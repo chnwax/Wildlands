@@ -1,0 +1,697 @@
+// Town construction kit: batched geometry builder, PBR materials, canvas-drawn signage, buildings and street props.
+import { THREE, scene, S, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform } from './core.js';
+import { env } from './sky.js';
+import { relief, weather, asphaltAge, wornPaint, windowMaterial } from './surface.js';
+
+// ---------------------------------------------------------------- batched builder
+// Geometry is accumulated per (material, 96 m chunk) and flushed into a few hundred meshes.
+const V3 = (a, b, c) => [a, b, c];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = a => Math.hypot(a[0], a[1], a[2]);
+const norm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const WHITE = [1, 1, 1];
+
+export class GeoBuilder {
+  constructor(chunk = 96) { this.chunk = chunk; this.parts = new Map(); this.frame(0, 0, 0, 0); }
+  frame(x, y, z, r = 0) { this.F = { x, y, z, c: Math.cos(r), s: Math.sin(r), r }; return this; }
+  P(l) { const F = this.F; return [F.x + l[0] * F.c + l[2] * F.s, F.y + l[1], F.z - l[0] * F.s + l[2] * F.c]; }
+  N(n) { const F = this.F; return [n[0] * F.c + n[2] * F.s, n[1], -n[0] * F.s + n[2] * F.c]; }
+  bucket(mat, x, z) {
+    const k = mat + '|' + Math.floor(x / this.chunk) + ',' + Math.floor(z / this.chunk);
+    let b = this.parts.get(k); if (!b) { b = { mat, pos: [], nor: [], uv: [], col: [], idx: [] }; this.parts.set(k, b); }
+    return b;
+  }
+  // a,b,c,d local corners, counter-clockwise seen from the front; uv in metres / opt.uv
+  quad(mat, a, b, c, d, opt = {}) {
+    const e1 = sub(b, a), e2 = sub(d, a), n = this.N(norm(cross(e1, e2)));
+    const s = opt.uv || 1, [u0, v0] = opt.uvo || [0, 0], lu = len(e1) / s, lv = len(e2) / s;
+    const uvs = opt.uvs || [[u0, v0], [u0 + lu, v0], [u0 + lu, v0 + lv], [u0, v0 + lv]];
+    const wa = this.P(a), B = this.bucket(mat, wa[0], wa[2]), base = B.pos.length / 3, col = opt.color || WHITE;
+    for (const [i, p] of [a, b, c, d].entries()) { const w = this.P(p); B.pos.push(w[0], w[1], w[2]); B.nor.push(n[0], n[1], n[2]); B.uv.push(uvs[i][0], uvs[i][1]); B.col.push(col[0], col[1], col[2]); }
+    B.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  tri(mat, a, b, c, opt = {}) {
+    const n = this.N(norm(cross(sub(b, a), sub(c, a)))), s = opt.uv || 1;
+    const wa = this.P(a), B = this.bucket(mat, wa[0], wa[2]), base = B.pos.length / 3, col = opt.color || WHITE;
+    const ax = norm(sub(b, a)), ay = norm(cross(cross(ax, sub(c, a)), ax));
+    for (const p of [a, b, c]) { const w = this.P(p), d = sub(p, a); B.pos.push(w[0], w[1], w[2]); B.nor.push(n[0], n[1], n[2]); B.uv.push((d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2]) / s, -(d[0] * ay[0] + d[1] * ay[1] + d[2] * ay[2]) / s); B.col.push(col[0], col[1], col[2]); }
+    B.idx.push(base, base + 1, base + 2);
+  }
+  // axis-aligned box in the current frame; (cx, cz) centre, y0 bottom
+  box(mat, cx, y0, cz, w, h, d, opt = {}) {
+    const x0 = cx - w / 2, x1 = cx + w / 2, z0 = cz - d / 2, z1 = cz + d / 2, y1 = y0 + h, sk = opt.skip || '';
+    const o = { color: opt.color, uv: opt.uv };
+    if (!sk.includes('pz')) this.quad(mat, V3(x0, y0, z1), V3(x1, y0, z1), V3(x1, y1, z1), V3(x0, y1, z1), o);
+    if (!sk.includes('nz')) this.quad(mat, V3(x1, y0, z0), V3(x0, y0, z0), V3(x0, y1, z0), V3(x1, y1, z0), o);
+    if (!sk.includes('px')) this.quad(mat, V3(x1, y0, z1), V3(x1, y0, z0), V3(x1, y1, z0), V3(x1, y1, z1), o);
+    if (!sk.includes('nx')) this.quad(mat, V3(x0, y0, z0), V3(x0, y0, z1), V3(x0, y1, z1), V3(x0, y1, z0), o);
+    if (!sk.includes('py')) this.quad(mat, V3(x0, y1, z1), V3(x1, y1, z1), V3(x1, y1, z0), V3(x0, y1, z0), o);
+    if (!sk.includes('ny')) this.quad(mat, V3(x0, y0, z0), V3(x1, y0, z0), V3(x1, y0, z1), V3(x0, y0, z1), o);
+  }
+  // box between two local points (for beams, rails, wires-as-bars)
+  beam(mat, a, b, w, h, opt = {}) {
+    const dx = b[0] - a[0], dz = b[2] - a[2], L = Math.hypot(dx, dz), r = Math.atan2(dx, dz);
+    const saved = this.F, F = this.F, ca = Math.cos(r), sa = Math.sin(r);
+    // compose rotation: world = frame(local); local beam frame rotated by r around its start
+    const P0 = this.P(a);
+    this.frame(P0[0], P0[1], P0[2], saved.r + r);
+    const dy = b[1] - a[1];
+    if (Math.abs(dy) < 1e-4) this.box(mat, 0, -h / 2, L / 2, w, h, L, opt);
+    else { // sloped: build as quads
+      const hw = w / 2, hh = h / 2;
+      const p = (x, y, z) => V3(x, y + dy * z / L, z);
+      const o = { color: opt.color, uv: opt.uv };
+      this.quad(mat, p(-hw, -hh, 0), p(hw, -hh, 0), p(hw, -hh, L), p(-hw, -hh, L), o);
+      this.quad(mat, p(-hw, hh, L), p(hw, hh, L), p(hw, hh, 0), p(-hw, hh, 0), o);
+      this.quad(mat, p(hw, -hh, 0), p(hw, hh, 0), p(hw, hh, L), p(hw, -hh, L), o);
+      this.quad(mat, p(-hw, -hh, L), p(-hw, hh, L), p(-hw, hh, 0), p(-hw, -hh, 0), o);
+    }
+    this.F = saved;
+  }
+  cyl(mat, cx, y0, cz, r0, r1, h, seg = 8, opt = {}) {
+    const col = opt.color || WHITE;
+    for (let i = 0; i < seg; i++) {
+      const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2;
+      const q = (a, r, y) => V3(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r);
+      this.quad(mat, q(a1, r0, y0), q(a0, r0, y0), q(a0, r1, y0 + h), q(a1, r1, y0 + h), { color: col, uvs: [[(i + 1) / seg, 0], [i / seg, 0], [i / seg, h / (opt.uv || 1)], [(i + 1) / seg, h / (opt.uv || 1)]] });
+      if (opt.cap) this.tri(mat, V3(cx, y0 + h, cz), q(a1, r1, y0 + h), q(a0, r1, y0 + h), { color: col });
+    }
+  }
+  flush(materials, shadow = {}) {
+    const meshes = [];
+    for (const b of this.parts.values()) {
+      if (!b.idx.length) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(b.nor, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
+      g.setIndex(b.idx.length > 65535 ? new THREE.Uint32BufferAttribute(b.idx, 1) : new THREE.Uint16BufferAttribute(b.idx, 1));
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, materials[b.mat]);
+      if (!materials[b.mat]) console.warn('missing material', b.mat);
+      m.castShadow = shadow[b.mat] !== false; m.receiveShadow = true; m.matrixAutoUpdate = false;
+      scene.add(m); meshes.push(m);
+    }
+    this.parts.clear();
+    return meshes;
+  }
+}
+
+// ---------------------------------------------------------------- materials
+export const night = { value: 0 }; // 0 day .. 1 night, drives emissive things
+export function updateNight() { night.value = clamp(env.night * 1.15 + (1 - env.day) * 0.3, 0, 1); }
+const tex = (name, kind, res = '1k', srgb = true) => phTex(name, kind, res, srgb, kind === 'nor_gl' ? NFLAT : [128, 128, 128]);
+function std(o) { return new THREE.MeshStandardMaterial(Object.assign({ vertexColors: true, roughness: 0.9, metalness: 0 }, o)); }
+function pbr(name, o = {}, res = '1k') { return std(Object.assign({ map: tex(name, 'diff', res), normalMap: tex(name, 'nor_gl', res, false) }, o)); }
+// emissive driven by night factor, tinted by vertex colour
+function nightGlow(mat, strength, key) {
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uNight = night;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n#ifdef USE_COLOR\n totalEmissiveRadiance *= vColor.rgb * uNight * ${strength.toFixed(2)};\n#endif`);
+  };
+  mat.customProgramCacheKey = () => key;
+  return mat;
+}
+let M = null;
+// full PBR set: albedo + normal + ARM (AO/roughness) + height map for parallax, plus weathering
+function pbrX(name, depth, wx, o = {}) {
+  const m = std(Object.assign({ map: tex(name, 'diff', '1k'), normalMap: tex(name, 'nor_gl', '1k', false), roughnessMap: tex(name, 'arm', '1k', false), aoMap: tex(name, 'arm', '1k', false), roughness: 1, aoMapIntensity: 0.9 }, o));
+  if (depth > 0) relief(m, tex(name, 'disp', '1k', false), depth, name);
+  if (wx) weather(m, Object.assign({ ground: 6 }, wx), name);
+  return m;
+}
+function asphaltVariant(key, units, factor) {
+  const m = std({ map: tex('asphalt_pit_lane', 'diff', '2k'), normalMap: tex('asphalt_pit_lane', 'nor_gl', '1k', false), roughnessMap: tex('asphalt_pit_lane', 'rough', '1k', false),
+    polygonOffset: units !== 0, polygonOffsetFactor: factor, polygonOffsetUnits: units });
+  return asphaltAge(m, key);
+}
+export function materials() {
+  if (M) return M;
+  M = {
+    siding: pbrX('exterior_wall_cladding', 0.006, { grime: 0.6, streaks: 0.55, moss: 0.3 }),
+    stucco: pbrX('white_stucco', 0.004, { grime: 0.7, streaks: 0.8, moss: 0.35 }),
+    plaster: pbrX('beige_wall_001', 0.003, { grime: 0.7, streaks: 0.7, moss: 0.3 }),
+    tiles: pbrX('rectangular_facade_tiles', 0.004, { grime: 0.5, streaks: 0.45, moss: 0.2 }),
+    concrete: pbrX('concrete_wall_008', 0.004, { grime: 0.8, streaks: 0.85, moss: 0.5 }),
+    block: pbrX('concrete_block_wall', 0.01, { grime: 0.9, streaks: 0.7, moss: 0.9 }),
+    stone: pbrX('japanese_stone_wall', 0.03, { grime: 0.6, streaks: 0.4, moss: 0.9, ground: 0.5 }),
+    roofTile: pbrX('grey_roof_tiles', 0.024, { grime: 0, streaks: 0.3, moss: 0.55 }, { metalness: 0.12, roughness: 0.75 }),
+    roofMetal: weather(std({ normalMap: tex('box_profile_metal_sheet', 'nor_gl', '1k', false), roughnessMap: tex('box_profile_metal_sheet', 'rough', '1k', false), metalness: 0.55, roughness: 0.6 }), { grime: 0, streaks: 0.4, moss: 0.15 }, 'roofMetal'),
+    wood: pbrX('japanese_cedar_planks', 0.006, { grime: 0.6, streaks: 0.5, moss: 0.4 }),
+    asphalt: asphaltVariant('main', -2, -1),
+    asphaltMain: null, asphaltRoad: asphaltVariant('road', -1, -0.5), asphaltLane: asphaltVariant('lane', -0.5, -0.25), asphaltLane2: asphaltVariant('lane2', 0, 0),
+    pavement: pbrX('concrete_pavement', 0.008, { grime: 0.3, streaks: 0, moss: 0.35 }),
+    ballast: pbrX('bicolour_gravel', 0.02, null),
+    paint: wornPaint(std({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }), 'road'),
+    metal: weather(std({ roughness: 0.45, metalness: 0.4 }), { grime: 0.3, streaks: 0.3, moss: 0, vary: 0.5 }, 'metal'),
+    alu: std({ roughness: 0.35, metalness: 0.85, color: 0xc8ccd0 }),
+    steel: std({ roughness: 0.3, metalness: 1.0, color: 0x9a9ea2 }),
+    plain: weather(std({ roughness: 0.8 }), { grime: 0.5, streaks: 0.5, moss: 0.1, vary: 0.6 }, 'plain'),
+    plastic: std({ roughness: 0.35 }),
+    dark: std({ roughness: 0.9, color: 0x111213 }),
+    shutter: weather(std({ normalMap: tex('painted_metal_shutter', 'nor_gl', '1k', false), roughness: 0.55, metalness: 0.35 }), { grime: 0.6, streaks: 0.6, moss: 0 }, 'shutter'),
+    glass: std({ color: 0x28323a, roughness: 0.06, metalness: 0.75, envMapIntensity: 1.2 }),
+    glassLit: nightGlow(std({ color: 0x2a3036, roughness: 0.08, metalness: 0.6, emissive: 0xffd6a0, emissiveIntensity: 1 }), 1.6, 'glassLit'),
+    window: windowMaterial({ night }),
+    shopWindow: windowMaterial({ night, shop: true, base: 6.0, roomW: 5.5, roomH: 3.0, depth: 6.5 }),
+    lamp: nightGlow(std({ color: 0xf4f4f0, roughness: 0.4, emissive: 0xfff2dc, emissiveIntensity: 1 }), 6.0, 'lampGlow'),
+    poly: new THREE.MeshStandardMaterial({ color: 0xcfe0e6, roughness: 0.2, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
+  };
+  M.asphaltMain = M.asphalt;
+  M.gravelPath = pbrX('bicolour_gravel', 0.02, null, { polygonOffset: true, polygonOffsetUnits: -1 });
+  for (const m of Object.values(M)) for (const t of [m.map, m.normalMap, m.roughnessMap, m.aoMap]) if (t) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return M;
+}
+
+// ---------------------------------------------------------------- canvas textures
+export const JP_FONT = '"Yu Gothic UI", "Yu Gothic", "Meiryo", "MS Gothic", "Hiragino Sans", sans-serif';
+export function canvasTex(w, h, draw, srgb = true) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8;
+  return t;
+}
+function fitText(g, text, x, y, maxW, size, font = JP_FONT, weight = 'bold') {
+  let s = size; g.font = `${weight} ${s}px ${font}`;
+  while (g.measureText(text).width > maxW && s > 8) { s -= 2; g.font = `${weight} ${s}px ${font}`; }
+  g.fillText(text, x, y);
+}
+// a lit sign mesh (canvas texture), glowing at night
+export function signMesh(w, h, draw, glow = 0.8, px = 256) {
+  const t = canvasTex(Math.round(px * w / h), px, draw);
+  const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0 });
+  m.userData.glow = glow; glowMats.push(m);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
+  mesh.castShadow = false; mesh.receiveShadow = true;
+  return mesh;
+}
+export const glowMats = [];
+export function updateGlow() { for (const m of glowMats) m.emissiveIntensity = m.userData.glow * (0.15 + night.value * 1.6); }
+
+const SHOP_NAMES = [
+  ['ラーメン', '桜屋', '#b3261e', '#fff'], ['薬局', 'くすりのヤマダ', '#1f6fb5', '#fff'], ['美容室', 'hair salon Lumi', '#f4efe6', '#333'],
+  ['居酒屋', 'とり吉', '#2b2320', '#f2d49b'], ['クリーニング', 'ホワイト急便', '#e9f1f7', '#1f5f9b'], ['不動産', '桜川ホーム', '#f5f5f0', '#1f7a3a'],
+  ['和菓子', '福田堂', '#3d2b1f', '#f2e3c6'], ['喫茶', 'ひだまり', '#6b4f36', '#fff3dd'], ['酒', 'たなか酒店', '#1d3557', '#fff'],
+  ['理容', 'バーバー森', '#ffffff', '#b3261e'], ['書店', 'さくら書房', '#2e5e4e', '#fff'], ['パン工房', 'こむぎ', '#f6e7c8', '#7a4a1e'],
+  ['そば・うどん', '更科', '#1c1c1c', '#fff'], ['歯科医院', '桜川デンタル', '#ffffff', '#1a8a9a'], ['花', 'フラワー花子', '#f3d7e0', '#7a2a4a'],
+  ['自転車', 'サイクル中村', '#ffcc00', '#222'], ['寿司', 'すし政', '#f4ecdc', '#1b1b1b'], ['整骨院', 'さくら整骨院', '#0e6b3a', '#fff'],
+];
+export function shopSign(rng, w) {
+  const [kind, name, bg, fg] = SHOP_NAMES[Math.floor(rng() * SHOP_NAMES.length)];
+  return signMesh(w, 0.9, (g, W, H) => {
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    g.fillStyle = fg; g.textBaseline = 'middle'; g.textAlign = 'center';
+    fitText(g, kind + '　' + name, W / 2, H * 0.54, W * 0.9, H * 0.62);
+    g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 6; g.strokeRect(3, 3, W - 6, H - 6);
+  }, 0.9);
+}
+export function verticalSign(rng) {
+  const [kind, , bg, fg] = SHOP_NAMES[Math.floor(rng() * SHOP_NAMES.length)];
+  const chars = [...kind].slice(0, 4);
+  return signMesh(0.55, 0.5 + chars.length * 0.5, (g, W, H) => {
+    g.fillStyle = bg; g.fillRect(0, 0, W, H); g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const cs = H / (chars.length + 0.6);
+    chars.forEach((c, i) => { g.font = `bold ${Math.min(W * 0.8, cs * 0.85)}px ${JP_FONT}`; g.fillText(c, W / 2, cs * (i + 0.8)); });
+  }, 1.0, 512);
+}
+
+// vending machine front (drinks)
+const vendTex = [];
+function vendingTexture(i) {
+  if (vendTex[i]) return vendTex[i];
+  const palettes = [['#c8102e', '#fff'], ['#0b4ea2', '#e8f1fb'], ['#f3f3ef', '#2f7d32'], ['#1b1b1b', '#e1b12c'], ['#e8e8e8', '#0b4ea2']];
+  const [body, accent] = palettes[i % palettes.length], rng = mulberry32(900 + i);
+  vendTex[i] = canvasTex(512, 1024, (g, W, H) => {
+    g.fillStyle = body; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#f7fbff'; g.fillRect(30, 40, W - 60, H * 0.52);
+    const cols = 6, rows = 4, cw = (W - 80) / cols, rh = H * 0.52 / rows;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = 40 + c * cw, y = 50 + r * rh, hue = rng() * 360;
+      g.fillStyle = `hsl(${hue},${40 + rng() * 50}%,${35 + rng() * 35}%)`;
+      const bw = cw * 0.52, bh = rh * 0.62, bx = x + (cw - bw) / 2, by = y + rh * 0.08;
+      if (rng() < 0.5) { g.fillRect(bx, by + bh * 0.25, bw, bh * 0.75); g.fillRect(bx + bw * 0.3, by, bw * 0.4, bh * 0.3); }
+      else { g.beginPath(); g.roundRect(bx, by + bh * 0.1, bw, bh * 0.9, 8); g.fill(); }
+      g.fillStyle = '#222'; g.font = `bold ${rh * 0.13}px ${JP_FONT}`; g.textAlign = 'center';
+      g.fillText('¥' + [100, 110, 120, 130, 150, 160][Math.floor(rng() * 6)], x + cw / 2, y + rh * 0.86);
+      g.fillStyle = '#2bd14b'; g.fillRect(x + cw * 0.3, y + rh * 0.9, cw * 0.4, rh * 0.06);
+    }
+    g.fillStyle = accent; g.fillRect(30, H * 0.6, W - 60, 90);
+    g.fillStyle = body; g.font = `bold 58px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(['つめた〜い', 'あったか〜い', 'おいしい水', 'リフレッシュ', 'ドリンク'][i % 5], W / 2, H * 0.6 + 45);
+    g.fillStyle = '#2a2a2a'; g.fillRect(W * 0.62, H * 0.7, 120, 150); g.fillStyle = '#58c2ff'; g.fillRect(W * 0.64, H * 0.72, 90, 50);
+    g.fillStyle = '#111'; g.fillRect(50, H * 0.86, W - 100, 100);
+  });
+  return vendTex[i];
+}
+
+// ---------------------------------------------------------------- props
+const vmGeo = new THREE.BoxGeometry(1.0, 1.83, 0.75);
+export function vendingMachine(x, y, z, r, i) {
+  const t = vendingTexture(i);
+  const front = new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0, roughness: 0.35 });
+  front.userData.glow = 0.55; glowMats.push(front);
+  const side = new THREE.MeshStandardMaterial({ color: [0xc8102e, 0x0b4ea2, 0xf3f3ef, 0x1b1b1b, 0xe8e8e8][i % 5], roughness: 0.4, metalness: 0.3 });
+  const m = new THREE.Mesh(vmGeo, [side, side, side, side, front, side]);
+  m.position.set(x, y + 0.915, z); m.rotation.y = r; m.castShadow = true; m.receiveShadow = true;
+  scene.add(m); addBox(x, z, 0.5, 0.38, r);
+  return m;
+}
+
+// utility pole with crossarms, insulators, optional transformer and street light; returns wire attach points (world)
+export function utilityPole(B, x, y, z, r, rng, { transformer = false, light = false, side = 1 } = {}) {
+  B.frame(x, y, z, r);
+  const MT = materials();
+  B.cyl('concrete', 0, 0, 0, 0.19, 0.13, 12.5, 8, { color: [0.78, 0.78, 0.76], uv: 3 });
+  // yellow/black guard sleeve at the base
+  for (let i = 0; i < 6; i++) B.cyl('plain', 0, 0.3 + i * 0.25, 0, 0.2, 0.2, 0.25, 8, { color: i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.75, 0.05] });
+  const pts = [];
+  for (const [h, wdt, n] of [[11.9, 1.8, 3], [10.9, 1.4, 2]]) {
+    B.box('metal', 0, h - 0.06, 0, wdt, 0.1, 0.08, { color: [0.35, 0.36, 0.37] });
+    for (let k = 0; k < n; k++) {
+      const ox = (k / (n - 1) - 0.5) * (wdt - 0.2);
+      B.cyl('plastic', ox, h + 0.04, 0, 0.05, 0.035, 0.16, 6, { color: [0.92, 0.92, 0.9] });
+      pts.push(B.P([ox, h + 0.18, 0]));
+    }
+  }
+  // telecom cable + low voltage
+  B.box('metal', 0.12 * side, 8.1, 0, 0.35, 0.08, 0.08, { color: [0.3, 0.3, 0.3] });
+  pts.push(B.P([0.28 * side, 8.1, 0])); pts.push(B.P([0.02, 6.2, 0]));
+  B.box('dark', 0.22 * side, 6.0, 0, 0.12, 0.35, 0.12);
+  if (transformer) {
+    B.cyl('metal', 0.55 * side, 8.6, 0, 0.3, 0.3, 1.0, 10, { color: [0.62, 0.64, 0.64], cap: true });
+    B.box('metal', 0.25 * side, 9.1, 0, 0.45, 0.08, 0.08, { color: [0.35, 0.36, 0.37] });
+  }
+  if (light) {
+    B.beam('metal', [0, 7.2, 0], [1.4 * side, 7.6, 0], 0.06, 0.06, { color: [0.55, 0.57, 0.58] });
+    B.box('metal', 1.6 * side, 7.52, 0, 0.5, 0.08, 0.22, { color: [0.4, 0.42, 0.44] });
+    B.box('lamp', 1.6 * side, 7.48, 0, 0.42, 0.04, 0.18);
+  }
+  // number plate
+  B.box('plain', 0, 2.2, 0.2, 0.18, 0.5, 0.02, { color: [0.95, 0.95, 0.92] });
+  addCircle(x, z, 0.25);
+  return { pts, lamp: light ? B.P([1.6 * side, 7.3, 0]) : null };
+}
+// sagging wires between consecutive poles (lines are the right visual weight for 1-2 cm cables)
+const wireMat = new THREE.LineBasicMaterial({ color: 0x1a1b1c });
+export function wires(poles) {
+  const P = [];
+  for (let i = 0; i + 1 < poles.length; i++) {
+    const a = poles[i].pts, b = poles[i + 1].pts, n = Math.min(a.length, b.length);
+    const span = Math.hypot(a[0][0] - b[0][0], a[0][2] - b[0][2]); if (span > 60) continue;
+    for (let k = 0; k < n; k++) {
+      const sag = 0.25 + span * 0.012 + (k === n - 2 ? 0.25 : 0);
+      for (let s = 0; s < 8; s++) {
+        const t0 = s / 8, t1 = (s + 1) / 8;
+        for (const t of [t0, t1]) P.push(lerp(a[k][0], b[k][0], t), lerp(a[k][1], b[k][1], t) - sag * 4 * t * (1 - t), lerp(a[k][2], b[k][2], t));
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  const l = new THREE.LineSegments(g, wireMat); l.frustumCulled = false; scene.add(l);
+  return l;
+}
+
+// convex traffic mirror (カーブミラー) on an orange pole
+const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 1, roughness: 0.02 });
+export function curveMirror(B, x, y, z, r) {
+  B.frame(x, y, z, r);
+  B.cyl('plain', 0, 0, 0, 0.038, 0.038, 3.0, 8, { color: [0.95, 0.42, 0.08] });
+  B.beam('plain', [0, 2.85, 0], [0, 2.85, 0.25], 0.05, 0.05, { color: [0.95, 0.42, 0.08] });
+  const disc = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 10, 0, Math.PI * 2, 0, 0.5), mirrorMat);
+  disc.rotation.x = Math.PI / 2; const p = B.P([0, 2.85, 0.3]); disc.position.set(p[0], p[1], p[2]);
+  const holder = new THREE.Group(); holder.position.copy(disc.position); holder.rotation.y = r; disc.position.set(0, 0, 0); holder.add(disc);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 6, 24), new THREE.MeshStandardMaterial({ color: 0xf06a14, roughness: 0.5 }));
+  rim.position.z = 0.03; holder.add(rim);
+  scene.add(holder);
+  addCircle(x, z, 0.1);
+}
+
+// road sign on a post: kind 'stop' (inverted red triangle 止まれ), 'speed30', 'crossing'
+const signTex = {};
+function roadSignTex(kind) {
+  if (signTex[kind]) return signTex[kind];
+  signTex[kind] = canvasTex(256, 256, (g, W, H) => {
+    g.clearRect(0, 0, W, H);
+    if (kind === 'stop') {
+      g.fillStyle = '#fff'; g.beginPath(); g.moveTo(8, 18); g.lineTo(W - 8, 18); g.lineTo(W / 2, H - 8); g.closePath(); g.fill();
+      g.fillStyle = '#c8102e'; g.beginPath(); g.moveTo(20, 26); g.lineTo(W - 20, 26); g.lineTo(W / 2, H - 22); g.closePath(); g.fill();
+      g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = `bold 58px ${JP_FONT}`; g.fillText('止まれ', W / 2, 100);
+      g.font = 'bold 30px Arial'; g.fillText('STOP', W / 2, 142);
+    } else if (kind === 'speed30') {
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(W / 2, H / 2, 122, 0, 7); g.fill();
+      g.strokeStyle = '#c8102e'; g.lineWidth = 26; g.beginPath(); g.arc(W / 2, H / 2, 108, 0, 7); g.stroke();
+      g.fillStyle = '#1f4fa3'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold 120px Arial'; g.fillText('30', W / 2, H / 2 + 6);
+    } else if (kind === 'crossing') {
+      g.fillStyle = '#ffcc00'; g.beginPath(); g.moveTo(W / 2, 6); g.lineTo(W - 6, H / 2); g.lineTo(W / 2, H - 6); g.lineTo(6, H / 2); g.closePath(); g.fill();
+      g.strokeStyle = '#111'; g.lineWidth = 8; g.stroke();
+      g.fillStyle = '#111'; g.fillRect(70, 150, 116, 14); g.fillRect(84, 95, 12, 60); g.fillRect(160, 95, 12, 60); g.fillRect(90, 88, 76, 20);
+    }
+  });
+  return signTex[kind];
+}
+export function roadSign(B, x, y, z, r, kind) {
+  B.frame(x, y, z, r);
+  B.cyl('alu', 0, 0, 0, 0.03, 0.03, kind === 'stop' ? 2.1 : 2.6, 6);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.75), new THREE.MeshStandardMaterial({ map: roadSignTex(kind), transparent: true, alphaTest: 0.5, roughness: 0.4, side: THREE.DoubleSide }));
+  const p = B.P([0, kind === 'stop' ? 1.85 : 2.3, 0.04]); m.position.set(p[0], p[1], p[2]); m.rotation.y = r; m.castShadow = true;
+  scene.add(m); addCircle(x, z, 0.06);
+}
+
+// painted "止まれ" legend + stop line texture for road surfaces
+export const stopTex = canvasTex(256, 512, (g, W, H) => {
+  g.clearRect(0, 0, W, H); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.save(); g.scale(1, 1.45); g.font = `bold 112px ${JP_FONT}`; // glyphs stretched lengthwise like real road paint
+  ['止', 'ま', 'れ'].forEach((c, i) => g.fillText(c, W / 2, 58 + i * 116)); g.restore();
+});
+export const stopMat = new THREE.MeshStandardMaterial({ map: stopTex, transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, depthWrite: false, color: 0xe8e8e2 });
+
+// ---------------------------------------------------------------- buildings
+const WALL_TINTS = [[0.96, 0.93, 0.86], [0.92, 0.9, 0.84], [0.85, 0.84, 0.82], [0.98, 0.97, 0.95], [0.82, 0.76, 0.66], [0.72, 0.7, 0.68], [0.9, 0.86, 0.78], [0.62, 0.6, 0.58]];
+const ROOF_METAL = [[0.2, 0.17, 0.15], [0.14, 0.18, 0.26], [0.1, 0.1, 0.11], [0.55, 0.57, 0.58], [0.16, 0.24, 0.2], [0.35, 0.22, 0.16]];
+const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
+const jitter = (rng, c, a = 0.04) => c.map(v => clamp(v + (rng() - 0.5) * a, 0, 1));
+
+export const lampPoints = []; // world positions of light fixtures (for dynamic point lights)
+export const litWindows = [];
+
+// window on a wall plane: wall frame axis is local X along wall, Y up, facing +Z (call with builder frame on wall)
+function windowOn(B, cx, y, w, h, rng, opt = {}) {
+  const lit = rng() < 0.45, z = opt.z || 0.02;
+  B.quad('window', [cx - w / 2, y, z], [cx + w / 2, y, z], [cx + w / 2, y + h, z], [cx - w / 2, y + h, z],
+    { color: lit ? jitter(rng, rng() < 0.7 ? [1, 0.85, 0.6] : [0.85, 0.92, 1], 0.1) : [1, 1, 1], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+  const f = 0.05, c = [0.78, 0.8, 0.82];
+  B.box('alu', cx, y - f, z + 0.01, w + f * 2, f, 0.06, { color: c });
+  B.box('alu', cx, y + h, z + 0.01, w + f * 2, f, 0.06, { color: c });
+  B.box('alu', cx - w / 2 - f / 2, y, z + 0.01, f, h, 0.06, { color: c });
+  B.box('alu', cx + w / 2 + f / 2, y, z + 0.01, f, h, 0.06, { color: c });
+  if (w > 0.9) B.box('alu', cx, y, z + 0.02, 0.04, h, 0.04, { color: c });
+  if (opt.sill !== false) B.box('alu', cx, y - 0.08, z + 0.05, w + 0.12, 0.04, 0.12, { color: c });
+  if (opt.shutterBox) B.box('alu', cx, y + h + 0.05, z + 0.08, w + 0.14, 0.2, 0.16, { color: opt.shutterColor || [0.75, 0.74, 0.7] });
+  if (opt.grille) for (let i = 1; i < 6; i++) B.box('alu', cx - w / 2 + i * w / 6, y, z + 0.06, 0.02, h, 0.02, { color: c });
+}
+
+function gableRoof(B, mat, w, d, y, pitch, over, color) {
+  const rh = Math.tan(pitch) * (d / 2 + over), x0 = -w / 2 - over, x1 = w / 2 + over, z0 = -d / 2 - over, z1 = d / 2 + over;
+  const o = { color, uv: 2 };
+  B.quad(mat, [x0, y, z1], [x1, y, z1], [x1, y + rh, 0], [x0, y + rh, 0], o);
+  B.quad(mat, [x1, y, z0], [x0, y, z0], [x0, y + rh, 0], [x1, y + rh, 0], o);
+  // soffits (underside of eaves)
+  B.quad('plain', [x1, y, z1], [x0, y, z1], [x0, y + rh, 0], [x1, y + rh, 0], { color: [0.55, 0.52, 0.48] });
+  B.quad('plain', [x0, y, z0], [x1, y, z0], [x1, y + rh, 0], [x0, y + rh, 0], { color: [0.55, 0.52, 0.48] });
+  // fascia + ridge
+  B.box('plain', 0, y - 0.12, z1, x1 - x0, 0.14, 0.05, { color: [0.2, 0.19, 0.18] });
+  B.box('plain', 0, y - 0.12, z0, x1 - x0, 0.14, 0.05, { color: [0.2, 0.19, 0.18] });
+  B.box(mat, 0, y + rh - 0.02, 0, x1 - x0, 0.14, 0.26, { color: color.map(v => v * 0.8), uv: 2 });
+  return rh;
+}
+function hipRoof(B, mat, w, d, y, pitch, over, color) {
+  const hw = w / 2 + over, hd = d / 2 + over, rh = Math.tan(pitch) * hd, r = Math.max(0.2, hw - hd);
+  const o = { color, uv: 2 };
+  B.quad(mat, [-hw, y, hd], [hw, y, hd], [r, y + rh, 0], [-r, y + rh, 0], o);
+  B.quad(mat, [hw, y, -hd], [-hw, y, -hd], [-r, y + rh, 0], [r, y + rh, 0], o);
+  B.tri(mat, [hw, y, hd], [hw, y, -hd], [r, y + rh, 0], o);
+  B.tri(mat, [-hw, y, -hd], [-hw, y, hd], [-r, y + rh, 0], o);
+  const so = { color: [0.55, 0.52, 0.48] };
+  B.quad('plain', [hw, y, hd], [-hw, y, hd], [-hw, y, -hd], [hw, y, -hd], so);
+  B.box(mat, 0, y + rh - 0.02, 0, 2 * r + 0.2, 0.14, 0.26, { color: color.map(v => v * 0.8), uv: 2 });
+  return rh;
+}
+
+// Detached house. Lot local frame: origin lot centre, +Z towards the street. Returns info for the caller.
+export function house(B, lot, rng, extras) {
+  const { x, y, z, r, w: LW, d: LD } = lot;
+  B.frame(x, y, z, r);
+  const W = clamp(LW - 2.2 - rng() * 1.2, 6.5, 10), D = clamp(LD - 6 - rng() * 1.5, 7, 10.5);
+  const floors = rng() < 0.12 ? 1 : 2, fh = 2.85, base = 0.45, H = base + floors * fh;
+  const hz = -LD / 2 + 1.2 + D / 2, hx = (rng() - 0.5) * (LW - W - 1.6);
+  const wallMat = rng() < 0.62 ? 'siding' : rng() < 0.6 ? 'stucco' : 'plaster';
+  const wc = jitter(rng, pick(rng, WALL_TINTS));
+  // body + foundation
+  B.frame(x, y, z, r);
+  let doorX = 0;
+  const Bf = (fn) => { const F = B.F; B.frame(...B.P([hx, 0, hz]), r); fn(); B.F = F; };
+  Bf(() => {
+    B.box('concrete', 0, 0, 0, W + 0.04, base, D + 0.04, { color: [0.62, 0.62, 0.6], skip: 'ny', uv: 2 });
+    B.box(wallMat, 0, base, 0, W, floors * fh, D, { color: wc, skip: 'ny', uv: wallMat === 'siding' ? 2.2 : 3 });
+    // floor band between storeys
+    if (floors === 2) B.box('plain', 0, base + fh - 0.1, 0, W + 0.06, 0.14, D + 0.06, { color: wc.map(v => v * 0.8) });
+    const tile = rng() < 0.52, rmat = tile ? 'roofTile' : 'roofMetal', rc = tile ? jitter(rng, [0.5, 0.52, 0.58], 0.06) : pick(rng, ROOF_METAL);
+    const hip = rng() < 0.4, pitch = (tile ? 24 : 20 + rng() * 10) * Math.PI / 180;
+    // ridge runs along the longer side
+    const along = W >= D;
+    const F2 = B.F; B.frame(...B.P([0, 0, 0]), r + (along ? 0 : Math.PI / 2));
+    const rw = along ? W : D, rd = along ? D : W;
+    if (hip) hipRoof(B, rmat, rw, rd, H, pitch, 0.55, rc); else {
+      const rh = gableRoof(B, rmat, rw, rd, H, pitch, 0.5, rc);
+      // gable end walls
+      for (const sx of [-1, 1]) B.tri(wallMat, [sx * rw / 2, H, sx * rd / 2], [sx * rw / 2, H, -sx * rd / 2], [sx * rw / 2, H + rh, 0], { color: wc, uv: 2.2 });
+    }
+    B.F = F2;
+    // windows: front (+Z), back, sides
+    const faces = [[0, D / 2, W, 0], [Math.PI, D / 2, W, 0], [Math.PI / 2, W / 2, D, 1], [-Math.PI / 2, W / 2, D, 1]];
+    doorX = (rng() < 0.5 ? -1 : 1) * (W / 2 - 1.1);
+    faces.forEach(([fr, off, fw, isSide], fi) => {
+      const F3 = B.F; B.frame(...B.P([Math.sin(fr) * off, 0, Math.cos(fr) * off]), r + fr);
+      for (let fl = 0; fl < floors; fl++) {
+        const n = isSide ? (rng() < 0.6 ? 1 : 2) : Math.max(1, Math.floor(fw / 2.6));
+        for (let k = 0; k < n; k++) {
+          const cx = (k + 0.5) / n * fw - fw / 2 + (rng() - 0.5) * 0.3;
+          if (fi === 0 && fl === 0 && Math.abs(cx - doorX) < 1.3) continue;
+          const big = !isSide && rng() < 0.5, ww = big ? 1.65 : 0.9 + rng() * 0.3, wh = big && fl === 0 ? 1.8 : 1.1;
+          const wy = base + fl * fh + (big && fl === 0 ? 0.35 : 0.95);
+          windowOn(B, clamp(cx, -fw / 2 + ww / 2 + 0.3, fw / 2 - ww / 2 - 0.3), wy, ww, wh, rng, { shutterBox: big || rng() < 0.4, grille: isSide && rng() < 0.4 });
+        }
+      }
+      // AC outdoor unit
+      if (rng() < 0.55) {
+        const ax = (rng() - 0.5) * (fw - 1.5);
+        B.box('plain', ax, 0.1, 0.35, 0.8, 0.6, 0.28, { color: [0.93, 0.93, 0.9] });
+        B.box('dark', ax - 0.1, 0.22, 0.495, 0.42, 0.38, 0.01);
+        extras.push({ t: 'box', p: B.P([ax, 0, 0.35]), hx: 0.4, hz: 0.15, r: r + fr });
+      }
+      B.F = F3;
+    });
+    // entrance (genkan): door + canopy + step
+    B.F = F2; const F4 = B.F; B.frame(...B.P([doorX, 0, D / 2]), r);
+    B.box('wood', 0, base - 0.05, 0.02, 0.95, 2.05, 0.06, { color: pick(rng, [[0.5, 0.36, 0.25], [0.3, 0.22, 0.16], [0.75, 0.72, 0.68]]) });
+    B.box('alu', 0.3, base + 0.95, 0.07, 0.04, 0.35, 0.04);
+    B.box('concrete', 0, 0, 0.5, 1.6, base - 0.05, 1.0, { color: [0.7, 0.7, 0.68] });
+    B.box('plain', 0, base + 2.35, 0.45, 1.5, 0.1, 0.95, { color: [0.3, 0.3, 0.32] });
+    B.box('lamp', 0.65, base + 1.9, 0.06, 0.12, 0.18, 0.08);
+    lampPoints.push({ p: B.P([0.65, base + 1.9, 0.3]), s: 0.5 });
+    B.F = F4;
+    // balcony on the upper floor
+    if (floors === 2 && rng() < 0.6) {
+      const bw = Math.min(W - 1, 3.5 + rng() * 2), bx = (rng() - 0.5) * (W - bw);
+      B.box('concrete', bx, base + fh - 0.12, D / 2 + 0.5, bw, 0.14, 1.0, { color: [0.72, 0.72, 0.7] });
+      const railC = [0.82, 0.83, 0.84];
+      B.box('alu', bx, base + fh + 0.95, D / 2 + 0.98, bw, 0.05, 0.05, { color: railC });
+      for (let i = 0; i <= Math.floor(bw / 0.12); i++) B.box('alu', bx - bw / 2 + i * 0.12, base + fh, D / 2 + 0.98, 0.02, 0.95, 0.02, { color: railC });
+      for (const s of [-1, 1]) B.box('alu', bx + s * bw / 2, base + fh, D / 2 + 0.5, 0.04, 0.98, 1.0, { color: railC, skip: 'pz nz' });
+      // laundry poles
+      B.box('alu', bx, base + fh + 1.75, D / 2 + 0.7, bw - 0.2, 0.03, 0.03, { color: [0.6, 0.62, 0.64] });
+      if (rng() < 0.5) for (let i = 0; i < 4; i++) B.box('plain', bx - bw / 2 + 0.5 + i * (bw - 1) / 3, base + fh + 1.1, D / 2 + 0.7, 0.45, 0.62, 0.02, { color: jitter(rng, pick(rng, [[0.9, 0.9, 0.9], [0.4, 0.5, 0.7], [0.8, 0.5, 0.5], [0.3, 0.3, 0.32]]), 0.2) });
+    }
+    extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: W / 2, hz: D / 2, r });
+    // water heater (EcoCute) on a side
+    if (rng() < 0.4) { const F5 = B.F; B.frame(...B.P([W / 2 + 0.45, 0, -D / 4]), r); B.box('plain', 0, 0, 0, 0.65, 1.95, 0.7, { color: [0.95, 0.95, 0.93] }); extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 0.35, hz: 0.35, r }); B.F = F5; }
+  });
+  // block wall around the lot with gate + driveway gap
+  B.frame(x, y, z, r);
+  const wallH = 0.8 + rng() * 0.6, gateW = 3.2, wc2 = jitter(rng, [0.75, 0.74, 0.72], 0.05), hasWall = rng() < 0.8;
+  if (hasWall) {
+    const seg = (ax, az, bx, bz) => { B.beam('block', [ax, wallH / 2, az], [bx, wallH / 2, bz], 0.15, wallH, { color: wc2, uv: 1.6 }); B.beam('concrete', [ax, wallH + 0.03, az], [bx, wallH + 0.03, bz], 0.19, 0.06, { color: [0.65, 0.65, 0.63] }); };
+    seg(-LW / 2, -LD / 2, LW / 2, -LD / 2);
+    seg(-LW / 2, -LD / 2, -LW / 2, LD / 2 - 0.1); seg(LW / 2, -LD / 2, LW / 2, LD / 2 - 0.1);
+    const gx = doorGap(LW, gateW);
+    seg(-LW / 2, LD / 2 - 0.1, gx[0], LD / 2 - 0.1); seg(gx[1], LD / 2 - 0.1, LW / 2, LD / 2 - 0.1);
+    for (const [ax, az, bx, bz] of [[-LW / 2, -LD / 2, LW / 2, -LD / 2], [-LW / 2, -LD / 2, -LW / 2, LD / 2], [LW / 2, -LD / 2, LW / 2, LD / 2], [-LW / 2, LD / 2 - 0.1, gx[0], LD / 2 - 0.1], [gx[1], LD / 2 - 0.1, LW / 2, LD / 2 - 0.1]]) {
+      const cxl = (ax + bx) / 2, czl = (az + bz) / 2, L = Math.hypot(bx - ax, bz - az), P = B.P([cxl, 0, czl]);
+      extras.push({ t: 'box', p: P, hx: Math.abs(bx - ax) > 0.1 ? L / 2 : 0.1, hz: Math.abs(bx - ax) > 0.1 ? 0.1 : L / 2, r, h: wallH });
+    }
+  }
+  // parking spot in front yard
+  const carSpot = rng() < 0.75 ? { p: B.P([doorGap(LW, gateW)[0] + gateW / 2 + 0.2, 0, LD / 2 - 3.0]), r: r + (rng() < 0.5 ? 0 : Math.PI) } : null;
+  if (carSpot && rng() < 0.35) { // aluminium carport
+    B.frame(...carSpot.p, r);
+    for (const [sx, sz] of [[-1.35, -2.3], [-1.35, 2.3]]) B.box('alu', sx, 0, sz, 0.1, 2.3, 0.1, { color: [0.6, 0.55, 0.5] });
+    B.box('alu', -0.1, 2.3, 0, 2.9, 0.12, 5.2, { color: [0.6, 0.55, 0.5], skip: 'py ny' });
+    extras.push({ t: 'poly', p: B.P([-0.1, 2.36, 0]), r, w: 2.8, d: 5.1 });
+  }
+  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6 };
+}
+function doorGap(LW, gw) { return [LW / 2 - 0.5 - gw, LW / 2 - 0.5]; }
+
+// Two/three-storey shop building fronting a street, flat roof with parapet. Frame: +Z faces street.
+export function shopBuilding(B, s, rng, extras) {
+  const { x, y, z, r, w, d } = s;
+  B.frame(x, y, z, r);
+  const floors = 2 + (rng() < 0.4 ? 1 : 0), fh = 3.1, H = floors * fh;
+  const mat = pick(rng, ['tiles', 'tiles', 'stucco', 'plaster', 'siding']), wc = jitter(rng, pick(rng, WALL_TINTS), 0.06);
+  B.box(mat, 0, 0, 0, w - 0.1, H, d, { color: wc, skip: 'ny', uv: mat === 'tiles' ? 2.5 : 3 });
+  B.box('concrete', 0, H, 0, w - 0.1, 0.5, d, { skip: 'ny', color: wc.map(v => v * 0.85), uv: 3 }); // parapet
+  B.box('concrete', 0, H + 0.02, 0, w - 0.6, 0.4, d - 0.5, { skip: 'ny', color: [0.5, 0.5, 0.5] });
+  // ground floor shopfront
+  const open = rng() < 0.3, fz = d / 2 + 0.01;
+  if (open) { // rolled-down shutter (closed shop)
+    B.quad('shutter', [-w / 2 + 0.4, 0, fz], [w / 2 - 0.4, 0, fz], [w / 2 - 0.4, 2.6, fz], [-w / 2 + 0.4, 2.6, fz], { color: jitter(rng, [0.72, 0.74, 0.74], 0.08), uv: 1.2 });
+    B.box('alu', 0, 2.6, fz + 0.1, w - 0.6, 0.35, 0.3, { color: [0.7, 0.7, 0.7] });
+  } else {
+    B.quad('shopWindow', [-w / 2 + 0.4, 0.15, fz], [w / 2 - 0.4, 0.15, fz], [w / 2 - 0.4, 2.7, fz], [-w / 2 + 0.4, 2.7, fz], { color: [1, 0.95, 0.85], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+    for (let i = 0; i <= 3; i++) B.box('alu', -w / 2 + 0.4 + i * (w - 0.8) / 3, 0, fz + 0.02, 0.06, 2.75, 0.06);
+    B.box('alu', 0, 2.7, fz + 0.02, w - 0.8, 0.08, 0.06);
+  }
+  // awning
+  if (rng() < 0.55) {
+    const ac = pick(rng, [[0.6, 0.12, 0.1], [0.12, 0.3, 0.2], [0.15, 0.2, 0.4], [0.8, 0.55, 0.15], [0.3, 0.3, 0.3]]);
+    B.quad('plain', [-w / 2 + 0.3, 2.95, fz], [w / 2 - 0.3, 2.95, fz], [w / 2 - 0.3, 2.65, fz + 1.1], [-w / 2 + 0.3, 2.65, fz + 1.1], { color: ac });
+    B.quad('plain', [-w / 2 + 0.3, 2.65, fz + 1.1], [w / 2 - 0.3, 2.65, fz + 1.1], [w / 2 - 0.3, 2.95, fz], [-w / 2 + 0.3, 2.95, fz], { color: ac.map(v => v * 0.6) });
+  }
+  const sign = shopSign(rng, w - 1.2); const sp = B.P([0, 3.45, fz + 0.03]); sign.position.set(...sp); sign.rotation.y = r; scene.add(sign);
+  if (rng() < 0.5) { const vs = verticalSign(rng), vp = B.P([w / 2 - 0.5, 5.2, fz + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs); }
+  // upper floors
+  for (let f = 1; f < floors; f++) {
+    const n = Math.max(1, Math.floor(w / 2.4));
+    for (let k = 0; k < n; k++) windowOn(B, ((k + 0.5) / n - 0.5) * (w - 1), f * fh + 0.9, 1.4, 1.3, rng, { z: d / 2 + 0.02, shutterBox: rng() < 0.3 });
+  }
+  if (rng() < 0.5) { B.box('plain', -w / 2 + 1, H + 0.5, -d / 4, 0.8, 0.6, 0.3, { color: [0.93, 0.93, 0.9] }); }
+  // back and side walls: living quarters above the shop, service door, AC units, drain pipe
+  const F0 = B.F;
+  for (const [fr, off, fw] of [[Math.PI, d / 2, w], [Math.PI / 2, w / 2, d], [-Math.PI / 2, w / 2, d]]) {
+    B.F = F0; B.frame(...B.P([Math.sin(fr) * off, 0, Math.cos(fr) * off]), r + fr);
+    const back = fr === Math.PI;
+    for (let f = back ? 0 : 1; f < floors; f++) {
+      const n = back ? Math.max(1, Math.floor(fw / 3)) : (rng() < 0.5 ? 1 : 2);
+      for (let k = 0; k < n; k++) if (rng() < (back ? 0.85 : 0.6)) windowOn(B, ((k + 0.5) / n - 0.5) * (fw - 1.6), f * fh + (f ? 0.9 : 1.1), 0.9, f ? 1.1 : 0.8, rng, { grille: f === 0 });
+    }
+    if (back) {
+      B.box('metal', fw / 2 - 1.3, 0, 0.03, 0.9, 2.0, 0.06, { color: jitter(rng, [0.55, 0.57, 0.58], 0.1) });
+      if (rng() < 0.8) B.box('plain', -fw / 4, 0.1, 0.35, 0.8, 0.6, 0.28, { color: [0.93, 0.93, 0.9] });
+      if (floors > 2 && rng() < 0.6) B.box('plain', fw / 4, fh + 0.2, 0.35, 0.8, 0.6, 0.28, { color: [0.93, 0.93, 0.9] });
+      B.box('plain', -fw / 2 + 0.35, 0, 0.1, 0.1, H + 0.4, 0.1, { color: [0.62, 0.62, 0.6] });
+    }
+  }
+  B.F = F0;
+  lampPoints.push({ p: B.P([0, 2.9, fz + 0.8]), s: 0.8 });
+  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
+}
+
+// Convenience store: single storey, glass front, coloured stripes, bright interior at all hours.
+export function konbini(B, s, rng, extras) {
+  const { x, y, z, r, w, d } = s;
+  B.frame(x, y, z, r);
+  B.box('stucco', 0, 0, 0, w, 4.2, d, { color: [0.97, 0.97, 0.96], skip: 'ny', uv: 3 });
+  const stripes = [[0.05, 0.55, 0.3], [0.95, 0.95, 0.95], [0.1, 0.35, 0.75], [0.95, 0.95, 0.95], [0.95, 0.55, 0.1]];
+  stripes.forEach((c, i) => B.box('plain', 0, 3.2 + i * 0.16, 0, w + 0.04, 0.16, d + 0.04, { color: c, skip: 'ny py' }));
+  const fz = d / 2 + 0.03;
+  B.quad('shopWindow', [-w / 2 + 0.5, 0.1, fz], [w / 2 - 0.5, 0.1, fz], [w / 2 - 0.5, 2.9, fz], [-w / 2 + 0.5, 2.9, fz], { color: [1.4, 1.45, 1.5], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+  for (let i = 0; i <= 6; i++) B.box('alu', -w / 2 + 0.5 + i * (w - 1) / 6, 0, fz, 0.08, 2.95, 0.08);
+  const sign = signMesh(6, 1.0, (g, W, H) => {
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#0a8a4b'; g.fillRect(0, 0, W, H * 0.22); g.fillStyle = '#1a5fb4'; g.fillRect(0, H * 0.78, W, H * 0.22);
+    g.fillStyle = '#0a4f8f'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H * 0.42}px Arial`; g.fillText('SUNNY MART', W / 2, H * 0.52);
+  }, 1.2);
+  sign.position.set(...B.P([0, 3.6, fz + 0.02])); sign.rotation.y = r; scene.add(sign);
+  lampPoints.push({ p: B.P([0, 2.6, fz + 2]), s: 1.4 }, { p: B.P([-w / 3, 2.6, fz + 2]), s: 1.2 }, { p: B.P([w / 3, 2.6, fz + 2]), s: 1.2 });
+  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
+}
+
+// Five-storey apartment block (mansion) with balconies facing +Z.
+export function apartment(B, s, rng, extras) {
+  const { x, y, z, r, w, d } = s;
+  B.frame(x, y, z, r);
+  const floors = 5, fh = 2.95, H = floors * fh + 0.3;
+  B.box('tiles', 0, 0, 0, w, H, d, { color: jitter(rng, [0.92, 0.88, 0.8], 0.05), skip: 'ny', uv: 2.5 });
+  B.box('concrete', 0, H, 0, w, 0.6, d, { color: [0.8, 0.78, 0.74], skip: 'ny', uv: 3 });
+  const units = Math.floor(w / 6.2);
+  for (let f = 0; f < floors; f++) for (let u = 0; u < units; u++) {
+    const cx = ((u + 0.5) / units - 0.5) * w, fy = 0.3 + f * fh;
+    const lit = rng() < 0.45;
+    B.quad('window', [cx - 1.6, fy + 0.05, d / 2 + 0.01], [cx + 1.6, fy + 0.05, d / 2 + 0.01], [cx + 1.6, fy + 2.1, d / 2 + 0.01], [cx - 1.6, fy + 2.1, d / 2 + 0.01],
+      { color: lit ? jitter(rng, [1, 0.88, 0.7], 0.12) : [1, 1, 1], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+    {
+      B.box('concrete', cx, fy - 0.15, d / 2 + 0.7, 6.0, 0.18, 1.4, { color: [0.85, 0.84, 0.82] });
+      B.box('plastic', cx, fy + 0.03, d / 2 + 1.38, 5.9, 1.05, 0.05, { color: [0.78, 0.8, 0.8] }); // frosted balcony panel
+      B.box('concrete', cx + 3.0, fy, d / 2 + 0.7, 0.12, fh - 0.2, 1.4, { color: [0.85, 0.84, 0.82] });
+      if (rng() < 0.3) B.box('plain', cx - 2.2, fy + 0.05, d / 2 + 0.5, 0.8, 0.6, 0.28, { color: [0.93, 0.93, 0.9] });
+    }
+  }
+  // corridor side (back): open walkways
+  for (let f = 1; f < floors; f++) B.box('concrete', 0, 0.3 + f * fh - 0.15, -d / 2 - 0.8, w, 0.16, 1.6, { color: [0.8, 0.8, 0.78] });
+  for (let f = 1; f < floors; f++) B.box('concrete', 0, 0.3 + f * fh, -d / 2 - 1.55, w, 1.1, 0.12, { color: [0.86, 0.85, 0.82] });
+  B.box('metal', w / 2 - 3, H + 0.6, 0, 2.2, 1.8, 2.2, { color: [0.85, 0.85, 0.82] }); // roof water tank
+  for (let f = 0; f < floors; f++) lampPoints.push({ p: B.P([0, 0.3 + f * fh + 2.2, -d / 2 - 1.2]), s: 0.4 });
+  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
+}
+
+// Shinto shrine gate + small hall + stone lanterns. Frame +Z faces the approach.
+export function shrine(B, x, y, z, r, extras) {
+  B.frame(x, y, z, r);
+  const red = [0.78, 0.16, 0.08];
+  for (const sx of [-1.8, 1.8]) B.cyl('plain', sx, 0, 0, 0.2, 0.18, 4.4, 12, { color: red });
+  B.box('plain', 0, 3.55, 0, 4.6, 0.3, 0.3, { color: red });
+  B.beam('plain', [-2.9, 4.45, 0], [2.9, 4.45, 0], 0.42, 0.28, { color: red });
+  B.beam('dark', [-3.0, 4.7, 0], [3.0, 4.7, 0], 0.46, 0.2);
+  B.box('dark', 0, 3.85, 0, 0.45, 0.55, 0.12);
+  for (const sx of [-1.8, 1.8]) extras.push({ t: 'circle', p: B.P([sx, 0, 0]), r: 0.25 });
+  for (const [lx, lz] of [[-2.5, -6], [2.5, -6], [-2.5, -14], [2.5, -14]]) {
+    B.box('stone', lx, 0, lz, 0.7, 0.3, 0.7, { color: [0.7, 0.7, 0.68] });
+    B.cyl('stone', lx, 0.3, lz, 0.14, 0.12, 0.9, 8, { color: [0.7, 0.7, 0.68] });
+    B.box('stone', lx, 1.2, lz, 0.55, 0.45, 0.55, { color: [0.72, 0.72, 0.7] });
+    B.box('lamp', lx, 1.3, lz, 0.3, 0.25, 0.56);
+    B.box('stone', lx, 1.65, lz, 0.85, 0.18, 0.85, { color: [0.7, 0.7, 0.68] });
+    extras.push({ t: 'circle', p: B.P([lx, 0, lz]), r: 0.45 });
+  }
+  // hall
+  B.frame(...B.P([0, 0, -24]), r);
+  B.box('stone', 0, 0, 0, 8, 0.6, 7, { color: [0.7, 0.7, 0.68], skip: 'ny' });
+  B.box('wood', 0, 0.6, 0, 6, 3.2, 5, { color: [0.62, 0.45, 0.32], skip: 'ny', uv: 2 });
+  for (const sx of [-2.9, 2.9]) for (const sz of [-2.4, 2.4]) B.cyl('plain', sx, 0.6, sz, 0.14, 0.14, 3.2, 8, { color: [0.45, 0.3, 0.2] });
+  gableRoof(B, 'roofTile', 6, 5, 3.8, 32 * Math.PI / 180, 1.2, [0.35, 0.37, 0.42]);
+  B.box('plain', 0, 3.4, 2.55, 0.8, 0.9, 0.06, { color: [0.95, 0.93, 0.85] });
+  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 4, hz: 3.5, r });
+}
+
+// ---------------------------------------------------------------- bicycles (mamachari with front basket), instanced
+let bikeGeo = null;
+function bicycleGeometry() {
+  if (bikeGeo) return bikeGeo;
+  const parts = [], add = (g, x, y, z, rx = 0, ry = 0, rz = 0) => { g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); parts.push(g.index ? g.toNonIndexed() : g); };
+  for (const x of [-0.52, 0.52]) { add(new THREE.TorusGeometry(0.33, 0.022, 6, 24), x, 0.35, 0); add(new THREE.CylinderGeometry(0.012, 0.012, 0.62, 4), x, 0.35, 0, Math.PI / 2); }
+  const tube = (a, b, r = 0.018) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length(); const g = new THREE.CylinderGeometry(r, r, L, 5); const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); g.applyQuaternion(q); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); parts.push(g.toNonIndexed()); };
+  tube([-0.52, 0.35, 0], [-0.1, 0.42, 0]); tube([-0.1, 0.42, 0], [0.38, 0.8, 0]); tube([-0.1, 0.42, 0], [-0.22, 0.85, 0]); tube([-0.52, 0.35, 0], [-0.22, 0.85, 0]);
+  tube([0.52, 0.35, 0], [0.38, 0.95, 0]); tube([0.38, 0.95, -0.25], [0.38, 0.95, 0.25], 0.012);
+  add(new THREE.BoxGeometry(0.24, 0.06, 0.12), -0.24, 0.9, 0);
+  add(new THREE.BoxGeometry(0.28, 0.22, 0.34), 0.62, 0.78, 0); // basket
+  add(new THREE.BoxGeometry(0.5, 0.02, 0.12), -0.62, 0.66, 0);  // rear carrier
+  const pos = [], nor = [];
+  for (const g of parts) { pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array); }
+  bikeGeo = new THREE.BufferGeometry();
+  bikeGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bikeGeo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  return bikeGeo;
+}
+export function bicycles(list, rng) { // list: [{x,y,z,r}]
+  const im = new THREE.InstancedMesh(bicycleGeometry(), new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.5 }), list.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c = new THREE.Color();
+  const cols = [[0.85, 0.85, 0.85], [0.1, 0.1, 0.1], [0.55, 0.1, 0.1], [0.2, 0.3, 0.55], [0.7, 0.7, 0.72], [0.95, 0.9, 0.8], [0.25, 0.4, 0.3]];
+  list.forEach((b, i) => { e.set(0, b.r, (rng() - 0.5) * 0.08); q.setFromEuler(e); m.compose(new THREE.Vector3(b.x, b.y, b.z), q, new THREE.Vector3(1, 1, 1)); im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(...cols[Math.floor(rng() * cols.length)])); });
+  im.castShadow = true; im.receiveShadow = true; scene.add(im);
+  return im;
+}
+export function clockPole(B, x, y, z) {
+  B.frame(x, y, z, 0);
+  B.cyl('metal', 0, 0, 0, 0.07, 0.06, 3.6, 8, { color: [0.3, 0.32, 0.33] });
+  const face = canvasTex(256, 256, (g, W, H) => {
+    g.fillStyle = '#fbfbf6'; g.beginPath(); g.arc(W / 2, H / 2, 120, 0, 7); g.fill(); g.strokeStyle = '#333'; g.lineWidth = 8; g.stroke();
+    g.fillStyle = '#222'; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g.fillRect(W / 2 + Math.sin(a) * 100 - 4, H / 2 - Math.cos(a) * 100 - 10, 8, 20); }
+    g.lineCap = 'round'; g.lineWidth = 9; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 + 50, H / 2 + 30); g.stroke();
+    g.lineWidth = 6; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 - 20, H / 2 - 88); g.stroke();
+  });
+  const m = new THREE.MeshStandardMaterial({ map: face, transparent: true, alphaTest: 0.5, roughness: 0.3, side: THREE.DoubleSide });
+  const d = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), m); d.position.set(x, y + 3.9, z); scene.add(d);
+  const d2 = d.clone(); d2.rotation.y = Math.PI; d2.position.z -= 0.02; scene.add(d2);
+  addCircle(x, z, 0.12);
+}
