@@ -2,7 +2,7 @@
 import { THREE, Q, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, Scatter, addCircle, clearColliders } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildForest, treeColor } from './terrain.js';
 
-export const meta = { name: 'Wildlands', startHour: 16.4, sunAzimuth: 2.2 };
+export const meta = { name: 'Wildlands', startHour: 16.4, sunAzimuth: 2.2, life: { flockCenter: { x: 40, y: 0, z: -60 } } };
 const LAKE_X = 40, LAKE_Z = -60;
 
 function height(x, z) {
@@ -25,7 +25,7 @@ export async function build(progress) {
     grass: { d: phTex('aerial_grass_rock', 'diff', '2k', true, [92, 98, 52]), n: phTex('aerial_grass_rock', 'nor_gl', '2k', false, NFLAT), s: 6, tint: [0.95, 1.08, 0.82] },
     forest: { d: phTex('forest_leaves_03', 'diff', '2k', true, [70, 58, 40]), n: phTex('forest_leaves_03', 'nor_gl', '1k', false, NFLAT), s: 3 },
     rock: { d: phTex('rock_face_03', 'diff', '2k', true, [110, 100, 90]), n: phTex('rock_face_03', 'nor_gl', '2k', false, NFLAT), s: 9 },
-    shore: { d: phTex('coast_sand_01', 'diff', '2k', true, [140, 125, 100]), n: phTex('coast_sand_01', 'nor_gl', '1k', false, NFLAT), s: 4 },
+    shore: { d: phTex('coast_sand_01', 'diff', '2k', true, [140, 125, 100]), n: phTex('coast_sand_01', 'nor_gl', '1k', false, NFLAT), s: 4, tint: [0.78, 0.72, 0.6] },
     urban: { d: phTex('coast_sand_01', 'diff', '2k', true), n: phTex('coast_sand_01', 'nor_gl', '1k', false, NFLAT), s: 4 },
   };
   const models = Promise.all(['rock_moss_set_01', 'boulder_01', 'fern_02', 'shrub_02', 'tree_stump_01', 'dead_tree_trunk'].map(loadModel));
@@ -70,10 +70,10 @@ export async function build(progress) {
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.68); await tick();
-  buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 175 }));
+  buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 175, shore: 0.8 }));
   progress('Planting trees', 0.78); await tick();
   buildForest(trees);
-  const grass = buildGrass(hf, layers.grass.d, { water: 0 });
+  const grass = buildGrass(hf, layers.grass.d, { water: 0, shore: 0.8, reeds: true });
   const water = buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass] });
 
   progress('Placing rocks and plants', 0.9); await tick();

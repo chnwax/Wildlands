@@ -5,6 +5,7 @@ import { post, buildComposer, updateRays } from './post.js';
 import { audio, Emitter } from './audio.js';
 import { player, keys, updatePlayer, updateCamera } from './player.js';
 import { $, toastMsg } from './ui.js';
+import { buildLife } from './life.js';
 
 const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js') };
 const mapName = MAPS[new URLSearchParams(location.search).get('map')] ? new URLSearchParams(location.search).get('map') : 'nature';
@@ -14,7 +15,7 @@ document.querySelectorAll('[data-map]').forEach(b => {
   b.addEventListener('click', () => { if (b.dataset.map !== mapName) location.search = '?map=' + b.dataset.map; });
 });
 
-let world = null, started = false, locked = false, hudOn = true;
+let world = null, life = null, started = false, locked = false, hudOn = true;
 const clock = new THREE.Clock();
 let fpsAcc = 0, fpsN = 0, ambTimer = 0, amb = {};
 
@@ -43,6 +44,7 @@ function step(dt, t) {
   S.uTime.value = t;
   if (time.running && started) time.hour = (time.hour + dt * time.speed) % 24;
   updateSky(false);
+  post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
   const wind = 0.55 + 0.3 * Math.sin(t * 0.07) + 0.2 * Math.sin(t * 0.23 + 1.3) * Math.sin(t * 0.11);
   S.uWind.value = wind;
   if (locked && started) updatePlayer(world, dt);
@@ -56,6 +58,7 @@ function step(dt, t) {
   followCamera((x, z) => world.groundAt(x, z), player.yaw);
   if (world.water) world.water.position.set(Math.round(camera.position.x), world.water.position.y, Math.round(camera.position.z));
   world.update(dt, t, camera);
+  life.update(t, time.hour);
   const wl = world.waterAt(camera.position.x, camera.position.z);
   const under = camera.position.y < wl - 0.05 && world.groundAt(camera.position.x, camera.position.z) < wl;
   post.grade.uniforms.uTime.value = t; post.grade.uniforms.uUnder.value = under ? 1 : 0;
@@ -105,6 +108,7 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 $('tSlider').addEventListener('input', e => { time.hour = +e.target.value; updateSky(true); });
+document.querySelectorAll('[data-hour]').forEach(b => b.addEventListener('click', () => { time.hour = +b.dataset.hour; updateSky(true); $('tSlider').value = time.hour; toastMsg(b.textContent); }));
 $('sSlider').addEventListener('input', e => player.sens = +e.target.value);
 $('fSlider').addEventListener('input', e => { camera.fov = +e.target.value; camera.updateProjectionMatrix(); });
 $('vSlider').addEventListener('input', e => audio.setVolume(+e.target.value));
@@ -115,15 +119,16 @@ $('qSel').value = Q.name;
 async function main() {
   progress('Preparing', 0.02); await tick();
   const mod = await MAPS[mapName]();
-  $('mapTitle').textContent = mod.meta.name;
+  $('mapTitle').textContent = 'free roam · ' + mod.meta.name;
   time.hour = mod.meta.startHour; env.azimuth = mod.meta.sunAzimuth ?? env.azimuth;
   world = await mod.build(progress);
+  life = buildLife(world, mod.meta.life || {});
   const texDone = new Promise(res => { if (loadState.assets >= 1) res(); const prev = manager.onLoad; manager.onLoad = () => { prev && prev(); res(); }; setTimeout(res, 30000); });
   progress('Finishing', 0.97); await texDone;
   buildComposer();
   player.pos.set(world.spawn.x, world.groundAt(world.spawn.x, world.spawn.z), world.spawn.z);
   player.yaw = world.spawn.yaw; player.pitch = world.spawn.pitch ?? -0.03;
-  updateSky(true);
+  updateSky(true); post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
   updateCamera(world); camera.updateMatrixWorld();
   for (const s of scatters) s.update(camera.position.x, camera.position.z);
   progress('Compiling shaders', 1); await tick();

@@ -8,8 +8,18 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 
+// AgX with a gentle "punchy" look (Blender's is power 1.35 / sat 1.4): the base AgX curve is faithful but reads flat
+// and desaturated on foliage and sky. Applied in AgX log space right after the contrast sigmoid, as Blender does.
+THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
+  'color = agxDefaultContrastApprox( color );',
+  `color = agxDefaultContrastApprox( color );
+	{ float l = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) ); color = pow( max( color, vec3( 0.0 ) ), vec3( 1.16 ) ); l = pow( max( l, 0.0 ), 1.16 ); color = l + 1.22 * ( color - l ); }`);
+
+export const post = { composer: null, bloom: null, grade: null, ao: null, scenePass: null, rays: null, onRebuild: [], exposure: { value: 0.2 }, wb: { value: new THREE.Vector3(1, 1, 1) } };
+
 // Renders the scene into its own (optionally multisampled) target with a depth texture, then resolves into the
-// composer chain. NaN/Inf texels are scrubbed so a single bad pixel can never smear through bloom.
+// composer chain, pre-multiplied by the exposure (so bloom / ray thresholds work in display-referred units).
+// NaN/Inf texels are scrubbed so a single bad pixel can never smear through bloom.
 class ScenePass extends Pass {
   constructor(samples) {
     super();
@@ -17,9 +27,9 @@ class ScenePass extends Pass {
     const depth = new THREE.DepthTexture(1, 1); depth.type = THREE.FloatType; // 32F depth: GTAO needs precision with a 26 km far plane
     this.rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples, depthTexture: depth });
     this.quad = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.clone(CopyShader.uniforms), vertexShader: CopyShader.vertexShader, depthTest: false, depthWrite: false,
-      fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
-        void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0); gl_FragColor = vec4(clamp(c, vec3(0.0), vec3(3e4)), 1.0); }`,
+      uniforms: Object.assign(THREE.UniformsUtils.clone(CopyShader.uniforms), { uExposure: post.exposure, uWB: post.wb }), vertexShader: CopyShader.vertexShader, depthTest: false, depthWrite: false,
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float uExposure; uniform vec3 uWB; varying vec2 vUv;
+        void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0); gl_FragColor = vec4(clamp(c, vec3(0.0), vec3(3e4)) * uExposure * uWB, 1.0); }`,
     }));
   }
   setSize(w, h) { this.rt.setSize(w, h); }
@@ -69,7 +79,7 @@ const RaysShader = {
       if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
       float sky = step(0.9999995, texture2D(tDepth, uv).r);
       vec3 c = texture2D(tDiffuse, uv).rgb;
-      return sky * smoothstep(0.35, 2.0, dot(c, vec3(0.3, 0.5, 0.2)));
+      return sky * smoothstep(0.22, 1.15, dot(c, vec3(0.3, 0.5, 0.2)));
     }
     void main(){
       vec4 base = texture2D(tDiffuse, vUv);
@@ -86,7 +96,6 @@ const RaysShader = {
     }`,
 };
 
-export const post = { composer: null, bloom: null, grade: null, ao: null, scenePass: null, rays: null, onRebuild: [] };
 const _sp = new THREE.Vector3();
 // call every frame: project the sun into screen space and fade shafts when it is behind the camera / below the horizon
 export function updateRays(sunDir, sunCol, dayFactor) {
@@ -96,7 +105,7 @@ export function updateRays(sunDir, sunCol, dayFactor) {
   const u = post.rays.uniforms;
   u.uSun.value.set(_sp.x * 0.5 + 0.5, _sp.y * 0.5 + 0.5);
   u.uVis.value = Math.max(0, facing) ** 2 * dayFactor * (_sp.z < 1 ? 1 : 0) * 0.55;
-  u.uCol.value.set(sunCol.x, sunCol.y, sunCol.z).multiplyScalar(0.35);
+  u.uCol.value.set(sunCol.x, sunCol.y, sunCol.z).multiplyScalar(0.09 * post.exposure.value);
   u.uAspect.value = innerWidth / innerHeight;
 }
 export function buildComposer() {
@@ -118,7 +127,7 @@ export function buildComposer() {
   P.rays = new ShaderPass(RaysShader);
   P.rays.uniforms.tDepth.value = P.scenePass.rt.depthTexture;
   P.composer.addPass(P.rays);
-  P.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.22, 0.55, 1.6);
+  P.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.24, 0.6, 0.95);
   P.bloom.enabled = Q.bloom;
   P.composer.addPass(P.bloom);
   P.composer.addPass(new OutputPass());

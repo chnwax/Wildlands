@@ -1,6 +1,7 @@
 // Reusable outdoor systems: heightfield terrain with splat shading, GPU grass (and rice), planar-reflection water,
 // scanned-branch conifer forests. Maps configure these and add their own content.
 import { THREE, scene, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle } from './core.js';
+import { CLOUD_SHADE_GLSL } from './clouds.js';
 
 // ---------------------------------------------------------------- heightfield
 export class Heightfield {
@@ -98,6 +99,7 @@ vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
 
 // ---------------------------------------------------------------- splat terrain
 // layers: { grass, forest, rock, shore, urban } each { d: diffuse tex, n: normal tex, s: tile metres, tint: [r,g,b] }
+const terrainTreeDist = { value: Q.trees }; // far-LOD tree cull distance (quality dependent)
 export function terrainMaterial(hf, L, opt = {}) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
   const tintV = a => new THREE.Vector3(...(a || [1, 1, 1]));
@@ -108,7 +110,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       tUrbanD: { value: L.urban.d }, tUrbanN: { value: L.urban.n }, tNoise: S.tNoise,
       uScales: { value: new THREE.Vector4(L.grass.s, L.forest.s, L.shore.s, L.urban.s) }, uRockS: { value: L.rock.s },
       uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uTintS: { value: tintV(L.shore.tint) },
-      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 },
+      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist,
     });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm;')
@@ -117,7 +119,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; varying vec3 vWNorm;
         uniform sampler2D tGrassD, tGrassN, tForestD, tForestN, tRockD, tRockN, tSandD, tSandN, tUrbanD, tUrbanN, tNoise, tMask, tMask2;
-        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS;
+        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS;
         vec3 unpackN(vec4 t){ return t.xyz * 2.0 - 1.0; }
         vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }`)
       .replace('#include <map_fragment>', /* glsl */`
@@ -138,9 +140,11 @@ export function terrainMaterial(hf, L, opt = {}) {
         float h = vWPos.y - uWaterLv;
         float mixS = smoothstep(0.3, 0.7, nz2.g);
         float farT = smoothstep(60.0, 400.0, camDist);
-        vec3 cGrass = mix(texture2D(tGrassD, wuv / uScales.x).rgb, texture2D(tGrassD, wuv / (uScales.x * 4.8)).rgb, mix(0.25 + 0.35 * mixS, 0.8, farT));
+        vec2 wuvR = mat2(0.8, -0.6, 0.6, 0.8) * wuv, wuvR2 = mat2(0.28, 0.96, -0.96, 0.28) * wuv;
+        vec3 cGrass = mix(texture2D(tGrassD, wuv / uScales.x).rgb, texture2D(tGrassD, wuvR / (uScales.x * 4.8)).rgb, mix(0.25 + 0.35 * mixS, 0.8, farT));
+        cGrass = mix(cGrass, texture2D(tGrassD, wuvR2 / (uScales.x * 17.3)).rgb, smoothstep(150.0, 700.0, camDist) * 0.5);
         vec3 nGrass = unpackN(texture2D(tGrassN, wuv / uScales.x));
-        cGrass *= mix(vec3(0.78, 0.92, 0.55), vec3(1.05, 1.02, 0.78), nz1.g) * uTintG;
+        cGrass *= mix(vec3(0.6, 0.86, 0.4), vec3(0.95, 0.98, 0.62), nz1.g) * uTintG;
         vec3 cForest = mix(texture2D(tForestD, wuv / uScales.y).rgb, texture2D(tForestD, wuv / (uScales.y * 4.6)).rgb, mix(0.35, 0.8, farT));
         vec3 nForest = unpackN(texture2D(tForestN, wuv / uScales.y));
         cForest *= mix(vec3(0.75, 0.72, 0.6), vec3(0.95), nz2.r) * uTintF;
@@ -154,11 +158,15 @@ export function terrainMaterial(hf, L, opt = {}) {
         vec3 rnx = unpackN(texture2D(tRockN, vWPos.zy * rs)), rny = unpackN(texture2D(tRockN, vWPos.xz * rs)), rnz = unpackN(texture2D(tRockN, vWPos.xy * rs));
         vec3 nRock = normalize(wN + vec3(0.0, rnx.y, rnx.x) * bw.x * 1.3 + vec3(rny.x, 0.0, rny.y) * bw.y * 1.3 + vec3(rnz.x, rnz.y, 0.0) * bw.z * 1.3);
         cRock = mix(cRock, vec3(dot(cRock, vec3(0.33))), 0.45) * mix(0.8, 1.1, nz2.b);
-        float wSand = max(1.0 - smoothstep(0.25, 1.3, h + (nz2.r - 0.5) * 1.2), msk2.g);
+        float shoreN = (nz2.r - 0.5) * 1.1 + (nz3.b - 0.5) * 0.6;
+        float wSand = max(1.0 - smoothstep(uShore * 0.2, uShore, h + shoreN * uShore * 0.9), msk2.g);
+        cSand = mix(cSand, cSand * vec3(0.52, 0.47, 0.4), smoothstep(0.35, 0.7, nz3.r + (nz2.g - 0.5) * 0.4) * (1.0 - msk2.g)); // silt / mud patches
         float wRock = smoothstep(0.30, 0.46, slope + (nz2.b - 0.5) * 0.14);
         float wSnow = smoothstep(uSnow, uSnow + 40.0, vWPos.y + (nz1.b - 0.5) * 70.0) * (1.0 - smoothstep(0.42, 0.62, slope));
         float wForest = smoothstep(0.2, 0.7, forest + (nz3.r - 0.5) * 0.35);
         float wUrban = smoothstep(0.15, 0.6, msk2.r + (nz3.g - 0.5) * 0.25);
+        float treeGone = smoothstep(uTreeDist * 0.82, uTreeDist, camDist) * inside;
+        cForest = mix(cForest, vec3(0.03, 0.05, 0.026) * (0.75 + 0.5 * nz3.r) * (0.8 + 0.4 * nz2.g), treeGone * smoothstep(0.3, 0.8, forest));
         vec3 col = mix(cGrass, cForest, wForest);
         vec3 tn = mix(nGrass, nForest, wForest);
         col = mix(col, cSand, wSand); tn = mix(tn, nSand, wSand);
@@ -168,6 +176,7 @@ export function terrainMaterial(hf, L, opt = {}) {
         col = mix(col, vec3(0.9, 0.93, 0.97), wSnow); nW = normalize(mix(nW, wN, wSnow * 0.7));
         float wet = max(1.0 - smoothstep(0.0, 0.9, h), msk2.g * 0.8);
         col *= mix(1.0, 0.5, wet);
+        col = mix(col, vec3(0.075, 0.068, 0.05) * (0.8 + 0.4 * nz3.g), smoothstep(0.05, 1.2, -h) * 0.75 * (1.0 - msk2.g)); // silty lake bed
         col *= exp(-clamp(-h, 0.0, 30.0) * vec3(0.30, 0.09, 0.06));
         col *= ao * (1.0 - canopy * 0.5);
         diffuseColor.rgb *= col;
@@ -234,6 +243,7 @@ export function buildTerrainMeshes(hf, mat, { outer = true, outerDrop = 45 } = {
     const om = new THREE.Mesh(og, mat); om.receiveShadow = true; om.matrixAutoUpdate = false;
     group.add(om);
   }
+  group.userData.applyQuality = () => { terrainTreeDist.value = Q.trees; };
   scene.add(group);
   return group;
 }
@@ -258,7 +268,9 @@ export function buildGrass(hf, grassTex, opt = {}) {
   g.setAttribute('iRand', new THREE.InstancedBufferAttribute(rnd, 4));
   g.instanceCount = Q.grass;
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0, side: THREE.DoubleSide });
-  const gu = { uTile: { value: Q.tile }, uRadius: { value: Q.tile * 0.5 }, uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 } };
+  mat.defines = { CLOUD_SHADE_VARYING: '' };
+  const gu = { uTile: { value: Q.tile }, uRadius: { value: Q.tile * 0.5 }, uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 },
+    uShore: { value: opt.shore ?? 1.3 }, uReeds: { value: opt.reeds ? 1 : 0 } };
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, gu, hf.U, { tNoise: S.tNoise, tGrassD: { value: grassTex },
       uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
@@ -266,9 +278,10 @@ export function buildGrass(hf, grassTex, opt = {}) {
       .replace('#include <common>', `#include <common>
         attribute vec2 bladeUV; attribute vec2 iOffset; attribute vec4 iRand;
         uniform sampler2D tMask, tMask2, tNoise, tGrassD;
-        uniform vec3 uCam, uPlayer; uniform float uTime, uTile, uRadius, uWind, uWaterLv, uSnow;
-        varying vec3 vGCol; varying float vT; varying vec3 vGW;
-        ${GLSL_HEIGHT}`)
+        uniform vec3 uCam, uPlayer; uniform float uTime, uTile, uRadius, uWind, uWaterLv, uSnow, uShore, uReeds;
+        varying vec3 vGCol; varying float vT; varying vec3 vGW; varying float vCloudLit;
+        ${GLSL_HEIGHT}
+        ${CLOUD_SHADE_GLSL}`)
       .replace('#include <beginnormal_vertex>', /* glsl */`
         vec2 wp2 = uCam.xz + mod(iOffset - uCam.xz + uTile * 0.5, uTile) - uTile * 0.5;
         vec4 gm2 = textureLod(tMask2, maskUV(wp2), 0.0);
@@ -283,7 +296,7 @@ export function buildGrass(hf, grassTex, opt = {}) {
         vec4 gz1 = textureLod(tNoise, wp2 * 0.0021, 0.0);
         vec4 gz2 = textureLod(tNoise, wp2 * 0.013, 0.0);
         vec4 gz3 = textureLod(tNoise, wp2 * 0.06, 0.0);
-        float dens = smoothstep(0.5, 1.6, gh - uWaterLv + (gz2.r - 0.5) * 1.2)
+        float dens = smoothstep(uShore * 0.35, uShore * 1.2, gh - uWaterLv + (gz2.r - 0.5) * 1.2)
           * (1.0 - smoothstep(0.26, 0.40, 1.0 - gN.y + (gz2.b - 0.5) * 0.14))
           * (1.0 - smoothstep(uSnow - 25.0, uSnow + 3.0, gh))
           * (1.0 - gm.b * 0.92)
@@ -292,23 +305,29 @@ export function buildGrass(hf, grassTex, opt = {}) {
         dens *= (1.0 - gm2.b) * (1.0 - smoothstep(0.2, 0.7, gm2.r) * 0.85);
         dens *= 1.0 - 0.45 * gm2.a; // mowed town lawns are sparser...
         if (rice) dens = 1.0;
+        // reed beds in clumps along the waterline (standing in the shallows and on the wet margin)
+        float hw = gh - uWaterLv, reedN = gz3.b * 0.55 + gz2.g * 0.65 + gz1.r * 0.2;
+        bool reed = !rice && uReeds > 0.5 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
+        if (reed) dens = 1.0;
         float keep = step(iRand.w, dens);
         float fade = 1.0 - smoothstep(uRadius * 0.55, uRadius, gdist);
         float gs = keep * fade;
-        bool flower = !rice && iRand.w < 0.014 && dens > 0.45;
+        bool flower = !rice && !reed && iRand.w < 0.014 && dens > 0.45;
         float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * mix(0.25, 1.0, fade) * keep;
         Hh *= 1.0 - 0.68 * gm2.a;   // ...and short
         if (flower) Hh = 0.25 + 0.3 * iRand.y;
         if (rice) Hh = (0.38 + 0.22 * iRand.y) * fade;
+        if (reed) Hh = (1.0 + 1.1 * iRand.y * iRand.y + max(-hw, 0.0)) * mix(0.3, 1.0, fade);
         float Wd = (0.02 + 0.022 * iRand.z) * (1.0 + gdist * 0.06) * step(0.001, gs);
         if (rice) Wd *= 0.8;
+        if (reed) Wd *= 0.75;
         float ang = iRand.x * 6.2831853;
         vec2 bdir = vec2(cos(ang), sin(ang)), bside = vec2(-bdir.y, bdir.x);
         float t = bladeUV.y;
         vec2 windDir = normalize(vec2(1.0, 0.35));
         float gust = textureLod(tNoise, wp2 * 0.012 - windDir * uTime * 0.05, 0.0).r;
         float flutter = sin(uTime * (2.2 + iRand.z * 2.5) + iRand.x * 40.0 + dot(wp2, windDir) * 0.8);
-        vec2 lean = bdir * (rice ? 0.35 + iRand.z * 0.3 : 0.12 + iRand.z * 0.4) + windDir * (gust * gust * 1.5 + 0.12) * uWind * (rice ? 0.6 : 1.0) + bside * flutter * 0.1 * uWind;
+        vec2 lean = bdir * (rice ? 0.35 + iRand.z * 0.3 : reed ? 0.04 + iRand.z * 0.14 : 0.12 + iRand.z * 0.4) + windDir * (gust * gust * 1.5 + 0.12) * uWind * (rice ? 0.6 : reed ? 0.35 : 1.0) + bside * flutter * 0.1 * uWind;
         vec2 away = wp2 - uPlayer.xz; float pd = length(away);
         lean += away / (pd + 0.001) * (1.0 - smoothstep(0.25, 1.1, pd)) * 1.8 * step(abs(uPlayer.y - gh), 2.2);
         float ll = length(lean); if (ll > 1.3) { lean *= 1.3 / ll; ll = 1.3; }
@@ -317,15 +336,21 @@ export function buildGrass(hf, grassTex, opt = {}) {
         gp.xz += lean * bt * Hh;
         gp.y += t * Hh * (1.0 - 0.35 * bt * ll / 1.3);
         gp.xz += bside * bladeUV.x * Wd * 0.5 * (1.0 - t * 0.6);
-        vGW = gp; vT = t;
+        vGW = gp; vT = t; vCloudLit = cloudShade(gp);
         vec3 bn = normalize(vec3(bdir.x, 0.0, bdir.y) + vec3(0.0, 0.4 + t, 0.0) - vec3(lean.x, 0.0, lean.y) * 0.3);
         vec3 objectNormal = normalize(mix(bn, gN, 0.5) + vec3(bside.x, 0.0, bside.y) * bladeUV.x * 0.3);
         vec3 texC = textureLod(tGrassD, wp2 / 29.0, 5.0).rgb;
         float dryness = smoothstep(0.3, 0.85, gz1.g * 0.6 + gz3.b * 0.3 + iRand.z * 0.35);
-        vec3 c = mix(vec3(0.13, 0.22, 0.05), vec3(0.42, 0.38, 0.16), dryness * 0.8) * (0.6 + 0.6 * iRand.y);
-        c = mix(c, texC * vec3(0.95, 1.1, 0.75), 0.45);
+        float lush = smoothstep(0.35, 0.75, gz2.r * 0.7 + gz1.b * 0.5);   // greener, darker swales between drier knolls
+        vec3 c = mix(vec3(0.10, 0.23, 0.04), vec3(0.34, 0.34, 0.13), dryness * 0.65) * (0.6 + 0.6 * iRand.y);
+        c = mix(c, vec3(0.07, 0.19, 0.035) * (0.7 + 0.5 * iRand.y), lush * 0.5);
+        c = mix(c, texC * vec3(0.9, 1.1, 0.7), 0.35);
         if (iRand.z > 0.93) c = mix(c, vec3(0.45, 0.4, 0.25), 0.6);
         if (rice) c = mix(vec3(0.16, 0.34, 0.06), vec3(0.3, 0.46, 0.1), iRand.y) * (0.8 + 0.3 * gz3.r);
+        if (reed) {
+          c = mix(vec3(0.14, 0.26, 0.07), vec3(0.4, 0.38, 0.17), iRand.y * 0.75 + gz3.r * 0.25) * (0.75 + 0.35 * iRand.z);
+          if (iRand.x > 0.9 && t > 0.84) c = vec3(0.2, 0.12, 0.06);   // bulrush heads
+        }
         if (flower && t > 0.6) {
           vec3 fc = iRand.x < 0.35 ? vec3(0.9, 0.88, 0.8) : iRand.x < 0.7 ? vec3(0.95, 0.72, 0.1) : vec3(0.45, 0.25, 0.75);
           c = mix(c, fc, smoothstep(0.6, 1.0, t));
@@ -341,7 +366,7 @@ export function buildGrass(hf, grassTex, opt = {}) {
       .replace('#include <emissivemap_fragment>', `
         vec3 gV = normalize(vGW - cameraPosition);
         float gTr = pow(max(dot(gV, uSunDir), 1e-4), 4.0) * vT;
-        totalEmissiveRadiance += vGCol * uSunCol * gTr * 0.28 + vGCol * uSunCol * 0.03 * vT;`);
+        totalEmissiveRadiance += (vGCol * uSunCol * gTr * 0.28 + vGCol * uSunCol * 0.03 * vT) * vCloudLit;`);
   };
   mat.customProgramCacheKey = () => 'grass';
   const mesh = new THREE.Mesh(g, mat);
@@ -373,7 +398,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = [0.006, 0
         #include <fog_vertex>
       }`,
     fragmentShader: /* glsl */`
-      uniform sampler2D tRefl, tNormal, tNoise; uniform float uTime, uLevel, uWaves, uStrength; uniform vec3 uSunDir, uSunCol, uAmb, uDeep, uShallow;
+      uniform sampler2D tRefl, tNormal, tNoise; uniform float uTime, uLevel, uWaves, uStrength; uniform vec3 uSunDir, uLightDir, uSunCol, uAmb, uDeep, uShallow;
       varying vec4 vMirror; varying vec3 vW;
       #include <common>
       #include <fog_pars_fragment>
@@ -394,27 +419,27 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = [0.006, 0
         vec3 refl = texture2D(tRefl, vMirror.xy / vMirror.w + distortion).rgb;
         float cosT = max(dot(eyeDir, sn), 0.0);
         float fres = 0.02 + 0.98 * pow(max(1.0 - cosT, 1e-4), 5.0);
-        vec3 rd = reflect(-uSunDir, sn);
+        vec3 rd = reflect(-uLightDir, sn);
         float sd = max(dot(eyeDir, rd), 1e-4);
-        vec3 spec = uSunCol * (pow(sd, 600.0) * 9.0 + pow(sd, 60.0) * 0.12);
+        vec3 spec = uSunCol * (pow(sd, 600.0) * 4.0 + pow(sd, 60.0) * 0.05) * step(0.0, uLightDir.y);
         float inside = step(abs(vW.x), uHalf) * step(abs(vW.z), uHalf);
         float depth = mix(40.0, max(0.0, uLevel - hAt(vW.xz)), inside);
-        vec3 body = mix(uShallow, uDeep, 1.0 - exp(-depth * 0.3)) * (uAmb * 1.4 + uSunCol * max(uSunDir.y, 0.0) * 0.12);
+        vec3 body = mix(uShallow, uDeep, 1.0 - exp(-depth * 0.3)) * (uAmb * 1.4 + uSunCol * max(uLightDir.y, 0.0) * 0.015);
         vec3 col = mix(body, refl, fres) + spec;
         float alpha = clamp(1.0 - exp(-depth * 0.9), 0.0, 1.0);
         alpha = max(alpha, fres * smoothstep(0.0, 0.25, depth));
         float fn = texture2D(tNoise, vW.xz * 0.21 + uTime * 0.02).g * texture2D(tNoise, vW.xz * 0.53 - uTime * 0.015).b;
         float band = 0.5 + 0.5 * sin(uTime * 1.3 - depth * 9.0 + fn * 6.0);
-        float foam = (1.0 - smoothstep(0.02, 0.55, depth)) * smoothstep(0.25, 0.55, fn * 1.6 * band + 0.15) * smoothstep(0.0, 0.04, depth);
-        col = mix(col, (uAmb * 1.2 + uSunCol * max(uSunDir.y, 0.0) * 0.45) * 0.9, foam * 0.75);
-        alpha = max(alpha, foam * 0.85);
+        float foam = (1.0 - smoothstep(0.02, 0.2, depth)) * smoothstep(0.3, 0.6, fn * 1.6 * band + 0.1) * smoothstep(0.0, 0.03, depth) * (1.0 - smoothstep(25.0, 120.0, dist));
+        col = mix(col, (uAmb * 1.2 + uSunCol * max(uLightDir.y, 0.0) * 0.15) * 0.9, foam * 0.5);
+        alpha = max(alpha, foam * 0.6);
         gl_FragColor = vec4(col, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
         #include <fog_fragment>
       }`,
   });
-  Object.assign(mat.uniforms, hf.U, { tNoise: S.tNoise, uTime: S.uTime, uSunDir: S.uSunDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
+  Object.assign(mat.uniforms, hf.U, { tNoise: S.tNoise, uTime: S.uTime, uSunDir: S.uSunDir, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
   mat.uniforms.tRefl.value = reflRT.texture; mat.uniforms.tNormal.value = normals; mat.uniforms.textureMatrix.value = textureMatrix;
   const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2), mat);
   water.position.y = level; water.renderOrder = 2;
@@ -550,6 +575,8 @@ export function coniferMaterials() {
     sh.uniforms.uSunViewDir = S.uSunViewDir; sh.uniforms.uSunCol = S.uSunCol;
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uSunViewDir; uniform vec3 uSunCol;')
+      // needles are not mirrors: damp the grazing-angle sheen that otherwise frosts backlit trees with sky light
+      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\nmaterial.specularColor *= 0.45; material.specularF90 = 0.25;')
       .replace('#include <alphatest_fragment>', `
         { vec2 ts = vec2(textureSize(map, 0)); vec2 dx = dFdx(vMapUv * ts), dy = dFdy(vMapUv * ts);
           float lod = max(0.0, 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-8)));
@@ -567,8 +594,18 @@ export function coniferMaterials() {
         vec3 nonPerturbedNormal = normal;`)
       .replace('#include <emissivemap_fragment>', `
         float trl = pow(max(dot(normalize(-vViewPosition), uSunViewDir), 1e-4), 3.0);
-        totalEmissiveRadiance += diffuseColor.rgb * uSunCol * (trl * 0.25 + 0.02);`);
+        totalEmissiveRadiance += diffuseColor.rgb * vec3(0.8, 1.0, 0.55) * uSunCol * (trl * 0.12 + 0.012) * vCloudLit;`);
   };
+  foliage.defines = { CLOUD_SHADE_VARYING: '' };
+  { const prev = foliage.onBeforeCompile; foliage.onBeforeCompile = (sh, r) => { prev(sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        { vec4 cwp = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            cwp = instanceMatrix * cwp;
+          #endif
+          vCloudLit = cloudShade((modelMatrix * cwp).xyz); }`); }; }
   windPatch(foliage, 'conifer');
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: d, alphaTest: 0.4 });
   windPatch(depth, 'coniferDepth');

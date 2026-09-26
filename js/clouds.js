@@ -45,11 +45,58 @@ function makeCloudNoise(N = 64) {
 }
 
 export const cloudU = { uCover: { value: 0.5 }, uBottom: { value: 1500 }, uTop: { value: 2700 } };
+export const cloudSunCol = { value: new THREE.Vector3() }, cloudLightDir = { value: new THREE.Vector3(0, 1, 0) }; // sunlight at cloud height (stays lit, and red, a while after sunset)
+const tCloud = makeCloudNoise();
+// three clones texture uniforms per material; these are static, shared textures (and Texture.copy drops wrapR)
+tCloud.clone = () => tCloud; S.tNoise.value.clone = () => S.tNoise.value;
+
+// ---------------------------------------------------------------- cloud shadows on everything lit by the sun
+// The sun (every directional light) is attenuated by the same cloud field the ray-marcher draws, sampled where the
+// light ray crosses the middle of the cloud layer, so shadows drift across the land with the clouds above them.
+// Uniforms go into three's lit ShaderLib entries; plain {x,y,z,w} objects survive per-material cloning by reference.
+export const cloudShadow = { p: { x: 0, y: 0.5, z: 2050, w: 0.8 }, sun: { x: 0, y: 1, z: 0 } }; // p: time, cover, mid height, strength
+for (const k in THREE.ShaderLib) {
+  const u = THREE.ShaderLib[k].uniforms;
+  if (u && u.directionalLights) Object.assign(u, { tCloudNoise: { value: S.tNoise.value }, tCloudShape: { value: tCloud }, cloudShadowP: { value: cloudShadow.p }, cloudSunDir: { value: cloudShadow.sun } });
+}
+// the shade function, for custom vertex shaders too (grass / foliage evaluate it per vertex: far cheaper under overdraw)
+export const CLOUD_SHADE_GLSL = /* glsl */`
+  uniform sampler2D tCloudNoise; uniform sampler3D tCloudShape; uniform vec4 cloudShadowP; uniform vec3 cloudSunDir;
+  float cloudShade(vec3 wp){
+    if (cloudShadowP.w <= 0.0 || cloudSunDir.y < 0.02) return 1.0;
+    vec3 p = wp + cloudSunDir * ((cloudShadowP.z - wp.y) / cloudSunDir.y);
+    float t = cloudShadowP.x;
+    vec2 wx = (p.xz + vec2(t * 7.0, t * 2.5) * 0.6) * 0.000028;
+    float weather = texture(tCloudNoise, wx).r * 0.75 + texture(tCloudNoise, wx * 3.3 + 0.2).g * 0.25;
+    float cov = clamp(weather * 1.25 + cloudShadowP.y - 0.62, 0.0, 1.0);
+    vec3 wind = vec3(t * 7.0, 0.0, t * 2.5);
+    float shape = texture(tCloudShape, (p + wind) * 0.00016).r;
+    float d = clamp((shape - (1.0 - cov)) / max(cov, 0.05), 0.0, 1.0);
+    float det = texture(tCloudShape, (p + wind * 1.6) * 0.0012).g;
+    d = clamp(d - det * 0.3 * (1.0 - d), 0.0, 1.0);
+    return mix(1.0, 0.14, smoothstep(0.01, 0.12, d) * cloudShadowP.w);
+  }`;
+THREE.ShaderChunk.lights_pars_begin += /* glsl */`
+  #ifdef CLOUD_SHADE_VARYING
+    varying float vCloudLit;
+  #else
+    ${CLOUD_SHADE_GLSL}
+  #endif
+  vec3 cloudWorldPos(vec3 viewPos){ return cameraPosition + (vec4(viewPos, 0.0) * viewMatrix).xyz; }`;
+THREE.ShaderChunk.lights_fragment_begin = THREE.ShaderChunk.lights_fragment_begin
+  .replace('vec3 geometryPosition = - vViewPosition;', `vec3 geometryPosition = - vViewPosition;
+#ifdef CLOUD_SHADE_VARYING
+  float cloudLit = vCloudLit;
+#else
+  float cloudLit = cloudShade(cloudWorldPos(geometryPosition));
+#endif`)
+  .replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight );\n\t\tdirectLight.color *= cloudLit;');
+
 export function buildClouds() {
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: true, fog: false, side: THREE.BackSide,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-    uniforms: Object.assign({ tCloud: { value: makeCloudNoise() }, tNoise: S.tNoise, uTime: S.uTime, uSunDir: S.uSunDir, uSunCol: S.uSunCol, uAmb: S.uAmb, uFogCol: S.uFogCol }, cloudU),
+    uniforms: Object.assign({ tCloud: { value: tCloud }, tNoise: S.tNoise, uTime: S.uTime, uSunDir: cloudLightDir, uSunCol: cloudSunCol, uAmb: S.uAmb, uFogCol: S.uFogCol }, cloudU),
     vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: /* glsl */`
       precision highp sampler3D;
@@ -66,7 +113,12 @@ export function buildClouds() {
         float shape = texture(tCloud, (p + wind) * 0.00016).r;
         float grad = smoothstep(0.0, 0.1, hf) * smoothstep(1.0, 0.35 + weather * 0.3, hf);
         float d = clamp((shape * grad - (1.0 - cov)) / max(cov, 0.05), 0.0, 1.0);
-        if (detail && d > 0.0) { float det = texture(tCloud, (p + wind * 1.6) * 0.0012).g; d = clamp(d - (1.0 - det) * 0.45 * (1.0 - d * 0.6), 0.0, 1.0); }
+        if (detail && d > 0.0) {
+          // billowy (inverted worley) erosion near the tops, wispy near the base; cores are left solid
+          float det = texture(tCloud, (p + wind * 1.6) * 0.0012).g;
+          det = mix(1.0 - det, det, smoothstep(0.1, 0.6, hf));
+          d = clamp((d - det * 0.42 * (1.0 - d)) / (1.0 - det * 0.42 * (1.0 - d) + 1e-3), 0.0, 1.0);
+        }
         return d;
       }
       void main(){
@@ -77,12 +129,13 @@ export function buildClouds() {
         if (t0 > 60000.0) discard;
         const int STEPS = 44;
         float dt = (t1 - t0) / float(STEPS);
-        float jit = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 17.0, vec2(12.9898, 78.233))) * 43758.5453);
+        // interleaved gradient noise, rotated each frame: an even, fine-grained dither instead of clumpy white noise
+        float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + fract(uTime * 60.0) * 0.618034);
         float t = t0 + dt * jit, T = 1.0;
         vec3 L = vec3(0.0);
         float cosT = dot(rd, uSunDir);
-        float phase = mix(hg(cosT, 0.65), hg(cosT, -0.2), 0.35);
-        float sunUp = smoothstep(-0.12, 0.08, uSunDir.y);
+        float phase = mix(hg(cosT, 0.65), hg(cosT, -0.2), 0.35) + hg(cosT, 0.86) * 0.035; // + silver lining
+        float sunUp = 1.0;
         vec3 lightDir = normalize(uSunDir + vec3(0.0, 0.05, 0.0));
         for (int i = 0; i < STEPS; i++) {
           vec3 p = ro + rd * t;
@@ -91,11 +144,11 @@ export function buildClouds() {
             float od = 0.0, ls = (uTop - uBottom) * 0.1;
             vec3 lp = p;
             for (int j = 0; j < 5; j++) { lp += lightDir * ls; od += density(lp, false) * ls; ls *= 1.3; }
-            float sigma = 0.02;
+            float sigma = 0.034;
             float beer = exp(-od * sigma * 0.5) + 0.25 * exp(-od * sigma * 0.12);   // multi-scatter approximation
             float powder = 1.0 - exp(-d * 60.0 * sigma);
             float hf = (p.y - uBottom) / (uTop - uBottom);
-            vec3 Sc = uSunCol * sunUp * beer * phase * 7.0 * mix(0.6, 1.0, powder) + uAmb * mix(0.55, 1.35, hf) * 1.3;
+            vec3 Sc = uSunCol * sunUp * beer * phase * 6.0 * mix(0.55, 1.0, powder) + uAmb * mix(0.45, 1.3, hf) * 1.25;
             float a = exp(-d * dt * sigma);
             L += T * (1.0 - a) * Sc;
             T *= a;

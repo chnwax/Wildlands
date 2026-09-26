@@ -72,7 +72,7 @@ export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPrefere
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2) * Q.pr);
 renderer.toneMapping = THREE.AgXToneMapping; // filmic, less saturated highlights than ACES — reads more photographic
-renderer.toneMappingExposure = 0.55;
+renderer.toneMappingExposure = 1.0; // the real exposure is applied when the scene is resolved (post.js)
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 export const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -88,6 +88,7 @@ export const sunDir = new THREE.Vector3(0, 1, 0);
 export const S = {
   uTime: { value: 0 }, uWind: { value: 0.6 },
   uSunDir: { value: sunDir }, uSunCol: { value: new THREE.Vector3() }, uSunViewDir: { value: new THREE.Vector3() },
+  uLightDir: { value: new THREE.Vector3(0, 1, 0) }, // sun by day, moon by night
   uAmb: { value: new THREE.Vector3() }, uFogCol: { value: new THREE.Vector3() },
   uCam: { value: new THREE.Vector3() }, uPlayer: { value: new THREE.Vector3() },
   tNoise: { value: null },
@@ -100,13 +101,14 @@ export const fogU = {
   fogSunDir: { value: { x: 0, y: 1, z: 0 } },
   fogSunColor: { value: { x: 0, y: 0, z: 0 } },
   fogParams: { value: { x: 0, y: 1 / 200, z: 0 } }, // x: camera height above fog base, y: height falloff
+  fogMist: { value: { x: 0, y: 1 / 11 } },           // low ground mist layer: x density, y height falloff
 };
 for (const k in THREE.ShaderLib) { const u = THREE.ShaderLib[k].uniforms; if (u && u.fogColor) Object.assign(u, fogU); }
 Object.assign(THREE.UniformsLib.fog, fogU);
 THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogDir;\n#endif';
 THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogDir = ( vec4( mvPosition.xyz, 0.0 ) * viewMatrix ).xyz;\n#endif';
 THREE.ShaderChunk.fog_pars_fragment = /* glsl */`#ifdef USE_FOG
-	uniform vec3 fogColor; uniform vec3 fogSunDir; uniform vec3 fogSunColor; uniform vec3 fogParams;
+	uniform vec3 fogColor; uniform vec3 fogSunDir; uniform vec3 fogSunColor; uniform vec3 fogParams; uniform vec2 fogMist;
 	varying float vFogDepth; varying vec3 vFogDir;
 	#ifdef FOG_EXP2
 		uniform float fogDensity;
@@ -121,7 +123,12 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 		float fk = fogParams.y;
 		float fdy = clamp( fDir.y * fDist * fk, -8.0, 60.0 );
 		float fH = exp( - clamp( fk * fogParams.x, -8.0, 60.0 ) ) * ( abs( fdy ) > 1e-3 ? ( 1.0 - exp( - fdy ) ) / fdy : 1.0 );
-		float fogFactor = 1.0 - exp( - fogDensity * fDist * fH );
+		float fOD = fogDensity * fDist * fH;
+		if ( fogMist.x > 0.0 ) {
+			float mk = fogMist.y, mdy = clamp( fDir.y * fDist * mk, -8.0, 60.0 );
+			fOD += fogMist.x * fDist * exp( - clamp( mk * fogParams.x, -8.0, 60.0 ) ) * ( abs( mdy ) > 1e-3 ? ( 1.0 - exp( - mdy ) ) / mdy : 1.0 );
+		}
+		float fogFactor = 1.0 - exp( - fOD );
 	#else
 		float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
 	#endif
