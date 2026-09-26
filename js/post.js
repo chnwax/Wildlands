@@ -1,4 +1,4 @@
-// Post-processing: MSAA scene pass (with depth for GTAO), ambient occlusion, bloom, tone mapping, grading.
+// Post-processing: MSAA scene pass (with depth for GTAO), ambient occlusion, god rays, bloom, tone mapping, anime grade.
 import { THREE, renderer, scene, camera, Q, onResize } from './core.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -7,13 +7,6 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
-
-// AgX with a gentle "punchy" look (Blender's is power 1.35 / sat 1.4): the base AgX curve is faithful but reads flat
-// and desaturated on foliage and sky. Applied in AgX log space right after the contrast sigmoid, as Blender does.
-THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
-  'color = agxDefaultContrastApprox( color );',
-  `color = agxDefaultContrastApprox( color );
-	{ float l = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) ); color = pow( max( color, vec3( 0.0 ) ), vec3( 1.16 ) ); l = pow( max( l, 0.0 ), 1.16 ); color = l + 1.22 * ( color - l ); }`);
 
 export const post = { composer: null, bloom: null, grade: null, ao: null, scenePass: null, rays: null, onRebuild: [], exposure: { value: 0.2 }, wb: { value: new THREE.Vector3(1, 1, 1) } };
 
@@ -58,14 +51,15 @@ const GradeShader = {
       vec2 uv = vUv;
       if (uUnder > 0.5) uv += vec2(sin(uv.y * 24.0 + uTime * 2.0), cos(uv.x * 20.0 + uTime * 1.7)) * 0.003;
       vec4 c = texture2D(tDiffuse, uv);
+      // anime grade: vivid but soft — saturation up, a gentle S-curve, lifted cool shadows, warm highlights
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-      c.rgb = mix(vec3(l), c.rgb, 1.06);
-      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), 0.16);
-      if (uUnder > 0.5) c.rgb = mix(c.rgb, vec3(0.02, 0.12, 0.13), 0.55) * vec3(0.6, 0.95, 1.0);
-      vec2 d = vUv - 0.5; c.rgb *= 1.0 - dot(d, d) * 0.45;
-      float g = fract(sin(dot(vUv * vec2(1231.1, 787.3) + fract(uTime) * 91.7, vec2(12.9898, 78.233))) * 43758.5453);
-      c.rgb += (g - 0.5) * 0.014;
-      gl_FragColor = c;
+      c.rgb = mix(vec3(l), c.rgb, 1.16);
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), 0.12);
+      c.rgb += vec3(0.012, 0.016, 0.035) * (1.0 - l);
+      c.rgb *= mix(vec3(1.0), vec3(1.03, 1.01, 0.97), smoothstep(0.5, 1.0, l));
+      if (uUnder > 0.5) c.rgb = mix(c.rgb, vec3(0.05, 0.35, 0.42), 0.5) * vec3(0.7, 1.0, 1.05);
+      vec2 d = vUv - 0.5; c.rgb *= 1.0 - dot(d, d) * 0.32;
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a);
     }`,
 };
 
@@ -105,7 +99,7 @@ export function updateRays(sunDir, sunCol, dayFactor) {
   const u = post.rays.uniforms;
   u.uSun.value.set(_sp.x * 0.5 + 0.5, _sp.y * 0.5 + 0.5);
   u.uVis.value = Math.max(0, facing) ** 2 * dayFactor * (_sp.z < 1 ? 1 : 0) * 0.55;
-  u.uCol.value.set(sunCol.x, sunCol.y, sunCol.z).multiplyScalar(0.09 * post.exposure.value);
+  u.uCol.value.set(sunCol.x, sunCol.y, sunCol.z).multiplyScalar(0.3 * post.exposure.value);
   u.uAspect.value = innerWidth / innerHeight;
 }
 export function buildComposer() {
@@ -127,7 +121,7 @@ export function buildComposer() {
   P.rays = new ShaderPass(RaysShader);
   P.rays.uniforms.tDepth.value = P.scenePass.rt.depthTexture;
   P.composer.addPass(P.rays);
-  P.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.24, 0.6, 0.95);
+  P.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.42, 0.75, 0.82);
   P.bloom.enabled = Q.bloom;
   P.composer.addPass(P.bloom);
   P.composer.addPass(new OutputPass());

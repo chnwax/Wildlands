@@ -6,6 +6,7 @@ import { audio, Emitter } from './audio.js';
 import { player, keys, updatePlayer, updateCamera } from './player.js';
 import { $, toastMsg } from './ui.js';
 import { buildLife } from './life.js';
+import { flattenPhotoMaterials } from './toon.js';
 
 const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js') };
 const mapName = MAPS[new URLSearchParams(location.search).get('map')] ? new URLSearchParams(location.search).get('map') : 'nature';
@@ -123,6 +124,7 @@ async function main() {
   time.hour = mod.meta.startHour; env.azimuth = mod.meta.sunAzimuth ?? env.azimuth;
   world = await mod.build(progress);
   life = buildLife(world, mod.meta.life || {});
+  flattenPhotoMaterials();
   const texDone = new Promise(res => { if (loadState.assets >= 1) res(); const prev = manager.onLoad; manager.onLoad = () => { prev && prev(); res(); }; setTimeout(res, 30000); });
   progress('Finishing', 0.97); await texDone;
   buildComposer();

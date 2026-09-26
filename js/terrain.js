@@ -1,7 +1,8 @@
-// Reusable outdoor systems: heightfield terrain with splat shading, GPU grass (and rice), planar-reflection water,
-// scanned-branch conifer forests. Maps configure these and add their own content.
+// Reusable outdoor systems: heightfield terrain with painted splat shading, GPU grass (and rice, reeds, flowers),
+// planar-reflection water, conifer forests (trees.js). Maps configure these and add their own content.
 import { THREE, scene, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle } from './core.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
+import { buildConiferForest, firColor } from './trees.js';
 
 // ---------------------------------------------------------------- heightfield
 export class Heightfield {
@@ -97,6 +98,24 @@ float hAt(vec2 p){
 vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
 `;
 
+// ---------------------------------------------------------------- painted palette (anime look)
+// Terrain and grass share these colours and the meadow function, so every blade matches the ground it grows from.
+export const PAINT = {
+  gDeep: '#2a7a3e', gLush: '#4ea236', gLight: '#9ccd4c', gDry: '#c9c45c', forest: '#35592b', canopy: '#24503a',
+  rockL: '#a3978d', rockD: '#5f5d72', sand: '#ead7a2', sandWet: '#a98f66', snow: '#f5f8ff', bed: '#2a6d66',
+};
+export const paintU = {};
+for (const k in PAINT) paintU['uP_' + k] = { value: new THREE.Color(PAINT[k]) };
+export const MEADOW_GLSL = /* glsl */`
+  uniform vec3 ${Object.keys(PAINT).map(k => 'uP_' + k).join(', ')};
+  // nz1/nz2/nz3: tNoise at world * 0.0021 / 0.013 / 0.06
+  vec3 meadowColor(vec4 nz1, vec4 nz2, vec4 nz3){
+    vec3 c = mix(uP_gDeep, uP_gLush, smoothstep(0.28, 0.62, nz1.g + (nz2.b - 0.5) * 0.3));
+    c = mix(c, uP_gLight, smoothstep(0.5, 0.8, nz2.r + (nz1.r - 0.5) * 0.4) * 0.75);
+    c = mix(c, uP_gDry, smoothstep(0.62, 0.86, nz1.b + (nz3.g - 0.5) * 0.2) * 0.55);
+    return c;
+  }`;
+
 // ---------------------------------------------------------------- splat terrain
 // layers: { grass, forest, rock, shore, urban } each { d: diffuse tex, n: normal tex, s: tile metres, tint: [r,g,b] }
 const terrainTreeDist = { value: Q.trees }; // far-LOD tree cull distance (quality dependent)
@@ -111,7 +130,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       uScales: { value: new THREE.Vector4(L.grass.s, L.forest.s, L.shore.s, L.urban.s) }, uRockS: { value: L.rock.s },
       uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uTintS: { value: tintV(L.shore.tint) },
       uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist,
-    });
+    }, paintU);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal);');
@@ -121,7 +140,9 @@ export function terrainMaterial(hf, L, opt = {}) {
         uniform sampler2D tGrassD, tGrassN, tForestD, tForestN, tRockD, tRockN, tSandD, tSandN, tUrbanD, tUrbanN, tNoise, tMask, tMask2;
         uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS;
         vec3 unpackN(vec4 t){ return t.xyz * 2.0 - 1.0; }
-        vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }`)
+        vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
+        float lum3(vec3 c){ return dot(c, vec3(0.3, 0.55, 0.15)); }
+        ${MEADOW_GLSL}`)
       .replace('#include <map_fragment>', /* glsl */`
         vec3 wN = normalize(vWNorm);
         vec2 wuv = vWPos.xz;
@@ -140,45 +161,46 @@ export function terrainMaterial(hf, L, opt = {}) {
         float h = vWPos.y - uWaterLv;
         float mixS = smoothstep(0.3, 0.7, nz2.g);
         float farT = smoothstep(60.0, 400.0, camDist);
-        vec2 wuvR = mat2(0.8, -0.6, 0.6, 0.8) * wuv, wuvR2 = mat2(0.28, 0.96, -0.96, 0.28) * wuv;
-        vec3 cGrass = mix(texture2D(tGrassD, wuv / uScales.x).rgb, texture2D(tGrassD, wuvR / (uScales.x * 4.8)).rgb, mix(0.25 + 0.35 * mixS, 0.8, farT));
-        cGrass = mix(cGrass, texture2D(tGrassD, wuvR2 / (uScales.x * 17.3)).rgb, smoothstep(150.0, 700.0, camDist) * 0.5);
-        vec3 nGrass = unpackN(texture2D(tGrassN, wuv / uScales.x));
-        cGrass *= mix(vec3(0.6, 0.86, 0.4), vec3(0.95, 0.98, 0.62), nz1.g) * uTintG;
-        vec3 cForest = mix(texture2D(tForestD, wuv / uScales.y).rgb, texture2D(tForestD, wuv / (uScales.y * 4.6)).rgb, mix(0.35, 0.8, farT));
-        vec3 nForest = unpackN(texture2D(tForestN, wuv / uScales.y));
-        cForest *= mix(vec3(0.75, 0.72, 0.6), vec3(0.95), nz2.r) * uTintF;
-        vec3 cSand = mix(texture2D(tSandD, wuv / uScales.z).rgb, texture2D(tSandD, wuv / (uScales.z * 4.7)).rgb, 0.45) * uTintS;
-        vec3 nSand = unpackN(texture2D(tSandN, wuv / uScales.z));
-        vec3 cUrban = mix(texture2D(tUrbanD, wuv / uScales.w).rgb, texture2D(tUrbanD, wuv / (uScales.w * 3.7)).rgb, 0.35) * uTintU;
-        vec3 nUrban = unpackN(texture2D(tUrbanN, wuv / uScales.w));
+        float nearT = 1.0 - smoothstep(30.0, 220.0, camDist);
+        // meadow: painted colour patches + a faint brush texture from the photo map's luminance
+        vec3 cGrass = meadowColor(nz1, nz2, nz3);
+        cGrass *= mix(1.0, clamp(lum3(texture2D(tGrassD, wuv / uScales.x).rgb) * 3.6, 0.6, 1.4), 0.2 * nearT);
+        vec3 nGrass = unpackN(texture2D(tGrassN, wuv / uScales.x)) * 0.35;
+        vec3 cForest = uP_forest * mix(0.8, 1.12, nz2.r) * mix(1.0, clamp(lum3(texture2D(tForestD, wuv / uScales.y).rgb) * 3.2, 0.6, 1.4), 0.3 * nearT);
+        vec3 nForest = unpackN(texture2D(tForestN, wuv / uScales.y)) * 0.5;
+        vec3 cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(texture2D(tSandD, wuv / uScales.z).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
+        vec3 nSand = unpackN(texture2D(tSandN, wuv / uScales.z)) * 0.5;
+        vec3 uTex = texture2D(tUrbanD, wuv / uScales.w).rgb, uAvg = textureLod(tUrbanD, wuv / uScales.w, 7.0).rgb;
+        vec3 cUrban = mix(uAvg, uTex, 0.35) * uTintU;
+        vec3 nUrban = unpackN(texture2D(tUrbanN, wuv / uScales.w)) * 0.6;
         vec3 bw = pow(max(abs(wN), vec3(1e-4)), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
         float rs = mix(1.0 / uRockS, 1.0 / (uRockS * 3.4), farT * 0.7);
-        vec3 cRock = texture2D(tRockD, vWPos.zy * rs).rgb * bw.x + texture2D(tRockD, vWPos.xz * rs).rgb * bw.y + texture2D(tRockD, vWPos.xy * rs).rgb * bw.z;
+        vec3 cRockT = texture2D(tRockD, vWPos.zy * rs).rgb * bw.x + texture2D(tRockD, vWPos.xz * rs).rgb * bw.y + texture2D(tRockD, vWPos.xy * rs).rgb * bw.z;
         vec3 rnx = unpackN(texture2D(tRockN, vWPos.zy * rs)), rny = unpackN(texture2D(tRockN, vWPos.xz * rs)), rnz = unpackN(texture2D(tRockN, vWPos.xy * rs));
-        vec3 nRock = normalize(wN + vec3(0.0, rnx.y, rnx.x) * bw.x * 1.3 + vec3(rny.x, 0.0, rny.y) * bw.y * 1.3 + vec3(rnz.x, rnz.y, 0.0) * bw.z * 1.3);
-        cRock = mix(cRock, vec3(dot(cRock, vec3(0.33))), 0.45) * mix(0.8, 1.1, nz2.b);
+        vec3 nRock = normalize(wN + vec3(0.0, rnx.y, rnx.x) * bw.x + vec3(rny.x, 0.0, rny.y) * bw.y + vec3(rnz.x, rnz.y, 0.0) * bw.z);
+        // rock: two painted tones picked by the photo's light/dark strata
+        vec3 cRock = mix(uP_rockD, uP_rockL, smoothstep(0.18, 0.42, lum3(cRockT) + (nz2.b - 0.5) * 0.12));
         float shoreN = (nz2.r - 0.5) * 1.1 + (nz3.b - 0.5) * 0.6;
         float wSand = max(1.0 - smoothstep(uShore * 0.2, uShore, h + shoreN * uShore * 0.9), msk2.g);
-        cSand = mix(cSand, cSand * vec3(0.52, 0.47, 0.4), smoothstep(0.35, 0.7, nz3.r + (nz2.g - 0.5) * 0.4) * (1.0 - msk2.g)); // silt / mud patches
         float wRock = smoothstep(0.30, 0.46, slope + (nz2.b - 0.5) * 0.14);
         float wSnow = smoothstep(uSnow, uSnow + 40.0, vWPos.y + (nz1.b - 0.5) * 70.0) * (1.0 - smoothstep(0.42, 0.62, slope));
         float wForest = smoothstep(0.2, 0.7, forest + (nz3.r - 0.5) * 0.35);
         float wUrban = smoothstep(0.15, 0.6, msk2.r + (nz3.g - 0.5) * 0.25);
+        // where far trees are no longer drawn, the forest floor takes the canopy colour
         float treeGone = smoothstep(uTreeDist * 0.82, uTreeDist, camDist) * inside;
-        cForest = mix(cForest, vec3(0.03, 0.05, 0.026) * (0.75 + 0.5 * nz3.r) * (0.8 + 0.4 * nz2.g), treeGone * smoothstep(0.3, 0.8, forest));
+        cForest = mix(cForest, uP_canopy * (0.8 + 0.4 * nz3.r), max(treeGone, 1.0 - inside) * smoothstep(0.3, 0.8, forest));
         vec3 col = mix(cGrass, cForest, wForest);
         vec3 tn = mix(nGrass, nForest, wForest);
         col = mix(col, cSand, wSand); tn = mix(tn, nSand, wSand);
         col = mix(col, cUrban, wUrban); tn = mix(tn, nUrban, wUrban);
-        vec3 nW = normalize(wN + vec3(tn.x, 0.0, tn.y) * 0.9);
+        vec3 nW = normalize(wN + vec3(tn.x, 0.0, tn.y));
         col = mix(col, cRock, wRock * (1.0 - wUrban)); nW = normalize(mix(nW, nRock, wRock * (1.0 - wUrban)));
-        col = mix(col, vec3(0.9, 0.93, 0.97), wSnow); nW = normalize(mix(nW, wN, wSnow * 0.7));
-        float wet = max(1.0 - smoothstep(0.0, 0.9, h), msk2.g * 0.8);
-        col *= mix(1.0, 0.5, wet);
-        col = mix(col, vec3(0.075, 0.068, 0.05) * (0.8 + 0.4 * nz3.g), smoothstep(0.05, 1.2, -h) * 0.75 * (1.0 - msk2.g)); // silty lake bed
-        col *= exp(-clamp(-h, 0.0, 30.0) * vec3(0.30, 0.09, 0.06));
-        col *= ao * (1.0 - canopy * 0.5);
+        col = mix(col, uP_snow, wSnow); nW = normalize(mix(nW, wN, wSnow * 0.7));
+        float wet = max(1.0 - smoothstep(0.0, 0.7, h), msk2.g * 0.8);
+        col = mix(col, uP_sandWet, wet * wSand * 0.8);
+        col = mix(col, uP_bed * (0.85 + 0.3 * nz3.g), smoothstep(0.0, 1.0, -h) * (1.0 - msk2.g)); // teal lake bed
+        col *= mix(1.0, 0.7, smoothstep(1.0, 12.0, -h));
+        col *= mix(1.0, ao, 0.6) * (1.0 - canopy * 0.35);
         diffuseColor.rgb *= col;
         float splatRough = mix(mix(0.97, 0.92, wForest), 0.82, wRock);
         splatRough = mix(splatRough, 0.9, wUrban);
@@ -267,21 +289,22 @@ export function buildGrass(hf, grassTex, opt = {}) {
   g.setAttribute('iOffset', new THREE.InstancedBufferAttribute(off, 2));
   g.setAttribute('iRand', new THREE.InstancedBufferAttribute(rnd, 4));
   g.instanceCount = Q.grass;
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0, side: THREE.DoubleSide });
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
   mat.defines = { CLOUD_SHADE_VARYING: '' };
   const gu = { uTile: { value: Q.tile }, uRadius: { value: Q.tile * 0.5 }, uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 },
     uShore: { value: opt.shore ?? 1.3 }, uReeds: { value: opt.reeds ? 1 : 0 } };
   mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, gu, hf.U, { tNoise: S.tNoise, tGrassD: { value: grassTex },
+    Object.assign(sh.uniforms, gu, hf.U, paintU, { tNoise: S.tNoise, tGrassD: { value: grassTex },
       uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         attribute vec2 bladeUV; attribute vec2 iOffset; attribute vec4 iRand;
         uniform sampler2D tMask, tMask2, tNoise, tGrassD;
         uniform vec3 uCam, uPlayer; uniform float uTime, uTile, uRadius, uWind, uWaterLv, uSnow, uShore, uReeds;
-        varying vec3 vGCol; varying float vT; varying vec3 vGW; varying float vCloudLit;
+        varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
         ${GLSL_HEIGHT}
-        ${CLOUD_SHADE_GLSL}`)
+        ${CLOUD_SHADE_GLSL}
+        ${MEADOW_GLSL}`)
       .replace('#include <beginnormal_vertex>', /* glsl */`
         vec2 wp2 = uCam.xz + mod(iOffset - uCam.xz + uTile * 0.5, uTile) - uTile * 0.5;
         vec4 gm2 = textureLod(tMask2, maskUV(wp2), 0.0);
@@ -312,10 +335,11 @@ export function buildGrass(hf, grassTex, opt = {}) {
         float keep = step(iRand.w, dens);
         float fade = 1.0 - smoothstep(uRadius * 0.55, uRadius, gdist);
         float gs = keep * fade;
-        bool flower = !rice && !reed && iRand.w < 0.014 && dens > 0.45;
+        float fPatch = smoothstep(0.58, 0.8, gz3.g * 0.65 + gz2.a * 0.6);
+        bool flower = !rice && !reed && dens > 0.35 && iRand.w < (0.01 + 0.16 * fPatch * dens) * smoothstep(22.0, 30.0, gdist);
         float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * mix(0.25, 1.0, fade) * keep;
         Hh *= 1.0 - 0.68 * gm2.a;   // ...and short
-        if (flower) Hh = 0.25 + 0.3 * iRand.y;
+        if (flower) Hh = (0.28 + 0.32 * iRand.y) * mix(0.4, 1.0, fade);
         if (rice) Hh = (0.38 + 0.22 * iRand.y) * fade;
         if (reed) Hh = (1.0 + 1.1 * iRand.y * iRand.y + max(-hw, 0.0)) * mix(0.3, 1.0, fade);
         float Wd = (0.02 + 0.022 * iRand.z) * (1.0 + gdist * 0.06) * step(0.001, gs);
@@ -335,38 +359,44 @@ export function buildGrass(hf, grassTex, opt = {}) {
         vec3 gp = vec3(wp2.x, gh - 0.03, wp2.y);
         gp.xz += lean * bt * Hh;
         gp.y += t * Hh * (1.0 - 0.35 * bt * ll / 1.3);
-        gp.xz += bside * bladeUV.x * Wd * 0.5 * (1.0 - t * 0.6);
+        gp.xz += bside * bladeUV.x * Wd * 0.5 * (flower ? 0.5 + smoothstep(0.55, 0.85, t) * 3.5 : 1.0 - t * 0.6);  // flowers open into a blossom
         vGW = gp; vT = t; vCloudLit = cloudShade(gp);
         vec3 bn = normalize(vec3(bdir.x, 0.0, bdir.y) + vec3(0.0, 0.4 + t, 0.0) - vec3(lean.x, 0.0, lean.y) * 0.3);
-        vec3 objectNormal = normalize(mix(bn, gN, 0.5) + vec3(bside.x, 0.0, bside.y) * bladeUV.x * 0.3);
-        vec3 texC = textureLod(tGrassD, wp2 / 29.0, 5.0).rgb;
-        float dryness = smoothstep(0.3, 0.85, gz1.g * 0.6 + gz3.b * 0.3 + iRand.z * 0.35);
-        float lush = smoothstep(0.35, 0.75, gz2.r * 0.7 + gz1.b * 0.5);   // greener, darker swales between drier knolls
-        vec3 c = mix(vec3(0.10, 0.23, 0.04), vec3(0.34, 0.34, 0.13), dryness * 0.65) * (0.6 + 0.6 * iRand.y);
-        c = mix(c, vec3(0.07, 0.19, 0.035) * (0.7 + 0.5 * iRand.y), lush * 0.5);
-        c = mix(c, texC * vec3(0.9, 1.1, 0.7), 0.35);
-        if (iRand.z > 0.93) c = mix(c, vec3(0.45, 0.4, 0.25), 0.6);
-        if (rice) c = mix(vec3(0.16, 0.34, 0.06), vec3(0.3, 0.46, 0.1), iRand.y) * (0.8 + 0.3 * gz3.r);
+        vec3 objectNormal = normalize(mix(bn, gN, 0.82) + vec3(bside.x, 0.0, bside.y) * bladeUV.x * 0.08);
+        // the blade takes the painted colour of the ground it grows from; tips are lighter and warmer
+        vec3 c = meadowColor(gz1, gz2, gz3);
+        c = mix(c, uP_forest * 1.25, smoothstep(0.2, 0.75, gm.r) * 0.6);
+        c *= 0.9 + 0.22 * iRand.y;
+        vec3 tip = mix(c, uP_gLight, 0.45) * 1.12 + vec3(0.03, 0.03, 0.0);
+        // bright bands where the gusts roll across the meadow
+        float wave = smoothstep(0.52, 0.85, gust);
+        tip += vec3(0.07, 0.09, 0.02) * wave;
+        if (rice) { c = mix(vec3(0.12, 0.36, 0.05), vec3(0.28, 0.5, 0.08), iRand.y) * (0.8 + 0.3 * gz3.r); tip = c * 1.2; }
         if (reed) {
-          c = mix(vec3(0.14, 0.26, 0.07), vec3(0.4, 0.38, 0.17), iRand.y * 0.75 + gz3.r * 0.25) * (0.75 + 0.35 * iRand.z);
-          if (iRand.x > 0.9 && t > 0.84) c = vec3(0.2, 0.12, 0.06);   // bulrush heads
+          c = mix(vec3(0.1, 0.3, 0.08), vec3(0.36, 0.42, 0.14), iRand.y * 0.75 + gz3.r * 0.25) * (0.8 + 0.3 * iRand.z);
+          tip = c * 1.15;
+          if (iRand.x > 0.9 && t > 0.84) c = tip = vec3(0.22, 0.12, 0.06);   // bulrush heads
         }
-        if (flower && t > 0.6) {
-          vec3 fc = iRand.x < 0.35 ? vec3(0.9, 0.88, 0.8) : iRand.x < 0.7 ? vec3(0.95, 0.72, 0.1) : vec3(0.45, 0.25, 0.75);
-          c = mix(c, fc, smoothstep(0.6, 1.0, t));
+        if (flower) {
+          // each patch has its own colour: white daisies, buttercups, pink clover, violets, poppies
+          float pick = fract(gz2.g * 5.3 + gz3.b * 0.6 + step(0.9, iRand.x) * 0.37);
+          vec3 fc = pick < 0.26 ? vec3(1.0, 0.95, 0.86) : pick < 0.5 ? vec3(1.0, 0.72, 0.06) : pick < 0.7 ? vec3(1.0, 0.36, 0.55)
+                  : pick < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
+          float head = smoothstep(0.6, 0.72, t);
+          c = mix(c, fc, head); tip = mix(tip, fc * 1.1, head);
         }
-        vGCol = c;
+        vGCol = c; vGTip = tip;
       `)
       .replace('#include <begin_vertex>', 'vec3 transformed = gp;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vGCol; varying float vT; varying vec3 vGW; uniform vec3 uSunDir, uSunCol;`)
-      .replace('#include <map_fragment>', 'diffuseColor.rgb *= vGCol * mix(0.3, 1.0, pow(max(vT, 1e-4), 0.75));')
+        varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; uniform vec3 uSunDir, uSunCol;`)
+      .replace('#include <map_fragment>', 'diffuseColor.rgb *= mix(vGCol * 0.62, vGTip, smoothstep(0.0, 1.0, vT));')
       .replace('#include <normal_fragment_begin>', 'float faceDirection = 1.0; vec3 normal = normalize(vNormal); vec3 nonPerturbedNormal = normal;')
       .replace('#include <emissivemap_fragment>', `
         vec3 gV = normalize(vGW - cameraPosition);
         float gTr = pow(max(dot(gV, uSunDir), 1e-4), 4.0) * vT;
-        totalEmissiveRadiance += (vGCol * uSunCol * gTr * 0.28 + vGCol * uSunCol * 0.03 * vT) * vCloudLit;`);
+        totalEmissiveRadiance += vGTip * uSunCol * (gTr * 0.22 + 0.02 * vT) * vCloudLit;`);
   };
   mat.customProgramCacheKey = () => 'grass';
   const mesh = new THREE.Mesh(g, mat);
@@ -377,7 +407,8 @@ export function buildGrass(hf, grassTex, opt = {}) {
 }
 
 // ---------------------------------------------------------------- water with planar reflection
-export function buildWater(hf, { level = 0, normals, hide = [], deep = [0.006, 0.03, 0.035], shallow = [0.04, 0.13, 0.11], waves = 4.0, strength = 0.55, active = () => true } = {}) {
+// painted water: turquoise shallows deepening to blue, a soft sky sheen, crisp white foam lines at the shore, sun sparkles
+export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e', mid = '#2398be', shallow = '#52d6c4', waves = 4.0, strength = 0.4, active = () => true } = {}) {
   const mirrorCam = new THREE.PerspectiveCamera();
   mirrorCam.layers.set(0); // objects moved to layer 1 are not reflected (cheap reflection pass)
   const textureMatrix = new THREE.Matrix4();
@@ -386,7 +417,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = [0.006, 0
     transparent: true, fog: true, depthWrite: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       tRefl: { value: null }, tNormal: { value: null }, textureMatrix: { value: null }, uLevel: { value: level },
-      uDeep: { value: new THREE.Color(...deep) }, uShallow: { value: new THREE.Color(...shallow) }, uWaves: { value: waves }, uStrength: { value: strength },
+      uDeep: { value: new THREE.Color(deep) }, uMid: { value: new THREE.Color(mid) }, uShallow: { value: new THREE.Color(shallow) }, uWaves: { value: waves }, uStrength: { value: strength },
     }]),
     vertexShader: /* glsl */`
       uniform mat4 textureMatrix; varying vec4 vMirror; varying vec3 vW;
@@ -398,7 +429,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = [0.006, 0
         #include <fog_vertex>
       }`,
     fragmentShader: /* glsl */`
-      uniform sampler2D tRefl, tNormal, tNoise; uniform float uTime, uLevel, uWaves, uStrength; uniform vec3 uSunDir, uLightDir, uSunCol, uAmb, uDeep, uShallow;
+      uniform sampler2D tRefl, tNormal, tNoise; uniform float uTime, uLevel, uWaves, uStrength; uniform vec3 uSunDir, uLightDir, uSunCol, uAmb, uDeep, uMid, uShallow;
       varying vec4 vMirror; varying vec3 vW;
       #include <common>
       #include <fog_pars_fragment>
@@ -418,21 +449,30 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = [0.006, 0
         vec2 distortion = sn.xz * (0.001 + 1.0 / dist) * 2.0;
         vec3 refl = texture2D(tRefl, vMirror.xy / vMirror.w + distortion).rgb;
         float cosT = max(dot(eyeDir, sn), 0.0);
-        float fres = 0.02 + 0.98 * pow(max(1.0 - cosT, 1e-4), 5.0);
+        float fres = 0.06 + 0.62 * pow(max(1.0 - cosT, 1e-4), 4.0);
         vec3 rd = reflect(-uLightDir, sn);
         float sd = max(dot(eyeDir, rd), 1e-4);
-        vec3 spec = uSunCol * (pow(sd, 600.0) * 4.0 + pow(sd, 60.0) * 0.05) * step(0.0, uLightDir.y);
+        // sparkles: the sharpest ripple reflections of the sun become little star glints
+        float glint = smoothstep(0.9982, 0.9993, sd) * (0.6 + 0.4 * sin(uTime * 7.0 + vW.x * 3.1 + vW.z * 2.3));
+        vec3 spec = uSunCol * (glint * 2.2 + pow(sd, 90.0) * 0.12) * step(0.0, uLightDir.y);
         float inside = step(abs(vW.x), uHalf) * step(abs(vW.z), uHalf);
         float depth = mix(40.0, max(0.0, uLevel - hAt(vW.xz)), inside);
-        vec3 body = mix(uShallow, uDeep, 1.0 - exp(-depth * 0.3)) * (uAmb * 1.4 + uSunCol * max(uLightDir.y, 0.0) * 0.015);
-        vec3 col = mix(body, refl, fres) + spec;
-        float alpha = clamp(1.0 - exp(-depth * 0.9), 0.0, 1.0);
-        alpha = max(alpha, fres * smoothstep(0.0, 0.25, depth));
-        float fn = texture2D(tNoise, vW.xz * 0.21 + uTime * 0.02).g * texture2D(tNoise, vW.xz * 0.53 - uTime * 0.015).b;
-        float band = 0.5 + 0.5 * sin(uTime * 1.3 - depth * 9.0 + fn * 6.0);
-        float foam = (1.0 - smoothstep(0.02, 0.2, depth)) * smoothstep(0.3, 0.6, fn * 1.6 * band + 0.1) * smoothstep(0.0, 0.03, depth) * (1.0 - smoothstep(25.0, 120.0, dist));
-        col = mix(col, (uAmb * 1.2 + uSunCol * max(uLightDir.y, 0.0) * 0.15) * 0.9, foam * 0.5);
-        alpha = max(alpha, foam * 0.6);
+        float dd = 1.0 - exp(-depth * 0.32);
+        vec3 body = mix(uShallow, uMid, smoothstep(0.0, 0.55, dd));
+        body = mix(body, uDeep, smoothstep(0.5, 1.0, dd));
+        body *= uAmb * 0.75 + uSunCol * max(uLightDir.y, 0.0) * 0.22 + 0.04;
+        vec3 col = mix(body, refl * mix(vec3(1.0), uShallow * 1.6, 0.18), fres) + spec;
+        float alpha = clamp(1.0 - exp(-depth * 2.2), 0.0, 1.0);
+        alpha = max(alpha, fres * smoothstep(0.0, 0.2, depth));
+        // foam: a solid wobbly line at the water's edge and a second one lapping in and out
+        float fn = texture2D(tNoise, vW.xz * 0.19 + uTime * 0.015).g * 0.6 + texture2D(tNoise, vW.xz * 0.61 - uTime * 0.02).b * 0.4;
+        float w = (fn - 0.45) * 0.09;
+        float edge = 1.0 - smoothstep(0.045, 0.06, depth + w);
+        float lap = 0.15 + 0.07 * sin(uTime * 0.8 + fn * 2.5);
+        float line2 = (1.0 - smoothstep(0.01, 0.022, abs(depth + w * 0.5 - lap))) * 0.9;
+        float foam = max(edge, line2) * smoothstep(0.0, 0.012, depth) * (1.0 - smoothstep(70.0, 220.0, dist));
+        col = mix(col, vec3(1.0, 1.0, 0.98) * (uAmb * 0.8 + uSunCol * max(uLightDir.y, 0.0) * 0.3 + 0.08), foam);
+        alpha = max(alpha, foam);
         gl_FragColor = vec4(col, alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -482,66 +522,6 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = [0.006, 0
   return water;
 }
 
-// ---------------------------------------------------------------- conifers with photographed branch cards
-export function buildConifer(hi, seed) {
-  const rng = mulberry32(seed || (hi ? 101 : 202));
-  const P = [], N = [], UV = [], C = [], I = [];
-  let vi = 0;
-  const push = (x, y, z, u, v, ao) => {
-    P.push(x, y, z);
-    let nx = x, nz = z, ny = 0.25 + (y - 0.55) * 0.35;
-    const r = Math.hypot(x, z); if (r < 1e-4) { nx = 0; nz = 0; ny = 1; }
-    const l = Math.hypot(nx, ny, nz); N.push(nx / l, ny / l, nz / l);
-    UV.push(u, v); C.push(ao, ao, ao); return vi++;
-  };
-  // variant 0 = long side branch (left half of atlas), 1 = dense crown branch (right half)
-  const card = (bx, by, bz, dx, dy, dz, L, wx, wy, wz, droop, rMax, variant) => {
-    const rows = hi ? 4 : 2, ids = [], u0 = variant * 0.5;
-    for (let r = 0; r < rows; r++) {
-      const t = r / (rows - 1);
-      const cx = bx + dx * L * t, cy = by + dy * L * t - droop * t * t * L, cz = bz + dz * L * t;
-      const ao = (0.35 + 0.65 * Math.min(1, Math.hypot(cx, cz) / (rMax + 1e-4))) * (0.55 + 0.45 * Math.min(1, cy));
-      ids.push(push(cx - wx * 0.5, cy - wy * 0.5, cz - wz * 0.5, u0, t, ao), push(cx + wx * 0.5, cy + wy * 0.5, cz + wz * 0.5, u0 + 0.5, t, ao));
-    }
-    for (let r = 0; r < rows - 1; r++) { const a = ids[r * 2], b = ids[r * 2 + 1], c = ids[r * 2 + 2], d = ids[r * 2 + 3]; I.push(a, b, c, b, d, c); }
-  };
-  const K = hi ? 20 : 8, y0 = 0.12;
-  for (let k = 0; k < K; k++) {
-    const f = k / (K - 1);
-    const y = y0 + (0.93 - y0) * Math.pow(f, 0.9);
-    const rMax = 0.24 * Math.pow(1 - (y - y0) / (1 - y0), 0.95) + 0.03;
-    const nb = hi ? 6 + Math.floor(rng() * 3) : 5;
-    const a0 = rng() * 6.283;
-    for (let b = 0; b < nb; b++) {
-      const a = a0 + b / nb * 6.283 + (rng() - 0.5) * 0.5;
-      const L = rMax * (0.9 + rng() * 0.3) * 1.15;
-      const up = lerp(-0.28, 0.25, f) + (rng() - 0.5) * 0.15;
-      let dx = Math.cos(a), dz = Math.sin(a), dy = up; const dl = Math.hypot(dx, dy, dz); dx /= dl; dy /= dl; dz /= dl;
-      const W = L * (hi ? 0.95 : 1.3);
-      let wx = -Math.sin(a), wy = (rng() - 0.5) * 0.5, wz = Math.cos(a); const wl = Math.hypot(wx, wy, wz); wx /= wl; wy /= wl; wz /= wl;
-      const droop = lerp(0.3, 0.04, f) * (0.7 + rng() * 0.6);
-      const by = y + (rng() - 0.5) * 0.02, variant = f > 0.72 ? 1 : 0;
-      card(dx * 0.006, by, dz * 0.006, dx, dy, dz, L, wx * W, wy * W, wz * W, droop, rMax, variant);
-      if (hi) {
-        let vx = dy * wz - dz * wy, vy = dz * wx - dx * wz, vz = dx * wy - dy * wx; const vl = Math.hypot(vx, vy, vz);
-        const V = W * 0.55 / vl;
-        card(dx * 0.006, by, dz * 0.006, dx, dy, dz, L * 0.85, vx * V, vy * V, vz * V, droop, rMax, variant);
-      }
-    }
-  }
-  for (let s = 0; s < 3; s++) { const a = s * Math.PI / 3; card(0, 0.84, 0, 0, 1, 0, 0.17, Math.cos(a) * 0.09, 0, Math.sin(a) * 0.09, 0, 0.05, 1); }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
-  g.setIndex(I);
-  const trunk = new THREE.CylinderGeometry(0.006, 0.028, 1, hi ? 10 : 5, hi ? 4 : 1, true);
-  trunk.translate(0, 0.5, 0);
-  const tuv = trunk.attributes.uv; for (let i = 0; i < tuv.count; i++) tuv.setXY(i, tuv.getX(i) * 3, tuv.getY(i) * 12);
-  return { foliage: g, trunk };
-}
-
 export function windPatch(mat, key, amount = 1) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
@@ -563,67 +543,6 @@ export function windPatch(mat, key, amount = 1) {
   mat.customProgramCacheKey = () => key;
 }
 
-let branchTex = null;
-export function coniferMaterials() {
-  if (branchTex) return branchTex;
-  const d = loadTex('gen/fir_branch_diff.png', true, [40, 60, 30]);
-  const n = loadTex('gen/fir_branch_nor.png', false, NFLAT);
-  d.wrapS = d.wrapT = n.wrapS = n.wrapT = THREE.ClampToEdgeWrapping;
-  const foliage = new THREE.MeshStandardMaterial({ map: d, normalMap: n, normalScale: new THREE.Vector2(0.7, 0.7), vertexColors: true,
-    alphaTest: 0.4, alphaToCoverage: Q.msaa > 0, side: THREE.DoubleSide, roughness: 0.88, metalness: 0, color: 0xd2dac4 });
-  foliage.onBeforeCompile = sh => {
-    sh.uniforms.uSunViewDir = S.uSunViewDir; sh.uniforms.uSunCol = S.uSunCol;
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uSunViewDir; uniform vec3 uSunCol;')
-      // needles are not mirrors: damp the grazing-angle sheen that otherwise frosts backlit trees with sky light
-      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\nmaterial.specularColor *= 0.45; material.specularF90 = 0.25;')
-      .replace('#include <alphatest_fragment>', `
-        { vec2 ts = vec2(textureSize(map, 0)); vec2 dx = dFdx(vMapUv * ts), dy = dFdy(vMapUv * ts);
-          float lod = max(0.0, 0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-8)));
-          diffuseColor.a = min(1.0, diffuseColor.a * (1.0 + lod * 0.3)); }
-        #ifdef ALPHA_TO_COVERAGE
-          diffuseColor.a = clamp((diffuseColor.a - alphaTest) / max(fwidth(diffuseColor.a), 1e-3) + 0.5, 0.0, 1.0);
-          if (diffuseColor.a <= 0.0) discard;
-        #else
-          if (diffuseColor.a < alphaTest) discard;
-        #endif`)
-      .replace('#include <normal_fragment_begin>', `float faceDirection = 1.0; vec3 normal = normalize(vNormal);
-        #ifdef USE_NORMALMAP_TANGENTSPACE
-          mat3 tbn = getTangentFrame(-vViewPosition, normal, vNormalMapUv);
-        #endif
-        vec3 nonPerturbedNormal = normal;`)
-      .replace('#include <emissivemap_fragment>', `
-        float trl = pow(max(dot(normalize(-vViewPosition), uSunViewDir), 1e-4), 3.0);
-        totalEmissiveRadiance += diffuseColor.rgb * vec3(0.8, 1.0, 0.55) * uSunCol * (trl * 0.12 + 0.012) * vCloudLit;`);
-  };
-  foliage.defines = { CLOUD_SHADE_VARYING: '' };
-  { const prev = foliage.onBeforeCompile; foliage.onBeforeCompile = (sh, r) => { prev(sh, r);
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
-      .replace('#include <project_vertex>', `#include <project_vertex>
-        { vec4 cwp = vec4(transformed, 1.0);
-          #ifdef USE_INSTANCING
-            cwp = instanceMatrix * cwp;
-          #endif
-          vCloudLit = cloudShade((modelMatrix * cwp).xyz); }`); }; }
-  windPatch(foliage, 'conifer');
-  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: d, alphaTest: 0.4 });
-  windPatch(depth, 'coniferDepth');
-  const trunk = new THREE.MeshStandardMaterial({ map: phTex('fir_tree_01', 'bark_diff', '1k', true), normalMap: phTex('fir_tree_01', 'bark_nor_gl', '1k', false, NFLAT), roughness: 0.95, color: 0xa89888 });
-  windPatch(trunk, 'coniferTrunk');
-  branchTex = { foliage, depth, trunk };
-  return branchTex;
-}
-
-// trees: [{x,y,z,s,sx,r,tilt,tilt2,c}] — builds LOD'd, cell-culled instanced forest and trunk colliders
-export function buildForest(trees, { hiDist = () => Q.treeHi, farDist = () => Q.trees } = {}) {
-  const M = coniferMaterials();
-  const hi = buildConifer(true), lo = buildConifer(false);
-  new Scatter(trees, [
-    { dist: hiDist, parts: [{ geometry: hi.foliage, material: M.foliage, tint: true, castShadow: true, depth: M.depth }, { geometry: hi.trunk, material: M.trunk, castShadow: true }] },
-    { dist: farDist, parts: [{ geometry: lo.foliage, material: M.foliage, tint: true, castShadow: true, depth: M.depth }, { geometry: lo.trunk, material: M.trunk }] },
-  ], 128);
-  for (const t of trees) addCircle(t.x, t.z, 0.028 * t.s * (t.sx || 1) + 0.05);
-  return M;
-}
-export function treeColor(rng) { return new THREE.Color().setHSL(0.24 + (rng() - 0.5) * 0.06, 0.1 + rng() * 0.2, 0.5 + rng() * 0.2); }
+// conifer forests (Ghibli-style trees live in trees.js; kept here so maps can keep importing it from terrain.js)
+export function buildForest(trees, opt) { buildConiferForest(trees, opt); }
+export function treeColor(rng) { return firColor(rng); }

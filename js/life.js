@@ -1,5 +1,6 @@
 // Ambient life: fireflies over the meadows at dusk and night, pollen / dust motes that catch the sun when backlit,
-// and a flock of birds wheeling over the valley. Everything is GPU-animated from a handful of uniforms.
+// flower blossoms in colourful patches, and a flock of birds wheeling over the valley. Everything is GPU-animated
+// from a handful of uniforms.
 import { THREE, scene, camera, renderer, S, fogU, clamp, smoothstep, mulberry32 } from './core.js';
 import { GLSL_HEIGHT } from './terrain.js';
 import { env } from './sky.js';
@@ -49,12 +50,15 @@ function fireflies(world) {
         vA = uFire * blink * where * (1.0 - smoothstep(${(R * 0.65).toFixed(1)}, ${R.toFixed(1)}, d));
         vec4 mv = viewMatrix * vec4(wp.x, y, wp.y, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = vA > 0.002 ? clamp(pointPx(0.16, -mv.z), 2.0 * uPR, 14.0 * uPR) : 0.0;
+        // never smaller than a few pixels (a 2 px sprite is a square that blooms into a square); far ones dim instead
+        float px = pointPx(0.2, -mv.z), minPx = 5.0 * uPR;
+        vA *= min(1.0, (px * px) / (minPx * minPx));
+        gl_PointSize = vA > 0.002 ? clamp(px, minPx, 16.0 * uPR) : 0.0;
       }`,
     fragmentShader: /* glsl */`
       varying float vA;
       void main(){ vec2 q = gl_PointCoord - 0.5; float r = dot(q, q); float a = (exp(-r * 28.0) + exp(-r * 9.0) * 0.2) * smoothstep(0.25, 0.12, r);
-        gl_FragColor = vec4(vec3(0.75, 1.0, 0.32) * 4.0 * vA * a, 1.0); }`,
+        gl_FragColor = vec4(vec3(0.75, 1.0, 0.32) * 2.2 * vA * a, 1.0); }`,
   });
   return wrappedPoints(800, 71, mat);
 }
@@ -82,16 +86,73 @@ function motes(world) {
         float d = length(w - uCam);
         float fade = smoothstep(0.6, 1.6, d) * (1.0 - smoothstep(${(R * 0.6).toFixed(1)}, ${R.toFixed(1)}, d));
         float tw = 0.6 + 0.4 * sin(t * 3.0 + aRnd.y * 20.0);
-        vC = uSunCol * phase * fade * tw * uMote * 0.22;
+        vC = min(uSunCol * phase * fade * tw * uMote * 0.12, vec3(0.45));   // subtle glints: never bright enough to bloom
         vec4 mv = viewMatrix * vec4(w, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = uMote > 0.001 ? clamp(pointPx(0.02, -mv.z), 1.0, 3.5 * uPR) : 0.0;
+        gl_PointSize = uMote > 0.001 ? clamp(pointPx(0.02, -mv.z), 1.0, 2.0 * uPR) : 0.0;
       }`,
     fragmentShader: /* glsl */`
       varying vec3 vC;
-      void main(){ vec2 q = gl_PointCoord - 0.5; gl_FragColor = vec4(vC * exp(-dot(q, q) * 10.0), 1.0); }`,
+      void main(){ vec2 q = gl_PointCoord - 0.5; float r = dot(q, q); gl_FragColor = vec4(vC * exp(-r * 16.0) * smoothstep(0.25, 0.1, r), 1.0); }`,
   });
   return wrappedPoints(700, 13, mat);
+}
+
+// ---------------------------------------------------------------- flowers: little five-petal sprites in colour patches
+// (the same patch noise as the grass shader, so far-off blade flowers and these close-up blossoms agree)
+function flowers(world) {
+  const R = 30;
+  const mat = new THREE.ShaderMaterial({
+    transparent: false, depthWrite: true, fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
+    vertexShader: /* glsl */`
+      attribute vec4 aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uPx, uPR, uWaterLv, uTime, uWind;
+      uniform sampler2D tMask, tMask2, tNoise;
+      varying vec3 vCol; varying float vAng;
+      ${GLSL_HEIGHT}
+      ${wrapGLSL}
+      #include <common>
+      #include <fog_pars_vertex>
+      void main(){
+        vec2 wp = wrapAround(aRnd.xy, ${R.toFixed(1)});
+        float g = hAt(wp);
+        vec4 z2 = texture(tNoise, wp * 0.013), z3 = texture(tNoise, wp * 0.06);
+        vec4 m = texture(tMask, maskUV(wp)), m2 = texture(tMask2, maskUV(wp));
+        float gx = hAt(wp + vec2(uCell, 0.0)) - hAt(wp - vec2(uCell, 0.0)), gz = hAt(wp + vec2(0.0, uCell)) - hAt(wp - vec2(0.0, uCell));
+        float flat_ = 2.0 * uCell / length(vec3(gx, 2.0 * uCell, gz));
+        float patch_ = smoothstep(0.58, 0.8, z3.g * 0.65 + z2.a * 0.6);
+        // strictly off roads, lots, paddies, forest floor and tree shade (the masks are bilinear at metre scale)
+        float ok = step(aRnd.w, (patch_ * 0.9 + 0.04) * (1.0 - 0.6 * m2.a)) * step(uWaterLv + 1.0, g) * step(0.86, flat_) * step(m.b, 0.3) * step(m.r, 0.45) * step(m2.r, 0.05) * step(m2.b, 0.05) * step(m2.g, 0.3);
+        float d = length(wp - uCam.xz);
+        float fade = 1.0 - smoothstep(${(R * 0.7).toFixed(1)}, ${R.toFixed(1)}, d);
+        float sway = sin(uTime * (1.5 + aRnd.z) + aRnd.x * 30.0) * 0.04 * uWind;
+        vec3 w = vec3(wp.x + sway, g + 0.18 + 0.32 * aRnd.z, wp.y + sway * 0.5);
+        float pick = fract(z2.g * 5.3 + z3.b * 0.6 + step(0.92, aRnd.y) * 0.37);
+        vec3 fc = pick < 0.26 ? vec3(1.0, 0.95, 0.86) : pick < 0.5 ? vec3(1.0, 0.72, 0.06) : pick < 0.7 ? vec3(1.0, 0.36, 0.55)
+                : pick < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
+        vCol = fc * (uAmb * 0.55 + uSunCol * 0.33 + 0.03);
+        vAng = aRnd.y * 6.2831;
+        vec4 mvPosition = viewMatrix * vec4(w, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        gl_PointSize = ok * fade > 0.01 ? clamp(pointPx(0.16 + 0.08 * aRnd.x, -mvPosition.z) * fade, 1.0, 40.0 * uPR) : 0.0;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol; varying float vAng;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main(){
+        vec2 q = (gl_PointCoord - 0.5) * 2.0;
+        float r = length(q), a = atan(q.y, q.x) + vAng;
+        float petal = 0.62 + 0.38 * cos(a * 5.0);
+        if (r > petal) discard;
+        vec3 c = r < 0.28 ? vec3(1.0, 0.8, 0.2) * length(vCol) * 0.75 : vCol * mix(1.0, 0.72, smoothstep(0.3, 1.0, r / petal));
+        gl_FragColor = vec4(c, 1.0);
+        #include <fog_fragment>
+      }`,
+  });
+  Object.assign(mat.uniforms, world.hf.U, U, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind, tNoise: S.tNoise, uWaterLv: { value: world.waterLevel ?? 0 } });
+  return wrappedPoints(9000, 29, mat);
 }
 
 // ---------------------------------------------------------------- birds
@@ -146,7 +207,7 @@ function birds(center) {
       #include <common>
       #include <fog_pars_fragment>
       void main(){
-        gl_FragColor = vec4(uAmb * 0.12 + uSunCol * 0.004, 1.0);
+        gl_FragColor = vec4(uAmb * 0.3 + uSunCol * 0.03, 1.0);
         #include <fog_fragment>
       }`,
   });
@@ -176,7 +237,7 @@ function mistAmount(h) {
 }
 
 export function buildLife(world, opt = {}) {
-  const f = fireflies(world), mo = motes(world);
+  const f = fireflies(world), mo = motes(world), fl = opt.flowers === false ? null : flowers(world);
   const flock = opt.birds === false ? null : birds(opt.flockCenter || new THREE.Vector3(world.spawn.x, world.waterLevel ?? 0, world.spawn.z));
   const mist = opt.mist ?? 1;
   return {

@@ -1,6 +1,7 @@
 // "Wildlands" — lake valley, conifer forests, mountains.
 import { THREE, Q, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, Scatter, addCircle, clearColliders } from './core.js';
-import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildForest, treeColor } from './terrain.js';
+import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater } from './terrain.js';
+import { buildConiferForest, buildBroadleafForest, firColor, leafColor } from './trees.js';
 
 export const meta = { name: 'Wildlands', startHour: 16.4, sunAzimuth: 2.2, life: { flockCenter: { x: 40, y: 0, z: -60 } } };
 const LAKE_X = 40, LAKE_Z = -60;
@@ -52,8 +53,19 @@ export async function build(progress) {
     if (h < 2.2 || h > 205) continue;
     hf.normalAt(x, z, nrm); if (nrm.y < 0.8) continue;
     if (rng() > f * 0.9 + 0.006) continue;
-    const s = lerp(11, 25, Math.pow(rng(), 1.3)) * (0.75 + 0.25 * f) * (1 - smoothstep(120, 205, h) * 0.45);
-    trees.push({ x, y: h - 0.25, z, s, sx: 0.85 + rng() * 0.35, r: rng() * Math.PI * 2, tilt: (rng() - 0.5) * 0.05, tilt2: (rng() - 0.5) * 0.05, c: treeColor(rng) });
+    // round broadleaf trees mix into the lower, sunnier forest edges; conifers own the slopes above
+    const leafy = h < 75 && rng() < 0.55 * (1 - smoothstep(40, 75, h)) * (1.15 - f);
+    const s = leafy ? lerp(8, 14, rng()) : lerp(11, 25, Math.pow(rng(), 1.3)) * (0.75 + 0.25 * f) * (1 - smoothstep(120, 205, h) * 0.45);
+    trees.push({ x, y: h - 0.25, z, s, sx: 0.85 + rng() * 0.35, r: rng() * Math.PI * 2, tilt: (rng() - 0.5) * 0.05, tilt2: (rng() - 0.5) * 0.05, leafy, c: leafy ? leafColor(rng) : firColor(rng) });
+  }
+  // lone trees and little groves out in the meadows (the classic painted hillside)
+  for (let k = 0; k < 900; k++) {
+    const cx = (rng() * 2 - 1) * (HALF - 60), cz = (rng() * 2 - 1) * (HALF - 60), n = rng() < 0.6 ? 1 : 2 + Math.floor(rng() * 4);
+    for (let m = 0; m < n; m++) {
+      const x = cx + (rng() - 0.5) * 18 * (n > 1), z = cz + (rng() - 0.5) * 18 * (n > 1), h = hf.heightAt(x, z);
+      if (h < 3 || h > 90 || FOREST[hf.idx(x, z)] > 0.25 || hf.normalAt(x, z, nrm).y < 0.88) continue;
+      trees.push({ x, y: h - 0.2, z, s: lerp(8, 15, rng()), sx: 0.9 + rng() * 0.3, r: rng() * 6.28, tilt: (rng() - 0.5) * 0.06, tilt2: (rng() - 0.5) * 0.06, leafy: true, c: leafColor(rng) });
+    }
   }
   // spawn on the lake shore, facing the water, in a small clearing
   let spawn = null;
@@ -66,13 +78,14 @@ export async function build(progress) {
   }
   spawn = spawn || { x: 0, z: 150 };
   spawn.yaw = Math.atan2(-(LAKE_X - spawn.x), -(LAKE_Z - spawn.z));
-  for (let i = trees.length - 1; i >= 0; i--) if (Math.hypot(trees[i].x - spawn.x, trees[i].z - spawn.z) < 9) trees.splice(i, 1);
+  for (let i = trees.length - 1; i >= 0; i--) if (Math.hypot(trees[i].x - spawn.x, trees[i].z - spawn.z) < 9 || (trees[i].leafy && Math.hypot(trees[i].x - LAKE_X, (trees[i].z - LAKE_Z) * 1.3) < 205 && trees[i].y < 2.5)) trees.splice(i, 1);
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.68); await tick();
   buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 175, shore: 0.8 }));
   progress('Planting trees', 0.78); await tick();
-  buildForest(trees);
+  buildConiferForest(trees.filter(t => !t.leafy));
+  buildBroadleafForest(trees.filter(t => t.leafy));
   const grass = buildGrass(hf, layers.grass.d, { water: 0, shore: 0.8, reeds: true });
   const water = buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass] });
 

@@ -71,7 +71,7 @@ export const Q = { name: 'high' };
 export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2) * Q.pr);
-renderer.toneMapping = THREE.AgXToneMapping; // filmic, less saturated highlights than ACES — reads more photographic
+renderer.toneMapping = THREE.NeutralToneMapping; // keeps hues and saturation intact (the look is painted, not filmic)
 renderer.toneMappingExposure = 1.0; // the real exposure is applied when the scene is resolved (post.js)
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -153,6 +153,7 @@ export function loadTex(file, srgb, fallback = [128, 128, 128]) {
   });
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = maxAniso;
+  if (file.startsWith('tex/')) t.userData.photo = true; // scanned: flattened by the toon look (toon.js)
   texCache.set(key, t);
   return t;
 }
@@ -161,7 +162,7 @@ export const phTex = (name, kind, res, srgb, fb) => loadTex(`tex/${name}_${kind}
 const modelCache = new Map();
 export function loadModel(name) {
   if (!modelCache.has(name)) modelCache.set(name, new Promise(res =>
-    gltfLoader.load(`assets/models/${name}/${name}_1k.gltf`, g => res(g.scene), undefined, () => res(null))));
+    gltfLoader.load(`assets/models/${name}/${name}_1k.gltf`, g => { g.scene.traverse(o => { if (o.material && o.material.map) o.material.map.userData.photo = true; }); res(g.scene); }, undefined, () => res(null))));
   return modelCache.get(name);
 }
 

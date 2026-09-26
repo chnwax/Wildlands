@@ -1,5 +1,5 @@
-// Volumetric cumulus: ray-marched through a 3D Perlin-Worley noise volume, lit with Beer-Lambert extinction,
-// a dual-lobe Henyey-Greenstein phase function and a powder term; ambient from the sky probe.
+// Volumetric cumulus: ray-marched through a 3D Perlin-Worley noise volume, shaded anime style — light reaching each
+// sample is banded into palette 'lit' and 'shade' colours, with glowing edges when backlit.
 import { THREE, scene, S, mulberry32, lerp, clamp } from './core.js';
 
 function makeCloudNoise(N = 64) {
@@ -45,7 +45,7 @@ function makeCloudNoise(N = 64) {
 }
 
 export const cloudU = { uCover: { value: 0.5 }, uBottom: { value: 1500 }, uTop: { value: 2700 } };
-export const cloudSunCol = { value: new THREE.Vector3() }, cloudLightDir = { value: new THREE.Vector3(0, 1, 0) }; // sunlight at cloud height (stays lit, and red, a while after sunset)
+export const cloudPal = { lit: new THREE.Color(1, 1, 1), shade: new THREE.Color(0.6, 0.65, 0.85), dir: new THREE.Vector3(0, 1, 0) }; // set from the sky palette
 const tCloud = makeCloudNoise();
 // three clones texture uniforms per material; these are static, shared textures (and Texture.copy drops wrapR)
 tCloud.clone = () => tCloud; S.tNoise.value.clone = () => S.tNoise.value;
@@ -54,7 +54,7 @@ tCloud.clone = () => tCloud; S.tNoise.value.clone = () => S.tNoise.value;
 // The sun (every directional light) is attenuated by the same cloud field the ray-marcher draws, sampled where the
 // light ray crosses the middle of the cloud layer, so shadows drift across the land with the clouds above them.
 // Uniforms go into three's lit ShaderLib entries; plain {x,y,z,w} objects survive per-material cloning by reference.
-export const cloudShadow = { p: { x: 0, y: 0.5, z: 2050, w: 0.8 }, sun: { x: 0, y: 1, z: 0 } }; // p: time, cover, mid height, strength
+export const cloudShadow = { p: { x: 0, y: 0.5, z: 2050, w: 0.5 }, sun: { x: 0, y: 1, z: 0 } }; // p: time, cover, mid height, strength
 for (const k in THREE.ShaderLib) {
   const u = THREE.ShaderLib[k].uniforms;
   if (u && u.directionalLights) Object.assign(u, { tCloudNoise: { value: S.tNoise.value }, tCloudShape: { value: tCloud }, cloudShadowP: { value: cloudShadow.p }, cloudSunDir: { value: cloudShadow.sun } });
@@ -96,14 +96,13 @@ export function buildClouds() {
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: true, fog: false, side: THREE.BackSide,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-    uniforms: Object.assign({ tCloud: { value: tCloud }, tNoise: S.tNoise, uTime: S.uTime, uSunDir: cloudLightDir, uSunCol: cloudSunCol, uAmb: S.uAmb, uFogCol: S.uFogCol }, cloudU),
+    uniforms: Object.assign({ tCloud: { value: tCloud }, tNoise: S.tNoise, uTime: S.uTime, uSunDir: { value: cloudPal.dir }, uLit: { value: cloudPal.lit }, uShade: { value: cloudPal.shade }, uFogCol: S.uFogCol }, cloudU),
     vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: /* glsl */`
       precision highp sampler3D;
       uniform sampler3D tCloud; uniform sampler2D tNoise; uniform float uTime, uCover, uBottom, uTop;
-      uniform vec3 uSunDir, uSunCol, uAmb, uFogCol;
+      uniform vec3 uSunDir, uLit, uShade, uFogCol;
       varying vec3 vW;
-      float hg(float c, float g){ float g2 = g * g; return (1.0 - g2) / (12.566 * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5)); }
       float density(vec3 p, bool detail){
         vec3 wind = vec3(uTime * 7.0, 0.0, uTime * 2.5);
         float hf = clamp((p.y - uBottom) / (uTop - uBottom), 0.0, 1.0);
@@ -117,49 +116,47 @@ export function buildClouds() {
           // billowy (inverted worley) erosion near the tops, wispy near the base; cores are left solid
           float det = texture(tCloud, (p + wind * 1.6) * 0.0012).g;
           det = mix(1.0 - det, det, smoothstep(0.1, 0.6, hf));
-          d = clamp((d - det * 0.42 * (1.0 - d)) / (1.0 - det * 0.42 * (1.0 - d) + 1e-3), 0.0, 1.0);
+          d = clamp((d - det * 0.22 * (1.0 - d)) / (1.0 - det * 0.22 * (1.0 - d) + 1e-3), 0.0, 1.0);
         }
-        return d;
+        return smoothstep(0.03, 0.4, d); // clean, cartoon-solid silhouettes
       }
       void main(){
         vec3 ro = cameraPosition, rd = normalize(vW - cameraPosition);
         if (rd.y < 0.015) discard;
-        float t0 = (uBottom - ro.y) / rd.y, t1 = (uTop - ro.y) / rd.y;
+        float t0 = max((uBottom - ro.y) / rd.y, 0.0), t1 = (uTop - ro.y) / rd.y;
         t1 = min(t1, t0 + 9000.0);
-        if (t0 > 60000.0) discard;
-        const int STEPS = 44;
+        if (t0 > 60000.0 || t1 <= t0) discard;
+        const int STEPS = 48;
         float dt = (t1 - t0) / float(STEPS);
-        // interleaved gradient noise, rotated each frame: an even, fine-grained dither instead of clumpy white noise
+        // interleaved gradient noise, rotated each frame, only decides where the coarse search starts
         float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + fract(uTime * 60.0) * 0.618034);
-        float t = t0 + dt * jit, T = 1.0;
-        vec3 L = vec3(0.0);
-        float cosT = dot(rd, uSunDir);
-        float phase = mix(hg(cosT, 0.65), hg(cosT, -0.2), 0.35) + hg(cosT, 0.86) * 0.035; // + silver lining
-        float sunUp = 1.0;
-        vec3 lightDir = normalize(uSunDir + vec3(0.0, 0.05, 0.0));
+        // 1) coarse search for the cloud surface, 2) binary refinement: crisp, stable anime silhouettes
+        float t = t0 + dt * jit, hit = -1.0;
         for (int i = 0; i < STEPS; i++) {
-          vec3 p = ro + rd * t;
-          float d = density(p, true);
-          if (d > 0.003) {
-            float od = 0.0, ls = (uTop - uBottom) * 0.1;
-            vec3 lp = p;
-            for (int j = 0; j < 5; j++) { lp += lightDir * ls; od += density(lp, false) * ls; ls *= 1.3; }
-            float sigma = 0.034;
-            float beer = exp(-od * sigma * 0.5) + 0.25 * exp(-od * sigma * 0.12);   // multi-scatter approximation
-            float powder = 1.0 - exp(-d * 60.0 * sigma);
-            float hf = (p.y - uBottom) / (uTop - uBottom);
-            vec3 Sc = uSunCol * sunUp * beer * phase * 6.0 * mix(0.55, 1.0, powder) + uAmb * mix(0.45, 1.3, hf) * 1.25;
-            float a = exp(-d * dt * sigma);
-            L += T * (1.0 - a) * Sc;
-            T *= a;
-            if (T < 0.015) break;
-          }
+          if (density(ro + rd * t, true) > 0.01) { hit = t; break; }
           t += dt;
         }
-        float fogF = 1.0 - exp(-t0 * 0.000055);
-        L = mix(L, uFogCol * (1.0 - T), fogF);
-        float a = (1.0 - T) * smoothstep(0.015, 0.06, rd.y);
-        gl_FragColor = vec4(L * smoothstep(0.015, 0.06, rd.y), a);
+        if (hit < 0.0) discard;
+        float lo = max(hit - dt, t0), hi = hit;
+        for (int k = 0; k < 5; k++) { float m = 0.5 * (lo + hi); if (density(ro + rd * m, true) > 0.01) hi = m; else lo = m; }
+        vec3 pe = ro + rd * hi;
+        // 3) two-tone shading at the surface: light reaching it, banded; sunlit tops, flatter cooler base
+        const float sigma = 0.06;
+        vec3 lightDir = normalize(uSunDir + vec3(0.0, 0.05, 0.0));
+        float od = 0.0, ls = (uTop - uBottom) * 0.08; vec3 lp = pe;
+        for (int j = 0; j < 6; j++) { lp += lightDir * ls; od += density(lp, false) * ls; ls *= 1.35; }
+        float hf = clamp((pe.y - uBottom) / (uTop - uBottom), 0.0, 1.0);
+        float toon = smoothstep(0.3, 0.5, exp(-od * sigma * 0.3) + (hf - 0.45) * 0.3);
+        vec3 col = mix(uShade, uLit * 1.22, toon) * mix(0.84, 1.0, smoothstep(0.0, 0.45, hf));
+        // 4) opacity through the cloud behind the surface (thin wisps stay translucent)
+        float OD = 0.0, tt = hi, sd = max(dt * 0.5, 25.0);
+        for (int i = 0; i < 16; i++) { OD += density(ro + rd * tt, true) * sd * sigma; tt += sd; if (OD > 6.0 || tt > t1) break; }
+        float alpha = 1.0 - exp(-OD);
+        float back = pow(max(dot(rd, uSunDir), 0.0), 4.0);
+        col += uLit * back * (1.0 - smoothstep(0.0, 3.0, OD)) * 0.9;   // backlit thin edges glow
+        col = mix(col, uFogCol, 1.0 - exp(-t0 * 0.000055));
+        alpha *= smoothstep(0.015, 0.06, rd.y);
+        gl_FragColor = vec4(col * alpha, alpha);   // premultiplied
       }`,
   });
   const m = new THREE.Mesh(new THREE.SphereGeometry(9000, 32, 16), mat);

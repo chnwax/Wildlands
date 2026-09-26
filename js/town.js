@@ -424,7 +424,7 @@ export async function build(progress) {
   buildForest(trees);
   for (let i = firstNatural; i < scene.children.length; i++) reflected.add(scene.children[i]);
   const grass = buildGrass(hf, layers.grass.d, { water: 0, snow: 900 });
-  const water = buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], waves: 6, strength: 0.35, deep: [0.02, 0.04, 0.035], shallow: [0.06, 0.1, 0.07],
+  const water = buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], waves: 6, strength: 0.3, deep: '#1d5a78', mid: '#2e8f9a', shallow: '#5cc4b0',
     active: c => Math.abs(c.x - riverX(c.z)) < 380 });
   reflected.add(water);
 
