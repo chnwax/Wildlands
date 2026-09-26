@@ -198,12 +198,12 @@ export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, 
             float row = floor(hp.y / 0.32);
             if (hp.y > 0.15 && hp.y < 1.9) {             // shelves full of goods
               float item = h31(vec3(floor((hp.x - hp.z) * 4.5), row, r1 * 9.0));
-              vec3 prod = pow(vec3(h31(vec3(item, 1, 2)), h31(vec3(item, 3, 4)), h31(vec3(item, 5, 6))), vec3(1.6)) * 0.85 + 0.05;
+              vec3 prod = mix(vec3(0.62, 0.6, 0.58), pow(vec3(h31(vec3(item, 1, 2)), h31(vec3(item, 3, 4)), h31(vec3(item, 5, 6))), vec3(1.6)) * 0.85 + 0.05, 0.6); // soft pastel packaging
               float fy = fract(hp.y / 0.32);
               col = mix(vec3(0.55), prod, step(0.1, fy)) * mix(0.35, 1.0, smoothstep(0.1, 0.9, fy)); // shadow under each shelf
             }
           } else col = d.y < 0.0 ? vec3(0.78, 0.78, 0.75) : vec3(0.96) + step(0.7, fract(hp.x * 0.5)) * step(0.6, fract(hp.z * 0.4)) * 4.0;
-          vec3 light = vec3(1.0, 0.98, 0.95) * (0.75 + uNightW * 0.7) * vColor.r;
+          vec3 light = vec3(1.0, 0.98, 0.95) * (0.5 + uNightW * 0.95) * vColor.r;
           col *= light + uAmbW * 0.2;
         #else
           vec3 wallC = mix(vec3(0.86, 0.83, 0.76), vec3(0.78, 0.82, 0.8), r1) * mix(0.8, 1.05, r4);
@@ -228,6 +228,11 @@ export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, 
           col = mix(col, vec3(0.9) * curtLight, step(0.5, r4) * 0.55 * (1.0 - clamp(curtain, 0.0, 1.0)));
         #endif
         totalEmissiveRadiance += col;
+        #ifndef WIN_SHOP
+        { float sk = vSUv.x + vSUv.y * 0.75, dayW = 1.0 - uNightW;
+          float band = (1.0 - smoothstep(0.0, 0.06, abs(sk - 0.5))) * 0.55 + (1.0 - smoothstep(0.0, 0.025, abs(sk - 0.7))) * 0.4;
+          totalEmissiveRadiance += (vec3(0.18, 0.3, 0.5) + vec3(0.85, 0.92, 1.0) * band) * dayW * 0.6; }
+        #endif
       }`);
     if (shop) sh.fragmentShader = '#define WIN_SHOP\n' + sh.fragmentShader;
   });

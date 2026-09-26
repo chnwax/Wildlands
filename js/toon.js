@@ -23,8 +23,13 @@ THREE.ShaderChunk.lights_physical_pars_fragment = src;
 
 THREE.ShaderChunk.color_fragment = /* glsl */`
 #if defined( USE_MAP ) && defined( TOON_FLAT )
-	{ vec3 toonAvg = diffuse * textureLod( map, vMapUv, 5.5 ).rgb; diffuseColor.rgb = mix( toonAvg, diffuseColor.rgb, 0.28 );
-	  diffuseColor.rgb = diffuseColor.rgb * 0.82 + 0.05; } // painted albedos: no near-black surfaces
+	{ vec3 mapAvg = textureLod( map, vMapUv, 5.5 ).rgb, toonAvg = diffuse * mapAvg; diffuseColor.rgb = mix( toonAvg, diffuseColor.rgb, 0.28 );
+	#ifdef TOON_NORM
+	  diffuseColor.rgb *= TOON_NORM / max( dot( mapAvg, vec3( 0.3, 0.59, 0.11 ) ), 0.04 ); // painted albedo of a set brightness, tinted by the material
+	#else
+	  diffuseColor.rgb = diffuseColor.rgb * 0.82 + 0.05; // painted albedos: no near-black surfaces
+	#endif
+	}
 #endif
 ` + THREE.ShaderChunk.color_fragment;
 
@@ -34,7 +39,7 @@ export function flattenPhotoMaterials(root = scene) {
   root.traverse(o => {
     for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
       if (!m.map || !m.map.userData.photo || (m.defines && 'TOON_FLAT' in m.defines)) continue;
-      m.defines = Object.assign({}, m.defines, { TOON_FLAT: '' });
+      m.defines = Object.assign({}, m.defines, { TOON_FLAT: '' }, m.userData.toonNorm ? { TOON_NORM: m.userData.toonNorm.toFixed(3) } : {});
       m.needsUpdate = true;
     }
   });

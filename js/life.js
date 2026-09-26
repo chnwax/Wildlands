@@ -1,6 +1,6 @@
 // Ambient life: fireflies over the meadows at dusk and night, pollen / dust motes that catch the sun when backlit,
-// flower blossoms in colourful patches, and a flock of birds wheeling over the valley. Everything is GPU-animated
-// from a handful of uniforms.
+// flower blossoms in colourful patches, butterflies, sakura petals, and a flock of birds wheeling over the valley.
+// Everything is GPU-animated from a handful of uniforms.
 import { THREE, scene, camera, renderer, S, fogU, clamp, smoothstep, mulberry32 } from './core.js';
 import { GLSL_HEIGHT } from './terrain.js';
 import { env } from './sky.js';
@@ -155,6 +155,131 @@ function flowers(world) {
   return wrappedPoints(9000, 29, mat);
 }
 
+// ---------------------------------------------------------------- sakura petals drifting down from every blossom tree
+function petals(trees) {
+  const PER = 34, n = trees.length * PER, rng = mulberry32(61);
+  const tA = new Float32Array(n * 4), rA = new Float32Array(n * 4);
+  trees.forEach((t, i) => { for (let k = 0; k < PER; k++) {
+    const j = (i * PER + k) * 4; tA[j] = t.x; tA[j + 1] = t.y; tA[j + 2] = t.z; tA[j + 3] = t.s;
+    rA[j] = rng(); rA[j + 1] = rng(); rA[j + 2] = rng(); rA[j + 3] = rng();
+  } });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute('aTree', new THREE.BufferAttribute(tA, 4));
+  g.setAttribute('aRnd', new THREE.BufferAttribute(rA, 4));
+  const mat = new THREE.ShaderMaterial({
+    fog: true, uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
+    vertexShader: /* glsl */`
+      attribute vec4 aTree, aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uTime, uWind, uPx, uPR;
+      varying vec3 vCol; varying float vAng;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main(){
+        float life = 8.0 + aRnd.x * 6.0, ph = fract(uTime / life + aRnd.y);
+        float S = aTree.w, crown = S * 0.62, R = S * 0.36 * sqrt(aRnd.z);
+        float a0 = aRnd.w * 6.2831;
+        vec3 p = vec3(aTree.x + cos(a0) * R, aTree.y + crown * (0.75 + 0.2 * aRnd.x), aTree.z + sin(a0) * R);
+        float fallH = p.y - aTree.y + 0.2;
+        p.y -= ph * fallH;
+        // blown downwind, fluttering in little loops
+        vec2 wind = normalize(vec2(1.0, 0.35)) * (1.0 + 2.5 * uWind);
+        float sw = uTime * (1.6 + aRnd.z) + aRnd.x * 40.0;
+        p.xz += wind * ph * life * 0.45 + vec2(sin(sw), cos(sw * 0.8)) * 0.45 * ph;
+        p.y += sin(sw * 1.3) * 0.12;
+        float fade = smoothstep(0.0, 0.06, ph) * (1.0 - smoothstep(0.9, 1.0, ph));
+        float d = length(p - uCam);
+        vCol = vec3(1.0, 0.76, 0.84) * (uAmb * 0.6 + uSunCol * 0.34 + 0.05);
+        vAng = uTime * (1.5 + aRnd.w * 2.0) + aRnd.z * 6.2831;
+        vec4 mvPosition = viewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        gl_PointSize = d < 70.0 && fade > 0.01 ? clamp(0.075 * uPx / max(-mvPosition.z, 0.1), 1.5, 26.0 * uPR) * fade : 0.0;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vCol; varying float vAng;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main(){
+        vec2 q = (gl_PointCoord - 0.5) * 2.0;
+        float c = cos(vAng), s = sin(vAng); q = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+        float e = dot(q / vec2(0.95, 0.55), q / vec2(0.95, 0.55));
+        if (e > 1.0 || (q.x > 0.6 && abs(q.y) < 0.12)) discard;   // oval petal with a notch at the tip
+        gl_FragColor = vec4(vCol * mix(1.08, 0.86, e), 1.0);
+        #include <fog_fragment>
+      }`,
+  });
+  Object.assign(mat.uniforms, U, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind });
+  const pts = new THREE.Points(g, mat); pts.frustumCulled = false; pts.layers.set(1); scene.add(pts);
+  return pts;
+}
+
+// ---------------------------------------------------------------- butterflies fluttering over the meadows by day
+function butterflies(world) {
+  const N = 110, R = 24, rng = mulberry32(83);
+  // two wings, each a quad hinged on the body axis (x: out along the wing, y: along the body)
+  const P = [], W = [];
+  for (const side of [-1, 1]) { P.push(0, -1, 0, side, -1, 0, side, 1, 0, 0, 1, 0); W.push(side, side, side, side); }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('aSide', new THREE.Float32BufferAttribute(W, 1));
+  g.setIndex([0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6]);
+  const r = new Float32Array(N * 4); for (let i = 0; i < r.length; i++) r[i] = rng();
+  g.setAttribute('aRnd', new THREE.InstancedBufferAttribute(r, 4));
+  g.instanceCount = N;
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.DoubleSide, fog: true, uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
+    vertexShader: /* glsl */`
+      attribute vec4 aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uTime, uVis, uWaterLv, uPx;
+      uniform sampler2D tMask2;
+      varying vec2 vUv; varying vec3 vLight; varying float vKind;
+      ${GLSL_HEIGHT}
+      ${wrapGLSL}
+      #include <common>
+      #include <fog_pars_vertex>
+      void main(){
+        float t = uTime * (0.35 + 0.2 * aRnd.z) + aRnd.w * 50.0;
+        vec2 base = wrapAround(aRnd.xy, ${R.toFixed(1)});
+        vec2 wp = base + vec2(sin(t) + 0.5 * sin(t * 2.3 + 1.0), cos(t * 0.8) + 0.5 * sin(t * 1.7)) * 2.5;
+        vec2 vel = vec2(cos(t) + 1.15 * cos(t * 2.3 + 1.0), -0.8 * sin(t * 0.8) + 0.85 * cos(t * 1.7));
+        float g = hAt(wp);
+        vec4 m2 = texture(tMask2, maskUV(wp));
+        float ok = step(uWaterLv + 0.5, g) * step(m2.r, 0.2) * step(m2.b, 0.2) * uVis;
+        float y = g + 0.45 + 1.1 * aRnd.z + sin(uTime * 2.1 + aRnd.x * 9.0) * 0.18;
+        float flap = sin(uTime * (13.0 + aRnd.w * 6.0) + aRnd.y * 20.0) * 1.05 + 0.25;
+        vec2 f = normalize(vel + 1e-4), rt = vec2(f.y, -f.x);
+        float span = (0.09 + 0.05 * aRnd.x) * ok;   // a little larger than life, so they read on screen
+        vec3 lp = vec3(position.x * cos(flap) * span, abs(position.x) * sin(flap) * span, position.y * span * 0.85);
+        vec3 w = vec3(wp.x, y, wp.y) + vec3(rt.x, 0.0, rt.y) * lp.x + vec3(f.x, 0.0, f.y) * lp.z + vec3(0.0, lp.y, 0.0);
+        vUv = vec2(abs(position.x), position.y);
+        vKind = floor(aRnd.x * 5.0);
+        vLight = uAmb * 0.6 + uSunCol * 0.36 + 0.06;
+        vec4 mvPosition = viewMatrix * vec4(w, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec2 vUv; varying vec3 vLight; varying float vKind;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main(){
+        // fore- and hindwing lobes
+        float fore = length((vUv - vec2(0.52, 0.3)) / vec2(0.5, 0.62));
+        float hind = length((vUv - vec2(0.4, -0.45)) / vec2(0.38, 0.5));
+        float lobe = min(fore, hind);
+        if (lobe > 1.0 || vUv.x < 0.04) discard;
+        vec3 c = vKind < 1.0 ? vec3(1.0, 0.98, 0.9) : vKind < 2.0 ? vec3(1.0, 0.86, 0.2) : vKind < 3.0 ? vec3(1.0, 0.5, 0.12)
+               : vKind < 4.0 ? vec3(0.45, 0.72, 1.0) : vec3(1.0, 0.62, 0.8);
+        c = mix(c, vec3(0.08, 0.07, 0.1), smoothstep(0.78, 0.9, lobe) * (vKind > 1.5 && vKind < 3.5 ? 1.0 : 0.6)); // dark wing edge
+        c = mix(c, vec3(1.0), step(length(vUv - vec2(0.7, 0.45)), 0.07) * step(1.5, vKind));   // white spot
+        gl_FragColor = vec4(min(c * vLight, vec3(0.86)), 1.0); // capped: small bright wings would bloom into white blobs
+        #include <fog_fragment>
+      }`,
+  });
+  Object.assign(mat.uniforms, world.hf.U, U, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uVis: { value: 1 }, uWaterLv: { value: world.waterLevel ?? 0 } });
+  const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.layers.set(1); scene.add(m);
+  return m;
+}
+
 // ---------------------------------------------------------------- birds
 function birds(center) {
   const N = 22, rng = mulberry32(5);
@@ -238,6 +363,7 @@ function mistAmount(h) {
 
 export function buildLife(world, opt = {}) {
   const f = fireflies(world), mo = motes(world), fl = opt.flowers === false ? null : flowers(world);
+  const pe = world.sakura && world.sakura.length ? petals(world.sakura) : null, bf = butterflies(world);
   const flock = opt.birds === false ? null : birds(opt.flockCenter || new THREE.Vector3(world.spawn.x, world.waterLevel ?? 0, world.spawn.z));
   const mist = opt.mist ?? 1;
   return {
@@ -247,6 +373,7 @@ export function buildLife(world, opt = {}) {
       U.uFire.value = smoothstep(0.25, 0.8, env.night) * (opt.fireflies ?? 1);
       U.uMote.value = env.day;
       f.visible = U.uFire.value > 0.001; mo.visible = U.uMote.value > 0.001;
+      bf.material.uniforms.uVis.value = smoothstep(0.2, 0.6, env.day); bf.visible = env.day > 0.2;
       if (flock) flock.update(t, env.day);
       fogU.fogMist.value.x = mistAmount(hour) * 0.0032 * mist;
     },

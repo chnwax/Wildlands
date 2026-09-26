@@ -44,7 +44,7 @@ function makeCloudNoise(N = 64) {
   return t;
 }
 
-export const cloudU = { uCover: { value: 0.5 }, uBottom: { value: 1500 }, uTop: { value: 2700 } };
+export const cloudU = { uCover: { value: 0.44 }, uBottom: { value: 1500 }, uTop: { value: 2700 } };
 export const cloudPal = { lit: new THREE.Color(1, 1, 1), shade: new THREE.Color(0.6, 0.65, 0.85), dir: new THREE.Vector3(0, 1, 0) }; // set from the sky palette
 const tCloud = makeCloudNoise();
 // three clones texture uniforms per material; these are static, shared textures (and Texture.copy drops wrapR)

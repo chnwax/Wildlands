@@ -128,7 +128,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       tRockD: { value: L.rock.d }, tRockN: { value: L.rock.n }, tSandD: { value: L.shore.d }, tSandN: { value: L.shore.n },
       tUrbanD: { value: L.urban.d }, tUrbanN: { value: L.urban.n }, tNoise: S.tNoise,
       uScales: { value: new THREE.Vector4(L.grass.s, L.forest.s, L.shore.s, L.urban.s) }, uRockS: { value: L.rock.s },
-      uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uTintS: { value: tintV(L.shore.tint) },
+      uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uUrbanNorm: { value: L.urban.norm || 0 }, uTintS: { value: tintV(L.shore.tint) },
       uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist,
     }, paintU);
     sh.vertexShader = sh.vertexShader
@@ -138,7 +138,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; varying vec3 vWNorm;
         uniform sampler2D tGrassD, tGrassN, tForestD, tForestN, tRockD, tRockN, tSandD, tSandN, tUrbanD, tUrbanN, tNoise, tMask, tMask2;
-        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS;
+        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
         vec3 unpackN(vec4 t){ return t.xyz * 2.0 - 1.0; }
         vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
         float lum3(vec3 c){ return dot(c, vec3(0.3, 0.55, 0.15)); }
@@ -171,7 +171,7 @@ export function terrainMaterial(hf, L, opt = {}) {
         vec3 cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(texture2D(tSandD, wuv / uScales.z).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
         vec3 nSand = unpackN(texture2D(tSandN, wuv / uScales.z)) * 0.5;
         vec3 uTex = texture2D(tUrbanD, wuv / uScales.w).rgb, uAvg = textureLod(tUrbanD, wuv / uScales.w, 7.0).rgb;
-        vec3 cUrban = mix(uAvg, uTex, 0.35) * uTintU;
+        vec3 cUrban = mix(uAvg, uTex, 0.35) * uTintU * (uUrbanNorm > 0.0 ? uUrbanNorm / max(lum3(uAvg), 0.04) : 1.0); // optional painted brightness
         vec3 nUrban = unpackN(texture2D(tUrbanN, wuv / uScales.w)) * 0.6;
         vec3 bw = pow(max(abs(wN), vec3(1e-4)), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
         float rs = mix(1.0 / uRockS, 1.0 / (uRockS * 3.4), farT * 0.7);

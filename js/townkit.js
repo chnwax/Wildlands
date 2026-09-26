@@ -118,9 +118,11 @@ function nightGlow(mat, strength, key) {
 let M = null;
 // full PBR set: albedo + normal + ARM (AO/roughness) + height map for parallax, plus weathering
 function pbrX(name, depth, wx, o = {}) {
-  const m = std(Object.assign({ map: tex(name, 'diff', '1k'), normalMap: tex(name, 'nor_gl', '1k', false), roughnessMap: tex(name, 'arm', '1k', false), aoMap: tex(name, 'arm', '1k', false), roughness: 1, aoMapIntensity: 0.9 }, o));
-  if (depth > 0) relief(m, tex(name, 'disp', '1k', false), depth, name);
-  if (wx) weather(m, Object.assign({ ground: 6 }, wx), name);
+  const m = std(Object.assign({ map: tex(name, 'diff', '1k'), normalMap: tex(name, 'nor_gl', '1k', false), roughnessMap: tex(name, 'arm', '1k', false), aoMap: tex(name, 'arm', '1k', false), roughness: 1, aoMapIntensity: 0.5 }, o));
+  m.normalScale.set(0.5, 0.5);
+  if (depth > 0) relief(m, tex(name, 'disp', '1k', false), depth * 0.6, name);
+  // anime streets are freshly painted: only a whisper of the grime, streaks and moss
+  if (wx) weather(m, Object.assign({ ground: 6 }, wx, { grime: (wx.grime ?? 0.6) * 0.18, streaks: (wx.streaks ?? 0.5) * 0.12, moss: (wx.moss ?? 0.3) * 0.15, vary: 0.35 }), name);
   return m;
 }
 function asphaltVariant(key, units, factor) {
@@ -161,7 +163,10 @@ export function materials() {
     poly: new THREE.MeshStandardMaterial({ color: 0xcfe0e6, roughness: 0.2, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
   };
   M.asphaltMain = M.asphalt;
-  M.gravelPath = pbrX('bicolour_gravel', 0.02, null, { polygonOffset: true, polygonOffsetUnits: -1 });
+  M.gravelPath = pbrX('bicolour_gravel', 0.02, null, { polygonOffset: true, polygonOffsetUnits: -1, color: 0xf2e6cf });
+  // painted brightness per surface (toon.js): light pastel walls, pale concrete and gravel, warm wood
+  for (const [k, v] of Object.entries({ siding: 0.58, stucco: 0.6, plaster: 0.6, tiles: 0.56, concrete: 0.64, block: 0.6, pavement: 0.66, ballast: 0.5, wood: 0.46, stone: 0.56, roofTile: 0.62, gravelPath: 0.66 }))
+    M[k].userData.toonNorm = v;
   for (const m of Object.values(M)) for (const t of [m.map, m.normalMap, m.roughnessMap, m.aoMap]) if (t) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return M;
 }
@@ -369,12 +374,23 @@ export const stopTex = canvasTex(256, 512, (g, W, H) => {
 export const stopMat = new THREE.MeshStandardMaterial({ map: stopTex, transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, depthWrite: false, color: 0xe8e8e2 });
 
 // ---------------------------------------------------------------- buildings
-const WALL_TINTS = [[0.96, 0.93, 0.86], [0.92, 0.9, 0.84], [0.85, 0.84, 0.82], [0.98, 0.97, 0.95], [0.82, 0.76, 0.66], [0.72, 0.7, 0.68], [0.9, 0.86, 0.78], [0.62, 0.6, 0.58]];
-const ROOF_METAL = [[0.2, 0.17, 0.15], [0.14, 0.18, 0.26], [0.1, 0.1, 0.11], [0.55, 0.57, 0.58], [0.16, 0.24, 0.2], [0.35, 0.22, 0.16]];
+// anime palettes: clean pastel walls and saturated roofs (Shinkai / Ghibli town streets)
+const WALL_TINTS = [[1, 0.97, 0.9], [0.98, 0.98, 0.96], [0.9, 0.95, 1], [0.92, 1, 0.93], [1, 0.9, 0.84], [1, 0.97, 0.8], [1, 0.9, 0.9], [0.9, 0.88, 0.86], [0.86, 0.92, 0.98]];
+const ROOF_METAL = [[0.2, 0.33, 0.6], [0.2, 0.5, 0.52], [0.72, 0.28, 0.2], [0.26, 0.3, 0.42], [0.3, 0.5, 0.32], [0.55, 0.22, 0.2], [0.18, 0.42, 0.7]];
+const ROOF_TILE = [[0.42, 0.52, 0.72], [0.36, 0.42, 0.55], [0.5, 0.56, 0.64], [0.7, 0.4, 0.32], [0.35, 0.55, 0.58]];
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
 const jitter = (rng, c, a = 0.04) => c.map(v => clamp(v + (rng() - 0.5) * a, 0, 1));
 
 export const lampPoints = []; // world positions of light fixtures (for dynamic point lights)
+const deco = mulberry32(777); // decorations draw from their own stream so the town layout stays the same
+// red paper lantern (chochin): lamp material, so it glows warm red at night
+export function chochin(B, x, y, z, col = [1, 0.3, 0.2], s = 1) {
+  B.cyl('dark', x, y + 0.5 * s, z, 0.1 * s, 0.1 * s, 0.05 * s, 8, { cap: true });
+  B.cyl('lamp', x, y + 0.36 * s, z, 0.19 * s, 0.11 * s, 0.14 * s, 10, { color: col, cap: true });
+  B.cyl('lamp', x, y + 0.12 * s, z, 0.19 * s, 0.19 * s, 0.24 * s, 10, { color: col });
+  B.cyl('lamp', x, y, z, 0.11 * s, 0.19 * s, 0.12 * s, 10, { color: col });
+  B.cyl('dark', x, y - 0.04 * s, z, 0.1 * s, 0.1 * s, 0.05 * s, 8);
+}
 export const litWindows = [];
 
 // window on a wall plane: wall frame axis is local X along wall, Y up, facing +Z (call with builder frame on wall)
@@ -399,11 +415,11 @@ function gableRoof(B, mat, w, d, y, pitch, over, color) {
   B.quad(mat, [x0, y, z1], [x1, y, z1], [x1, y + rh, 0], [x0, y + rh, 0], o);
   B.quad(mat, [x1, y, z0], [x0, y, z0], [x0, y + rh, 0], [x1, y + rh, 0], o);
   // soffits (underside of eaves)
-  B.quad('plain', [x1, y, z1], [x0, y, z1], [x0, y + rh, 0], [x1, y + rh, 0], { color: [0.55, 0.52, 0.48] });
-  B.quad('plain', [x0, y, z0], [x1, y, z0], [x1, y + rh, 0], [x0, y + rh, 0], { color: [0.55, 0.52, 0.48] });
+  B.quad('plain', [x1, y, z1], [x0, y, z1], [x0, y + rh, 0], [x1, y + rh, 0], { color: [0.86, 0.82, 0.76] });
+  B.quad('plain', [x0, y, z0], [x1, y, z0], [x1, y + rh, 0], [x0, y + rh, 0], { color: [0.86, 0.82, 0.76] });
   // fascia + ridge
-  B.box('plain', 0, y - 0.12, z1, x1 - x0, 0.14, 0.05, { color: [0.2, 0.19, 0.18] });
-  B.box('plain', 0, y - 0.12, z0, x1 - x0, 0.14, 0.05, { color: [0.2, 0.19, 0.18] });
+  B.box('plain', 0, y - 0.12, z1, x1 - x0, 0.14, 0.05, { color: color.map(v => v * 0.7) });
+  B.box('plain', 0, y - 0.12, z0, x1 - x0, 0.14, 0.05, { color: color.map(v => v * 0.7) });
   B.box(mat, 0, y + rh - 0.02, 0, x1 - x0, 0.14, 0.26, { color: color.map(v => v * 0.8), uv: 2 });
   return rh;
 }
@@ -414,7 +430,7 @@ function hipRoof(B, mat, w, d, y, pitch, over, color) {
   B.quad(mat, [hw, y, -hd], [-hw, y, -hd], [-r, y + rh, 0], [r, y + rh, 0], o);
   B.tri(mat, [hw, y, hd], [hw, y, -hd], [r, y + rh, 0], o);
   B.tri(mat, [-hw, y, -hd], [-hw, y, hd], [-r, y + rh, 0], o);
-  const so = { color: [0.55, 0.52, 0.48] };
+  const so = { color: [0.86, 0.82, 0.76] };
   B.quad('plain', [hw, y, hd], [-hw, y, hd], [-hw, y, -hd], [hw, y, -hd], so);
   B.box(mat, 0, y + rh - 0.02, 0, 2 * r + 0.2, 0.14, 0.26, { color: color.map(v => v * 0.8), uv: 2 });
   return rh;
@@ -438,7 +454,7 @@ export function house(B, lot, rng, extras) {
     B.box(wallMat, 0, base, 0, W, floors * fh, D, { color: wc, skip: 'ny', uv: wallMat === 'siding' ? 2.2 : 3 });
     // floor band between storeys
     if (floors === 2) B.box('plain', 0, base + fh - 0.1, 0, W + 0.06, 0.14, D + 0.06, { color: wc.map(v => v * 0.8) });
-    const tile = rng() < 0.52, rmat = tile ? 'roofTile' : 'roofMetal', rc = tile ? jitter(rng, [0.5, 0.52, 0.58], 0.06) : pick(rng, ROOF_METAL);
+    const tile = rng() < 0.52, rmat = tile ? 'roofTile' : 'roofMetal', rc = tile ? jitter(rng, pick(rng, ROOF_TILE), 0.06) : pick(rng, ROOF_METAL);
     const hip = rng() < 0.4, pitch = (tile ? 24 : 20 + rng() * 10) * Math.PI / 180;
     // ridge runs along the longer side
     const along = W >= D;
@@ -543,10 +559,17 @@ export function shopBuilding(B, s, rng, extras) {
     B.quad('shopWindow', [-w / 2 + 0.4, 0.15, fz], [w / 2 - 0.4, 0.15, fz], [w / 2 - 0.4, 2.7, fz], [-w / 2 + 0.4, 2.7, fz], { color: [1, 0.95, 0.85], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
     for (let i = 0; i <= 3; i++) B.box('alu', -w / 2 + 0.4 + i * (w - 0.8) / 3, 0, fz + 0.02, 0.06, 2.75, 0.06);
     B.box('alu', 0, 2.7, fz + 0.02, w - 0.8, 0.08, 0.06);
+    const nx = (deco() - 0.5) * (w - 3.5);
+    if (deco() < 0.6) { // noren: split cloth curtain over the doorway
+      const nc = pick(deco, [[0.14, 0.22, 0.48], [0.78, 0.18, 0.15], [0.96, 0.94, 0.88], [0.22, 0.48, 0.36], [0.5, 0.25, 0.42], [0.95, 0.62, 0.2]]);
+      B.box('wood', nx, 2.58, fz + 0.12, 1.95, 0.05, 0.05, { color: [0.45, 0.32, 0.22] });
+      for (let k = 0; k < 3; k++) { const x0 = nx - 0.9 + k * 0.61, x1 = x0 + 0.57; B.quad('plain', [x0, 1.95, fz + 0.14], [x1, 1.95, fz + 0.14], [x1, 2.58, fz + 0.14], [x0, 2.58, fz + 0.14], { color: nc }); }
+    }
+    if (deco() < 0.45) for (const sd of [-1, 1]) { const lx = nx + sd * 1.35; B.box('dark', lx, 2.45, fz + 0.3, 0.02, 0.2, 0.02); chochin(B, lx, 1.95, fz + 0.3, deco() < 0.8 ? [1, 0.28, 0.18] : [1, 0.85, 0.6], 0.95); }
   }
   // awning
   if (rng() < 0.55) {
-    const ac = pick(rng, [[0.6, 0.12, 0.1], [0.12, 0.3, 0.2], [0.15, 0.2, 0.4], [0.8, 0.55, 0.15], [0.3, 0.3, 0.3]]);
+    const ac = pick(rng, [[0.85, 0.2, 0.18], [0.2, 0.55, 0.35], [0.22, 0.38, 0.75], [0.98, 0.7, 0.2], [0.9, 0.45, 0.6], [0.3, 0.65, 0.7]]);
     B.quad('plain', [-w / 2 + 0.3, 2.95, fz], [w / 2 - 0.3, 2.95, fz], [w / 2 - 0.3, 2.65, fz + 1.1], [-w / 2 + 0.3, 2.65, fz + 1.1], { color: ac });
     B.quad('plain', [-w / 2 + 0.3, 2.65, fz + 1.1], [w / 2 - 0.3, 2.65, fz + 1.1], [w / 2 - 0.3, 2.95, fz], [-w / 2 + 0.3, 2.95, fz], { color: ac.map(v => v * 0.6) });
   }
@@ -650,7 +673,7 @@ export function shrine(B, x, y, z, r, extras) {
   B.box('stone', 0, 0, 0, 8, 0.6, 7, { color: [0.7, 0.7, 0.68], skip: 'ny' });
   B.box('wood', 0, 0.6, 0, 6, 3.2, 5, { color: [0.62, 0.45, 0.32], skip: 'ny', uv: 2 });
   for (const sx of [-2.9, 2.9]) for (const sz of [-2.4, 2.4]) B.cyl('plain', sx, 0.6, sz, 0.14, 0.14, 3.2, 8, { color: [0.45, 0.3, 0.2] });
-  gableRoof(B, 'roofTile', 6, 5, 3.8, 32 * Math.PI / 180, 1.2, [0.35, 0.37, 0.42]);
+  gableRoof(B, 'roofTile', 6, 5, 3.8, 32 * Math.PI / 180, 1.2, [0.3, 0.36, 0.5]);
   B.box('plain', 0, 3.4, 2.55, 0.8, 0.9, 0.06, { color: [0.95, 0.93, 0.85] });
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 4, hz: 3.5, r });
 }

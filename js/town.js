@@ -3,8 +3,10 @@
 import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts,
   Scatter, addBox, addCircle, addPlatform, colliders } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildForest, treeColor } from './terrain.js';
+import { buildSakura, buildBushes, sakuraColor, bushColor, hydraColor } from './trees.js';
+import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, house, shopBuilding, konbini, apartment, shrine, utilityPole, wires, curveMirror, roadSign,
-  vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole } from './townkit.js';
+  vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
 import { RAIL, buildRailway, buildCrossing, updateCrossings, crossings, crossingActive, Train } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 
@@ -92,7 +94,7 @@ export async function build(progress) {
     forest: { d: phTex('forest_leaves_03', 'diff', '2k', true), n: phTex('forest_leaves_03', 'nor_gl', '1k', false, NFLAT), s: 3 },
     rock: { d: phTex('rock_face_03', 'diff', '2k', true), n: phTex('rock_face_03', 'nor_gl', '2k', false, NFLAT), s: 9 },
     shore: { d: phTex('brown_mud', 'diff', '1k', true), n: phTex('brown_mud', 'nor_gl', '1k', false, NFLAT), s: 3, tint: [0.85, 0.82, 0.78] },
-    urban: { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [0.95, 0.95, 0.95] },
+    urban: { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.1, 1.03, 0.9], norm: 0.44 },
   };
   const modelsP = Promise.all(['shrub_02', 'potted_plant_04', 'planter_box_01', 'plastic_crate_01', 'utility_box_02', 'weed_plant_02', 'water_manhole_cover'].map(loadModel));
   await hf.generate(p => progress('Shaping the valley', p * 0.3));
@@ -242,6 +244,12 @@ export async function build(progress) {
       B.frame(0, 0, 0, 0);
       if (sd < 0) B.quad('stone', [xa, 0.2, z], [xb, 0.2, z + 4], [xb, Y0 + 0.15, z + 4], [xa, Y0 + 0.15, z], { uv: 2, color: [0.8, 0.8, 0.78] });
       else B.quad('stone', [xb, 0.2, z + 4], [xa, 0.2, z], [xa, Y0 + 0.15, z], [xb, Y0 + 0.15, z + 4], { uv: 2, color: [0.8, 0.8, 0.78] });
+      // paved walkway on top of the bank, with a skirt down to the ground on its outer edge
+      if (Math.abs(z + 78) > 8) {
+        const xo = riverX(z) + sd * 17.6, xo2 = riverX(z + 4) + sd * 17.6, yd = Y0 + 0.12, pc = { uv: 1.5, color: [0.88, 0.86, 0.82] }, sk = { uv: 2, color: [0.72, 0.72, 0.7] };
+        if (sd > 0) { B.quad('pavement', [xa, yd, z], [xb, yd, z + 4], [xo2, yd, z + 4], [xo, yd, z], pc); B.quad('concrete', [xo2, Y0 - 1.2, z + 4], [xo, Y0 - 1.2, z], [xo, yd, z], [xo2, yd, z + 4], sk); }
+        else { B.quad('pavement', [xo, yd, z], [xo2, yd, z + 4], [xb, yd, z + 4], [xa, yd, z], pc); B.quad('concrete', [xo, Y0 - 1.2, z], [xo2, Y0 - 1.2, z + 4], [xo2, yd, z + 4], [xo, yd, z], sk); }
+      }
       if (Math.abs(z + 25) < 12 || Math.abs(z + 80) < 12 || Math.abs(z - 200) < 10) continue;
       const rx = xa + sd * 0.4;
       B.box('alu', rx, Y0 + 0.9, z + 2, 0.06, 0.06, 4, { color: [0.3, 0.5, 0.45] });
@@ -318,6 +326,8 @@ export async function build(progress) {
   }
   progress('Building houses', 0.5); await tick();
   const vend = [];
+  const srng = mulberry32(3131), sakura = [], hydras = [], bushes = [];
+  const lotW = (lot, lx, lz) => { const c = Math.cos(lot.r), s = Math.sin(lot.r); return [lot.x + lx * c + lz * s, lot.z - lx * s + lz * c]; };
   let li = 0;
   for (const lot of lots) {
     const y = hf.groundAt(lot.x, lot.z);
@@ -325,14 +335,33 @@ export async function build(progress) {
       shopBuilding(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: Math.min(lot.d, 12) }, rng, extras);
       hf.paint2(2, lot.x - 9, lot.z - 9, lot.x + 9, lot.z + 9, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z; return Math.abs(dx * c - dz * s) < lot.w / 2 && Math.abs(dx * s + dz * c) < lot.d / 2 ? 1 : 0; });
       if (rng() < 0.18) vend.push({ lot, off: [lot.w / 2 - 0.6, Math.min(lot.d, 12) / 2 + 0.6] });
+      if (srng() < 0.45) { // flower planter by the shop door
+        const fz = Math.min(lot.d, 12) / 2 + 0.45, lx = -lot.w / 2 + 1.1;
+        B.frame(lot.x, y, lot.z, lot.r); B.box('wood', lx, 0, fz, 1.3, 0.42, 0.5, { color: [0.62, 0.44, 0.3] });
+        const [px, pz] = lotW(lot, lx, fz); addBox(px, pz, 0.65, 0.25, lot.r, y - 1, y + 0.5);
+        for (const o of [-0.35, 0.35]) { const [hx, hz] = lotW(lot, lx + o, fz); hydras.push({ x: hx, y: y + 0.36, z: hz, s: 0.62 + srng() * 0.15, sx: 1, r: srng() * 6.28, c: hydraColor(srng) }); }
+      }
     } else {
       const info = house(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng, extras);
+      // a blossom tree in some front gardens (the gate + parking side is the right, so the left corner is free), hydrangeas in the others
+      if (srng() < 0.2) { const [tx, tz] = lotW(lot, -lot.w / 2 + 1.8, lot.d / 2 - 2); lot.sakura = true; sakura.push({ garden: true, x: tx, y: y - 0.15, z: tz, s: lerp(5.5, 7, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
+      else if (srng() < 0.65) for (let k = 0; k < 2; k++) { const [hx, hz] = lotW(lot, -lot.w / 2 + 0.9 + k * 1.2, lot.d / 2 - 0.9); hydras.push({ x: hx, y: y - 0.05, z: hz, s: 0.9 + srng() * 0.4, sx: 0.9 + srng() * 0.3, r: srng() * 6.28, c: hydraColor(srng) }); }
       if (info.carSpot) carSpots.push(info.carSpot);
       hf.paint2(0, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z, lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < lot.w / 2 && Math.abs(lz) < lot.d / 2 ? (lz > lot.d / 2 - 6 ? 0.9 : 0.25) : 0; });
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z, lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < lot.w / 2 - 0.3 && Math.abs(lz) < lot.d / 2 - 0.3 && lz > lot.d / 2 - 6.5 ? 1 : 0; });
       if (rng() < 0.07) vend.push({ lot, off: [-lot.w / 2 + 0.8, lot.d / 2 + 0.55] });
     }
     if (++li % 40 === 0) { progress('Building houses', 0.5 + 0.12 * li / lots.length); await tick(); }
+  }
+  // festival lantern strings across the shopping street
+  for (let x = -252; x < 190; x += 21) {
+    if (nearInter(x, -25, ROADS[0], 5) || Math.abs(x - riverX(-25)) < 26) continue;
+    B.frame(x, Y0, -25, 0);
+    for (const sd of [-1, 1]) { B.box('wood', 0, 0.1, sd * 6.35, 0.15, 5.35, 0.15, { color: [0.52, 0.37, 0.26] }); B.box('wood', 0, 5.4, sd * 6.35, 0.2, 0.08, 0.2, { color: [0.3, 0.22, 0.16] }); addCircle(x, -25 + sd * 6.35, 0.16); }
+    const N = 10, pt = i => { const t = i / N; return [0, 5.2 - 0.75 * 4 * t * (1 - t), -6.35 + 12.7 * t]; };
+    for (let i = 0; i < N; i++) B.beam('dark', pt(i), pt(i + 1), 0.025, 0.025);
+    for (let i = 1; i < N; i++) { const p = pt(i); B.box('dark', 0, p[1] - 0.16, p[2], 0.015, 0.16, 0.015); chochin(B, 0, p[1] - 0.62, p[2], i % 2 ? [1, 0.3, 0.2] : [1, 0.88, 0.7], 0.8); }
+    lampPoints.push({ p: [x, 4.4, -25], s: 0.6 });
   }
   // colliders from buildings/walls
   for (const e of extras) {
@@ -403,7 +432,7 @@ export async function build(progress) {
   for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) {
     const x = -HALF + i * CELL, z = -HALF + j * CELL, h = hf.H[j * HN + i];
     const f = smoothstep(Y0 + 4, Y0 + 14, h) * smoothstep(-0.3, 0.1, fbm(x * 0.006 + 3, z * 0.006, 3)) * smoothstep(0.62, 0.8, hf.gridNormalY(i, j));
-    const shrineWood = smoothstep(55, 30, Math.hypot(x - SHRINE.x, z - SHRINE.z + 14)) * (Math.hypot(x - SHRINE.x, z - SHRINE.z + 14) > 20 ? 1 : 0) * (Math.abs(x - SHRINE.x) > 5 ? 1 : 0);
+    const shrineWood = smoothstep(55, 30, Math.hypot(x - SHRINE.x, z - SHRINE.z + 14)) * (Math.hypot(x - SHRINE.x, z - SHRINE.z + 14) > 20 ? 1 : 0) * (z > SHRINE.z + 8 ? smoothstep(10, 15, Math.abs(x - SHRINE.x)) : Math.abs(x - SHRINE.x) > 5 ? 1 : 0); // open lawns along the approach
     const v = Math.max(f, shrineWood);
     FOREST[j * HN + i] = v; hf.mask[(j * HN + i) * 4] = v * 255;
   }
@@ -416,12 +445,39 @@ export async function build(progress) {
     if (hf.normalAt(x, z, nrm).y < 0.75) continue;
     trees.push({ x, y: h - 0.25, z, s: lerp(16, 30, rng()), sx: 0.7 + rng() * 0.2, r: rng() * 6.28, tilt: (rng() - 0.5) * 0.04, c: treeColor(rng) });
   }
-  hf.paintCanopy(trees);
+  // sakura: the town's namesake — a blossom promenade along both river banks and an avenue up the shrine approach
+  const riverTrees = [], LB = new LGeo(96), bankClear = z => Math.abs(z + 25) > 13 && Math.abs(z - 200) > 9 && Math.abs(z + 80) > 15;
+  const flatTown = (x, z) => { const g = hf.groundAt(x, z); return g > Y0 - 0.5 && g < Y0 + 1.6; };
+  for (let z = -520, n = 0; z < 520; z += 8 + srng() * 2.5, n++) {
+    if (!bankClear(z)) continue;
+    const rx = riverX(z), xe = rx + 21.2 + (srng() - 0.5) * 1.2, xw = rx - 26 + (srng() - 0.5) * 0.8;
+    if (flatTown(xe, z)) riverTrees.push({ x: xe, y: hf.groundAt(xe, z) - 0.2, z, s: lerp(7.5, 10, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) });
+    if (flatTown(xw, z) && !occRect(xw, z, 1.3, 1.3, 0, 0, true)) riverTrees.push({ x: xw, y: hf.groundAt(xw, z) - 0.2, z, s: lerp(7, 9.5, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) });
+    // benches facing the water between the trees on the east promenade
+    if (n % 5 === 2 && Math.abs(z) < 360 && bankClear(z + 4)) { const bx = riverX(z + 4) + 16.4; bench(LB, bx, Y0 + 0.12, z + 4, -Math.PI / 2); }
+  }
+  // gravel promenade on the east bank
+  hf.paint2(0, 150, -760, 280, 760, (x, z) => { const d = Math.abs(x - riverX(z)); return d > 14 && d < 18.6 ? 1 : 0; });
+  for (let z = -284; z < -228; z += 9) for (const sd of [-1, 1]) {
+    const x = SHRINE.x + sd * (6.2 + srng() * 0.6), zz = z + (srng() - 0.5) * 1.5;
+    if (!occRect(x, zz, 1.0, 1.0, 0, 0, true)) riverTrees.push({ x, y: hf.groundAt(x, zz) - 0.2, z: zz, s: lerp(7, 9, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) });
+    if ((z + 284) % 18 === 0 && z + 4 < -230) lantern(LB, SHRINE.x + sd * 2.8, hf.groundAt(SHRINE.x + sd * 2.8, z + 4) - 0.05, z + 4, 0);
+  }
+  for (let i = trees.length - 1; i >= 0; i--) if (riverTrees.some(t => Math.hypot(t.x - trees[i].x, t.z - trees[i].z) < 6)) trees.splice(i, 1);
+  for (const t of riverTrees) sakura.push(t);
+  for (const t of riverTrees) for (let k = 0; k < 2; k++) if (srng() < 0.55) { // bushes and hydrangeas at the tree feet
+    const a = srng() * 6.28, d = 1.6 + srng() * 1.6, x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d, rd = x - riverX(z);
+    if (rd > -23.8 && rd < 20.2 || Math.abs(x - SHRINE.x) < 4.5 || Math.abs(rd) > 24 && (occRect(x, z, 0.5, 0.5, 0, 0, true) || inPaddyZone(x, z)) || !bankClear(z)) continue;
+    const hy = srng() < 0.55;
+    (hy ? hydras : bushes).push({ x, y: hf.groundAt(x, z) - 0.1, z, s: 0.9 + srng() * 0.6, sx: 0.9 + srng() * 0.3, r: srng() * 6.28, c: hy ? hydraColor(srng) : bushColor(srng) });
+  }
+  hf.paintCanopy([...trees, ...riverTrees]);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.76); await tick();
   const firstNatural = scene.children.length;
   buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 900 }), { outerDrop: 45 });
   buildForest(trees);
+  buildSakura(sakura.filter(t => !t.garden));
   for (let i = firstNatural; i < scene.children.length; i++) reflected.add(scene.children[i]);
   const grass = buildGrass(hf, layers.grass.d, { water: 0, snow: 900 });
   const water = buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], waves: 6, strength: 0.3, deep: '#1d5a78', mid: '#2e8f9a', shallow: '#5cc4b0',
@@ -432,6 +488,7 @@ export async function build(progress) {
   progress('Merging geometry', 0.82); await tick();
   B.flush(MT, { paint: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false });
   Bx.flush(MT, { paint: false });
+  const landmarks = flushLandmarks(LB);
 
   // ---------------------------------------------------------------- scanned props (gardens, shops)
   const [shrub, potted, planter, crate, ubox, weed, manhole] = await modelsP;
@@ -447,14 +504,17 @@ export async function build(progress) {
   for (const lot of lots) {
     const c = Math.cos(lot.r), s = Math.sin(lot.r), W = (lx, lz) => [lot.x + lx * c + lz * s, lot.z - lx * s + lz * c];
     if (!lot.shop) {
-      for (let k = 0; k < 3; k++) if (prng() < 0.7) { const [x, z] = W((prng() - 0.5) * (lot.w - 2), -lot.d / 2 + 0.8 + prng() * 1.2); shrubs.push({ x, y: hf.groundAt(x, z), z, s: 0.9 + prng() * 0.9, r: prng() * 6.28 }); }
-      if (prng() < 0.6) { const [x, z] = W(-lot.w / 2 + 0.7, lot.d / 2 - 0.8); shrubs.push({ x, y: hf.groundAt(x, z), z, s: 1.2 + prng() * 1.0, r: prng() * 6.28 }); }
-      for (let k = 0; k < 3; k++) if (prng() < 0.5) { const [x, z] = W(-lot.w / 2 + 2 + prng() * 3, lot.d / 2 - 1.1 - prng() * 2); pots.push({ x, y: hf.groundAt(x, z), z, s: 0.35 + prng() * 0.25, r: prng() * 6.28 }); }
+      for (let k = 0; k < 3; k++) if (prng() < 0.7) { const [x, z] = W((prng() - 0.5) * (lot.w - 2), -lot.d / 2 + 0.8 + prng() * 1.2); (k === 1 ? shrubs : bushes).push({ x, y: hf.groundAt(x, z) - 0.1, z, s: 0.9 + prng() * 0.6, sx: 0.9 + prng() * 0.3, r: prng() * 6.28, c: bushColor(prng) }); }
+      if (prng() < 0.6 && !lot.sakura) { const [x, z] = W(lot.w / 2 - 0.8, -lot.d / 2 + 0.9); shrubs.push({ x, y: hf.groundAt(x, z), z, s: 1.2 + prng() * 1.0, r: prng() * 6.28 }); }
+      for (let k = 0; k < 3; k++) if (prng() < 0.5 && !lot.sakura) { const [x, z] = W(-lot.w / 2 + 2.6 + prng() * 2.4, lot.d / 2 - 1.1 - prng() * 2); pots.push({ x, y: hf.groundAt(x, z), z, s: 0.35 + prng() * 0.25, r: prng() * 6.28 }); }
     } else if (prng() < 0.4) { const [x, z] = W(lot.w / 2 - 1.2, Math.min(lot.d, 12) / 2 + 0.5); crates.push({ x, y: hf.groundAt(x, z), z, s: 0.45, r: lot.r + (prng() - 0.5) * 0.3 }); if (prng() < 0.5) crates.push({ x, y: hf.groundAt(x, z) + 0.3, z, s: 0.45, r: lot.r + (prng() - 0.5) * 0.3 }); }
-    for (let k = 0; k < 4; k++) if (prng() < 0.6) { const [x, z] = W((prng() - 0.5) * lot.w, lot.d / 2 - 0.15); weeds.push({ x, y: hf.groundAt(x, z), z, s: 0.25 + prng() * 0.3, r: prng() * 6.28 }); }
+    for (let k = 0; k < 4; k++) if (prng() < 0.25) { const [x, z] = W((prng() - 0.5) * lot.w, lot.d / 2 - 0.15); weeds.push({ x, y: hf.groundAt(x, z), z, s: 0.25 + prng() * 0.3, r: prng() * 6.28 }); }
     if (prng() < 0.05) { const [x, z] = W(lot.w / 2 - 0.5, lot.d / 2 + 0.4); boxes.push({ x, y: hf.groundAt(x, z), z, s: 1.3, r: lot.r }); addCircle(x, z, 0.4); }
   }
   scatterModel(shrub, shrubs, true, () => Q.props, true, true);
+  buildBushes(bushes, 'bush');
+  buildBushes(hydras, 'hydra');
+  buildSakura(sakura.filter(t => t.garden));
   scatterModel(potted, pots, true, () => Q.props * 0.35);
   scatterModel(weed, weeds, true, () => Q.props * 0.3, false, true);
   scatterModel(crate, crates, true, () => Q.props * 0.4);
@@ -517,9 +577,12 @@ export async function build(progress) {
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3();
   const world = {
-    hf, grass, water, spawn, trains, traffic, crossings,
+    hf, grass, water, spawn, trains, traffic, crossings, sakura,
     bounds: { minX: -740, maxX: 740, minZ: -740, maxZ: 740 },
-    groundAt(x, z) { const g = hf.groundAt(x, z); return onBridge(x, z) && (Math.abs(z + 25) < 7 || Math.abs(z - 200) < 3.5) ? Math.max(g, Y0 + 0.35) : g; },
+    groundAt(x, z) {
+      const g = hf.groundAt(x, z); if (onBridge(x, z) && (Math.abs(z + 25) < 7 || Math.abs(z - 200) < 3.5)) return Math.max(g, Y0 + 0.35);
+      const rd = Math.abs(x - riverX(z)); return rd > 14.55 && rd < 17.65 && Math.abs(z + 78) > 8 ? Math.max(g, Y0 + 0.12) : g; // bank-top walkway
+    },
     normalAt: (x, z, out) => hf.normalAt(x, z, out),
     waterAt: (x, z) => Math.abs(x - riverX(z)) < 15 ? 0 : -1e9,
     surfaceAt(x, z, y) {
@@ -539,7 +602,7 @@ export async function build(progress) {
     },
     collide(p) { traffic.collide(p); for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
     update(dt, t, cam) {
-      updateNight(); updateGlow();
+      updateNight(); updateGlow(); landmarks.update();
       const pl = { x: cam.position.x, y: cam.position.y - 1.6, z: cam.position.z };
       for (const tr of trains) tr.update(dt, pl);
       for (const c of crossings) c.active = crossingActive(c, trains);

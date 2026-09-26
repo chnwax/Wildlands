@@ -32,6 +32,31 @@ function leafTexture() {
   return (leafTex = t);
 }
 
+// a clump of little five-petal blossoms (sakura / hydrangea): white, tinted per tree; darker centres
+const blossomTex = {};
+function blossomTexture(kind) {
+  if (blossomTex[kind]) return blossomTex[kind];
+  const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
+  const g = cv.getContext('2d'), rng = mulberry32(kind === 'hydra' ? 41 : 31);
+  g.translate(N / 2, N / 2);
+  const count = kind === 'hydra' ? 70 : 110, big = kind === 'hydra' ? 1.35 : 1;
+  for (let i = 0; i < count; i++) {
+    const r = Math.sqrt(rng()) * N * 0.37, a = rng() * Math.PI * 2, x = Math.cos(a) * r, y = Math.sin(a) * r;
+    const s = Math.round(lerp(218, 255, 0.5 - 0.5 * y / (N * 0.37)) * (0.95 + rng() * 0.05));
+    const R = N * (0.035 + rng() * 0.02) * big, rot = rng() * 6.28, petals = kind === 'hydra' ? 4 : 5;
+    g.fillStyle = `rgb(${s},${s},${s})`;
+    for (let p = 0; p < petals; p++) {
+      const pa = rot + p / petals * Math.PI * 2;
+      g.beginPath(); g.ellipse(x + Math.cos(pa) * R * 0.55, y + Math.sin(pa) * R * 0.55, R * 0.55, R * 0.38, pa, 0, 7); g.fill();
+    }
+    g.fillStyle = `rgb(${Math.round(s * 0.93)},${Math.round(s * 0.8)},${Math.round(s * 0.86)})`;
+    g.beginPath(); g.arc(x, y, R * 0.16, 0, 7); g.fill();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 4;
+  return (blossomTex[kind] = t);
+}
+
 // ---------------------------------------------------------------- geometry helpers
 function meshBuilder() {
   const P = [], N = [], C = [], UV = [], I = [];
@@ -99,14 +124,35 @@ export function coniferGeo(hi, seed = 3) {
   return { solid: B.geometry(false), trunk };
 }
 
-// ---------------------------------------------------------------- broadleaf: lumpy blob crown + leaf-card fringe (height ~1)
-export function broadleafGeo(hi, seed = 7) {
-  const rng = mulberry32(seed), crown = V(0, 0.7, 0), blobs = [];
+// ---------------------------------------------------------------- blob crowns: lumpy solid blobs + card fringe (height ~1)
+// shape: 'leaf' round broadleaf, 'sakura' wide umbrella crown on spreading dark branches, 'bush' / 'hydra' low shrubs
+function crownLayout(shape, hi, rng) {
+  const blobs = [];
+  if (shape === 'sakura') {
+    const nB = hi ? 9 : 5;
+    for (let i = 0; i < nB; i++) {
+      const a = i / nB * Math.PI * 2 + rng() * 0.5, r = i === 0 ? 0 : 0.2 + rng() * 0.14;
+      blobs.push({ c: V(Math.cos(a) * r, i === 0 ? 0.74 : 0.52 + rng() * 0.16, Math.sin(a) * r), R: i === 0 ? 0.22 : 0.15 + rng() * 0.06, s: rng() * 10 });
+    }
+    return { crown: V(0, 0.6, 0), blobs };
+  }
+  if (shape === 'bush' || shape === 'hydra') {
+    const nB = hi ? 5 : 3;
+    for (let i = 0; i < nB; i++) {
+      const a = i / nB * Math.PI * 2 + rng() * 0.8, r = i === 0 ? 0 : 0.2 + rng() * 0.1;
+      blobs.push({ c: V(Math.cos(a) * r, i === 0 ? 0.42 : 0.26 + rng() * 0.1, Math.sin(a) * r), R: i === 0 ? 0.32 : 0.22 + rng() * 0.08, s: rng() * 10 });
+    }
+    return { crown: V(0, 0.3, 0), blobs };
+  }
   const nB = hi ? 7 : 4;
   for (let i = 0; i < nB; i++) {
     const a = i / nB * Math.PI * 2 + rng() * 0.6, r = i === 0 ? 0 : 0.14 + rng() * 0.08;
     blobs.push({ c: V(Math.cos(a) * r, i === 0 ? 0.84 : 0.6 + rng() * 0.2, Math.sin(a) * r), R: i === 0 ? 0.2 : 0.14 + rng() * 0.06, s: rng() * 10 });
   }
+  return { crown: V(0, 0.7, 0), blobs };
+}
+export function broadleafGeo(hi, seed = 7, shape = 'leaf') {
+  const rng = mulberry32(seed), { crown, blobs } = crownLayout(shape, hi, rng);
   const ico = new THREE.IcosahedronGeometry(1, hi ? 2 : 1);
   const parts = [], d = V(0, 0, 0), q = V(0, 0, 0), nn = V(0, 0, 0);
   for (const b of blobs) {
@@ -117,7 +163,7 @@ export function broadleafGeo(hi, seed = 7) {
       pos.setXYZ(i, q.x, q.y, q.z);
       nn.copy(d).add(q.clone().sub(crown).normalize().multiplyScalar(0.7)).normalize();
       nor.setXYZ(i, nn.x, nn.y, nn.z);
-      const ao = 0.5 + 0.5 * Math.min(1, Math.max(0, (q.y - 0.45) / 0.5)) * (0.6 + 0.4 * Math.min(1, q.distanceTo(crown) / 0.3));
+      const ao = 0.5 + 0.5 * Math.min(1, Math.max(0, (q.y - crown.y + 0.25) / 0.5)) * (0.6 + 0.4 * Math.min(1, q.distanceTo(crown) / 0.3));
       col.push(ao, ao, ao);
     }
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -128,20 +174,30 @@ export function broadleafGeo(hi, seed = 7) {
   // leaf cards stuck on the blob surfaces, facing out, sharing the blob's smooth normal
   const B = meshBuilder(), ax = V(0, 0, 0), ay = V(0, 0, 0);
   for (const b of blobs) {
-    const cards = hi ? 16 : 6;
+    const cards = (hi ? 16 : 6) * (shape === 'sakura' ? 1.4 : shape === 'hydra' ? 1.2 : 1) | 0;
     for (let k = 0; k < cards; k++) {
       d.set(rng() * 2 - 1, rng() * 1.6 - 0.5, rng() * 2 - 1).normalize();
       const c = b.c.clone().addScaledVector(d, b.R * (0.9 + 0.12 * rng())), size = b.R * (0.75 + rng() * 0.3);
       ax.set(0, 1, 0).cross(d); if (ax.lengthSq() < 1e-3) ax.set(1, 0, 0); ax.normalize().applyAxisAngle(d, rng() * 6.28);
       ay.copy(d).cross(ax).normalize();
       nn.copy(d).add(c.clone().sub(crown).normalize().multiplyScalar(0.7)).normalize();
-      const ao = 0.6 + 0.4 * Math.min(1, Math.max(0, (c.y - 0.45) / 0.5));
+      const ao = 0.6 + 0.4 * Math.min(1, Math.max(0, (c.y - crown.y + 0.25) / 0.5));
       const ids = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => B.v(c.clone().addScaledVector(ax, u * size * 0.5).addScaledVector(ay, v * size * 0.5), nn, ao, [(u + 1) / 2, (v + 1) / 2]));
       B.tri(ids[0], ids[1], ids[2]); B.tri(ids[0], ids[2], ids[3]);
     }
   }
-  const trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.036 }, { p: V(0.01, 0.3, 0.005), r: 0.026 }, { p: V(0, 0.62, 0), r: 0.016 }], hi ? 8 : 5)];
-  if (hi) for (const b of blobs.slice(1, 5)) trunkParts.push(trunkGeo([{ p: V(0, 0.42 + rng() * 0.12, 0), r: 0.013 }, { p: b.c.clone().multiplyScalar(0.8), r: 0.006 }], 5));
+  if (shape === 'bush' || shape === 'hydra') return { solid, cards: B.geometry(true), trunk: null };
+  let trunkParts;
+  if (shape === 'sakura') { // short stout trunk forking into dark spreading limbs that show under the blossom
+    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.05 }, { p: V(0.02, 0.22, 0), r: 0.04 }, { p: V(0, 0.34, 0.01), r: 0.034 }], hi ? 8 : 5)];
+    for (const b of blobs.slice(1, hi ? 7 : 4)) {
+      const mid = V(b.c.x * 0.5, 0.44 + rng() * 0.06, b.c.z * 0.5);
+      trunkParts.push(trunkGeo([{ p: V(0, 0.32, 0), r: 0.022 }, { p: mid, r: 0.014 }, { p: V(b.c.x * 0.9, b.c.y - 0.04, b.c.z * 0.9), r: 0.007 }], hi ? 6 : 4));
+    }
+  } else {
+    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.036 }, { p: V(0.01, 0.3, 0.005), r: 0.026 }, { p: V(0, 0.62, 0), r: 0.016 }], hi ? 8 : 5)];
+    if (hi) for (const b of blobs.slice(1, 5)) trunkParts.push(trunkGeo([{ p: V(0, 0.42 + rng() * 0.12, 0), r: 0.013 }, { p: b.c.clone().multiplyScalar(0.8), r: 0.006 }], 5));
+  }
   return { solid, cards: B.geometry(true), trunk: mergeGeometries(trunkParts) };
 }
 
@@ -184,27 +240,31 @@ function foliagePatch(m, key, amount, cards) {
 const mats = {};
 function materials(kind) {
   if (mats[kind]) return mats[kind];
-  const sway = kind === 'leaf' ? 1.6 : 1;
-  const solid = foliagePatch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }), 'toonSolid' + kind, sway, false);
+  const sway = { leaf: 1.6, sakura: 1.3, bush: 0.5, hydra: 0.5 }[kind] || 1;
+  const solid = foliagePatch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, color: kind === 'hydra' ? 0x4c9a3e : 0xffffff }), 'toonSolid' + kind, sway, false);
   const solidDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); windPatch(solidDepth, 'toonSolidDepth' + kind, sway);
   const M = { solid, solidDepth };
-  if (kind === 'leaf') {
-    const tex = leafTexture();
-    M.cards = foliagePatch(new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, alphaTest: 0.5, alphaToCoverage: Q.msaa > 0, side: THREE.DoubleSide, roughness: 1, metalness: 0 }), 'toonCards', sway, true);
-    M.cardDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.5 }); windPatch(M.cardDepth, 'toonCardsDepth', sway);
+  if (kind !== 'fir') {
+    const tex = kind === 'sakura' || kind === 'hydra' ? blossomTexture(kind) : leafTexture();
+    M.cards = foliagePatch(new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, alphaTest: 0.5, alphaToCoverage: Q.msaa > 0, side: THREE.DoubleSide, roughness: 1, metalness: 0 }), 'toonCards' + kind, sway, true);
+    M.cardDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.5 }); windPatch(M.cardDepth, 'toonCardsDepth' + kind, sway);
   }
-  M.trunk = new THREE.MeshStandardMaterial({ map: phTex(kind === 'leaf' ? 'sakura_bark' : 'fir_tree_01', kind === 'leaf' ? 'diff' : 'bark_diff', '1k', true),
-    color: kind === 'leaf' ? 0xa07e66 : 0x8e6e58, roughness: 1 });
-  windPatch(M.trunk, 'toonTrunk' + kind, sway);
+  const bark = { leaf: ['sakura_bark', 'diff', 0xa07e66], sakura: ['sakura_bark', 'diff', 0x6a4a48], fir: ['fir_tree_01', 'bark_diff', 0x8e6e58] }[kind];
+  if (bark) {
+    M.trunk = new THREE.MeshStandardMaterial({ map: phTex(bark[0], bark[1], '1k', true), color: bark[2], roughness: 1 });
+    windPatch(M.trunk, 'toonTrunk' + kind, sway);
+  }
   return (mats[kind] = M);
 }
 
 // ---------------------------------------------------------------- forests
 // trees: [{x,y,z,s,sx,r,tilt,tilt2,c}] -> LOD'd, cell-culled instanced forest with trunk colliders
 function parts(kind, g, M, near) {
-  const p = [{ geometry: g.solid, material: M.solid, tint: true, castShadow: true, depth: M.solidDepth }];
-  if (g.cards) p.push({ geometry: g.cards, material: M.cards, tint: true, castShadow: near, depth: M.cardDepth });
-  p.push({ geometry: g.trunk, material: M.trunk, castShadow: near });
+  // hydrangeas: a green leafy mound (untinted) under per-bush coloured flower heads
+  const p = [{ geometry: g.solid, material: M.solid, tint: kind !== 'hydra', castShadow: true, depth: M.solidDepth }];
+  // blossom cards cast no shadow: card-shaped shadow speckle reads as blotches on the soft pink crowns
+  if (g.cards) p.push({ geometry: g.cards, material: M.cards, tint: true, castShadow: near && kind !== 'sakura' && kind !== 'hydra', depth: M.cardDepth });
+  if (g.trunk) p.push({ geometry: g.trunk, material: M.trunk, castShadow: near });
   return p;
 }
 function forest(trees, kind, geo, hiDist, farDist, trunkR) {
@@ -219,6 +279,16 @@ export function buildConiferForest(trees, { hiDist = () => Q.treeHi, farDist = (
 export function buildBroadleafForest(trees, { hiDist = () => Q.treeHi, farDist = () => Q.trees } = {}) {
   forest(trees, 'leaf', broadleafGeo, hiDist, farDist, 0.034);
 }
+export function buildSakura(trees, { hiDist = () => Q.treeHi, farDist = () => Q.trees } = {}) {
+  forest(trees, 'sakura', (hi) => broadleafGeo(hi, 13, 'sakura'), hiDist, farDist, 0.05);
+}
+// shrubs: no trunk collider worth having below ~1 m; only the big ones block
+export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * 0.6, farDist = () => Q.trees * 0.35 } = {}) {
+  if (!bushes.length) return;
+  const M = materials(kind), hi = broadleafGeo(true, kind === 'hydra' ? 21 : 17, kind), lo = broadleafGeo(false, kind === 'hydra' ? 21 : 17, kind);
+  new Scatter(bushes, [{ dist: hiDist, parts: parts(kind, hi, M, true) }, { dist: farDist, parts: parts(kind, lo, M, false) }], 96);
+  for (const b of bushes) if (b.s > 1.2) addCircle(b.x, b.z, 0.35 * b.s);
+}
 
 // painted palettes, picked per tree
 const FIR = ['#2f8a5a', '#3b9a62', '#287453', '#4aa266', '#34855e'].map(c => new THREE.Color(c));
@@ -226,3 +296,9 @@ const LEAF = ['#62bb45', '#50a641', '#80c74e', '#48994a', '#94d052', '#6cbf4c'].
 const pick = (list, rng) => list[Math.floor(rng() * list.length)].clone().multiplyScalar(0.92 + rng() * 0.16);
 export const firColor = rng => pick(FIR, rng);
 export const leafColor = rng => pick(LEAF, rng);
+const SAKURA = ['#ffc2d6', '#ffb4cb', '#f9a7c2', '#ffcadb', '#f6b1cd', '#ffbcd2'].map(c => new THREE.Color(c));
+const BUSH = ['#4f9f3f', '#5cae44', '#3f8f45', '#6bb84a'].map(c => new THREE.Color(c));
+const HYDRA = ['#7f9cff', '#9a86ff', '#c38cf0', '#ff9ccf', '#8fb6ff', '#b4a2ff'].map(c => new THREE.Color(c));
+export const sakuraColor = rng => pick(SAKURA, rng);
+export const bushColor = rng => pick(BUSH, rng);
+export const hydraColor = rng => pick(HYDRA, rng);
