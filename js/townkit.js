@@ -670,6 +670,12 @@ export function house(B, lot, rng, extras) {
       if (rng() < 0.5) for (let i = 0; i < 4; i++) B.box('plain', bx - bw / 2 + 0.5 + i * (bw - 1) / 3, base + fh + 1.1, D / 2 + 0.7, 0.45, 0.62, 0.02, { color: jitter(rng, pick(rng, [[0.95, 0.95, 0.95], [0.5, 0.62, 0.9], [0.95, 0.6, 0.62], [0.98, 0.86, 0.5]]), 0.1) });
     }
     extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: W / 2, hz: D / 2, r });
+    // backyard storage shed (the ubiquitous steel monooki) in a rear corner
+    if (rng() < 0.45) { const F7 = B.F, side = rng() < 0.5 ? -1 : 1; B.frame(...B.P([side * (W / 2 - 0.9), 0, -D / 2 - 0.52]), r);
+      const sc = pick(rng, [[0.86, 0.82, 0.7], [0.62, 0.72, 0.6], [0.8, 0.8, 0.78], [0.55, 0.62, 0.72]]);
+      B.box('plain', 0, 0, 0, 1.5, 1.6, 0.6, { color: sc }); B.box('plain', 0, 1.6, 0, 1.6, 0.07, 0.7, { color: sc.map(v => v * 0.8) });
+      for (const dx of [-0.37, 0.37]) B.box('dark', dx, 0.1, 0.31, 0.02, 1.35, 0.01, { color: [0.3, 0.3, 0.3] });
+      extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 0.75, hz: 0.3, r }); B.F = F7; }
     // water heater (EcoCute) on a side
     if (rng() < 0.4) { const F5 = B.F; B.frame(...B.P([W / 2 + 0.45, 0, -D / 4]), r); B.box('plain', 0, 0, 0, 0.65, 1.95, 0.7, { color: [0.95, 0.95, 0.93] }); extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 0.35, hz: 0.35, r }); B.F = F5; }
   });

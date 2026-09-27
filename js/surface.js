@@ -157,7 +157,7 @@ export function wornPaint(mat, key) {
       .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise;')
       .replace('#include <color_fragment>', `#include <color_fragment>
         { vec2 p = vSWPos.xz; float wr = texture2D(tNoise, p * 1.6).r * 0.65 + texture2D(tNoise, p * 0.23).g * 0.55;
-          if (wr > 0.8) discard;
+          if (wr > 0.86) discard;
           diffuseColor.rgb *= mix(1.0, 0.72, smoothstep(0.55, 0.8, wr)); }`);
   });
 }
@@ -399,7 +399,8 @@ export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, 
           // window dressing: curtains / lace, blinds, or shoji screens in tatami rooms
           vec2 fwu = fwidth(vSUv) + 1e-4;
           float blinds = kind == 2.0 || kind == 4.0 ? step(0.35, r6) : kind == 6.0 ? step(0.4, r6) : step(0.85, r6);
-          vec3 dressLight = uAmbW * 0.6 + lit * lamp * (0.65 + 0.6 * uNightW);
+          // curtains and blinds catch the same soft daylight as the room (not the pure sky blue), or the lamp at night
+          vec3 dressLight = dayC * 0.95 * dayW + uAmbW * 0.45 * uNightW + lit * lamp * (0.65 + 0.6 * uNightW);
           if (kind == 3.0) {
             float sh = step(1.0 - (0.3 + 0.6 * r4), vSUv.x);                                           // a slid-across shoji
             float gridS = max(step(0.46, abs(fract(vSUv.x * 4.0) - 0.5)), step(0.46, abs(fract(vSUv.y * 5.0) - 0.5))) * detail;

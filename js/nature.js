@@ -116,7 +116,7 @@ export async function build(progress) {
       let v = smoothstep(-0.02, 0.22, f) * smoothstep(2.5, 6, h) * (1 - smoothstep(140, 195, h)) * smoothstep(0.78, 0.9, hf.gridNormalY(i, j));
       // toward the map edge the woods follow the far-forest mask, so they carry on seamlessly past the boundary
       const edge = smoothstep(HALF - 240, HALF - 20, Math.max(Math.abs(x), Math.abs(z)));
-      if (edge > 0) v = lerp(v, farForestAt(x, z, h, 1 - hf.gridNormalY(i, j), 0, 175), edge);
+      if (edge > 0) v = lerp(v, farForestAt(x, z, h, 1 - hf.gridNormalY(i, j), 0, 280), edge);
       const st = streamAt(x, z); if (st) v *= smoothstep(st.W / 2 + 0.5, st.W / 2 + 4, st.d); // stream banks stay open
       FOREST[j * HN + i] = v; hf.mask[(j * HN + i) * 4] = v * 255;
     }
@@ -263,7 +263,7 @@ export async function build(progress) {
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.68); await tick();
-  await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 175, shore: 0.8, conifer: 0.62 }));
+  await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 280, shore: 0.8, conifer: 0.62 }));
   progress('Planting trees', 0.78); await tick();
   buildConiferForest(trees.filter(t => !t.leafy && !t.sakura));
   buildBroadleafForest(trees.filter(t => t.leafy));
@@ -321,7 +321,7 @@ export async function build(progress) {
   for (let k = 0; k < 120; k++) { const x = (brng() * 2 - 1) * 700, z = (brng() * 2 - 1) * 700; if (FOREST[hf.idx(x, z)] > 0.1 && FOREST[hf.idx(x, z)] < 0.5) hydraAt(x, z, 3, 0, 5); }
   buildBushes(bushes, 'bush');
   buildBushes(hydras, 'hydra');
-  const grass = buildGrass(hf, layers.grass.d, { water: 0, shore: 0.8, reeds: true });
+  const grass = buildGrass(hf, layers.grass.d, { water: 0, shore: 0.8, reeds: true, snow: 280 });
   const water = buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass] });
   for (const S of streams) { const pts = S.pts.filter(q => q.b > -0.25); if (pts.length > 2) buildStream(pts); }
 

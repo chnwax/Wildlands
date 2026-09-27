@@ -120,7 +120,6 @@ export const MEADOW_GLSL = /* glsl */`
 // layers: { grass, forest, rock, shore, urban } each { d: diffuse tex, n: normal tex, s: tile metres, tint: [r,g,b] }
 // All five diffuse maps live in one texture array and all five normal maps in another, so every layer gets its own
 // normal map while the whole ground shader uses 7 texture units (WebGL2 guarantees 16).
-const terrainTreeDist = { value: Q.trees }; // far-LOD tree cull distance (quality dependent)
 const terrainGrassR = { value: Q.tile * 0.5 }; // where the near grass blades end and the clump cards take over
 const terrainFarTrees = { value: 0 };           // half-extent of the outer far-forest (trees drawn up to there)
 const LAYER_RES = 1024;
@@ -168,7 +167,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       tLayD: { value: tLayD }, tLayN: { value: tLayN }, tNoise: S.tNoise,
       uScales: { value: new THREE.Vector4(L.grass.s, L.forest.s, L.shore.s, L.urban.s) }, uRockS: { value: L.rock.s },
       uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uUrbanNorm: { value: L.urban.norm || 0 }, uTintS: { value: tintV(L.shore.tint) },
-      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist, uGrassR: terrainGrassR, uFarTrees: terrainFarTrees,
+      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uGrassR: terrainGrassR, uFarTrees: terrainFarTrees,
     }, paintU);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
@@ -177,7 +176,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; varying vec3 vWNorm;
         uniform sampler2D tNoise, tMask, tMask2;
-        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist, uGrassR, uFarTrees; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
+        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uGrassR, uFarTrees; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
         vec3 unpackN(vec4 t){ return t.xyz * 2.0 - 1.0; }
         // layers: 0 grass, 1 forest floor, 2 rock, 3 shore, 4 urban ground
         #ifdef TERRAIN_LITE
@@ -260,8 +259,11 @@ export function terrainMaterial(hf, L, opt = {}) {
         float wRock = smoothstep(0.30, 0.46, slope + (nz2.b - 0.5) * 0.14);
         // scree: broken rock collects at the foot of cliffs and on steep upper slopes
         float scree = smoothstep(0.2, 0.3, slope) * (1.0 - wRock) * smoothstep(0.55, 0.8, nz3.a + nz2.b * 0.3);
-        float wSnow = smoothstep(uSnow, uSnow + 40.0, vWPos.y + (nz1.b - 0.5) * 70.0) * (1.0 - smoothstep(0.42, 0.62, slope));
+        // the snow line climbs toward the distant ranges, so only their high peaks carry snow
+        float snowL = uSnow + max(0.0, length(vWPos.xz) - 1500.0) * 0.06;
+        float wSnow = smoothstep(snowL, snowL + 40.0, vWPos.y + (nz1.b - 0.5) * 70.0) * (1.0 - smoothstep(0.42, 0.62, slope));
         float wForest = smoothstep(0.2, 0.7, forest + (nz3.r - 0.5) * 0.35);
+        wForest = mix(wForest, smoothstep(0.4, 0.54, forest), (1.0 - inside) * step(uHalf + 1024.0, max(abs(vWPos.x), abs(vWPos.z))));
         float wUrban = smoothstep(0.15, 0.6, msk2.r + (nz3.g - 0.5) * 0.25);
         // where no trees stand any more (past the outermost far-forest ring) the forest reads as a painted canopy with
         // soft crown relief; under drawn trees the floor stays the darker forest ground
@@ -274,7 +276,8 @@ export function terrainMaterial(hf, L, opt = {}) {
         vec3 cCanopy = mix(uP_canopy, vec3(0.19, 0.44, 0.31), 0.45) * (0.78 + 0.4 * cr0) * mix(0.9, 1.1, nz2.r) * mix(vec3(1.0), vec3(1.08, 1.02, 0.86), region * 0.5);
         // outside the map the ground under the far trees takes the canopy colour too, so the gaps between distant tree
         // cards read as more forest rather than bright speckle
-        cForest = mix(cForest, cCanopy, max(crownW, (1.0 - inside) * smoothstep(0.25, 0.6, forest) * 0.9));
+        float ringOut = step(uHalf + 1024.0, max(abs(vWPos.x), abs(vWPos.z)));
+        cForest = mix(cForest, cCanopy, max(crownW, (1.0 - inside) * mix(smoothstep(0.25, 0.6, forest), smoothstep(0.42, 0.52, forest), ringOut) * 0.9));
         nForest = mix(nForest, vec3(crownN.x, crownN.z, 0.0), crownW);
         vec3 col = mix(cGrass, cForest, wForest);
         vec3 tn = mix(nGrass, nForest, wForest);
@@ -439,7 +442,8 @@ export async function buildTerrainMeshes(hf, mat, { outer = true, farForest = tr
           const sx = groundOn(Rr, x + e, z) - groundOn(Rr, x - e, z), sz = groundOn(Rr, x, z + e) - groundOn(Rr, x, z - e);
           const slope = 1 - 2 * e / Math.hypot(sx, 2 * e, sz);
           const f = farForestAt(x, z, y, slope, water, snow);
-          if (r2 > smoothstep(0.25, 0.6, f)) continue; // closed stands with clean edges: sparse far trees read as speckle
+          // closed stands with clean edges (sparse far trees only read as speckle); beyond the first ring the edge is crisp
+          if (r2 > (fi ? smoothstep(0.42, 0.52, f) : smoothstep(0.25, 0.6, f))) continue;
           const leafy = r3 > conifer + (y - water - 60) * 0.004;
           const s = (leafy ? lerp(9, 15, r4) : lerp(13, 26, Math.pow(r4, 1.3))) * F.sc * (0.8 + 0.2 * f);
           (leafy ? sets[fi].leaf : sets[fi].fir).push({ x, y: y - 0.3 - slope * 3, z, s, sx: 0.8 + 0.4 * rng(), r: rng() * 6.28, tilt: (rng() - 0.5) * 0.05, c: leafy ? leafColor(rng) : firColor(rng) });
@@ -449,7 +453,7 @@ export async function buildTerrainMeshes(hf, mat, { outer = true, farForest = tr
     }
     buildFarForest(sets, FR);
   }
-  group.userData.applyQuality = () => { terrainTreeDist.value = Q.trees; terrainGrassR.value = Q.tile * 0.5; if (outer && farForest) terrainFarTrees.value = farExt(); };
+  group.userData.applyQuality = () => { terrainGrassR.value = Q.tile * 0.5; if (outer && farForest) terrainFarTrees.value = farExt(); };
   scene.add(group);
   return group;
 }
@@ -618,8 +622,11 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         float fade = (1.0 - smoothstep(uR * 0.55, uR, gdist)) * (uIn.y > 0.0 ? smoothstep(uIn.x, uIn.y, gdist) : 1.0);
         float keep = step(iRand.w + 0.002, dens) * step(fract(iRand.y * 13.73 + iRand.x * 5.31), fade * 1.02); // strict: dens 0 keeps nothing
         float gs = keep;
-        float fPatch = smoothstep(0.58, 0.8, gz3.g * 0.65 + gz2.a * 0.6);
-        bool flower = !rice && !reed && dens > 0.35 && iRand.w < (0.01 + 0.16 * fPatch * dens) * smoothstep(22.0, 30.0, gdist) * (uLod > 1.5 ? 0.5 : 1.0);
+        // meadow zones: whole flower meadows in some valleys, short wiry alpine turf high up
+        float flowerMeadow = smoothstep(0.62, 0.8, gz1.a + (gz2.r - 0.5) * 0.2);
+        float alpine = smoothstep(85.0, 150.0, gh - uWaterLv);
+        float fPatch = max(smoothstep(0.58, 0.8, gz3.g * 0.65 + gz2.a * 0.6), flowerMeadow * smoothstep(0.35, 0.6, gz3.g));
+        bool flower = !rice && !reed && dens > 0.35 && iRand.w < (0.01 + 0.16 * fPatch * dens + 0.06 * alpine) * smoothstep(22.0, 30.0, gdist) * (uLod > 1.5 ? 0.5 : 1.0);
         // species: most blades are meadow grass; a share are seed-head grasses (more in drier patches), sun-dried straw
         // blades, and broad low weed leaves (plantain / dock) in the unmown grass
         float sp = fract(iRand.x * 7.13 + iRand.z * 3.71 + iRand.y * 1.37);
@@ -632,6 +639,7 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         float tallP = smoothstep(0.55, 0.8, gz2.a * 0.7 + gz3.r * 0.5);
         float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * (1.0 + 0.45 * tallP) * mix(0.75, 1.0, fade) * keep;
         Hh *= 1.0 - 0.68 * gm2.a;   // ...and short
+        Hh *= 1.0 - 0.5 * alpine;
         if (seedG) Hh = Hh * 1.3 + 0.22 * keep;
         if (broadB) Hh *= 0.42;
         if (flower) Hh = (0.28 + 0.32 * iRand.y) * mix(0.4, 1.0, fade);
