@@ -19,8 +19,17 @@ export class GeoBuilder {
   N(n) { const F = this.F; return [n[0] * F.c + n[2] * F.s, n[1], -n[0] * F.s + n[2] * F.c]; }
   bucket(mat, x, z) {
     const k = mat + '|' + Math.floor(x / this.chunk) + ',' + Math.floor(z / this.chunk);
-    let b = this.parts.get(k); if (!b) { b = { mat, pos: [], nor: [], uv: [], col: [], idx: [] }; this.parts.set(k, b); }
+    let b = this.parts.get(k); if (!b) { b = { mat, pos: [], nor: [], uv: [], col: [], idx: [], extra: {} }; this.parts.set(k, b); }
     return b;
+  }
+  // optional extra per-vertex attributes (opt.attr = { name: [v0, v1, v2(, v3)] }, each a 2-vector); other vertices get 0
+  _extra(B, n, attr) {
+    const count = B.pos.length / 3 - n;           // vertices already in the bucket before this primitive
+    for (const name in B.extra) if (!attr || !(name in attr)) for (let i = 0; i < n; i++) B.extra[name].push(0, 0);
+    if (attr) for (const name in attr) {
+      if (!B.extra[name]) B.extra[name] = new Array(count * 2).fill(0);
+      for (const v of attr[name]) B.extra[name].push(v[0], v[1]);
+    }
   }
   // a,b,c,d local corners, counter-clockwise seen from the front; uv in metres / opt.uv
   quad(mat, a, b, c, d, opt = {}) {
@@ -28,14 +37,20 @@ export class GeoBuilder {
     const s = opt.uv || 1, [u0, v0] = opt.uvo || [0, 0], lu = len(e1) / s, lv = len(e2) / s;
     const uvs = opt.uvs || [[u0, v0], [u0 + lu, v0], [u0 + lu, v0 + lv], [u0, v0 + lv]];
     const wa = this.P(a), B = this.bucket(mat, wa[0], wa[2]), base = B.pos.length / 3, col = opt.color || WHITE;
-    for (const [i, p] of [a, b, c, d].entries()) { const w = this.P(p); B.pos.push(w[0], w[1], w[2]); B.nor.push(n[0], n[1], n[2]); B.uv.push(uvs[i][0], uvs[i][1]); B.col.push(col[0], col[1], col[2]); }
+    const ns = opt.normals; // optional per-vertex normals (local frame) for smooth shading
+    for (const [i, p] of [a, b, c, d].entries()) { const w = this.P(p), nn = ns ? this.N(norm(ns[i])) : n; B.pos.push(w[0], w[1], w[2]); B.nor.push(nn[0], nn[1], nn[2]); B.uv.push(uvs[i][0], uvs[i][1]); B.col.push(col[0], col[1], col[2]); }
+    this._extra(B, 4, opt.attr);
     B.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
   tri(mat, a, b, c, opt = {}) {
     const n = this.N(norm(cross(sub(b, a), sub(c, a)))), s = opt.uv || 1;
     const wa = this.P(a), B = this.bucket(mat, wa[0], wa[2]), base = B.pos.length / 3, col = opt.color || WHITE;
     const ax = norm(sub(b, a)), ay = norm(cross(cross(ax, sub(c, a)), ax));
-    for (const p of [a, b, c]) { const w = this.P(p), d = sub(p, a); B.pos.push(w[0], w[1], w[2]); B.nor.push(n[0], n[1], n[2]); B.uv.push((d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2]) / s, -(d[0] * ay[0] + d[1] * ay[1] + d[2] * ay[2]) / s); B.col.push(col[0], col[1], col[2]); }
+    const uvs = opt.uvs;
+    for (const [i, p] of [a, b, c].entries()) { const w = this.P(p), d = sub(p, a); B.pos.push(w[0], w[1], w[2]); B.nor.push(n[0], n[1], n[2]);
+      if (uvs) B.uv.push(uvs[i][0], uvs[i][1]); else B.uv.push((d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2]) / s, -(d[0] * ay[0] + d[1] * ay[1] + d[2] * ay[2]) / s);
+      B.col.push(col[0], col[1], col[2]); }
+    this._extra(B, 3, opt.attr);
     B.idx.push(base, base + 1, base + 2);
   }
   // axis-aligned box in the current frame; (cx, cz) centre, y0 bottom
@@ -48,6 +63,65 @@ export class GeoBuilder {
     if (!sk.includes('nx')) this.quad(mat, V3(x0, y0, z0), V3(x0, y0, z1), V3(x0, y1, z1), V3(x0, y1, z0), o);
     if (!sk.includes('py')) this.quad(mat, V3(x0, y1, z1), V3(x1, y1, z1), V3(x1, y1, z0), V3(x0, y1, z0), o);
     if (!sk.includes('ny')) this.quad(mat, V3(x0, y0, z0), V3(x1, y0, z0), V3(x1, y0, z1), V3(x0, y0, z1), o);
+  }
+  // triangle or quad with its winding chosen so it faces along `hint` (local frame)
+  poly(mat, pts, hint, opt = {}) {
+    const n = cross(sub(pts[1], pts[0]), sub(pts[pts.length - 1], pts[0]));
+    let p = pts, uvs = opt.uvs;
+    if (n[0] * hint[0] + n[1] * hint[1] + n[2] * hint[2] < 0) { p = [...pts].reverse(); if (uvs) uvs = [...uvs].reverse(); }
+    const o = uvs ? Object.assign({}, opt, { uvs }) : opt;
+    if (p.length === 3) this.tri(mat, p[0], p[1], p[2], o); else this.quad(mat, p[0], p[1], p[2], p[3], o);
+  }
+  // box with chamfered edges (bevel b): edges and corners catch the light, so things stop reading as raw primitives
+  bbox(mat, cx, y0, cz, w, h, d, b = 0.02, opt = {}) {
+    b = Math.max(1e-4, Math.min(b, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4));
+    const x0 = cx - w / 2, x1 = cx + w / 2, y1 = y0 + h, z0 = cz - d / 2, z1 = cz + d / 2, sk = opt.skip || '', o = { color: opt.color, uv: opt.uv };
+    const X = [x0, x0 + b, x1 - b, x1], Y = [y0, y0 + b, y1 - b, y1], Z = [z0, z0 + b, z1 - b, z1];
+    const P = this.poly.bind(this, mat);
+    if (!sk.includes('pz')) P([[X[1], Y[1], z1], [X[2], Y[1], z1], [X[2], Y[2], z1], [X[1], Y[2], z1]], [0, 0, 1], o);
+    if (!sk.includes('nz')) P([[X[1], Y[1], z0], [X[2], Y[1], z0], [X[2], Y[2], z0], [X[1], Y[2], z0]], [0, 0, -1], o);
+    if (!sk.includes('px')) P([[x1, Y[1], Z[1]], [x1, Y[1], Z[2]], [x1, Y[2], Z[2]], [x1, Y[2], Z[1]]], [1, 0, 0], o);
+    if (!sk.includes('nx')) P([[x0, Y[1], Z[1]], [x0, Y[1], Z[2]], [x0, Y[2], Z[2]], [x0, Y[2], Z[1]]], [-1, 0, 0], o);
+    if (!sk.includes('py')) P([[X[1], y1, Z[1]], [X[2], y1, Z[1]], [X[2], y1, Z[2]], [X[1], y1, Z[2]]], [0, 1, 0], o);
+    const bottom = !sk.includes('ny');
+    if (bottom) P([[X[1], y0, Z[1]], [X[2], y0, Z[1]], [X[2], y0, Z[2]], [X[1], y0, Z[2]]], [0, -1, 0], o);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { // vertical edges
+      const xe = sx > 0 ? x1 : x0, xi = sx > 0 ? X[2] : X[1], ze = sz > 0 ? z1 : z0, zi = sz > 0 ? Z[2] : Z[1];
+      P([[xi, Y[1], ze], [xe, Y[1], zi], [xe, Y[2], zi], [xi, Y[2], ze]], [sx, 0, sz], o);
+    }
+    for (const sy of bottom ? [-1, 1] : [1]) {
+      const ye = sy > 0 ? y1 : y0, yi = sy > 0 ? Y[2] : Y[1];
+      for (const sz of [-1, 1]) { const ze = sz > 0 ? z1 : z0, zi = sz > 0 ? Z[2] : Z[1]; P([[X[1], yi, ze], [X[2], yi, ze], [X[2], ye, zi], [X[1], ye, zi]], [0, sy, sz], o); }
+      for (const sx of [-1, 1]) { const xe = sx > 0 ? x1 : x0, xi = sx > 0 ? X[2] : X[1]; P([[xe, yi, Z[1]], [xe, yi, Z[2]], [xi, ye, Z[2]], [xi, ye, Z[1]]], [sx, sy, 0], o); }
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const xe = sx > 0 ? x1 : x0, xi = sx > 0 ? X[2] : X[1], ze = sz > 0 ? z1 : z0, zi = sz > 0 ? Z[2] : Z[1];
+        P([[xi, yi, ze], [xe, yi, zi], [xi, ye, zi]], [sx, sy, sz], o);
+      }
+    }
+  }
+  // sweep a closed or open 2D profile ([u right, v up]) along a local path; the solid lies left of the profile's
+  // direction of travel (counter-clockwise outlines). opt.closed joins the last profile point to the first.
+  sweep(mat, profile, path, opt = {}) {
+    const n = path.length, frames = [];
+    for (let i = 0; i < n; i++) {
+      const a = path[Math.max(0, i - 1)], b = path[Math.min(n - 1, i + 1)];
+      const t = norm(sub(b, a)), r = norm(cross(t, [0, 1, 0])), u = cross(r, t);
+      frames.push({ p: path[i], r, u });
+    }
+    const at = (f, q) => [f.p[0] + f.r[0] * q[0] + f.u[0] * q[1], f.p[1] + f.r[1] * q[0] + f.u[1] * q[1], f.p[2] + f.r[2] * q[0] + f.u[2] * q[1]];
+    const m = opt.closed ? profile.length : profile.length - 1;
+    let along = 0;
+    for (let i = 0; i + 1 < n; i++) {
+      const seg = len(sub(path[i + 1], path[i])), A = frames[i], Bf = frames[i + 1];
+      for (let k = 0; k < m; k++) {
+        const q0 = profile[k], q1 = profile[(k + 1) % profile.length], du = q1[0] - q0[0], dv = q1[1] - q0[1];
+        const hint = [A.r[0] * dv - A.u[0] * du, A.r[1] * dv - A.u[1] * du, A.r[2] * dv - A.u[2] * du];
+        const pl = Math.hypot(du, dv), sc = opt.uv || 1;
+        this.poly(mat, [at(A, q0), at(Bf, q0), at(Bf, q1), at(A, q1)], hint, { color: opt.color, attr: opt.attr,
+          uvs: [[along / sc, 0], [(along + seg) / sc, 0], [(along + seg) / sc, pl / sc], [along / sc, pl / sc]] });
+      }
+      along += seg;
+    }
   }
   // box between two local points (for beams, rails, wires-as-bars)
   beam(mat, a, b, w, h, opt = {}) {
@@ -70,11 +144,12 @@ export class GeoBuilder {
     this.F = saved;
   }
   cyl(mat, cx, y0, cz, r0, r1, h, seg = 8, opt = {}) {
-    const col = opt.color || WHITE;
+    const col = opt.color || WHITE, sl = (r0 - r1) / Math.max(h, 1e-4);
     for (let i = 0; i < seg; i++) {
       const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2;
-      const q = (a, r, y) => V3(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r);
-      this.quad(mat, q(a1, r0, y0), q(a0, r0, y0), q(a0, r1, y0 + h), q(a1, r1, y0 + h), { color: col, uvs: [[(i + 1) / seg, 0], [i / seg, 0], [i / seg, h / (opt.uv || 1)], [(i + 1) / seg, h / (opt.uv || 1)]] });
+      const q = (a, r, y) => V3(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r), nr = a => [Math.cos(a), sl, Math.sin(a)];
+      this.quad(mat, q(a1, r0, y0), q(a0, r0, y0), q(a0, r1, y0 + h), q(a1, r1, y0 + h), { color: col, uvs: [[(i + 1) / seg, 0], [i / seg, 0], [i / seg, h / (opt.uv || 1)], [(i + 1) / seg, h / (opt.uv || 1)]],
+        normals: opt.smooth === false ? null : [nr(a1), nr(a0), nr(a0), nr(a1)] });
       if (opt.cap) this.tri(mat, V3(cx, y0 + h, cz), q(a1, r1, y0 + h), q(a0, r1, y0 + h), { color: col });
     }
   }
@@ -87,6 +162,7 @@ export class GeoBuilder {
       g.setAttribute('normal', new THREE.Float32BufferAttribute(b.nor, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
       g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
+      for (const name in b.extra) g.setAttribute(name, new THREE.Float32BufferAttribute(b.extra[name], 2));
       g.setIndex(b.idx.length > 65535 ? new THREE.Uint32BufferAttribute(b.idx, 1) : new THREE.Uint16BufferAttribute(b.idx, 1));
       g.computeBoundingSphere();
       const m = new THREE.Mesh(g, materials[b.mat]);

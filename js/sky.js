@@ -2,7 +2,7 @@
 // Everything is driven by an art-directed palette keyed on the time of day (vivid noon blue, peach sunrise, orange and
 // pink sunset, violet dusk, deep blue night): the sky gradient, sunlight, coloured shadow fill, haze, clouds and exposure
 // are all interpolated from the same keyframes, so every hour looks like one painting.
-import { THREE, renderer, scene, camera, S, sunDir, fogU, Q, clamp, lerp, smoothstep, mulberry32 } from './core.js';
+import { THREE, renderer, scene, camera, S, sunDir, fogU, Q, clamp, lerp, smoothstep, mulberry32, withStandardDepth } from './core.js';
 import { buildClouds, cloudShadow, cloudU, cloudPal } from './clouds.js';
 
 export const time = { hour: 16.4, running: true, speed: 1 / 60 }; // game hours per real second (1 day = 24 min)
@@ -62,7 +62,13 @@ const skyMat = new THREE.ShaderMaterial({
   uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
   vertexShader: /* glsl */`
     varying vec3 vW;
-    void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; gl_Position.z = gl_Position.w; }`,
+    void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w;
+      #ifdef USE_REVERSEDEPTHBUF
+        gl_Position.z = 0.0;           // on the far plane (reversed depth: far = 0)
+      #else
+        gl_Position.z = gl_Position.w;
+      #endif
+    }`,
   fragmentShader: /* glsl */`
     uniform sampler2D tNoise; uniform float uTime, uNightSky, uGlowAmt; uniform vec3 uSunDir, uSunDisk, uMoonDir, uMoonGlow, uZen, uHor, uGlow, uGnd; uniform mat3 uCel;
     varying vec3 vW;
@@ -226,7 +232,7 @@ export function updateSky(force) {
   if (force || Math.abs(time.hour - lastEnvHour) > 0.05 || envTimer <= 0) {
     lastEnvHour = time.hour; envTimer = 180;
     if (envRT) envRT.dispose();
-    envRT = pmrem.fromScene(skyScene, 0.04);
+    envRT = withStandardDepth(() => pmrem.fromScene(skyScene, 0.04));
     scene.environment = envRT.texture;
   }
   scene.environmentIntensity = 1.0 + 1.8 * night; // anime nights stay readable: a brighter blue fill in the shadows

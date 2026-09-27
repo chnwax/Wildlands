@@ -7,6 +7,19 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
+import { GTAOShader, GTAODepthShader } from 'three/addons/shaders/GTAOShader.js';
+import { PoissonDenoiseShader } from 'three/addons/shaders/PoissonDenoiseShader.js';
+
+// GTAO and its denoiser rebuild view positions from standard depth: read reversed depth as 1 - d
+{
+  const flip = (sh, pairs) => { for (const [a, b] of pairs) { if (!sh.fragmentShader.includes(a)) { console.warn('post: shader changed', a); continue; } sh.fragmentShader = sh.fragmentShader.split(a).join(b); } };
+  const rev = e => `(1.0 - ${e})`;
+  flip(GTAOShader, [['return textureLod(tDepth, uv.xy, 0.0).DEPTH_SWIZZLING;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('textureLod(tDepth, uv.xy, 0.0).DEPTH_SWIZZLING') + ';\n#else\n return textureLod(tDepth, uv.xy, 0.0).DEPTH_SWIZZLING;\n#endif'],
+    ['return texelFetch(tDepth, uv.xy, 0).DEPTH_SWIZZLING;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('texelFetch(tDepth, uv.xy, 0).DEPTH_SWIZZLING') + ';\n#else\n return texelFetch(tDepth, uv.xy, 0).DEPTH_SWIZZLING;\n#endif']]);
+  flip(PoissonDenoiseShader, [['return textureLod(tDepth, uv.xy, 0.0).r;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('textureLod(tDepth, uv.xy, 0.0).r') + ';\n#else\n return textureLod(tDepth, uv.xy, 0.0).r;\n#endif'],
+    ['return texelFetch(tDepth, uv.xy, 0).r;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('texelFetch(tDepth, uv.xy, 0).r') + ';\n#else\n return texelFetch(tDepth, uv.xy, 0).r;\n#endif']]);
+  void GTAODepthShader;
+}
 
 export const post = { composer: null, bloom: null, grade: null, ao: null, scenePass: null, rays: null, onRebuild: [], exposure: { value: 0.2 }, wb: { value: new THREE.Vector3(1, 1, 1) } };
 
@@ -71,7 +84,11 @@ const RaysShader = {
     uniform sampler2D tDiffuse, tDepth; uniform vec2 uSun; uniform float uVis, uAspect; uniform vec3 uCol; varying vec2 vUv;
     float skyMask(vec2 uv){
       if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
-      float sky = step(0.9999995, texture2D(tDepth, uv).r);
+      #ifdef USE_REVERSEDEPTHBUF
+        float sky = step(texture2D(tDepth, uv).r, 5e-7);
+      #else
+        float sky = step(0.9999995, texture2D(tDepth, uv).r);
+      #endif
       vec3 c = texture2D(tDiffuse, uv).rgb;
       return sky * smoothstep(0.22, 1.15, dot(c, vec3(0.3, 0.5, 0.2)));
     }

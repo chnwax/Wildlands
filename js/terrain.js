@@ -874,7 +874,8 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
   const mirrorCam = new THREE.PerspectiveCamera();
   mirrorCam.layers.set(0); // objects moved to layer 1 are not reflected (cheap reflection pass)
   const textureMatrix = new THREE.Matrix4();
-  const reflRT = new THREE.WebGLRenderTarget(512, 512, { type: THREE.HalfFloatType });
+  const reflDepth = new THREE.DepthTexture(512, 512); reflDepth.type = THREE.FloatType; // 32F: pairs with reversed-Z
+  const reflRT = new THREE.WebGLRenderTarget(512, 512, { type: THREE.HalfFloatType, depthTexture: reflDepth });
   const mat = new THREE.ShaderMaterial({
     transparent: true, fog: true, depthWrite: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {

@@ -82,7 +82,42 @@ export const Q = { name: 'high' };
 }
 
 // ---------------------------------------------------------------- renderer / scene / camera
-export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
+// Reversed-Z: with a float depth buffer, depth precision stays nearly constant relative to distance, so layered
+// geometry (road, markings, kerbs, terrain under them) stays stable from the street to 20 km out. Needs
+// EXT_clip_control (desktop Chrome/Edge/Firefox have it); without it three silently keeps standard depth.
+export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, reverseDepthBuffer: true });
+export const depthReversed = renderer.state.buffers.depth.getReversed();
+function applyReversedDepth() {
+  const clip = renderer.extensions.get('EXT_clip_control'), db = renderer.state.buffers.depth;
+  db.reset(); db.setReversed(true);                                   // drops the stale cached clear value
+  clip.clipControlEXT(clip.LOWER_LEFT_EXT, clip.ZERO_TO_ONE_EXT);
+  db.setClear(1);                                                     // stored flipped: clears to 0
+}
+// run a render with standard depth (three's PMREM generator is not reversed-depth aware in r170)
+export function withStandardDepth(fn) {
+  if (!depthReversed) return fn();
+  const clip = renderer.extensions.get('EXT_clip_control'), db = renderer.state.buffers.depth;
+  db.reset(); clip.clipControlEXT(clip.LOWER_LEFT_EXT, clip.NEGATIVE_ONE_TO_ONE_EXT); db.setClear(1);
+  try { return fn(); } finally { applyReversedDepth(); }
+}
+if (depthReversed) {
+  // three r170 enables reversed depth with the wrong clip-control mode and keeps a cached depth-clear of 1: set the
+  // [0,1] clip range (full float precision) and a depth clear of 0 (the far plane) ourselves
+  applyReversedDepth();
+  // polygon offsets are written for standard depth (negative = toward the camera): flip them for reversed depth
+  const setPO = renderer.state.setPolygonOffset;
+  renderer.state.setPolygonOffset = (on, factor, units) => setPO(on, -factor, -units);
+}
+// shadow maps store standard [0,1] depth even when the view is rendered reversed (the lookup side uses the unreversed
+// shadow matrix)
+THREE.ShaderLib.depth.fragmentShader = THREE.ShaderLib.depth.fragmentShader.replace(
+  'float fragCoordZ = 0.5 * vHighPrecisionZW[0] / vHighPrecisionZW[1] + 0.5;',
+  `#ifdef USE_REVERSEDEPTHBUF
+	float fragCoordZ = 1.0 - vHighPrecisionZW[0] / vHighPrecisionZW[1];
+#else
+	float fragCoordZ = 0.5 * vHighPrecisionZW[0] / vHighPrecisionZW[1] + 0.5;
+#endif`);
+if (!THREE.ShaderLib.depth.fragmentShader.includes('USE_REVERSEDEPTHBUF')) console.warn('depth chunk patch failed');
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(pixelRatio());
 renderer.toneMapping = THREE.NeutralToneMapping; // keeps hues and saturation intact (the look is painted, not filmic)
