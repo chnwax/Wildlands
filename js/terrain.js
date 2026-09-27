@@ -124,7 +124,9 @@ export function terrainMaterial(hf, L, opt = {}) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
   // cloud shadows are evaluated per vertex: the splat shader already needs 15 textures, and WebGL2 GPUs only
   // guarantee 16 per fragment shader (going over fails to link and the ground simply is not drawn)
-  mat.defines = { CLOUD_SHADE_VARYING: '' };
+  mat.defines = opt.lite ? { CLOUD_SHADE_VARYING: '', TERRAIN_LITE: '' } : { CLOUD_SHADE_VARYING: '' };
+  // if this GPU cannot run the full splat shader, main.js swaps in the painted-colour version (no photo textures)
+  if (!opt.lite) mat.userData.fallback = () => terrainMaterial(hf, L, Object.assign({}, opt, { lite: true }));
   const tintV = a => new THREE.Vector3(...(a || [1, 1, 1]));
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, hf.U, {
@@ -144,6 +146,15 @@ export function terrainMaterial(hf, L, opt = {}) {
         uniform sampler2D tGrassD, tGrassN, tForestD, tForestN, tRockD, tRockN, tSandD, tSandN, tUrbanD, tUrbanN, tNoise, tMask, tMask2;
         uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist, uGrassR; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
         vec3 unpackN(vec4 t){ return t.xyz * 2.0 - 1.0; }
+        #ifdef TERRAIN_LITE
+          #define SMPD(t, uv) vec4(0.32)
+          #define SMPDL(t, uv, l) vec4(0.32)
+          #define SMPN(t, uv) vec4(0.5, 0.5, 1.0, 1.0)
+        #else
+          #define SMPD(t, uv) texture2D(t, uv)
+          #define SMPDL(t, uv, l) textureLod(t, uv, l)
+          #define SMPN(t, uv) texture2D(t, uv)
+        #endif
         vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
         float lum3(vec3 c){ return dot(c, vec3(0.3, 0.55, 0.15)); }
         ${MEADOW_GLSL}`)
@@ -168,19 +179,19 @@ export function terrainMaterial(hf, L, opt = {}) {
         float nearT = 1.0 - smoothstep(30.0, 220.0, camDist);
         // meadow: painted colour patches + a faint brush texture from the photo map's luminance
         vec3 cGrass = meadowColor(nz1, nz2, nz3);
-        cGrass *= mix(1.0, clamp(lum3(texture2D(tGrassD, wuv / uScales.x).rgb) * 3.6, 0.6, 1.4), 0.2 * nearT);
-        vec3 nGrass = unpackN(texture2D(tGrassN, wuv / uScales.x)) * 0.35;
-        vec3 cForest = uP_forest * mix(0.8, 1.12, nz2.r) * mix(1.0, clamp(lum3(texture2D(tForestD, wuv / uScales.y).rgb) * 3.2, 0.6, 1.4), 0.3 * nearT);
-        vec3 nForest = unpackN(texture2D(tForestN, wuv / uScales.y)) * 0.5;
-        vec3 cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(texture2D(tSandD, wuv / uScales.z).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
-        vec3 nSand = unpackN(texture2D(tSandN, wuv / uScales.z)) * 0.5;
-        vec3 uTex = texture2D(tUrbanD, wuv / uScales.w).rgb, uAvg = textureLod(tUrbanD, wuv / uScales.w, 7.0).rgb;
+        cGrass *= mix(1.0, clamp(lum3(SMPD(tGrassD, wuv / uScales.x).rgb) * 3.6, 0.6, 1.4), 0.2 * nearT);
+        vec3 nGrass = unpackN(SMPN(tGrassN, wuv / uScales.x)) * 0.35;
+        vec3 cForest = uP_forest * mix(0.8, 1.12, nz2.r) * mix(1.0, clamp(lum3(SMPD(tForestD, wuv / uScales.y).rgb) * 3.2, 0.6, 1.4), 0.3 * nearT);
+        vec3 nForest = unpackN(SMPN(tGrassN, wuv / uScales.y)) * 0.5;
+        vec3 cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(SMPD(tSandD, wuv / uScales.z).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
+        vec3 nSand = unpackN(SMPN(tGrassN, wuv / uScales.z)) * 0.5;
+        vec3 uTex = SMPD(tUrbanD, wuv / uScales.w).rgb, uAvg = SMPDL(tUrbanD, wuv / uScales.w, 7.0).rgb;
         vec3 cUrban = mix(uAvg, uTex, 0.35) * uTintU * (uUrbanNorm > 0.0 ? uUrbanNorm / max(lum3(uAvg), 0.04) : 1.0); // optional painted brightness
-        vec3 nUrban = unpackN(texture2D(tUrbanN, wuv / uScales.w)) * 0.6;
+        vec3 nUrban = unpackN(SMPN(tGrassN, wuv / uScales.w)) * 0.6;
         vec3 bw = pow(max(abs(wN), vec3(1e-4)), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
         float rs = mix(1.0 / uRockS, 1.0 / (uRockS * 3.4), farT * 0.7);
-        vec3 cRockT = texture2D(tRockD, vWPos.zy * rs).rgb * bw.x + texture2D(tRockD, vWPos.xz * rs).rgb * bw.y + texture2D(tRockD, vWPos.xy * rs).rgb * bw.z;
-        vec3 rnx = unpackN(texture2D(tRockN, vWPos.zy * rs)), rny = unpackN(texture2D(tRockN, vWPos.xz * rs)), rnz = unpackN(texture2D(tRockN, vWPos.xy * rs));
+        vec3 cRockT = SMPD(tRockD, vWPos.zy * rs).rgb * bw.x + SMPD(tRockD, vWPos.xz * rs).rgb * bw.y + SMPD(tRockD, vWPos.xy * rs).rgb * bw.z;
+        vec3 rnx = unpackN(SMPN(tRockN, vWPos.zy * rs)), rny = unpackN(SMPN(tRockN, vWPos.xz * rs)), rnz = unpackN(SMPN(tRockN, vWPos.xy * rs));
         vec3 nRock = normalize(wN + vec3(0.0, rnx.y, rnx.x) * bw.x + vec3(rny.x, 0.0, rny.y) * bw.y + vec3(rnz.x, rnz.y, 0.0) * bw.z);
         // rock: two painted tones picked by the photo's light/dark strata
         vec3 cRock = mix(uP_rockD, uP_rockL, smoothstep(0.18, 0.42, lum3(cRockT) + (nz2.b - 0.5) * 0.12));
@@ -218,7 +229,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = splatRough;')
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(splatN, 0.0)).xyz);');
   };
-  mat.customProgramCacheKey = () => 'terrain';
+  mat.customProgramCacheKey = () => opt.lite ? 'terrainLite' : 'terrain';
   return mat;
 }
 

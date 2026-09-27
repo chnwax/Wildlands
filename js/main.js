@@ -17,6 +17,37 @@ document.querySelectorAll('[data-map]').forEach(b => {
 });
 
 let world = null, life = null, started = false, locked = false, hudOn = true;
+
+// ---------------------------------------------------------------- graphics safety net
+// A shader this GPU cannot compile or link silently draws nothing (e.g. one that needs more textures than the GPU
+// allows). Failed programs are collected; materials that offer a simpler fallback are swapped in on the next frame,
+// and the player is told which GPU struggled so the problem can be reported.
+const failedPrograms = new Set();
+const gl0 = renderer.getContext(), dbgInfo = gl0.getExtension('WEBGL_debug_renderer_info');
+const gpuName = dbgInfo ? gl0.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL) : gl0.getParameter(gl0.RENDERER);
+console.info(`Wildlands · GPU: ${gpuName} · textures per shader: ${gl0.getParameter(gl0.MAX_TEXTURE_IMAGE_UNITS)} · WebGL ${renderer.capabilities.isWebGL2 ? 2 : 1}`);
+renderer.debug.onShaderError = (gl, program, vs, fs) => {
+  failedPrograms.add(program);
+  const log = [gl.getProgramInfoLog(program), gl.getShaderInfoLog(vs), gl.getShaderInfoLog(fs)].map(x => (x || '').trim()).filter(Boolean).join('\n');
+  console.error('Wildlands: a shader could not be built on this GPU (' + gpuName + ')\n' + log);
+};
+function gfxNote(html) {
+  let el = document.getElementById('gfxNote');
+  if (!el) { el = document.createElement('div'); el.id = 'gfxNote'; el.title = 'click to hide'; el.onclick = () => el.remove(); document.body.appendChild(el); }
+  el.innerHTML = html;
+}
+function repairShaders() {
+  const swaps = new Map(); let fixed = 0, broken = 0;
+  scene.traverse(o => {
+    const m = o.material; if (!m || Array.isArray(m)) return;
+    const pr = renderer.properties.get(m).currentProgram;
+    if (!pr || !failedPrograms.has(pr.program)) return;
+    if (m.userData.fallback) { if (!swaps.has(m)) swaps.set(m, m.userData.fallback()); o.material = swaps.get(m); fixed++; } else broken++;
+  });
+  failedPrograms.clear();
+  if (fixed || broken) gfxNote(`<b>Graphics:</b> ${fixed ? 'your GPU could not run the detailed ground shader, so a simpler painted ground is used.' : ''}
+    ${broken ? `${broken} object(s) could not be drawn on this GPU.` : ''}<br><small>${gpuName} · details in the browser console (F12)</small>`);
+}
 const clock = new THREE.Clock();
 let fpsAcc = 0, fpsN = 0, ambTimer = 0, amb = {};
 
@@ -70,6 +101,7 @@ function step(dt, t) {
   audio.update(dt, { wind, ...amb, day: env.day, night: env.night, fly: player.fly, under });
   for (const e of audio.emitters) e.update(dt);
   post.composer.render(dt);
+  if (failedPrograms.size) repairShaders();
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) {
     $('fps').textContent = Math.round(fpsN / fpsAcc) + ' fps · ' + Q.name;
