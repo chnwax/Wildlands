@@ -251,10 +251,12 @@ export async function build(progress) {
         else { B.quad('pavement', [xo, yd, z], [xo2, yd, z + 4], [xb, yd, z + 4], [xa, yd, z], pc); B.quad('concrete', [xo, Y0 - 1.2, z], [xo2, Y0 - 1.2, z + 4], [xo2, yd, z + 4], [xo, yd, z], sk); }
       }
       if (Math.abs(z + 25) < 12 || Math.abs(z + 80) < 12 || Math.abs(z - 200) < 10) continue;
-      const rx = xa + sd * 0.4;
-      B.box('alu', rx, Y0 + 0.9, z + 2, 0.06, 0.06, 4, { color: [0.3, 0.5, 0.45] });
-      B.box('alu', rx, Y0, z, 0.06, 0.95, 0.06, { color: [0.3, 0.5, 0.45] });
-      addBox(rx, z + 2, 0.2, 2.1, 0);
+      // railing: rails follow the bank's curve segment by segment, posts every 2 m
+      const ra = xa + sd * 0.4, rb = xb + sd * 0.4, rc = { color: [0.3, 0.52, 0.47] };
+      B.beam('alu', [ra, Y0 + 1.07, z], [rb, Y0 + 1.07, z + 4], 0.07, 0.07, rc);
+      B.beam('alu', [ra, Y0 + 0.62, z], [rb, Y0 + 0.62, z + 4], 0.035, 0.035, rc);
+      for (const k of [0, 0.5]) B.box('alu', lerp(ra, rb, k), Y0 + 0.1, z + 4 * k, 0.06, 0.97, 0.06, rc);
+      addBox((ra + rb) / 2, z + 2, 0.1, 2.05, Math.atan2(rb - ra, 4));
     }
   }
   for (const [bz, bw] of [[-25, 7 + 5], [200, 4.0 + 1]]) {

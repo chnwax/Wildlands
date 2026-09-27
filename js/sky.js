@@ -259,4 +259,5 @@ export function followCamera(groundAt, yaw) {
   sun.position.copy(center).addScaledVector(env.lightDir, 700);
   sun.target.updateMatrixWorld();
   fogU.fogParams.value.x = c.y;
+  fogU.fogHaze.value.x = Q.trees * 0.3; fogU.fogHaze.value.y = 1.25 / Q.trees;
 }

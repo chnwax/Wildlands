@@ -102,13 +102,14 @@ export const fogU = {
   fogSunColor: { value: { x: 0, y: 0, z: 0 } },
   fogParams: { value: { x: 0, y: 1 / 200, z: 0 } }, // x: camera height above fog base, y: height falloff
   fogMist: { value: { x: 0, y: 1 / 11 } },           // low ground mist layer: x density, y height falloff
+  fogHaze: { value: { x: 600, y: 0 } },              // aerial haze toward the draw distance: x start (m), y density per metre
 };
 for (const k in THREE.ShaderLib) { const u = THREE.ShaderLib[k].uniforms; if (u && u.fogColor) Object.assign(u, fogU); }
 Object.assign(THREE.UniformsLib.fog, fogU);
 THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogDir;\n#endif';
 THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogDir = ( vec4( mvPosition.xyz, 0.0 ) * viewMatrix ).xyz;\n#endif';
 THREE.ShaderChunk.fog_pars_fragment = /* glsl */`#ifdef USE_FOG
-	uniform vec3 fogColor; uniform vec3 fogSunDir; uniform vec3 fogSunColor; uniform vec3 fogParams; uniform vec2 fogMist;
+	uniform vec3 fogColor; uniform vec3 fogSunDir; uniform vec3 fogSunColor; uniform vec3 fogParams; uniform vec2 fogMist; uniform vec2 fogHaze;
 	varying float vFogDepth; varying vec3 vFogDir;
 	#ifdef FOG_EXP2
 		uniform float fogDensity;
@@ -128,6 +129,7 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 			float mk = fogMist.y, mdy = clamp( fDir.y * fDist * mk, -8.0, 60.0 );
 			fOD += fogMist.x * fDist * exp( - clamp( mk * fogParams.x, -8.0, 60.0 ) ) * ( abs( mdy ) > 1e-3 ? ( 1.0 - exp( - mdy ) ) / mdy : 1.0 );
 		}
+		fOD += fogHaze.y * max( fDist - fogHaze.x, 0.0 ); // distant scenery melts into the sky colour before the draw distance
 		float fogFactor = 1.0 - exp( - fOD );
 	#else
 		float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );

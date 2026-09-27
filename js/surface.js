@@ -163,6 +163,13 @@ export function wornPaint(mat, key) {
 }
 
 // ---------------------------------------------------------------- interior-mapped windows
+// soft anime palette for shop goods, curtains and pictures
+const SHOP_PAL = /* glsl */`
+vec3 shopPal(float h) {
+  float i = floor(h * 8.0);
+  return i < 1.0 ? vec3(0.96, 0.62, 0.66) : i < 2.0 ? vec3(0.56, 0.84, 0.7) : i < 3.0 ? vec3(0.99, 0.84, 0.46) : i < 4.0 ? vec3(0.56, 0.74, 0.96)
+       : i < 5.0 ? vec3(0.96, 0.58, 0.42) : i < 6.0 ? vec3(0.72, 0.62, 0.92) : i < 7.0 ? vec3(0.36, 0.68, 0.74) : vec3(0.95, 0.9, 0.78);
+}`;
 // Rooms are laid out on a world-space grid (floor height, room width) behind every window quad; UVs 0..1 across the pane
 // drive curtains. Reflections come from the physically based glass (black diffuse, low roughness).
 export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, roomH = 2.85, depth = 4.2 } = {}) {
@@ -171,7 +178,7 @@ export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, 
     worldVaryings(sh);
     Object.assign(sh.uniforms, { uNightW: night, uAmbW: S.uAmb, uRoom: { value: new THREE.Vector4(roomW, roomH, depth, base) } });
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uNightW; uniform vec3 uAmbW; uniform vec4 uRoom;' + HASH)
+      .replace('#include <common>', '#include <common>\nuniform float uNightW; uniform vec3 uAmbW; uniform vec4 uRoom;' + HASH + SHOP_PAL)
       .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
       {
         vec3 N = normalize(vSWNrm);
@@ -191,48 +198,87 @@ export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, 
         float t = min(min(tx, ty), tz);
         vec3 hp = p0 + d * t;
         vec3 col;
+        // size of a pixel on the room surfaces (metres): fine detail fades to its average before it can shimmer
+        vec3 fwp = fwidth(hp);
+        float detail = 1.0 - smoothstep(0.025, 0.08, max(max(fwp.x, fwp.y), fwp.z));
+        float back = clamp(-hp.z / D, 0.0, 1.0);
         #ifdef WIN_SHOP
-          vec3 wallC = vec3(0.92, 0.92, 0.9);
-          if (t == tz || t == tx) {
-            col = wallC;
-            float row = floor(hp.y / 0.32);
-            if (hp.y > 0.15 && hp.y < 1.9) {             // shelves full of goods
-              float item = h31(vec3(floor((hp.x - hp.z) * 4.5), row, r1 * 9.0));
-              vec3 prod = mix(vec3(0.62, 0.6, 0.58), pow(vec3(h31(vec3(item, 1, 2)), h31(vec3(item, 3, 4)), h31(vec3(item, 5, 6))), vec3(1.6)) * 0.85 + 0.05, 0.6); // soft pastel packaging
-              float fy = fract(hp.y / 0.32);
-              col = mix(vec3(0.55), prod, step(0.1, fy)) * mix(0.35, 1.0, smoothstep(0.1, 0.9, fy)); // shadow under each shelf
+          // anime shop: a three-colour pastel palette per shopfront, rounded goods on pale shelves, soft ceiling panels
+          vec3 pa = shopPal(r1), pb = shopPal(fract(r1 + 0.41)), pc = shopPal(fract(r1 + 0.73));
+          vec3 wallC = mix(vec3(0.97, 0.94, 0.88), pa * 0.3 + 0.68, 0.45);
+          if (t == ty) {
+            if (d.y < 0.0) {
+              vec3 fl = r3 < 0.5 ? vec3(0.82, 0.7, 0.55) : vec3(0.88, 0.87, 0.84);
+              float seam = r3 < 0.5 ? abs(fract(hp.x * 2.0) - 0.5) : max(abs(fract(hp.x * 1.5) - 0.5), abs(fract(hp.z * 1.5) - 0.5));
+              col = fl * (1.0 - 0.07 * smoothstep(0.45, 0.49, seam) * detail);
+            } else {
+              vec2 q = vec2(abs(fract(hp.x / 1.8) - 0.5), abs(fract(hp.z / 1.6) - 0.5));
+              float panel = (1.0 - smoothstep(0.17, 0.23, q.x)) * (1.0 - smoothstep(0.2, 0.26, q.y));
+              col = vec3(0.95, 0.95, 0.93) + panel * vec3(1.2, 1.15, 1.05) * (0.4 + 0.6 * uNightW);
             }
-          } else col = d.y < 0.0 ? vec3(0.78, 0.78, 0.75) : vec3(0.96) + step(0.7, fract(hp.x * 0.5)) * step(0.6, fract(hp.z * 0.4)) * 4.0;
-          vec3 light = vec3(1.0, 0.98, 0.95) * (0.5 + uNightW * 0.95) * vColor.r;
-          col *= light + uAmbW * 0.2;
+          } else {
+            float u = t == tz ? hp.x : hp.z, du = t == tz ? fwp.x : fwp.z;
+            col = wallC;
+            float sy = (hp.y - 0.1) / 0.45, row = floor(sy), fy = fract(sy);
+            float slot = u / 0.36, si = floor(slot), fx = fract(slot);
+            float k = h31(vec3(si, row, r1 * 17.0)), k2 = h31(vec3(si + 0.5, row, r2 * 11.0 + 3.0));
+            vec3 prod = k < 0.4 ? pa : k < 0.75 ? pb : pc;
+            prod = mix(prod, vec3(0.97, 0.95, 0.9), step(0.82, k2) * 0.75);           // some white packaging
+            float hgt = 0.52 + 0.36 * k2, ex = 0.06 + 0.06 * k;
+            float ax = du / 0.36 + 1e-3, ay = fwp.y / 0.45 + 1e-3;
+            float item = smoothstep(ex - ax, ex + ax, fx) * (1.0 - smoothstep(1.0 - ex - ax, 1.0 - ex + ax, fx))
+                       * smoothstep(0.13 - ay, 0.13 + ay, fy) * (1.0 - smoothstep(hgt - ay, hgt + ay, fy));
+            vec3 goods = mix(prod * 0.9, prod * 1.06 + 0.06, smoothstep(0.13, hgt, fy)); // painted: lighter toward the top
+            float board = 1.0 - smoothstep(0.09, 0.09 + ay, fy);
+            vec3 shelf = mix(wallC * 0.8, goods, item);
+            shelf = mix(shelf, vec3(0.84, 0.76, 0.66), board) * mix(0.8, 1.0, smoothstep(0.09, 0.42, fy));
+            vec3 avg = mix(wallC * 0.8, (pa + pb + pc) / 3.0, 0.45) * 0.93;
+            col = mix(col, mix(avg, shelf, detail), step(0.0, sy) * step(sy, 4.0));
+            float band = smoothstep(2.18, 2.18 + ay, hp.y) * (1.0 - smoothstep(2.46, 2.46 + ay, hp.y)); // painted frieze above the shelves
+            col = mix(col, pa * 0.75 + 0.2, band);
+          }
+          vec3 light = vec3(1.0, 0.97, 0.9) * (0.55 + uNightW * 0.3) * vColor.r * mix(1.08, 0.78, back);
+          col *= light + uAmbW * 0.12;
         #else
-          vec3 wallC = mix(vec3(0.86, 0.83, 0.76), vec3(0.78, 0.82, 0.8), r1) * mix(0.8, 1.05, r4);
-          vec3 floorC = r2 < 0.55 ? vec3(0.42, 0.29, 0.18) : vec3(0.6, 0.57, 0.38);   // wood or tatami
+          // homes: pastel walls, wood or tatami floors, one soft furniture shape, a ceiling lamp and curtains
+          vec3 wallC = mix(vec3(0.96, 0.91, 0.8), vec3(0.86, 0.92, 0.9), r1) * mix(0.9, 1.02, r4);
+          vec3 floorC = r2 < 0.55 ? vec3(0.62, 0.45, 0.31) : vec3(0.8, 0.76, 0.52);
+          float lit = step(r3, mix(0.1, 0.62, uNightW));
+          vec3 lamp = mix(vec3(1.0, 0.82, 0.6), vec3(0.9, 0.95, 1.0), step(0.72, r1));
           if (t == tz) {
             col = wallC * 0.95;
-            float fx = RW * (0.2 + 0.6 * r1), fw = 0.4 + 0.7 * r2, fh = 0.5 + 1.3 * r3;  // wardrobe / shelf / sofa silhouette
-            if (hp.y < fh && abs(hp.x - fx) < fw) col = mix(vec3(0.18, 0.13, 0.1), vec3(0.55, 0.5, 0.45), r4);
-          } else if (t == ty) col = d.y < 0.0 ? floorC : vec3(0.93, 0.93, 0.9);
-          else col = wallC * 0.85;
-          float lit = step(r3, mix(0.1, 0.62, uNightW));
-          vec3 lamp = mix(vec3(1.0, 0.8, 0.58), vec3(0.88, 0.94, 1.0), step(0.72, r1));
-          float nearCeil = mix(0.55, 1.2, hp.y / RH) * mix(1.1, 0.7, clamp(-hp.z / D, 0.0, 1.0));
-          vec3 light = uAmbW * 0.3 + lit * lamp * (0.7 + 0.8 * uNightW) * nearCeil;
+            float fx = RW * (0.2 + 0.6 * r1), fwid = 0.4 + 0.7 * r2, fh = 0.5 + 1.2 * r3, e = fwp.x + fwp.y + 0.01;
+            float furn = (1.0 - smoothstep(fwid - e, fwid + e, abs(hp.x - fx))) * (1.0 - smoothstep(fh - e, fh + e, hp.y));
+            col = mix(col, mix(vec3(0.5, 0.36, 0.28), vec3(0.64, 0.7, 0.78), r4) * mix(0.9, 1.05, hp.y / fh), furn);
+            float px = RW * (0.75 - 0.5 * r1), pic = (1.0 - smoothstep(0.32 - e, 0.32 + e, abs(hp.x - px))) * (1.0 - smoothstep(0.24 - e, 0.24 + e, abs(hp.y - 1.75)));
+            col = mix(col, shopPal(r2) * 0.85, pic * step(fh + 0.3, 1.5) * detail);    // a framed picture above low furniture
+          } else if (t == ty) {
+            col = d.y < 0.0 ? floorC * mix(1.0, 0.94, step(0.5, fract(hp.x * 2.2)) * detail) : vec3(0.96, 0.95, 0.92);
+            if (d.y > 0.0) col += lit * lamp * 1.6 * (1.0 - smoothstep(0.18, 0.5, length(hp.xz - vec2(RW * 0.5, -D * 0.45))));
+          } else col = wallC * 0.86;
+          float nearCeil = mix(0.6, 1.15, hp.y / RH) * mix(1.1, 0.72, back);
+          vec3 light = uAmbW * 0.34 + lit * lamp * (0.75 + 0.8 * uNightW) * nearCeil;
           col *= light;
-          // curtains (side panels) and lace
-          float cw = 0.08 + 0.3 * r4;
-          float curtain = step(vSUv.x, cw) + step(1.0 - cw * (0.4 + r2), vSUv.x) + step(0.86, r2) * step(0.2, vSUv.y);
-          vec3 curtC = mix(vec3(0.82, 0.76, 0.64), vec3(0.42, 0.47, 0.56), r1) * (0.85 + 0.15 * sin(vSUv.x * 70.0));
-          vec3 curtLight = uAmbW * 0.55 + lit * lamp * (0.6 + 0.6 * uNightW);
+          // curtains (side panels, soft folds) and lace
+          vec2 fwu = fwidth(vSUv) + 1e-4;
+          float cw = 0.08 + 0.3 * r4, cr = 1.0 - cw * (0.4 + r2);
+          float curtain = max(1.0 - smoothstep(cw - fwu.x, cw + fwu.x, vSUv.x), smoothstep(cr - fwu.x, cr + fwu.x, vSUv.x));
+          curtain = max(curtain, step(0.86, r2) * smoothstep(0.2 - fwu.y, 0.2 + fwu.y, vSUv.y));
+          vec3 curtC = mix(vec3(0.95, 0.88, 0.74), shopPal(r1) * 0.8 + 0.1, step(0.5, r3)) * (1.0 - 0.1 * detail * (0.5 + 0.5 * sin(vSUv.x * 60.0)));
+          vec3 curtLight = uAmbW * 0.6 + lit * lamp * (0.65 + 0.6 * uNightW);
           col = mix(col, curtC * curtLight, clamp(curtain, 0.0, 1.0) * 0.96);
-          col = mix(col, vec3(0.9) * curtLight, step(0.5, r4) * 0.55 * (1.0 - clamp(curtain, 0.0, 1.0)));
+          col = mix(col, vec3(0.92) * curtLight, step(0.5, r4) * 0.5 * (1.0 - clamp(curtain, 0.0, 1.0)));
         #endif
         totalEmissiveRadiance += col;
-        #ifndef WIN_SHOP
+        // daylight: sky tint and two painted highlight streaks across the glass
         { float sk = vSUv.x + vSUv.y * 0.75, dayW = 1.0 - uNightW;
           float band = (1.0 - smoothstep(0.0, 0.06, abs(sk - 0.5))) * 0.55 + (1.0 - smoothstep(0.0, 0.025, abs(sk - 0.7))) * 0.4;
-          totalEmissiveRadiance += (vec3(0.18, 0.3, 0.5) + vec3(0.85, 0.92, 1.0) * band) * dayW * 0.6; }
-        #endif
+          #ifdef WIN_SHOP
+            totalEmissiveRadiance += vec3(0.85, 0.92, 1.0) * band * dayW * 0.22;
+          #else
+            totalEmissiveRadiance += (vec3(0.18, 0.3, 0.5) + vec3(0.85, 0.92, 1.0) * band) * dayW * 0.6;
+          #endif
+        }
       }`);
     if (shop) sh.fragmentShader = '#define WIN_SHOP\n' + sh.fragmentShader;
   });

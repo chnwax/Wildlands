@@ -25,7 +25,9 @@ THREE.ShaderChunk.color_fragment = /* glsl */`
 #if defined( USE_MAP ) && defined( TOON_FLAT )
 	{ vec3 mapAvg = textureLod( map, vMapUv, 5.5 ).rgb, toonAvg = diffuse * mapAvg; diffuseColor.rgb = mix( toonAvg, diffuseColor.rgb, 0.28 );
 	#ifdef TOON_NORM
-	  diffuseColor.rgb *= TOON_NORM / max( dot( mapAvg, vec3( 0.3, 0.59, 0.11 ) ), 0.04 ); // painted albedo of a set brightness, tinted by the material
+	  // painted albedo of a set brightness; the photo's own hue is mostly removed so the vertex tint decides the colour
+	  diffuseColor.rgb = mix( vec3( dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ), diffuseColor.rgb, 0.35 );
+	  diffuseColor.rgb *= TOON_NORM / max( dot( mapAvg, vec3( 0.3, 0.59, 0.11 ) ), 0.04 );
 	#else
 	  diffuseColor.rgb = diffuseColor.rgb * 0.82 + 0.05; // painted albedos: no near-black surfaces
 	#endif

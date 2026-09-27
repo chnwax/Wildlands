@@ -121,7 +121,7 @@ export function buildComposer() {
   P.rays = new ShaderPass(RaysShader);
   P.rays.uniforms.tDepth.value = P.scenePass.rt.depthTexture;
   P.composer.addPass(P.rays);
-  P.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.42, 0.75, 0.82);
+  P.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.42, 0.75, 0.97); // only light sources and sunlit highlights bloom, not whole sunny walls
   P.bloom.enabled = Q.bloom;
   P.composer.addPass(P.bloom);
   P.composer.addPass(new OutputPass());

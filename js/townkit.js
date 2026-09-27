@@ -398,14 +398,21 @@ function windowOn(B, cx, y, w, h, rng, opt = {}) {
   const lit = rng() < 0.45, z = opt.z || 0.02;
   B.quad('window', [cx - w / 2, y, z], [cx + w / 2, y, z], [cx + w / 2, y + h, z], [cx - w / 2, y + h, z],
     { color: lit ? jitter(rng, rng() < 0.7 ? [1, 0.85, 0.6] : [0.85, 0.92, 1], 0.1) : [1, 1, 1], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
-  const f = 0.05, c = [0.78, 0.8, 0.82];
-  B.box('alu', cx, y - f, z + 0.01, w + f * 2, f, 0.06, { color: c });
-  B.box('alu', cx, y + h, z + 0.01, w + f * 2, f, 0.06, { color: c });
-  B.box('alu', cx - w / 2 - f / 2, y, z + 0.01, f, h, 0.06, { color: c });
-  B.box('alu', cx + w / 2 + f / 2, y, z + 0.01, f, h, 0.06, { color: c });
-  if (w > 0.9) B.box('alu', cx, y, z + 0.02, 0.04, h, 0.04, { color: c });
-  if (opt.sill !== false) B.box('alu', cx, y - 0.08, z + 0.05, w + 0.12, 0.04, 0.12, { color: c });
+  const f = 0.05, c = opt.frame || [0.78, 0.8, 0.82], fm = opt.frameMat || 'alu';
+  B.box(fm, cx, y - f, z + 0.01, w + f * 2, f, 0.06, { color: c });
+  B.box(fm, cx, y + h, z + 0.01, w + f * 2, f, 0.06, { color: c });
+  B.box(fm, cx - w / 2 - f / 2, y, z + 0.01, f, h, 0.06, { color: c });
+  B.box(fm, cx + w / 2 + f / 2, y, z + 0.01, f, h, 0.06, { color: c });
+  if (w > 0.9) B.box(fm, cx, y, z + 0.02, 0.04, h, 0.04, { color: c });
+  if (opt.sill !== false) B.box(fm, cx, y - 0.08, z + 0.05, w + 0.12, 0.04, 0.12, { color: c });
+  if (opt.lattice) { const n = Math.round(w / 0.1); for (let i = 1; i < n; i++) B.box('plain', cx - w / 2 + i * w / n, y, z + 0.07, 0.025, h, 0.03, { color: [0.36, 0.25, 0.18] }); } // koshi
   if (opt.shutterBox) B.box('alu', cx, y + h + 0.05, z + 0.08, w + 0.14, 0.2, 0.16, { color: opt.shutterColor || [0.75, 0.74, 0.7] });
+  if (opt.hood) { // small sloped hood (hisashi) over the window
+    const hy = y + h + (opt.shutterBox ? 0.34 : 0.14), hd = 0.45, hw = w / 2 + 0.22;
+    B.quad('roofMetal', [cx - hw, hy, z + hd], [cx + hw, hy, z + hd], [cx + hw, hy + 0.16, z], [cx - hw, hy + 0.16, z], { color: opt.hood });
+    B.quad('plain', [cx + hw, hy - 0.02, z + hd], [cx - hw, hy - 0.02, z + hd], [cx - hw, hy + 0.14, z], [cx + hw, hy + 0.14, z], { color: [0.9, 0.88, 0.84] });
+    B.box('plain', cx, hy - 0.06, z + hd, hw * 2, 0.08, 0.03, { color: opt.hood.map(v => v * 0.75) });
+  }
   if (opt.grille) for (let i = 1; i < 6; i++) B.box('alu', cx - w / 2 + i * w / 6, y, z + 0.06, 0.02, h, 0.02, { color: c });
 }
 
@@ -436,49 +443,184 @@ function hipRoof(B, mat, w, d, y, pitch, over, color) {
   return rh;
 }
 
-// Detached house. Lot local frame: origin lot centre, +Z towards the street. Returns info for the caller.
+// Detached houses in five styles so streets never look copy-pasted:
+//  classic      pastel siding, gable or hip roof, sometimes a smaller second floor over a lean-to
+//  twoTone      tiled or timber ground floor under a pastel upper floor, bay window
+//  modern       single-pitch (katanagare) roof with solar panels, dark frames, tall windows, timber accent
+//  traditional  dark cedar skirting under white plaster, heavy kawara hip roof, skirt roof between floors, lattices
+//  cube         flat roof with parapet, ribbon windows, glass balcony
+// Lot local frame: origin lot centre, +Z towards the street. Returns info for the caller.
+const HOUSE_WALLS = [[1, 0.93, 0.78], [0.98, 0.98, 0.96], [0.78, 0.95, 0.82], [0.78, 0.88, 1], [1, 0.82, 0.7], [1, 0.92, 0.62], [1, 0.82, 0.85],
+  [0.87, 0.82, 0.98], [0.78, 0.87, 0.7], [0.95, 0.86, 0.72], [0.74, 0.86, 0.94], [1, 0.97, 0.9]];
+const MODERN_WALLS = [[0.97, 0.97, 0.95], [0.97, 0.97, 0.95], [0.36, 0.38, 0.42], [0.32, 0.42, 0.6], [0.62, 0.76, 0.62], [0.92, 0.86, 0.78], [0.84, 0.6, 0.5]];
+const LOWER_TONES = [[0.86, 0.6, 0.48], [0.72, 0.72, 0.74], [0.9, 0.8, 0.66], [0.62, 0.5, 0.44], [0.58, 0.66, 0.72]];
+const HOUSE_ROOFS = [[0.2, 0.33, 0.6], [0.2, 0.5, 0.52], [0.72, 0.28, 0.2], [0.26, 0.3, 0.42], [0.3, 0.5, 0.32], [0.55, 0.22, 0.2], [0.18, 0.42, 0.7],
+  [0.42, 0.28, 0.22], [0.62, 0.36, 0.22], [0.3, 0.32, 0.36]];
+const FRAMES = { alu: [0.8, 0.82, 0.84], white: [0.96, 0.96, 0.94], brown: [0.36, 0.25, 0.18], black: [0.16, 0.16, 0.18], wood: [0.5, 0.35, 0.22] };
+const FLOWERS = [[1, 0.45, 0.55], [0.98, 0.3, 0.28], [1, 0.86, 0.3], [0.96, 0.96, 0.94], [0.72, 0.52, 0.95], [1, 0.62, 0.8]];
+
+function shedRoof(B, mat, w, d, yEave, pitch, over, color) { // single pitch: low edge at +Z, high edge at -Z
+  const x0 = -w / 2 - over, x1 = w / 2 + over, z0 = -d / 2 - over, z1 = d / 2 + over, k = Math.tan(pitch);
+  const yAt = zz => yEave + (z1 - zz) * k, o = { color, uv: 2 }, so = { color: [0.9, 0.87, 0.82] };
+  B.quad(mat, [x0, yAt(z1), z1], [x1, yAt(z1), z1], [x1, yAt(z0), z0], [x0, yAt(z0), z0], o);
+  B.quad('plain', [x1, yAt(z1) - 0.05, z1], [x0, yAt(z1) - 0.05, z1], [x0, yAt(z0) - 0.05, z0], [x1, yAt(z0) - 0.05, z0], so);
+  const fc = { color: color.map(v => v * 0.7) };
+  B.box('plain', 0, yAt(z1) - 0.16, z1, x1 - x0, 0.18, 0.06, fc);
+  B.box('plain', 0, yAt(z0) - 0.16, z0, x1 - x0, 0.18, 0.06, fc);
+  for (const sx of [x0, x1]) B.beam('plain', [sx, yAt(z1) - 0.07, z1], [sx, yAt(z0) - 0.07, z0], 0.06, 0.18, fc);
+  return yAt;
+}
+function skirtRoof(B, mat, W, D, yh, out, drop, color) { // hisashi: a narrow sloped roof wrapped around the walls
+  const F = B.F, so = { color: [0.88, 0.85, 0.8] }, o = { color, uv: 2 };
+  for (const [fr, off, hl] of [[0, D / 2, W / 2], [Math.PI, D / 2, W / 2], [Math.PI / 2, W / 2, D / 2], [-Math.PI / 2, W / 2, D / 2]]) {
+    B.frame(...B.P([Math.sin(fr) * 0, 0, 0]), F.r + fr);
+    const yo = yh - drop, a = [-hl - out, yo, off + out], b = [hl + out, yo, off + out], c = [hl, yh, off], d = [-hl, yh, off];
+    B.quad(mat, a, b, c, d, o);
+    B.quad('plain', b, a, d, c, so);
+    B.F = F;
+  }
+}
+function solarPanels(B, w, z0, z1, yAt, rows) { // dark glass panels lying on a roof plane between z0 and z1
+  const cols = Math.max(2, Math.floor(w / 1.05)), pw = 0.98, gx = -cols * pw / 2;
+  for (let rI = 0; rI < rows; rI++) {
+    const za = lerp(z0, z1, rI / rows) + 0.05, zb = lerp(z0, z1, (rI + 1) / rows) - 0.05;
+    for (let c = 0; c < cols; c++) {
+      const xa = gx + c * pw + 0.03, xb = xa + pw - 0.06;
+      B.quad('glass', [xa, yAt(za) + 0.09, za], [xb, yAt(za) + 0.09, za], [xb, yAt(zb) + 0.09, zb], [xa, yAt(zb) + 0.09, zb], { color: [0.55, 0.7, 1.1] });
+    }
+    B.beam('alu', [gx, yAt(za) + 0.06, za], [gx + cols * pw, yAt(za) + 0.06, za], 0.04, 0.05, { color: [0.75, 0.77, 0.8] });
+  }
+}
+function antenna(B, x, y, z) { // TV aerial on the ridge
+  B.cyl('alu', x, y, z, 0.025, 0.02, 2.3, 6, { color: [0.7, 0.72, 0.75] });
+  B.box('alu', x, y + 1.9, z, 0.03, 0.03, 1.4, { color: [0.7, 0.72, 0.75] });
+  for (let i = 0; i < 5; i++) B.box('alu', x, y + 1.9, z - 0.6 + i * 0.3, 0.7 - i * 0.08, 0.02, 0.02, { color: [0.7, 0.72, 0.75] });
+}
+function flowerBox(B, cx, y, w, z, rng) {
+  B.box('wood', cx, y - 0.3, z + 0.14, w, 0.22, 0.24, { color: [0.55, 0.38, 0.26] });
+  const c = pick(rng, FLOWERS), n = Math.max(3, Math.floor(w / 0.18));
+  for (let i = 0; i < n; i++) B.box('plain', cx - w / 2 + (i + 0.5) * w / n, y - 0.1, z + 0.12 + (i % 2) * 0.06, 0.13, 0.12 + (i % 3) * 0.03, 0.13, { color: i % 3 === 2 ? [0.3, 0.6, 0.3] : c });
+}
+
 export function house(B, lot, rng, extras) {
   const { x, y, z, r, w: LW, d: LD } = lot;
   B.frame(x, y, z, r);
   const W = clamp(LW - 2.2 - rng() * 1.2, 6.5, 10), D = clamp(LD - 6 - rng() * 1.5, 7, 10.5);
-  const floors = rng() < 0.12 ? 1 : 2, fh = 2.85, base = 0.45, H = base + floors * fh;
+  const sr = rng(), style = sr < 0.3 ? 'classic' : sr < 0.53 ? 'twoTone' : sr < 0.71 ? 'modern' : sr < 0.87 ? 'traditional' : 'cube';
+  const floors = style === 'cube' ? 2 : style === 'traditional' ? (rng() < 0.35 ? 1 : 2) : rng() < 0.12 ? 1 : 2;
+  const fh = 2.85, base = style === 'traditional' ? 0.55 : 0.45, H = base + floors * fh;
   const hz = -LD / 2 + 1.2 + D / 2, hx = (rng() - 0.5) * (LW - W - 1.6);
-  const wallMat = rng() < 0.62 ? 'siding' : rng() < 0.6 ? 'stucco' : 'plaster';
-  const wc = jitter(rng, pick(rng, WALL_TINTS));
-  // body + foundation
-  B.frame(x, y, z, r);
-  let doorX = 0;
+  // materials and colours
+  let wallMat = rng() < 0.55 ? 'siding' : rng() < 0.6 ? 'stucco' : 'plaster', wc = jitter(rng, pick(rng, HOUSE_WALLS), 0.05);
+  let lowMat = wallMat, lc = wc, frameC = FRAMES.alu, frameMat = 'alu', roofC = pick(rng, HOUSE_ROOFS), roofMat = rng() < 0.5 ? 'roofTile' : 'roofMetal';
+  if (style === 'twoTone') { lowMat = rng() < 0.6 ? 'tiles' : 'wood'; lc = jitter(rng, lowMat === 'wood' ? [0.86, 0.62, 0.42] : pick(rng, LOWER_TONES), 0.05); wallMat = 'siding'; frameC = rng() < 0.5 ? FRAMES.white : FRAMES.brown; frameMat = 'plain'; }
+  if (style === 'modern') { wallMat = rng() < 0.7 ? 'siding' : 'stucco'; wc = jitter(rng, pick(rng, MODERN_WALLS), 0.03); lowMat = wallMat; lc = wc; frameC = FRAMES.black; frameMat = 'plain'; roofMat = 'roofMetal'; roofC = pick(rng, [[0.24, 0.26, 0.3], [0.2, 0.3, 0.44], [0.46, 0.3, 0.24], [0.3, 0.42, 0.36]]); }
+  if (style === 'traditional') { wallMat = 'plaster'; wc = [0.98, 0.96, 0.9]; lowMat = 'wood'; lc = [0.5, 0.36, 0.28]; frameC = FRAMES.wood; frameMat = 'plain'; roofMat = 'roofTile'; roofC = jitter(rng, pick(rng, [[0.36, 0.42, 0.55], [0.3, 0.33, 0.4], [0.42, 0.46, 0.52]]), 0.04); }
+  if (style === 'cube') { wallMat = rng() < 0.5 ? 'stucco' : 'plaster'; wc = jitter(rng, pick(rng, [[0.98, 0.98, 0.96], [0.9, 0.9, 0.9], [0.95, 0.9, 0.82], [0.4, 0.42, 0.46]]), 0.03); lowMat = wallMat; lc = wc; frameC = FRAMES.black; frameMat = 'plain'; }
+  if (style === 'classic' && rng() < 0.4) { frameC = rng() < 0.6 ? FRAMES.white : FRAMES.brown; frameMat = 'plain'; }
+  const uvW = m => m === 'siding' ? 2.2 : m === 'wood' ? 2 : 3;
+  const upperOnly = style === 'classic' && floors === 2 && rng() < 0.35;   // second floor over part of the house only
+  const W2 = upperOnly ? Math.max(4.6, W * (0.55 + rng() * 0.12)) : W, x2 = upperOnly ? (rng() < 0.5 ? -1 : 1) * (W - W2) / 2 : 0;
+  let doorX = 0, roofTop = H, ridgeZ = 0, ridgeAlongX = true;
   const Bf = (fn) => { const F = B.F; B.frame(...B.P([hx, 0, hz]), r); fn(); B.F = F; };
   Bf(() => {
-    B.box('concrete', 0, 0, 0, W + 0.04, base, D + 0.04, { color: [0.62, 0.62, 0.6], skip: 'ny', uv: 2 });
-    B.box(wallMat, 0, base, 0, W, floors * fh, D, { color: wc, skip: 'ny', uv: wallMat === 'siding' ? 2.2 : 3 });
-    // floor band between storeys
-    if (floors === 2) B.box('plain', 0, base + fh - 0.1, 0, W + 0.06, 0.14, D + 0.06, { color: wc.map(v => v * 0.8) });
-    const tile = rng() < 0.52, rmat = tile ? 'roofTile' : 'roofMetal', rc = tile ? jitter(rng, pick(rng, ROOF_TILE), 0.06) : pick(rng, ROOF_METAL);
-    const hip = rng() < 0.4, pitch = (tile ? 24 : 20 + rng() * 10) * Math.PI / 180;
-    // ridge runs along the longer side
-    const along = W >= D;
-    const F2 = B.F; B.frame(...B.P([0, 0, 0]), r + (along ? 0 : Math.PI / 2));
-    const rw = along ? W : D, rd = along ? D : W;
-    if (hip) hipRoof(B, rmat, rw, rd, H, pitch, 0.55, rc); else {
-      const rh = gableRoof(B, rmat, rw, rd, H, pitch, 0.5, rc);
-      // gable end walls
-      for (const sx of [-1, 1]) B.tri(wallMat, [sx * rw / 2, H, sx * rd / 2], [sx * rw / 2, H, -sx * rd / 2], [sx * rw / 2, H + rh, 0], { color: wc, uv: 2.2 });
+    // body: foundation, ground floor, upper floor (possibly narrower), trim bands
+    B.box('concrete', 0, 0, 0, W + 0.04, base, D + 0.04, { color: [0.7, 0.7, 0.68], skip: 'ny', uv: 2 });
+    const g1 = base + fh;
+    if (style === 'traditional') {
+      B.box('wood', 0, base, 0, W + 0.03, 1.0, D + 0.03, { color: lc, skip: 'ny py', uv: 2 });
+      B.box(wallMat, 0, base + 1.0, 0, W, floors * fh - 1.0, D, { color: wc, skip: 'ny', uv: 3 });
+    } else if (floors === 1) B.box(lowMat, 0, base, 0, W, fh, D, { color: lc, skip: 'ny', uv: uvW(lowMat) });
+    else {
+      B.box(lowMat, 0, base, 0, W, fh, D, { color: lc, skip: 'ny py', uv: uvW(lowMat) });
+      B.box(wallMat, x2, g1, 0, W2, fh, D, { color: wc, skip: 'ny', uv: uvW(wallMat) });
     }
-    B.F = F2;
+    if (floors === 2 && style !== 'traditional' && style !== 'modern') B.box('plain', x2, g1 - 0.1, 0, W2 + 0.06, 0.14, D + 0.06, { color: style === 'twoTone' ? frameC : wc.map(v => v * 0.82) });
+    if (style === 'modern') B.box('wood', W / 2 - 1.3, base, D / 2 + 0.01, 1.6, floors * fh, 0.06, { color: [1.0, 0.76, 0.52], uv: 2 }); // timber accent panel
+    // roofs
+    const F2 = B.F;
+    const over = style === 'traditional' ? 0.85 : style === 'modern' ? 0.35 : 0.55;
+    if (style === 'cube') {
+      B.box(wallMat, 0, H, 0, W, 0.45, D, { color: wc.map(v => v * 0.97), skip: 'ny', uv: 3 });
+      B.box('concrete', 0, H + 0.45, 0, W + 0.1, 0.06, D + 0.1, { color: [0.62, 0.63, 0.64] });
+      roofTop = H + 0.5;
+    } else if (style === 'modern') {
+      const flip = rng() < 0.5 ? 0 : Math.PI, pitch = (12 + rng() * 8) * Math.PI / 180;
+      B.frame(...B.P([0, 0, 0]), r + flip);
+      const yEave = H - Math.tan(pitch) * over, yAt = shedRoof(B, roofMat, W, D, yEave, pitch, over, roofC);
+      // walls up to the sloped roof: side trapezoids and the tall back strip
+      for (const sx of [-1, 1]) {
+        const X = sx * W / 2, q = sx > 0 ? [[X, H, D / 2], [X, H, -D / 2], [X, yAt(-D / 2), -D / 2], [X, yAt(D / 2), D / 2]] : [[X, H, -D / 2], [X, H, D / 2], [X, yAt(D / 2), D / 2], [X, yAt(-D / 2), -D / 2]];
+        B.quad(wallMat, ...q, { color: wc, uv: uvW(wallMat) });
+      }
+      B.quad(wallMat, [W / 2, H, -D / 2], [-W / 2, H, -D / 2], [-W / 2, yAt(-D / 2), -D / 2], [W / 2, yAt(-D / 2), -D / 2], { color: wc, uv: uvW(wallMat) });
+      // clerestory windows in the tall wall
+      const F3 = B.F; B.frame(...B.P([0, 0, -D / 2]), r + flip + Math.PI);
+      const ch = Math.min(1.1, yAt(-D / 2) - H - 0.45);
+      if (ch > 0.35) for (let k = 0; k < 3; k++) windowOn(B, -W / 3 + k * W / 3, H + 0.15, 1.1, ch, rng, { sill: false, frame: frameC, frameMat });
+      B.F = F3;
+      if (rng() < 0.7) solarPanels(B, W * 0.8, D / 2 - 0.2, -D / 2 + 0.4, yAt, 2);
+      roofTop = yAt(-D / 2); ridgeZ = flip ? D / 2 - 0.3 : -D / 2 + 0.3;
+      B.F = F2;
+    } else {
+      const gableFront = !upperOnly && style !== 'traditional' && rng() < 0.38;   // gable end facing the street, steep roof
+      const hip = !gableFront && (style === 'traditional' ? rng() < 0.75 : rng() < 0.4);
+      const pitch = (style === 'traditional' ? 27 : gableFront ? 31 + rng() * 9 : roofMat === 'roofTile' ? 22 + rng() * 6 : 18 + rng() * 12) * Math.PI / 180;
+      const along = gableFront ? false : W2 >= D;
+      B.frame(...B.P([x2, 0, 0]), r + (along ? 0 : Math.PI / 2));
+      const rw = along ? W2 : D, rd = along ? D : W2;
+      let rh;
+      if (hip) rh = hipRoof(B, roofMat, rw, rd, H, pitch, over, roofC);
+      else {
+        rh = gableRoof(B, roofMat, rw, rd, H, pitch, over * 0.9, roofC);
+        for (const sx of [-1, 1]) B.tri(wallMat, [sx * rw / 2, H, sx * rd / 2], [sx * rw / 2, H, -sx * rd / 2], [sx * rw / 2, H + rh, 0], { color: wc, uv: 2.2 });
+        if (along && rng() < 0.3 && style === 'classic') { // solar panels on the street-facing slope
+          const z1 = rd / 2 + over * 0.9, k = rh / z1;
+          solarPanels(B, rw * 0.7, rd / 2 - 0.1, 0.5, zz => H + (z1 - zz) * k, 2);
+        }
+      }
+      roofTop = H + rh; ridgeAlongX = along;
+      B.F = F2;
+      if (gableFront && rh > 1.6) { // attic window in the street-facing gable
+        const F7 = B.F; B.frame(...B.P([x2, 0, D / 2]), r);
+        windowOn(B, 0, H + rh * 0.22, 0.75, Math.min(0.9, rh * 0.35), rng, { frame: frameC, frameMat, sill: false });
+        B.F = F7;
+      }
+      if (upperOnly) { // lean-to over the single-storey part, closed at both ends
+        const lw = W - W2, side = -Math.sign(x2);
+        B.frame(...B.P([-Math.sign(x2) * W2 / 2, 0, 0]), r + side * Math.PI / 2);
+        const yAt = shedRoof(B, roofMat, D, lw, g1 + 0.05, 0.3, 0.45, roofC);
+        for (const sx of [-1, 1]) { const X = sx * D / 2, a = [X, g1, -lw / 2], b = [X, g1, lw / 2], c = [X, yAt(lw / 2), lw / 2], d = [X, yAt(-lw / 2), -lw / 2];
+          B.quad(lowMat, ...(sx > 0 ? [b, a, d, c] : [a, b, c, d]), { color: lc, uv: uvW(lowMat) }); }
+        B.F = F2;
+      }
+      if (style === 'traditional' && floors === 2) skirtRoof(B, roofMat, W, D, g1 + 0.2, 0.75, 0.4, roofC);
+    }
+    if (rng() < 0.35 && style !== 'cube') { const off = (rng() - 0.5) * 1.2; antenna(B, x2 + (ridgeAlongX ? off : 0), roofTop - 0.1, ridgeAlongX ? ridgeZ : off); }
     // windows: front (+Z), back, sides
     const faces = [[0, D / 2, W, 0], [Math.PI, D / 2, W, 0], [Math.PI / 2, W / 2, D, 1], [-Math.PI / 2, W / 2, D, 1]];
     doorX = (rng() < 0.5 ? -1 : 1) * (W / 2 - 1.1);
+    const bayX = -doorX * 0.45, lattice = style === 'traditional', boxes = (style === 'classic' || style === 'twoTone') && rng() < 0.45;
+    const hoods = (style === 'classic' || style === 'twoTone' || style === 'traditional') && rng() < 0.5;
     faces.forEach(([fr, off, fw, isSide], fi) => {
       const F3 = B.F; B.frame(...B.P([Math.sin(fr) * off, 0, Math.cos(fr) * off]), r + fr);
       for (let fl = 0; fl < floors; fl++) {
-        const n = isSide ? (rng() < 0.6 ? 1 : 2) : Math.max(1, Math.floor(fw / 2.6));
+        // the narrower upper floor of a partial two-storey house: only windows on its own walls
+        const upper = fl === 1 && upperOnly;
+        const faceW = upper && !isSide ? W2 : fw, faceX = upper && !isSide ? x2 * (fr === 0 ? 1 : -1) : 0;
+        if (upper && isSide && Math.sign(Math.sin(fr)) !== Math.sign(x2)) continue;
+        let n = isSide ? (rng() < 0.6 ? 1 : 2) : Math.max(1, Math.floor(faceW / (style === 'modern' ? 3.2 : 2.6)));
+        if (style === 'cube' && !isSide) n = 1;
         for (let k = 0; k < n; k++) {
-          const cx = (k + 0.5) / n * fw - fw / 2 + (rng() - 0.5) * 0.3;
-          if (fi === 0 && fl === 0 && Math.abs(cx - doorX) < 1.3) continue;
-          const big = !isSide && rng() < 0.5, ww = big ? 1.65 : 0.9 + rng() * 0.3, wh = big && fl === 0 ? 1.8 : 1.1;
-          const wy = base + fl * fh + (big && fl === 0 ? 0.35 : 0.95);
-          windowOn(B, clamp(cx, -fw / 2 + ww / 2 + 0.3, fw / 2 - ww / 2 - 0.3), wy, ww, wh, rng, { shutterBox: big || rng() < 0.4, grille: isSide && rng() < 0.4 });
+          let cx = faceX + (k + 0.5) / n * faceW - faceW / 2 + (rng() - 0.5) * 0.3;
+          let big = !isSide && rng() < 0.5, ww = big ? 1.65 : 0.9 + rng() * 0.3, wh = big && fl === 0 ? 1.8 : 1.1, wy = base + fl * fh + (big && fl === 0 ? 0.35 : 0.95);
+          if (style === 'cube' && !isSide) { const gd = fl === 0 && fi === 0; ww = faceW * (gd ? 0.4 : 0.62); cx = gd ? -Math.sign(doorX) * faceW * 0.22 : faceX; wh = 1.05; wy = base + fl * fh + 0.95; big = false; }
+          else if (style === 'modern' && !isSide && rng() < 0.6) { ww = 0.7; wh = 2.1; wy = base + fl * fh + 0.35; }        // tall slit windows
+          const wx = clamp(cx, faceX - faceW / 2 + ww / 2 + 0.3, faceX + faceW / 2 - ww / 2 - 0.3);
+          if (fi === 0 && fl === 0 && (Math.abs(wx - doorX) < ww / 2 + 0.75 || style === 'twoTone' && Math.abs(wx - bayX) < ww / 2 + 1.25)) continue;
+          windowOn(B, wx, wy, ww, wh, rng, { shutterBox: style !== 'cube' && style !== 'modern' && (big || rng() < 0.4), grille: isSide && rng() < 0.4, lattice: lattice && fl === 0,
+            frame: frameC, frameMat, sill: style !== 'cube', hood: hoods && !isSide ? roofC : null });
+          if (boxes && fi === 0 && !big && rng() < 0.7) flowerBox(B, wx, wy, ww + 0.1, 0.02, rng);
         }
       }
       // AC outdoor unit
@@ -490,26 +632,39 @@ export function house(B, lot, rng, extras) {
       }
       B.F = F3;
     });
+    // twoTone: a bay window on the ground floor front
+    if (style === 'twoTone') {
+      const F6 = B.F; B.frame(...B.P([bayX, 0, D / 2]), r);
+      B.box(lowMat, 0, base + 0.3, 0.3, 2.3, 1.9, 0.6, { color: lc, skip: 'nz', uv: uvW(lowMat) });
+      B.box('roofMetal', 0, base + 2.2, 0.32, 2.5, 0.1, 0.72, { color: roofC });
+      windowOn(B, 0, base + 0.75, 1.8, 1.2, rng, { z: 0.61, frame: frameC, frameMat, sill: false });
+      if (rng() < 0.6) flowerBox(B, 0, base + 0.75, 1.9, 0.62, rng);
+      B.F = F6;
+    }
     // entrance (genkan): door + canopy + step
-    B.F = F2; const F4 = B.F; B.frame(...B.P([doorX, 0, D / 2]), r);
-    B.box('wood', 0, base - 0.05, 0.02, 0.95, 2.05, 0.06, { color: pick(rng, [[0.5, 0.36, 0.25], [0.3, 0.22, 0.16], [0.75, 0.72, 0.68]]) });
+    const F4 = B.F; B.frame(...B.P([doorX, 0, D / 2]), r);
+    const doorC = style === 'traditional' ? [0.45, 0.32, 0.22] : pick(rng, [[0.28, 0.42, 0.62], [0.66, 0.3, 0.26], [0.35, 0.52, 0.42], [0.95, 0.95, 0.93], [0.38, 0.29, 0.24], [0.86, 0.68, 0.3], [0.3, 0.3, 0.33]]);
+    const woodDoor = style === 'traditional' || rng() < 0.4;
+    B.box(woodDoor ? 'wood' : 'plain', 0, base - 0.05, 0.02, 0.95, 2.05, 0.06, { color: woodDoor ? [0.82, 0.6, 0.42] : doorC });
+    if (style === 'traditional') for (let i = -3; i <= 3; i++) B.box('plain', i * 0.13, base - 0.05, 0.06, 0.025, 2.05, 0.02, { color: [0.3, 0.22, 0.16] }); // sliding lattice door
     B.box('alu', 0.3, base + 0.95, 0.07, 0.04, 0.35, 0.04);
-    B.box('concrete', 0, 0, 0.5, 1.6, base - 0.05, 1.0, { color: [0.7, 0.7, 0.68] });
-    B.box('plain', 0, base + 2.35, 0.45, 1.5, 0.1, 0.95, { color: [0.3, 0.3, 0.32] });
+    B.box('concrete', 0, 0, 0.5, 1.6, base - 0.05, 1.0, { color: [0.74, 0.74, 0.72] });
+    B.box(style === 'modern' || style === 'cube' ? 'plain' : 'roofMetal', 0, base + 2.35, 0.45, 1.5, 0.1, 0.95, { color: style === 'modern' || style === 'cube' ? [0.25, 0.25, 0.27] : roofC });
     B.box('lamp', 0.65, base + 1.9, 0.06, 0.12, 0.18, 0.08);
     lampPoints.push({ p: B.P([0.65, base + 1.9, 0.3]), s: 0.5 });
     B.F = F4;
-    // balcony on the upper floor
-    if (floors === 2 && rng() < 0.6) {
-      const bw = Math.min(W - 1, 3.5 + rng() * 2), bx = (rng() - 0.5) * (W - bw);
-      B.box('concrete', bx, base + fh - 0.12, D / 2 + 0.5, bw, 0.14, 1.0, { color: [0.72, 0.72, 0.7] });
-      const railC = [0.82, 0.83, 0.84];
+    // balcony on the upper floor (glass for the cube houses)
+    if (floors === 2 && style !== 'traditional' && rng() < (style === 'cube' ? 0.8 : 0.6)) {
+      const bw = Math.min(W2 - 1, 3.5 + rng() * 2), bx = x2 + (rng() - 0.5) * (W2 - bw);
+      B.box('concrete', bx, base + fh - 0.12, D / 2 + 0.5, bw, 0.14, 1.0, { color: [0.76, 0.76, 0.74] });
+      const railC = style === 'cube' ? FRAMES.black : [0.82, 0.83, 0.84];
       B.box('alu', bx, base + fh + 0.95, D / 2 + 0.98, bw, 0.05, 0.05, { color: railC });
-      for (let i = 0; i <= Math.floor(bw / 0.12); i++) B.box('alu', bx - bw / 2 + i * 0.12, base + fh, D / 2 + 0.98, 0.02, 0.95, 0.02, { color: railC });
+      if (style === 'cube') B.quad('poly', [bx - bw / 2, base + fh, D / 2 + 0.99], [bx + bw / 2, base + fh, D / 2 + 0.99], [bx + bw / 2, base + fh + 0.95, D / 2 + 0.99], [bx - bw / 2, base + fh + 0.95, D / 2 + 0.99]);
+      else for (let i = 0; i <= Math.floor(bw / 0.12); i++) B.box('alu', bx - bw / 2 + i * 0.12, base + fh, D / 2 + 0.98, 0.02, 0.95, 0.02, { color: railC });
       for (const s of [-1, 1]) B.box('alu', bx + s * bw / 2, base + fh, D / 2 + 0.5, 0.04, 0.98, 1.0, { color: railC, skip: 'pz nz' });
       // laundry poles
       B.box('alu', bx, base + fh + 1.75, D / 2 + 0.7, bw - 0.2, 0.03, 0.03, { color: [0.6, 0.62, 0.64] });
-      if (rng() < 0.5) for (let i = 0; i < 4; i++) B.box('plain', bx - bw / 2 + 0.5 + i * (bw - 1) / 3, base + fh + 1.1, D / 2 + 0.7, 0.45, 0.62, 0.02, { color: jitter(rng, pick(rng, [[0.9, 0.9, 0.9], [0.4, 0.5, 0.7], [0.8, 0.5, 0.5], [0.3, 0.3, 0.32]]), 0.2) });
+      if (rng() < 0.5) for (let i = 0; i < 4; i++) B.box('plain', bx - bw / 2 + 0.5 + i * (bw - 1) / 3, base + fh + 1.1, D / 2 + 0.7, 0.45, 0.62, 0.02, { color: jitter(rng, pick(rng, [[0.95, 0.95, 0.95], [0.5, 0.62, 0.9], [0.95, 0.6, 0.62], [0.98, 0.86, 0.5]]), 0.1) });
     }
     extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: W / 2, hz: D / 2, r });
     // water heater (EcoCute) on a side
