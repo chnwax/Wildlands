@@ -1,6 +1,6 @@
 // Reusable outdoor systems: heightfield terrain with painted splat shading, GPU grass (and rice, reeds, flowers),
 // planar-reflection water, conifer forests (trees.js). Maps configure these and add their own content.
-import { THREE, scene, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle } from './core.js';
+import { THREE, scene, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters } from './core.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
 import { buildConiferForest, firColor } from './trees.js';
 
@@ -271,42 +271,110 @@ export function buildTerrainMeshes(hf, mat, { outer = true, outerDrop = 45 } = {
 }
 
 // ---------------------------------------------------------------- grass + rice (GPU instanced, wraps around the camera)
-export function buildGrass(hf, grassTex, opt = {}) {
-  const SEG = 4, uv = [], idx = [];
+// Grass is drawn in three distance rings, each a K x K set of world-anchored cells: a cell always carries the same blade
+// pattern (cell -> chunk by index mod K), so blades never swim as the camera moves. Every cell is its own draw with a real
+// bounding sphere, so three's frustum culling and a per-cell distance test skip everything off-screen or out of range.
+// Near cells are dense, with full blades; far rings are sparser with wider, simpler tufts, fading into each other.
+const GRASS_K = 8;
+const GRASS_RINGS = [
+  { seg: 4, r: 1, count: 1.3, tuft: 1.0, lod: 0 },       // r: radius in units of the quality's near radius
+  { seg: 3, r: 4, count: 0.6, tuft: 2.2, lod: 1 },
+  { seg: 2, r: 22, count: 0.42, tuft: 3.3, lod: 2 },
+];
+function bladeGeometry(SEG) {
+  const uv = [], idx = [];
   for (let i = 0; i < SEG; i++) { const t = i / SEG; uv.push(-1, t, 1, t); }
   uv.push(0, 1);
   for (let i = 0; i < SEG - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   const l = (SEG - 1) * 2; idx.push(l, l + 1, SEG * 2);
-  const g = new THREE.InstancedBufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array((SEG * 2 + 1) * 3), 3));
-  g.setAttribute('bladeUV', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  const off = new Float32Array(MAX_GRASS * 2), rnd = new Float32Array(MAX_GRASS * 4), rng = mulberry32(5);
-  for (let i = 0; i < MAX_GRASS; i++) {
-    off[i * 2] = rng() * 4096; off[i * 2 + 1] = rng() * 4096;
-    rnd[i * 4] = rng(); rnd[i * 4 + 1] = rng(); rnd[i * 4 + 2] = rng(); rnd[i * 4 + 3] = rng();
-  }
-  g.setAttribute('iOffset', new THREE.InstancedBufferAttribute(off, 2));
-  g.setAttribute('iRand', new THREE.InstancedBufferAttribute(rnd, 4));
-  g.instanceCount = Q.grass;
+  return { position: new THREE.Float32BufferAttribute(new Float32Array((SEG * 2 + 1) * 3), 3), bladeUV: new THREE.Float32BufferAttribute(uv, 2), index: new THREE.Uint16BufferAttribute(idx, 1) };
+}
+export function buildGrass(hf, grassTex, opt = {}) {
+  const group = new THREE.Group(), K2 = GRASS_K * GRASS_K;
+  const gu = { uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uReeds: { value: opt.reeds ? 1 : 0 } };
+  // per-blade data is packed (16-bit position in the cell, 8-bit randoms) and generated from a per-chunk seed, so a
+  // chunk can grow its buffers when the quality goes up and still keep exactly the same blades
+  const fill = (c, n) => {
+    const rng = mulberry32(c.seed), off = new Uint16Array(n * 2), rnd = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) { off[i * 2] = rng() * 65535; off[i * 2 + 1] = rng() * 65535; for (let k = 0; k < 4; k++) rnd[i * 4 + k] = rng() * 255; }
+    c.g.dispose();
+    c.g.setAttribute('iOffset', new THREE.InstancedBufferAttribute(off, 2, true));
+    c.g.setAttribute('iRand', new THREE.InstancedBufferAttribute(rnd, 4, true));
+    c.cap = n;
+  };
+  const rings = GRASS_RINGS.map((R, ri) => {
+    const base = bladeGeometry(R.seg);
+    const ru = { uCellSize: { value: 1 }, uR: { value: 1 }, uIn: { value: new THREE.Vector2(0, 0) }, uLod: { value: R.lod }, uTuft: { value: R.tuft } };
+    const mat = grassMaterial(hf, grassTex, gu, ru);
+    const chunks = [];
+    for (let c = 0; c < K2; c++) {
+      const g = new THREE.InstancedBufferGeometry();
+      g.setAttribute('position', base.position); g.setAttribute('bladeUV', base.bladeUV); g.setIndex(base.index);
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1);
+      const m = new THREE.Mesh(g, mat);
+      m.matrixAutoUpdate = false; m.receiveShadow = true; m.visible = false;
+      group.add(m);
+      chunks.push({ m, g, i: c % GRASS_K, j: Math.floor(c / GRASS_K), X: NaN, Z: NaN, y0: 0, y1: 0, cap: 0, seed: 5 + ri * 7919 + c * 977 });
+    }
+    return { R, ru, chunks, s: 1, rad: 1, inA: 0 };
+  });
+  const applyQuality = () => {
+    const r0 = Q.tile * 0.5;
+    rings.forEach((ring, k) => {
+      ring.rad = r0 * ring.R.r; ring.s = ring.rad / ((GRASS_K - 1) / 2);   // the window always covers `rad` around the camera
+      ring.inA = k ? r0 * GRASS_RINGS[k - 1].r * 0.55 : 0;
+      ring.ru.uCellSize.value = ring.s; ring.ru.uR.value = ring.rad;
+      ring.ru.uIn.value.set(ring.inA, k ? r0 * GRASS_RINGS[k - 1].r : 0);
+      const n = Math.min(Math.ceil(MAX_GRASS * ring.R.count / K2), Math.round(Q.grass * ring.R.count / K2 * (k === 2 && Q.grass < 300000 ? 0.6 : 1)));
+      for (const c of ring.chunks) { if (n > c.cap) fill(c, n); c.g.instanceCount = n; c.X = NaN; }
+    });
+  };
+  applyQuality();
+  const HALF = hf.HALF;
+  scatters.push({
+    update(cx, cz) {
+      for (const ring of rings) {
+        const s = ring.s, K = GRASS_K, fx = Math.floor(cx / s - K / 2 + 0.5), fz = Math.floor(cz / s - K / 2 + 0.5);
+        for (const c of ring.chunks) {
+          const X = fx + (((c.i - fx) % K) + K) % K, Z = fz + (((c.j - fz) % K) + K) % K;
+          const x0 = X * s, z0 = Z * s;
+          if (X !== c.X || Z !== c.Z) { // the chunk moved to a new cell: place it and fit its bounds to the terrain there
+            c.X = X; c.Z = Z;
+            let y0 = 1e9, y1 = -1e9;
+            for (let a = 0; a <= 4; a++) for (let b = 0; b <= 4; b++) { const h = hf.heightAt(clamp(x0 + a * s / 4, -HALF, HALF), clamp(z0 + b * s / 4, -HALF, HALF)); y0 = Math.min(y0, h); y1 = Math.max(y1, h); }
+            c.y0 = y0 - 1; c.y1 = y1 + 2.5;
+            c.m.matrix.makeTranslation(x0, 0, z0); c.m.matrixWorld.copy(c.m.matrix);
+            c.g.boundingSphere.center.set(s / 2, (c.y0 + c.y1) / 2, s / 2);
+            c.g.boundingSphere.radius = Math.hypot(s / 2, s / 2, (c.y1 - c.y0) / 2);
+          }
+          const nx = Math.max(x0 - cx, 0, cx - x0 - s), nz = Math.max(z0 - cz, 0, cz - z0 - s);
+          const farX = Math.max(Math.abs(x0 - cx), Math.abs(x0 + s - cx)), farZ = Math.max(Math.abs(z0 - cz), Math.abs(z0 + s - cz));
+          c.m.visible = Math.hypot(nx, nz) < ring.rad && Math.hypot(farX, farZ) > ring.inA && x0 < HALF && x0 + s > -HALF && z0 < HALF && z0 + s > -HALF;
+        }
+      }
+    },
+  });
+  group.userData.applyQuality = applyQuality;
+  scene.add(group);
+  return group;
+}
+function grassMaterial(hf, grassTex, gu, ru) {
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
   mat.defines = { CLOUD_SHADE_VARYING: '' };
-  const gu = { uTile: { value: Q.tile }, uRadius: { value: Q.tile * 0.5 }, uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 },
-    uShore: { value: opt.shore ?? 1.3 }, uReeds: { value: opt.reeds ? 1 : 0 } };
   mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, gu, hf.U, paintU, { tNoise: S.tNoise, tGrassD: { value: grassTex },
+    Object.assign(sh.uniforms, gu, ru, hf.U, paintU, { tNoise: S.tNoise, tGrassD: { value: grassTex },
       uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         attribute vec2 bladeUV; attribute vec2 iOffset; attribute vec4 iRand;
         uniform sampler2D tMask, tMask2, tNoise, tGrassD;
-        uniform vec3 uCam, uPlayer; uniform float uTime, uTile, uRadius, uWind, uWaterLv, uSnow, uShore, uReeds;
+        uniform vec3 uCam, uPlayer; uniform float uTime, uCellSize, uR, uLod, uTuft, uWind, uWaterLv, uSnow, uShore, uReeds; uniform vec2 uIn;
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
         ${GLSL_HEIGHT}
         ${CLOUD_SHADE_GLSL}
         ${MEADOW_GLSL}`)
       .replace('#include <beginnormal_vertex>', /* glsl */`
-        vec2 wp2 = uCam.xz + mod(iOffset - uCam.xz + uTile * 0.5, uTile) - uTile * 0.5;
+        vec2 wp2 = modelMatrix[3].xz + iOffset * uCellSize;   // cell origin (the chunk's translation) + position in the cell
         vec4 gm2 = textureLod(tMask2, maskUV(wp2), 0.0);
         bool rice = gm2.g > 0.6;
         if (rice) wp2 = (floor(wp2 / vec2(0.32, 0.26)) + 0.5) * vec2(0.32, 0.26) + (iRand.zx - 0.5) * 0.05; // transplanted rows
@@ -330,19 +398,21 @@ export function buildGrass(hf, grassTex, opt = {}) {
         if (rice) dens = 1.0;
         // reed beds in clumps along the waterline (standing in the shallows and on the wet margin)
         float hw = gh - uWaterLv, reedN = gz3.b * 0.55 + gz2.g * 0.65 + gz1.r * 0.2;
-        bool reed = !rice && uReeds > 0.5 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
+        bool reed = !rice && uReeds > 0.5 && uLod < 1.5 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
         if (reed) dens = 1.0;
-        float keep = step(iRand.w, dens);
-        float fade = 1.0 - smoothstep(uRadius * 0.55, uRadius, gdist);
-        float gs = keep * fade;
+        dens *= step(abs(wp2.x), uHalf - 2.0) * step(abs(wp2.y), uHalf - 2.0);
+        // ring cross-fade: blades thin out stochastically (so near and far rings keep the same blade height)
+        float fade = (1.0 - smoothstep(uR * 0.55, uR, gdist)) * (uIn.y > 0.0 ? smoothstep(uIn.x, uIn.y, gdist) : 1.0);
+        float keep = step(iRand.w, dens) * step(fract(iRand.y * 13.73 + iRand.x * 5.31), fade * 1.02);
+        float gs = keep;
         float fPatch = smoothstep(0.58, 0.8, gz3.g * 0.65 + gz2.a * 0.6);
-        bool flower = !rice && !reed && dens > 0.35 && iRand.w < (0.01 + 0.16 * fPatch * dens) * smoothstep(22.0, 30.0, gdist);
-        float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * mix(0.25, 1.0, fade) * keep;
+        bool flower = !rice && !reed && dens > 0.35 && iRand.w < (0.01 + 0.16 * fPatch * dens) * smoothstep(22.0, 30.0, gdist) * (uLod > 1.5 ? 0.5 : 1.0);
+        float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * mix(0.75, 1.0, fade) * keep;
         Hh *= 1.0 - 0.68 * gm2.a;   // ...and short
         if (flower) Hh = (0.28 + 0.32 * iRand.y) * mix(0.4, 1.0, fade);
         if (rice) Hh = (0.38 + 0.22 * iRand.y) * fade;
         if (reed) Hh = (1.0 + 1.1 * iRand.y * iRand.y + max(-hw, 0.0)) * mix(0.3, 1.0, fade);
-        float Wd = (0.02 + 0.022 * iRand.z) * (1.0 + gdist * 0.06) * step(0.001, gs);
+        float Wd = (0.02 + 0.022 * iRand.z) * (1.0 + gdist * 0.06) * uTuft * step(0.001, gs);   // far rings: wider tufts
         if (rice) Wd *= 0.8;
         if (reed) Wd *= 0.75;
         float ang = iRand.x * 6.2831853;
@@ -387,7 +457,7 @@ export function buildGrass(hf, grassTex, opt = {}) {
         }
         vGCol = c; vGTip = tip;
       `)
-      .replace('#include <begin_vertex>', 'vec3 transformed = gp;');
+      .replace('#include <begin_vertex>', 'vec3 transformed = gp - modelMatrix[3].xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; uniform vec3 uSunDir, uSunCol;`)
@@ -399,11 +469,7 @@ export function buildGrass(hf, grassTex, opt = {}) {
         totalEmissiveRadiance += vGTip * uSunCol * (gTr * 0.22 + 0.02 * vT) * vCloudLit;`);
   };
   mat.customProgramCacheKey = () => 'grass';
-  const mesh = new THREE.Mesh(g, mat);
-  mesh.frustumCulled = false; mesh.receiveShadow = true;
-  mesh.userData.applyQuality = () => { g.instanceCount = Q.grass; gu.uTile.value = Q.tile; gu.uRadius.value = Q.tile * 0.5; };
-  scene.add(mesh);
-  return mesh;
+  return mat;
 }
 
 // ---------------------------------------------------------------- water with planar reflection

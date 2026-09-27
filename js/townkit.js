@@ -692,7 +692,7 @@ export function house(B, lot, rng, extras) {
     B.box('alu', -0.1, 2.3, 0, 2.9, 0.12, 5.2, { color: [0.6, 0.55, 0.5], skip: 'py ny' });
     extras.push({ t: 'poly', p: B.P([-0.1, 2.36, 0]), r, w: 2.8, d: 5.1 });
   }
-  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6 };
+  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D };
 }
 function doorGap(LW, gw) { return [LW / 2 - 0.5 - gw, LW / 2 - 0.5]; }
 
@@ -753,6 +753,12 @@ export function shopBuilding(B, s, rng, extras) {
     }
   }
   B.F = F0;
+  if (deco() < 0.4) { // rooftop water tank on a steel stand
+    const tc = pick(deco, [[0.92, 0.92, 0.9], [0.4, 0.6, 0.82], [0.85, 0.86, 0.88]]), tx = (deco() - 0.5) * (w - 3), tz = -d / 4;
+    for (const [sx, sz] of [[-0.55, -0.55], [0.55, -0.55], [-0.55, 0.55], [0.55, 0.55]]) B.box('alu', tx + sx, H + 0.02, tz + sz, 0.08, 0.7, 0.08, { color: [0.5, 0.5, 0.52] });
+    B.cyl('plastic', tx, H + 0.72, tz, 0.72, 0.72, 1.2, 16, { color: tc });
+    B.cyl('plastic', tx, H + 1.92, tz, 0.72, 0.28, 0.26, 16, { color: tc, cap: true });
+  }
   lampPoints.push({ p: B.P([0, 2.9, fz + 0.8]), s: 0.8 });
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
 }

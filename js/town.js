@@ -3,7 +3,8 @@
 import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts,
   Scatter, addBox, addCircle, addPlatform, colliders } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildForest, treeColor } from './terrain.js';
-import { buildSakura, buildBushes, sakuraColor, bushColor, hydraColor } from './trees.js';
+import { buildSakura, buildBushes, buildBroadleafForest, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
+import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, house, shopBuilding, konbini, apartment, shrine, utilityPole, wires, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
@@ -291,6 +292,18 @@ export async function build(progress) {
   // shrine
   shrine(B, SHRINE.x, hf.groundAt(SHRINE.x, SHRINE.z), SHRINE.z, 0, extras);
   reserve(SHRINE.x, SHRINE.z - 12, 12, 22, 0);
+  // an elementary school fills the block between lanes C, V1, S2 and S3; a playground park opens onto lane S0
+  const drng = mulberry32(2024), schoolSak = [], parkTrees = [], bikeList = [], gardenTrees = [];
+  const SCH = { x: -89.75, z: 223, w: 113, d: 64 }, PK = { x: -212, z: 69.5, w: 42, d: 32 };
+  reserve(SCH.x, SCH.z, SCH.w / 2 + 1, SCH.d / 2 + 1, 0);
+  school(B, SCH.x, hf.groundAt(SCH.x, SCH.z), SCH.z, Math.PI, SCH.w, SCH.d, drng, schoolSak, bikeList, extras);
+  hf.paint2(0, SCH.x - SCH.w / 2, SCH.z - SCH.d / 2, SCH.x + SCH.w / 2, SCH.z + SCH.d / 2, (x, z) => Math.abs(x - SCH.x) < SCH.w / 2 - 4 && Math.abs(z - SCH.z) < SCH.d / 2 - 4 ? 1 : 0);
+  hf.paint2(2, SCH.x - SCH.w / 2, SCH.z - SCH.d / 2, SCH.x + SCH.w / 2, SCH.z + SCH.d / 2, (x, z) => Math.abs(x - SCH.x) < SCH.w / 2 - 4.5 && Math.abs(z - SCH.z) < SCH.d / 2 - 4.5 || Math.abs(x - SCH.x) < 4.5 && z < SCH.z ? 1 : 0);
+  hf.paint2(0, SCH.x - 6, SCH.z - SCH.d / 2 - 2, SCH.x + 6, SCH.z, (x, z) => Math.abs(x - SCH.x) < 4.2 ? 1 : 0); // paved way in from the gate
+  reserve(PK.x, PK.z, PK.w / 2 + 1, PK.d / 2 + 1, 0);
+  playground(B, PK.x, hf.groundAt(PK.x, PK.z), PK.z, Math.PI, PK.w, PK.d, drng, parkTrees, extras);
+  hf.paint2(0, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4 && Math.abs(z - PK.z) < PK.d / 2 - 4 ? 1 : 0);
+  hf.paint2(2, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4.5 && Math.abs(z - PK.z) < PK.d / 2 - 4.5 ? 1 : 0);
 
   // lots along roads
   const lots = [];
@@ -343,17 +356,60 @@ export async function build(progress) {
         const [px, pz] = lotW(lot, lx, fz); addBox(px, pz, 0.65, 0.25, lot.r, y - 1, y + 0.5);
         for (const o of [-0.35, 0.35]) { const [hx, hz] = lotW(lot, lx + o, fz); hydras.push({ x: hx, y: y + 0.36, z: hz, s: 0.62 + srng() * 0.15, sx: 1, r: srng() * 6.28, c: hydraColor(srng) }); }
       }
+      // shopfront clutter: a pair of nobori banners, a chalk signboard, customers' bicycles
+      const sfz = Math.min(lot.d, 12) / 2;
+      if (drng() < 0.5) { const col = [[0.86, 0.18, 0.14], [0.18, 0.4, 0.78], [0.98, 0.78, 0.2], [0.22, 0.62, 0.42], [0.95, 0.5, 0.65]][Math.floor(drng() * 5)];
+        for (const o of [2.3, 2.95]) { const [nx, nz] = lotW(lot, -lot.w / 2 + o, sfz + 0.4); nobori(B, nx, y, nz, lot.r, col); addCircle(nx, nz, 0.18); } }
+      if (drng() < 0.35) { const [bx, bz] = lotW(lot, lot.w * 0.08, sfz + 0.7); standBoard(B, bx, y, bz, lot.r + (drng() - 0.5) * 0.4, [[0.92, 0.9, 0.86], [0.55, 0.36, 0.24], [0.2, 0.3, 0.45]][Math.floor(drng() * 3)]); addCircle(bx, bz, 0.3); }
+      if (drng() < 0.4) for (let k = 0, n = 1 + Math.floor(drng() * 3); k < n; k++) { const [bx, bz] = lotW(lot, lot.w * 0.22 + k * 0.62, sfz + 1.05); bikeList.push({ x: bx, y, z: bz, r: lot.r + Math.PI / 2 + (drng() - 0.5) * 0.15 }); }
     } else {
       const info = house(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng, extras);
       // a blossom tree in some front gardens (the gate + parking side is the right, so the left corner is free), hydrangeas in the others
       if (srng() < 0.2) { const [tx, tz] = lotW(lot, -lot.w / 2 + 1.8, lot.d / 2 - 2); lot.sakura = true; sakura.push({ garden: true, x: tx, y: y - 0.15, z: tz, s: lerp(5.5, 7, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
       else if (srng() < 0.65) for (let k = 0; k < 2; k++) { const [hx, hz] = lotW(lot, -lot.w / 2 + 0.9 + k * 1.2, lot.d / 2 - 0.9); hydras.push({ x: hx, y: y - 0.05, z: hz, s: 0.9 + srng() * 0.4, sx: 0.9 + srng() * 0.3, r: srng() * 6.28, c: hydraColor(srng) }); }
       if (info.carSpot) carSpots.push(info.carSpot);
+      // yard life: a clipped garden tree, laundry in the side yard, a mailbox by the gate, bicycles beside the car
+      if (!lot.sakura && drng() < 0.4) { const [tx, tz] = lotW(lot, -lot.w / 2 + 2.9, lot.d / 2 - 2.3); lot.niwaki = true; gardenTrees.push({ x: tx, y: y - 0.1, z: tz, s: lerp(3.6, 5.0, drng()), sx: 0.9 + drng() * 0.25, r: drng() * 6.28, c: leafColor(drng) }); }
+      const gapL = info.hx - info.W / 2 + lot.w / 2, gapR = lot.w / 2 - info.hx - info.W / 2;
+      if (drng() < 0.3 && Math.max(gapL, gapR) > 1.5) { const left = gapL >= gapR, g = left ? gapL : gapR, lx = left ? -lot.w / 2 + g / 2 : lot.w / 2 - g / 2, [rx, rz] = lotW(lot, lx, info.hz - 0.5);
+        dryingRack(B, rx, y, rz, lot.r + Math.PI / 2, drng, Math.min(2.6, info.D - 2)); }
+      if (drng() < 0.45) { const [mx, mz] = lotW(lot, lot.w / 2 - 4.0, lot.d / 2 - 0.4); mailbox(B, mx, y, mz, lot.r, [[0.22, 0.32, 0.52], [0.86, 0.86, 0.84], [0.58, 0.26, 0.2], [0.26, 0.26, 0.28], [0.32, 0.48, 0.36]][Math.floor(drng() * 5)]); }
+      if (info.carSpot && drng() < 0.35) for (let k = 0, n = 1 + Math.floor(drng() * 2); k < n; k++) { const [bx, bz] = lotW(lot, lot.w / 2 - 0.55, lot.d / 2 - 4.6 + k * 0.75); bikeList.push({ x: bx, y, z: bz, r: lot.r + Math.PI / 2 + (drng() - 0.5) * 0.1 }); }
       hf.paint2(0, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z, lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < lot.w / 2 && Math.abs(lz) < lot.d / 2 ? (lz > lot.d / 2 - 6 ? 0.9 : 0.25) : 0; });
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z, lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < lot.w / 2 - 0.3 && Math.abs(lz) < lot.d / 2 - 0.3 && lz > lot.d / 2 - 6.5 ? 1 : 0; });
       if (rng() < 0.07) vend.push({ lot, off: [-lot.w / 2 + 0.8, lot.d / 2 + 0.55] });
     }
     if (++li % 40 === 0) { progress('Building houses', 0.5 + 0.12 * li / lots.length); await tick(); }
+  }
+  // zebra crossings on the main road and road B beside every junction
+  for (const I of inters) {
+    const major = I.roads.find(R => R.id === 'A') || I.roads.find(R => R.id === 'B'); if (!major) continue;
+    const minor = I.roads[0] === major ? I.roads[1] : I.roads[0]; if (minor.kind === 'path') continue;
+    const q = nearestOnRoad(major, I.p[0], I.p[1]);
+    for (const dir of [-1, 1]) {
+      const d = minor.w / 2 + (minor.walk || 0) + 2.4, x = I.p[0] + q.dx * dir * d, z = I.p[1] + q.dz * dir * d;
+      if (Math.abs(x) > 460 || Math.abs(z) > 340 || onRail(z) || onBridge(x, z)) continue;
+      crosswalk(B, x, roadY(x, z), z, q.dx, q.dz, major.w, 3.2);
+    }
+  }
+  // street trees in square planters along the main road's sidewalks, outside the shopping street
+  const streetTrees = [];
+  for (let x = -430; x < 430; x += 13) for (const sd of [-1, 1]) {
+    if (x > -268 && x < 205 || Math.abs(x - riverX(-25)) < 32 || nearInter(x, -25, ROADS[0], 5)) continue;
+    const z = -25 + sd * 4.3; streetTrees.push({ x, y: Y0 + 0.1, z, s: lerp(7, 8.5, drng()), sx: 0.9, r: drng() * 6.28, c: leafColor(drng) });
+    B.frame(x, Y0 + 0.15, z, 0); B.box('concrete', 0, 0, 0, 1.3, 0.12, 1.3, { color: [0.78, 0.78, 0.76] }); B.box('plain', 0, 0.02, 0, 1.1, 0.12, 1.1, { color: [0.36, 0.28, 0.22] });
+  }
+  // bus stops, post boxes, garbage points
+  for (const [x, sd] of [[-205, 1], [58, -1], [300, 1]]) { const z = -25 + sd * 5.55; busStop(B, x, Y0 + 0.15, z, sd > 0 ? Math.PI : 0); }
+  for (const z of [-150, 120]) busStop(B, 110 + 3.6, Y0, z, -Math.PI / 2, false);
+  for (const [x, sd] of [[-128, 1], [22, 1], [158, -1], [-240, -1]]) postBox(B, x, Y0 + 0.15, -25 + sd * 5.4, sd > 0 ? Math.PI : 0);
+  for (const R of ROADS) if (R.kind === 'lane' && R.id !== 'R') for (const [a, b] of roadSegs(R)) {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+    for (let t = 40 + drng() * 30; t < L - 20; t += 90 + drng() * 60) {
+      const sd = drng() < 0.5 ? 1 : -1, x = a[0] + dx * t - dz * sd * (R.w / 2 + 0.45), z = a[1] + dz * t + dx * sd * (R.w / 2 + 0.45);
+      if (Math.abs(x) > 440 || Math.abs(z) > 330 || nearInter(x, z, R, 4) || onRail(z) || Math.abs(x - riverX(z)) < 26 || hf.groundAt(x, z) > Y0 + 1) continue;
+      garbagePoint(B, x, hf.groundAt(x, z), z, Math.atan2(dx, dz) + (sd > 0 ? -Math.PI / 2 : Math.PI / 2), drng);
+    }
   }
   // festival lantern strings across the shopping street
   for (let x = -252; x < 190; x += 21) {
@@ -467,6 +523,7 @@ export async function build(progress) {
   }
   for (let i = trees.length - 1; i >= 0; i--) if (riverTrees.some(t => Math.hypot(t.x - trees[i].x, t.z - trees[i].z) < 6)) trees.splice(i, 1);
   for (const t of riverTrees) sakura.push(t);
+  for (const t of schoolSak) { const h = hf.groundAt(t.x, t.z); sakura.push({ x: t.x, y: h - 0.2, z: t.z, s: lerp(7, 9, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
   for (const t of riverTrees) for (let k = 0; k < 2; k++) if (srng() < 0.55) { // bushes and hydrangeas at the tree feet
     const a = srng() * 6.28, d = 1.6 + srng() * 1.6, x = t.x + Math.cos(a) * d, z = t.z + Math.sin(a) * d, rd = x - riverX(z);
     if (rd > -23.8 && rd < 20.2 || Math.abs(x - SHRINE.x) < 4.5 || Math.abs(rd) > 24 && (occRect(x, z, 0.5, 0.5, 0, 0, true) || inPaddyZone(x, z)) || !bankClear(z)) continue;
@@ -488,7 +545,7 @@ export async function build(progress) {
 
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
-  B.flush(MT, { paint: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false });
+  B.flush(MT, { paint: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false, chain: false, poly: false });
   Bx.flush(MT, { paint: false });
   const landmarks = flushLandmarks(LB);
 
@@ -508,7 +565,7 @@ export async function build(progress) {
     if (!lot.shop) {
       for (let k = 0; k < 3; k++) if (prng() < 0.7) { const [x, z] = W((prng() - 0.5) * (lot.w - 2), -lot.d / 2 + 0.8 + prng() * 1.2); (k === 1 ? shrubs : bushes).push({ x, y: hf.groundAt(x, z) - 0.1, z, s: 0.9 + prng() * 0.6, sx: 0.9 + prng() * 0.3, r: prng() * 6.28, c: bushColor(prng) }); }
       if (prng() < 0.6 && !lot.sakura) { const [x, z] = W(lot.w / 2 - 0.8, -lot.d / 2 + 0.9); shrubs.push({ x, y: hf.groundAt(x, z), z, s: 1.2 + prng() * 1.0, r: prng() * 6.28 }); }
-      for (let k = 0; k < 3; k++) if (prng() < 0.5 && !lot.sakura) { const [x, z] = W(-lot.w / 2 + 2.6 + prng() * 2.4, lot.d / 2 - 1.1 - prng() * 2); pots.push({ x, y: hf.groundAt(x, z), z, s: 0.35 + prng() * 0.25, r: prng() * 6.28 }); }
+      for (let k = 0; k < 3; k++) if (prng() < 0.5 && !lot.sakura && !lot.niwaki) { const [x, z] = W(-lot.w / 2 + 2.6 + prng() * 2.4, lot.d / 2 - 1.1 - prng() * 2); pots.push({ x, y: hf.groundAt(x, z), z, s: 0.35 + prng() * 0.25, r: prng() * 6.28 }); }
     } else if (prng() < 0.4) { const [x, z] = W(lot.w / 2 - 1.2, Math.min(lot.d, 12) / 2 + 0.5); crates.push({ x, y: hf.groundAt(x, z), z, s: 0.45, r: lot.r + (prng() - 0.5) * 0.3 }); if (prng() < 0.5) crates.push({ x, y: hf.groundAt(x, z) + 0.3, z, s: 0.45, r: lot.r + (prng() - 0.5) * 0.3 }); }
     for (let k = 0; k < 4; k++) if (prng() < 0.25) { const [x, z] = W((prng() - 0.5) * lot.w, lot.d / 2 - 0.15); weeds.push({ x, y: hf.groundAt(x, z), z, s: 0.25 + prng() * 0.3, r: prng() * 6.28 }); }
     if (prng() < 0.05) { const [x, z] = W(lot.w / 2 - 0.5, lot.d / 2 + 0.4); boxes.push({ x, y: hf.groundAt(x, z), z, s: 1.3, r: lot.r }); addCircle(x, z, 0.4); }
@@ -517,6 +574,11 @@ export async function build(progress) {
   buildBushes(bushes, 'bush');
   buildBushes(hydras, 'hydra');
   buildSakura(sakura.filter(t => t.garden));
+  // green trees: park shade trees, clipped garden trees, and a row along the main road's sidewalks outside the shops
+  const greenTrees = [...gardenTrees];
+  for (const t of parkTrees) greenTrees.push({ x: t.x, y: hf.groundAt(t.x, t.z) - 0.2, z: t.z, s: lerp(8, 11, drng()), sx: 1, r: drng() * 6.28, c: leafColor(drng) });
+  buildBroadleafForest([...greenTrees, ...streetTrees]);
+  bicycles(bikeList, drng);
   scatterModel(potted, pots, true, () => Q.props * 0.35);
   scatterModel(weed, weeds, true, () => Q.props * 0.3, false, true);
   scatterModel(crate, crates, true, () => Q.props * 0.4);
@@ -576,6 +638,15 @@ export async function build(progress) {
   for (let i = 0; i < 6; i++) { const l = new THREE.PointLight(0xffd9a8, 0, 22, 2); scene.add(l); plights.push(l); }
   let lightTimer = 0;
 
+  // people on the streets: sidewalks of the main road, lane shoulders, the riverside walkways and the shrine approach
+  const walkPaths = [];
+  for (const R of ROADS) {
+    if (R.id === 'F') continue;
+    const pts = R.pts.map(([x, z]) => [clamp(x, -440, 440), clamp(z, -335, 335)]);
+    walkPaths.push({ pts, off: R.kind === 'path' ? 1.0 : R.w / 2 + (R.walk ? R.walk / 2 : 0.55), lift: R.walk ? (x, z) => onBridge(x, z) ? 0 : 0.15 : null, w: R.id === 'A' ? 3 : 1 });
+  }
+  for (const sd of [-1, 1]) for (const [z0, z1] of [[-330, -94], [-66, 330]]) walkPaths.push({ pts: Array.from({ length: 13 }, (_, i) => { const z = lerp(z0, z1, i / 12); return [riverX(z) + sd * 16.1, z]; }), off: 0, lift: null });
+  const people = pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 260);
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3();
   const world = {
@@ -602,9 +673,9 @@ export async function build(progress) {
       const rd = Math.abs(x - riverX(z));
       return { forest: FOREST[hf.idx(clamp(x, -HALF, HALF), clamp(z, -HALF, HALF))], water: rd < 40 ? (1 - rd / 40) * 0.6 : 0, town: Math.abs(x) < 450 && Math.abs(z) < 330 ? 1 : 0.3, insects: 0.9 };
     },
-    collide(p) { traffic.collide(p); for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
+    collide(p) { traffic.collide(p); people.collide(p); for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
     update(dt, t, cam) {
-      updateNight(); updateGlow(); landmarks.update();
+      updateNight(); updateGlow(); landmarks.update(); people.update(dt);
       const pl = { x: cam.position.x, y: cam.position.y - 1.6, z: cam.position.z };
       for (const tr of trains) tr.update(dt, pl);
       for (const c of crossings) c.active = crossingActive(c, trains);
@@ -621,5 +692,6 @@ export async function build(progress) {
       for (const L of plights) L.intensity = lerp(L.intensity, L.userData.target || 0, 1 - Math.exp(-dt * 4));
     },
   };
+  people.update(0);
   return world;
 }
