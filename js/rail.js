@@ -4,7 +4,46 @@ import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints,
 import { Emitter, audio } from './audio.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export const RAIL = { z: [-82.1, -77.9], gauge: 1.067, portal: 700, stationX: -8, platformLen: 100 };
+export const RAIL = { z: [-82.1, -77.9], gauge: 1.067, portal: 700, portalW: 700, portalE: 700, stationX: -8, platformLen: 100 };
+// tunnel portal headwall set into the hillside: arched opening, cornice, wing walls down the cutting banks, dark bore.
+// (x, y, z) = centre of the opening at formation level; sx = +1 facing west (tunnel runs toward +x), -1 the other way
+// A tunnel portal that plugs the end of a cutting exactly: the headwall's outline is the cross-section between the cut
+// (bottom(dz), height above the formation on the valley side) and the natural hillside behind it (top(dz)), so the
+// heightfield's step from cutting to hill is hidden inside the wall and the hill runs straight down onto its coping.
+// The face stands at xFace; the wall reaches back to xBack; `capAt` metres behind the face the bore turns to darkness
+// (a black arch, so trains vanish into the hill). cutDepth(dz) > 0 where the cutting is dug in (the wall's extent).
+// z: track axis; sx: -1 west end, +1 east end.
+export function tunnelPortal(MT, { xFace, xBack, y, z, sx, archW = 10, archH = 9.5, capAt = 2, top, bottom, cutDepth, dzMin = -80, dzMax = 80 }) {
+  const grp = new THREE.Group(); grp.position.set(xFace, y, z); grp.rotation.y = sx > 0 ? -Math.PI / 2 : Math.PI / 2; scene.add(grp);
+  const toDz = lx => lx * (sx > 0 ? 1 : -1);            // local x -> world z offset from the axis
+  const T = lx => top(toDz(lx)), Bt = lx => bottom(toDz(lx));
+  const reach = dir => { let lx = archW / 2 + 1; const ok = l => { const d = toDz(l * dir); return d > dzMin && d < dzMax; }; while (ok(lx + 0.5) && cutDepth(toDz(lx * dir)) > 0.25) lx += 0.5; return lx + 0.5; };
+  const L = reach(-1), R = reach(1), lo = [], up = [];
+  for (let lx = -L; lx < R; lx += 1) lo.push([lx, Math.min(Bt(lx), T(lx)) - 1.2]);
+  lo.push([R, Math.min(Bt(R), T(R)) - 1.2]);
+  for (let lx = R; lx > -L; lx -= 1) up.push([lx, Math.max(T(lx), Bt(lx)) + 0.4]);
+  up.push([-L, Math.max(T(-L), Bt(-L)) + 0.4]);
+  const shape = new THREE.Shape(); shape.moveTo(lo[0][0], lo[0][1]);
+  for (const [a, b] of [...lo.slice(1), ...up]) shape.lineTo(a, b);
+  const r = archW / 2, archPath = p => { p.moveTo(-r, -0.5); p.lineTo(r, -0.5); p.lineTo(r, archH - r); p.absarc(0, archH - r, r, 0, Math.PI, false); p.lineTo(-r, -0.5); return p; };
+  shape.holes.push(archPath(new THREE.Path()));
+  const depth = Math.abs(xBack - xFace) + 0.6;
+  // GeoBuilder materials take their tint from vertex colours
+  const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+  const add = (geo, mat, px = 0, py = 0, pz = 0, c = [0.78, 0.78, 0.75]) => { const m = new THREE.Mesh(tint(geo, c), mat); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; grp.add(m); return m; };
+  const uvScale = g => { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.25, uv.getY(i) * 0.25); return g; };
+  add(uvScale(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 20 })), MT.concrete, 0, 0, -depth + 0.3);
+  // coping along the top edge, slightly proud of the face
+  const cop = new THREE.Shape(); cop.moveTo(up[0][0], up[0][1]);
+  for (const [a, b] of up.slice(1)) cop.lineTo(a, b);
+  for (const [a, b] of [...up].reverse()) cop.lineTo(a, b + 0.45);
+  add(uvScale(new THREE.ExtrudeGeometry(cop, { depth: depth + 0.35, bevelEnabled: false })), MT.concrete, 0, 0, -depth + 0.3, [0.66, 0.66, 0.64]);
+  add(new THREE.TorusGeometry(r + 0.35, 0.35, 6, 28, Math.PI), MT.concrete, 0, archH - r, 0.45, [0.7, 0.7, 0.68]); // arch ring
+  for (const s2 of [-1, 1]) add(new THREE.BoxGeometry(0.9, archH - r + 0.5, 0.5), MT.concrete, s2 * (r + 0.35), (archH - r) / 2 - 0.25, 0.45, [0.7, 0.7, 0.68]);
+  const cap = new THREE.Mesh(new THREE.ShapeGeometry(archPath(new THREE.Shape()), 20), new THREE.MeshBasicMaterial({ color: 0x030304, fog: false }));
+  cap.position.set(0, 0, -capAt); grp.add(cap);
+  return grp;
+}
 // ground level y0: ballast top = y0 + 0.2, rail top = y0 + 0.45
 export function railTop(y0) { return y0 + 0.45; }
 
@@ -13,7 +52,7 @@ stripeTex.wrapS = THREE.RepeatWrapping;
 
 export function buildRailway(ctx) {
   const { y0, riverX, B } = ctx, MT = materials();
-  const rt = railTop(y0), X0 = -RAIL.portal - 60, X1 = RAIL.portal + 60;
+  const rt = railTop(y0), X0 = -RAIL.portalW - 60, X1 = RAIL.portalE + 60;
   const rx = riverX(-80);
   // ballast bed (trapezoid) along the whole line
   for (let x = X0; x < X1; x += 25) {
@@ -57,18 +96,7 @@ export function buildRailway(ctx) {
   const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(cw, 3));
   const cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x3a3a38 })); cl.frustumCulled = false; scene.add(cl);
 
-  // tunnel portals + dark interiors
-  const portalShape = new THREE.Shape(); portalShape.moveTo(-9, -1); portalShape.lineTo(9, -1); portalShape.lineTo(9, 11); portalShape.lineTo(-9, 11); portalShape.lineTo(-9, -1);
-  const hole = new THREE.Path(); hole.moveTo(-5, -0.5); hole.lineTo(5, -0.5); hole.lineTo(5, 4.5); hole.absarc(0, 4.5, 5, 0, Math.PI, false); hole.lineTo(-5, -0.5);
-  portalShape.holes.push(hole);
-  const pg = new THREE.ExtrudeGeometry(portalShape, { depth: 1.2, bevelEnabled: false });
-  for (const sx of [-1, 1]) {
-    const px = sx * RAIL.portal;
-    const p = new THREE.Mesh(pg, MT.concrete); p.rotation.y = Math.PI / 2 * sx; p.position.set(px, y0, -80); p.castShadow = p.receiveShadow = true; scene.add(p);
-    const box = new THREE.Mesh(new THREE.BoxGeometry(90, 10, 10), new THREE.MeshBasicMaterial({ color: 0x030303, side: THREE.BackSide, fog: false }));
-    box.position.set(px + sx * 45.6, y0 + 4.5, -80); scene.add(box);
-    addBox(px + sx * 1.0, -80, 0.8, 9.5, 0); // nobody walks into the tunnel
-  }
+  // tunnel portals: set into the hills by the map (town.js), which knows the terrain they must plug
 
   // river bridge: concrete deck, steel plate girders, piers
   B.frame(rx, y0, -80, 0);

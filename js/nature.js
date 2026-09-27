@@ -1,6 +1,6 @@
 // "Wildlands" — lake valley, conifer forests, mountains.
 import { THREE, Q, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, Scatter, addCircle, clearColliders } from './core.js';
-import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater } from './terrain.js';
+import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt } from './terrain.js';
 import { buildConiferForest, buildBroadleafForest, buildSakura, buildBushes, firColor, leafColor, sakuraColor, bushColor, hydraColor } from './trees.js';
 import { GeoBuilder, dock, shrine, cottage, bench, lantern, flushLandmarks } from './landmarks.js';
 
@@ -14,7 +14,10 @@ function height(x, z) {
   const mm = smoothstep(380, 1150, d);
   const e = erosion(wx * 0.0017 + 11.3, wz * 0.0017 - 4.2) * 0.5 + 0.5;
   const hills = fbm(wx * 0.0055, wz * 0.0055, 5);
-  const h = 7 + hills * (10 - mm * 4) + e * e * (38 + 380 * mm) + mm * 30;
+  let h = 7 + hills * (10 - mm * 4) + e * e * (38 + 380 * mm) + mm * 30;
+  // beyond the valley's own mountains, higher ranges rise ridge behind ridge toward the horizon (snow-capped)
+  const far = smoothstep(1350, 4800, d);
+  if (far > 0) { const r = erosion(wx * 0.00042 + 2.1, wz * 0.00042 - 7.3, 6) * 0.5 + 0.5; h += far * (60 + r * r * 1150 + e * 120); }
   const ld = Math.hypot(wx - LAKE_X, (wz - LAKE_Z) * 1.3) + fbm(x * 0.008, z * 0.008, 2) * 45;
   const lm = smoothstep(290, 70, ld);
   return h * (1 - lm) - 10 * lm;
@@ -39,7 +42,10 @@ export async function build(progress) {
     for (let i = 0; i < HN; i++) {
       const x = -HALF + i * CELL, z = -HALF + j * CELL, h = hf.H[j * HN + i];
       const f = fbm(x * 0.0042 + 40, z * 0.0042 - 17, 4) * 0.85 + fbm(x * 0.02, z * 0.02, 2) * 0.3;
-      const v = smoothstep(-0.02, 0.22, f) * smoothstep(2.5, 6, h) * (1 - smoothstep(140, 195, h)) * smoothstep(0.78, 0.9, hf.gridNormalY(i, j));
+      let v = smoothstep(-0.02, 0.22, f) * smoothstep(2.5, 6, h) * (1 - smoothstep(140, 195, h)) * smoothstep(0.78, 0.9, hf.gridNormalY(i, j));
+      // toward the map edge the woods follow the far-forest mask, so they carry on seamlessly past the boundary
+      const edge = smoothstep(HALF - 240, HALF - 20, Math.max(Math.abs(x), Math.abs(z)));
+      if (edge > 0) v = lerp(v, farForestAt(x, z, h, 1 - hf.gridNormalY(i, j), 0, 175), edge);
       FOREST[j * HN + i] = v; hf.mask[(j * HN + i) * 4] = v * 255;
     }
     if ((j & 63) === 0) { progress('Growing forests', 0.4 + 0.1 * j / HN); await tick(); }
@@ -148,7 +154,7 @@ export async function build(progress) {
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.68); await tick();
-  buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 175, shore: 0.8 }));
+  await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 175, shore: 0.8, conifer: 0.62 }));
   progress('Planting trees', 0.78); await tick();
   buildConiferForest(trees.filter(t => !t.leafy && !t.sakura));
   buildBroadleafForest(trees.filter(t => t.leafy));

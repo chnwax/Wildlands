@@ -57,9 +57,14 @@ export const QUALITY = {
   low:    { pr: 0.75, grass: 220000, tile: 56,  shadow: 2048, box: 90,  msaa: 0, ao: false, treeHi: 140, trees: 1100, rocks: 160, props: 120, ferns: 60,  bloom: false, refl: 0.3 },
   medium: { pr: 1.0,  grass: 380000, tile: 64,  shadow: 2048, box: 120, msaa: 4, ao: false, treeHi: 200, trees: 1600, rocks: 230, props: 180, ferns: 80,  bloom: true,  refl: 0.4 },
   high:   { pr: 1.0,  grass: 620000, tile: 76,  shadow: 4096, box: 190, msaa: 4, ao: true,  treeHi: 260, trees: 2400, rocks: 320, props: 260, ferns: 100, bloom: true,  refl: 0.5 },
-  ultra:  { pr: 1.35, grass: 900000, tile: 90,  shadow: 4096, box: 240, msaa: 8, ao: true,  treeHi: 340, trees: 3200, rocks: 420, props: 360, ferns: 130, bloom: true,  refl: 0.65 },
+  ultra:  { pr: 1.35, grass: 1100000, tile: 100, shadow: 4096, box: 260, msaa: 8, ao: true,  treeHi: 380, trees: 3600, rocks: 480, props: 400, ferns: 150, bloom: true,  refl: 0.7, far: 3 },
+  // no compromises: supersampled, 8k shadows, the densest grass and every far-forest ring
+  extreme: { pr: 1.5, grass: 1600000, tile: 124, shadow: 8192, box: 300, msaa: 8, ao: true,  treeHi: 520, trees: 5000, rocks: 700, props: 560, ferns: 220, bloom: true,  refl: 0.9, far: 4 },
 };
-export const MAX_GRASS = 900000;
+QUALITY.low.far = 1; QUALITY.medium.far = 1; QUALITY.high.far = 2; // far: how many outer far-forest rings are drawn
+export const MAX_GRASS = 1600000;
+// supersampling never goes past ~8.3 million pixels (4K), so a 4K screen on Extreme renders natively instead of at 6K
+export const pixelRatio = () => { const d = Math.min(devicePixelRatio, 2) * Q.pr, px = innerWidth * innerHeight; return Math.max(Math.min(d, Math.sqrt(8.3e6 / Math.max(px, 1))), Math.min(devicePixelRatio, 1)); };
 export const Q = { name: 'high' };
 {
   let s = 'high';
@@ -70,7 +75,7 @@ export const Q = { name: 'high' };
 // ---------------------------------------------------------------- renderer / scene / camera
 export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2) * Q.pr);
+renderer.setPixelRatio(pixelRatio());
 renderer.toneMapping = THREE.NeutralToneMapping; // keeps hues and saturation intact (the look is painted, not filmic)
 renderer.toneMappingExposure = 1.0; // the real exposure is applied when the scene is resolved (post.js)
 renderer.shadowMap.enabled = true;
@@ -191,9 +196,16 @@ export function makeNoiseTexture() {
   const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
   t.generateMipmaps = true; t.needsUpdate = true;
+  t.userData.data = data;
   return t;
 }
 S.tNoise.value = makeNoiseTexture();
+// CPU copy of the GPU's bilinear, repeating tNoise lookup (channel c), so scattering on the CPU matches shader masks
+export function noiseAt(u, v, c) {
+  const N = 256, D = S.tNoise.value.userData.data, x = u * N - 0.5, y = v * N - 0.5, ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const at = (i, j) => D[((((j % N) + N) % N) * N + (((i % N) + N) % N)) * 4 + c];
+  return lerp(lerp(at(ix, iy), at(ix + 1, iy), fx), lerp(at(ix, iy + 1), at(ix + 1, iy + 1), fx), fy) / 255;
+}
 
 // ---------------------------------------------------------------- collisions (circles + oriented boxes, spatial hash)
 const COL_CELL = 16;
@@ -328,6 +340,6 @@ export function onResize(fn) { resizeFns.push(fn); }
 const resizeFns = [];
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(pixelRatio()); renderer.setSize(innerWidth, innerHeight);
   resizeFns.forEach(f => f());
 });

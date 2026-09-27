@@ -2,13 +2,13 @@
 // houses and shops, utility poles, a river with concrete banks, rice paddies and cedar-covered hills.
 import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts,
   Scatter, addBox, addCircle, addPlatform, colliders } from './core.js';
-import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildForest, treeColor } from './terrain.js';
+import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildForest, treeColor, farForestAt } from './terrain.js';
 import { buildSakura, buildBushes, buildBroadleafForest, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, house, shopBuilding, konbini, apartment, shrine, utilityPole, wires, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
-import { RAIL, buildRailway, buildCrossing, updateCrossings, crossings, crossingActive, Train } from './rail.js';
+import { RAIL, buildRailway, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 
 export const meta = { name: 'Sakuragawa 桜川', startHour: 16.6, sunAzimuth: 2.6 };
@@ -23,35 +23,73 @@ function paddyCell(x, z) { // returns {inside (0..1), levee} for the paddy grid
   const e = Math.min(cx, 30 - cx, cz, 20 - cz);
   return e;
 }
-function height(x, z) {
+// the valley and its ring of hills, before any earthworks; far out, higher mountain ranges rise behind the hills so the
+// horizon shows layered ridgelines (snow on the highest peaks)
+function hills(x, z) {
   const ex = x / 720, ez = (z + 10) / 440, ve = Math.hypot(ex, ez);
   const hn = fbm(x * 0.004 + 7, z * 0.004 - 2, 5), ridge = erosion(x * 0.0021 + 5, z * 0.0021 - 3) * 0.5 + 0.5;
   const hill = smoothstep(0.8, 1.55, ve + hn * 0.12);
   let h = Y0 + fbm(x * 0.01, z * 0.01, 3) * 0.2 * (1 - hill) + hill * hill * (30 + ridge * ridge * 210 + hn * 30);
-  // extra mass above the tunnel portals
-  h += smoothstep(RAIL.portal - 140, RAIL.portal + 20, Math.abs(x)) * smoothstep(70, 20, Math.abs(z + 80)) * 30;
-  // railway cutting up to the portals
-  if (Math.abs(x) < RAIL.portal + 1) h = lerp(h, Y0, smoothstep(10, 5.5, Math.abs(z + 80)));
-  // main road corridor leaving the valley (gentle grade)
-  h = lerp(h, Y0 + Math.max(0, Math.abs(x) - 640) * 0.035, smoothstep(13, 6, Math.abs(z + 25)));
+  const far = smoothstep(1350, 4600, Math.hypot(x, z * 1.2));
+  if (far > 0) { const r = erosion(x * 0.00045 + 2.1, z * 0.00045 - 7.3, 6) * 0.5 + 0.5; h += far * (70 + r * r * 980 + ridge * 90); }
+  return h;
+}
+// the main road climbs gently out of the valley; railway and road reach the hills in open cuttings and then bore into
+// them through tunnels sited where the ground first stands 10.5 m above the formation, so no slot is carved through
+// the mountains and the ridgelines stay whole (the ground over each bore is kept at least 12 m above the formation)
+export const roadGrade = x => Y0 + Math.max(0, Math.abs(x) - 640) * 0.035;
+function portalAt(z, sx, level) { for (let x = 450; x < 1000; x++) if (hills(sx * x, z) - level(x) >= 12) return x; return 1000; }
+export const PORTALS = { railW: portalAt(-80, -1, () => Y0), railE: portalAt(-80, 1, () => Y0), roadW: portalAt(-25, -1, roadGrade), roadE: portalAt(-25, 1, roadGrade) };
+RAIL.portalW = PORTALS.railW; RAIL.portalE = PORTALS.railE; RAIL.portal = Math.max(PORTALS.railW, PORTALS.railE);
+// earthworks: a level formation `hw` wide, grassed banks at about 1:1.5 either side, back to the natural ground
+const earthwork = (h, level, dz, hw) => { const bank = Math.max(0, dz - hw) * 0.68; return clamp(h, level - bank, level + bank); };
+// smooth minimum (k = blend width in metres)
+const smin = (a, b, k) => { if (k <= 0) return Math.min(a, b); const t = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - t * t * k * 0.25; };
+function baseHeight(x, z) {
+  let h = hills(x, z);
+  const ax = Math.abs(x), pr = x < 0 ? PORTALS.railW : PORTALS.railE, pd = x < 0 ? PORTALS.roadW : PORTALS.roadE;
+  // the cut runs one heightfield cell on into the portal under the arch itself, so the bore's floor is open ground
+  const bore = (P, dz, hw) => ax < Math.ceil(P / 2) * 2 + 0.5 && dz < hw;
+  if (ax < pr || bore(pr, Math.abs(z + 80), 6.6)) h = earthwork(h, Y0, Math.abs(z + 80), 7.4);
+  else if (ax < pr + 170) h = Math.max(h, Y0 + 12 + (ax - pr) * 0.04 - Math.max(0, Math.abs(z + 80) - 10) * 0.6); // cover over the bore
+  if (ax < pd || bore(pd, Math.abs(z + 25), 7.6)) h = earthwork(h, roadGrade(x), Math.abs(z + 25), 8.6);
+  else if (ax < pd + 190) h = Math.max(h, roadGrade(x) + 12 + (ax - pd) * 0.04 - Math.max(0, Math.abs(z + 25) - 11) * 0.6);
   // shrine terrace
   h = lerp(h, Y0 + 0.4, smoothstep(34, 24, Math.hypot(x - SHRINE.x, z - SHRINE.z + 10)));
-  // river valley and channel with concrete banks
-  const rd = Math.abs(x - riverX(z));
-  h = lerp(h, Y0, smoothstep(70, 30, rd));
+  // the river runs down a broad valley: flat floor, then walls of ~24 degrees meeting the hills in a soft crease
+  const rd = Math.abs(x - riverX(z)), wall = Y0 + Math.max(0, rd - 30) * 0.45;
+  h = smin(h, wall, Math.min(14, (wall - Y0) * 0.6));
+  h = lerp(h, Y0, smoothstep(60, 30, rd));
   if (rd < 17) {
     const bed = rd < 5 ? -1.3 : rd < 12.5 ? lerp(-1.3, 0.45, (rd - 5) / 7.5) : 0.45;
     h = rd < 14.5 ? bed : lerp(0.45, h, (rd - 14.5) / 2.5);
   }
+  return h;
+}
+// rice paddies are only laid out where the valley floor is flat: a cell whose natural ground rises more than ~1 m stays
+// meadow, so paddies end where the hills begin instead of being cut into them behind a wall
+const paddyCache = new Map();
+function paddyOK(x, z) {
+  const cx = Math.floor(x / 30) * 30, cz = Math.floor(z / 20) * 20, k = cx * 100003 + cz;
+  let v = paddyCache.get(k);
+  if (v === undefined) {
+    v = inPaddyZone(cx + 15, cz + 10) && Math.abs(cx + 15 - riverX(cz + 10)) >= 30;
+    for (const [px, pz] of [[0, 0], [30, 0], [0, 20], [30, 20], [15, 10]]) if (!v || !inPaddyZone(cx + Math.min(px, 29.9), cz + Math.min(pz, 19.9)) || baseHeight(cx + px, cz + pz) > Y0 + 0.9) v = false;
+    paddyCache.set(k, v);
+  }
+  return v;
+}
+function height(x, z) {
+  const h = baseHeight(x, z);
   // rice paddies: flat terraces with levees
-  if (inPaddyZone(x, z) && rd > 24) { const e = paddyCell(x, z); h = Y0 - (e > 1.2 ? 0.35 : 0.05); }
+  if (inPaddyZone(x, z) && paddyOK(x, z)) { const e = paddyCell(x, z); return Y0 - (e > 1.2 ? 0.35 : 0.05); }
   return h;
 }
 
 // ---------------------------------------------------------------- road network
 // kind: main > road > lane > path ; w = carriageway width
 const ROADS = [
-  { id: 'A', kind: 'main', w: 7.0, walk: 2.5, center: 'yellow', pts: [[-1100, -25], [1100, -25]], mat: 'asphaltMain' },
+  { id: 'A', kind: 'main', w: 7.0, walk: 2.5, center: 'yellow', pts: [[-PORTALS.roadW - 30, -25], [PORTALS.roadE + 30, -25]], mat: 'asphaltMain' },
   { id: 'B', kind: 'road', w: 6.0, center: 'white', pts: [[110, -340], [110, 330]], mat: 'asphaltRoad' },
   { id: 'C', kind: 'lane', w: 5.0, pts: [[-150, -300], [-150, 300]], mat: 'asphaltLane' },
   { id: 'D', kind: 'lane', w: 5.0, pts: [[-400, -312], [-400, 322]], mat: 'asphaltLane' },
@@ -88,7 +126,7 @@ export async function build(progress) {
   const MT = materials();
   MT.paddyWater = new THREE.MeshStandardMaterial({ color: 0x3b3a2a, roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.72, depthWrite: false, envMapIntensity: 1.3 });
 
-  const hf = new Heightfield({ world: 1536, grid: 768, height });
+  const hf = new Heightfield({ world: 2048, grid: 1024, height });
   const { HN, HALF, CELL } = hf;
   const layers = {
     grass: { d: phTex('aerial_grass_rock', 'diff', '2k', true), n: phTex('aerial_grass_rock', 'nor_gl', '2k', false, NFLAT), s: 6, tint: [0.95, 1.1, 0.8] },
@@ -112,7 +150,7 @@ export async function build(progress) {
     }
     return false;
   };
-  const roadY = (x, z) => Math.abs(x - riverX(z)) < 17 ? Y0 + 0.35 : hf.groundAt(x, z) + 0.05;
+  const roadY = (x, z) => Math.abs(x - riverX(z)) < 17 ? Y0 + 0.35 : Math.abs(z + 25) < 6.5 && Math.abs(x) > 600 ? roadGrade(x) + 0.05 : hf.groundAt(x, z) + 0.05;
 
   // ---------------------------------------------------------------- roads, markings, intersections
   const B = new GeoBuilder(192);
@@ -176,6 +214,15 @@ export async function build(progress) {
     }
   }
   progress('Laying roads', 0.36); await tick();
+  // railway and main road leave the valley through tunnels at both ends. Each headwall sits between the last cut
+  // heightfield vertex and the first natural one, so it hides the step between them
+  for (const sx of [-1, 1]) for (const [zc, P, level, o] of [[-80, sx < 0 ? PORTALS.railW : PORTALS.railE, () => Y0, { archW: 11, archH: 9.5, dzMax: 26 }],
+    [-25, sx < 0 ? PORTALS.roadW : PORTALS.roadE, roadGrade, { archW: 13, archH: 8.5, dzMin: -26 }]]) {
+    const xNat = sx * Math.ceil(P / hf.CELL) * hf.CELL, xCut = xNat - sx * hf.CELL, xHill = xNat + sx * hf.CELL, y = level(Math.abs(xCut));
+    tunnelPortal(MT, { xFace: xCut, xBack: xHill, y, z: zc, sx, ...o, capAt: hf.CELL, top: dz => height(xHill, zc + dz) - y, bottom: dz => height(xCut, zc + dz) - y,
+      cutDepth: dz => hills(xCut, zc + dz) - height(xCut, zc + dz) });
+    addBox(xCut + sx * 1.0, zc, 1.0, o.archW / 2 + 1, 0); // nobody walks into the tunnel
+  }
 
   // stop lines + 止まれ + stop signs where minor roads meet bigger ones, and before level crossings
   const stopSpots = []; // {x, z, hx, hz} approach heading
@@ -220,7 +267,7 @@ export async function build(progress) {
   // occupancy/masks for railway corridor, river corridor, station
   occRect(0, -80, 1000, 13, 0, 1);
   for (let z = -800; z < 800; z += 1) { const rx = riverX(z); occRect(rx, z, 24, 0.6, 0, 1); }
-  hf.paint2(2, -900, -92, 900, -68, (x, z) => Math.abs(z + 80) < 11 ? 1 : 0);
+  hf.paint2(2, -PORTALS.railW, -92, PORTALS.railE, -68, (x, z) => Math.abs(z + 80) < 11 ? 1 : 0);
   // station plaza
   B.frame(0, 0, 0, 0);
   B.box('pavement', RAIL.stationX + 6, Y0 - 0.2, -47.5, 64, 0.34, 32, { color: [0.86, 0.85, 0.82], uv: 1.2, skip: 'ny' });
@@ -470,12 +517,12 @@ export async function build(progress) {
   // ---------------------------------------------------------------- rice paddy water surfaces
   for (const [x0, z0, x1, z1] of PADDIES) {
     for (let cx = Math.ceil(x0 / 30) * 30; cx < x1 - 1; cx += 30) for (let cz = Math.ceil(z0 / 20) * 20; cz < z1 - 1; cz += 20) {
-      if (Math.abs(cx + 15 - riverX(cz + 10)) < 30) continue;
+      if (!paddyOK(cx + 15, cz + 10)) continue;
       B.frame(0, 0, 0, 0);
       const y = Y0 - 0.3, a = [cx + 1.3, y, cz + 1.3], b = [cx + 28.7, y, cz + 18.7];
       B.quad('paddyWater', [a[0], y, b[2]], [b[0], y, b[2]], [b[0], y, a[2]], [a[0], y, a[2]], { uv: 10 });
     }
-    hf.paint2(1, x0, z0, x1, z1, (x, z) => inPaddyZone(x, z) && paddyCell(x, z) > 1.4 && Math.abs(x - riverX(z)) > 30 ? 1 : 0);
+    hf.paint2(1, x0, z0, x1, z1, (x, z) => inPaddyZone(x, z) && paddyOK(x, z) && paddyCell(x, z) > 1.4 ? 1 : 0);
   }
   // town lawns are mowed; yards are gravel
   hf.paint2(3, -460, -345, 205, 345, (x, z) => !inPaddyZone(x, z) && hf.groundAt(x, z) < Y0 + 1.5 && Math.abs(x - riverX(z)) > 16 ? 1 : 0);
@@ -491,14 +538,17 @@ export async function build(progress) {
     const x = -HALF + i * CELL, z = -HALF + j * CELL, h = hf.H[j * HN + i];
     const f = smoothstep(Y0 + 4, Y0 + 14, h) * smoothstep(-0.3, 0.1, fbm(x * 0.006 + 3, z * 0.006, 3)) * smoothstep(0.62, 0.8, hf.gridNormalY(i, j));
     const shrineWood = smoothstep(55, 30, Math.hypot(x - SHRINE.x, z - SHRINE.z + 14)) * (Math.hypot(x - SHRINE.x, z - SHRINE.z + 14) > 20 ? 1 : 0) * (z > SHRINE.z + 8 ? smoothstep(10, 15, Math.abs(x - SHRINE.x)) : Math.abs(x - SHRINE.x) > 5 ? 1 : 0); // open lawns along the approach
-    const v = Math.max(f, shrineWood);
+    let v = Math.max(f, shrineWood);
+    const edge = smoothstep(HALF - 240, HALF - 20, Math.max(Math.abs(x), Math.abs(z))); // woods continue past the map edge
+    if (edge > 0) v = lerp(v, farForestAt(x, z, h, 1 - hf.gridNormalY(i, j), 0, 900), edge);
     FOREST[j * HN + i] = v; hf.mask[(j * HN + i) * 4] = v * 255;
   }
   await hf.bakeAO();
   for (let gz = -HALF; gz < HALF; gz += 6.5) for (let gx = -HALF; gx < HALF; gx += 6.5) {
     const x = gx + (rng() - 0.5) * 5, z = gz + (rng() - 0.5) * 5, f = FOREST[hf.idx(x, z)];
     if (rng() > f * 0.95) continue;
-    if (Math.abs(z + 80) < 12 || Math.abs(x - riverX(z)) < 20 || Math.abs(z + 25) < 9) continue;
+    const inCut = (zc, pw, pe, w) => Math.abs(z - zc) < w && Math.abs(x) < (x < 0 ? pw : pe) + 4; // trees grow over the tunnels
+    if (inCut(-80, PORTALS.railW, PORTALS.railE, 12) || Math.abs(x - riverX(z)) < 20 || inCut(-25, PORTALS.roadW, PORTALS.roadE, 9)) continue;
     const h = hf.heightAt(x, z);
     if (hf.normalAt(x, z, nrm).y < 0.75) continue;
     trees.push({ x, y: h - 0.25, z, s: lerp(16, 30, rng()), sx: 0.7 + rng() * 0.2, r: rng() * 6.28, tilt: (rng() - 0.5) * 0.04, c: treeColor(rng) });
@@ -534,7 +584,7 @@ export async function build(progress) {
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.76); await tick();
   const firstNatural = scene.children.length;
-  buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 900 }), { outerDrop: 45 });
+  await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 900, conifer: 0.72 }));
   buildForest(trees);
   buildSakura(sakura.filter(t => !t.garden));
   for (let i = firstNatural; i < scene.children.length; i++) reflected.add(scene.children[i]);
@@ -651,7 +701,7 @@ export async function build(progress) {
   const _n = new THREE.Vector3();
   const world = {
     hf, grass, water, spawn, trains, traffic, crossings, sakura,
-    bounds: { minX: -740, maxX: 740, minZ: -740, maxZ: 740 },
+    bounds: { minX: -990, maxX: 990, minZ: -990, maxZ: 990 },
     groundAt(x, z) {
       const g = hf.groundAt(x, z); if (onBridge(x, z) && (Math.abs(z + 25) < 7 || Math.abs(z - 200) < 3.5)) return Math.max(g, Y0 + 0.35);
       const rd = Math.abs(x - riverX(z)); return rd > 14.55 && rd < 17.65 && Math.abs(z + 78) > 8 ? Math.max(g, Y0 + 0.12) : g; // bank-top walkway
@@ -663,7 +713,7 @@ export async function build(progress) {
       if (Math.abs(z + 80) < 5.6 && y < Y0 + 0.6) return 'gravel';
       const g = hf.groundAt(x, z);
       if (Math.abs(x - riverX(z)) < 14.5) return g < 0.2 ? 'water' : 'gravel';
-      if (inPaddyZone(x, z) && paddyCell(x, z) > 1.2) return 'water';
+      if (inPaddyZone(x, z) && paddyOK(x, z) && paddyCell(x, z) > 1.2) return 'water';
       const m2 = hf.mask2[hf.idx(x, z) * 4 + 2], ur = hf.mask2[hf.idx(x, z) * 4];
       if (m2 > 128) return 'asphalt';
       if (ur > 128) return 'gravel';

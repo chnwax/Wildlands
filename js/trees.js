@@ -124,6 +124,22 @@ export function coniferGeo(hi, seed = 3) {
   return { solid: B.geometry(false), trunk };
 }
 
+// far conifer: a few plain cone tiers (same silhouette and shading as the near tree, a tenth of the triangles)
+export function coniferFarGeo(K = 3, SEG = 6) {
+  const B = meshBuilder(), n = V(0, 0, 0);
+  for (let k = 0; k < K; k++) {
+    const f = K > 1 ? k / (K - 1) : 0;
+    const yb = lerp(0.18, 0.72, f), R = lerp(0.3, 0.11, f), H = lerp(0.38, 0.28, f), ya = yb + H, shade = 0.78 + 0.22 * f, rot = k * 0.7;
+    const apex = B.v(V(0, ya, 0), V(0, 1, 0), shade), rim = [];
+    for (let i = 0; i <= SEG; i++) {
+      const a = rot + i / SEG * Math.PI * 2, cx = Math.cos(a), cz = Math.sin(a);
+      rim.push(B.v(V(cx * R, yb - R * 0.06, cz * R), n.set(cx * H, R * 0.9, cz * H).normalize().clone(), shade * 0.95));
+    }
+    for (let i = 0; i < SEG; i++) B.tri(apex, rim[i + 1], rim[i]);
+  }
+  return { solid: B.geometry(false) };
+}
+
 // ---------------------------------------------------------------- blob crowns: lumpy solid blobs + card fringe (height ~1)
 // shape: 'leaf' round broadleaf, 'sakura' wide umbrella crown on spreading dark branches, 'bush' / 'hydra' low shrubs
 function crownLayout(shape, hi, rng) {
@@ -151,9 +167,11 @@ function crownLayout(shape, hi, rng) {
   }
   return { crown: V(0, 0.7, 0), blobs };
 }
-export function broadleafGeo(hi, seed = 7, shape = 'leaf') {
-  const rng = mulberry32(seed), { crown, blobs } = crownLayout(shape, hi, rng);
-  const ico = new THREE.IcosahedronGeometry(1, hi ? 2 : 1);
+export function broadleafGeo(hi, seed = 7, shape = 'leaf', far = 0) {
+  const rng = mulberry32(seed), { crown, blobs: all } = crownLayout(shape, hi, rng);
+  // far: 1 = a few low-poly blobs, 2 = one blob (distant hillsides); no leaf cards or trunk
+  const blobs = far ? all.slice(0, far > 1 ? 1 : 3).map((b, i) => far > 1 ? { c: V(0, 0.66, 0), R: 0.3, s: b.s } : i ? b : { ...b, R: b.R * 1.25 }) : all;
+  const ico = new THREE.IcosahedronGeometry(1, far ? 0 : hi ? 2 : 1);
   const parts = [], d = V(0, 0, 0), q = V(0, 0, 0), nn = V(0, 0, 0);
   for (const b of blobs) {
     const g = ico.clone(), pos = g.attributes.position, nor = g.attributes.normal, col = [];
@@ -171,6 +189,7 @@ export function broadleafGeo(hi, seed = 7, shape = 'leaf') {
     parts.push(g);
   }
   const solid = mergeGeometries(parts);
+  if (far) return { solid };
   // leaf cards stuck on the blob surfaces, facing out, sharing the blob's smooth normal
   const B = meshBuilder(), ax = V(0, 0, 0), ay = V(0, 0, 0);
   for (const b of blobs) {
@@ -267,21 +286,120 @@ function parts(kind, g, M, near) {
   if (g.trunk) p.push({ geometry: g.trunk, material: M.trunk, castShadow: near });
   return p;
 }
-function forest(trees, kind, geo, hiDist, farDist, trunkR) {
+// Past the low LOD, trees switch to a far version instead of disappearing, so forests never thin out with distance.
+function forest(trees, kind, geo, hiDist, farDist, trunkR, farGeo) {
   if (!trees.length) return;
-  const M = materials(kind), hi = geo(true), lo = geo(false);
-  new Scatter(trees, [{ dist: hiDist, parts: parts(kind, hi, M, true) }, { dist: farDist, parts: parts(kind, lo, M, false) }], 128);
+  const M = materials(kind), hi = geo(true), lo = geo(false), lods = [{ dist: hiDist, parts: parts(kind, hi, M, true) }, { dist: farDist, parts: parts(kind, lo, M, false) }];
+  if (farGeo) lods.push({ dist: () => Infinity, parts: [{ geometry: farGeo.solid, material: M.solid, tint: true, castShadow: false }] });
+  new Scatter(trees, lods, 128);
   for (const t of trees) addCircle(t.x, t.z, trunkR * t.s * (t.sx || 1) + 0.05);
 }
 export function buildConiferForest(trees, { hiDist = () => Q.treeHi, farDist = () => Q.trees } = {}) {
-  forest(trees, 'fir', coniferGeo, hiDist, farDist, 0.03);
+  forest(trees, 'fir', coniferGeo, hiDist, farDist, 0.03, coniferFarGeo());
 }
 export function buildBroadleafForest(trees, { hiDist = () => Q.treeHi, farDist = () => Q.trees } = {}) {
-  forest(trees, 'leaf', broadleafGeo, hiDist, farDist, 0.034);
+  forest(trees, 'leaf', broadleafGeo, hiDist, farDist, 0.034, broadleafGeo(false, 7, 'leaf', 1));
 }
 export function buildSakura(trees, { hiDist = () => Q.treeHi, farDist = () => Q.trees } = {}) {
-  forest(trees, 'sakura', (hi) => broadleafGeo(hi, 13, 'sakura'), hiDist, farDist, 0.05);
+  forest(trees, 'sakura', (hi) => broadleafGeo(hi, 13, 'sakura'), hiDist, farDist, 0.05, broadleafGeo(false, 13, 'sakura', 1));
 }
+// ---------------------------------------------------------------- far tree cards (impostors)
+// Painted silhouettes on camera-facing cards for the distant forest: unlike real geometry, a mip-mapped card averages
+// out when a tree shrinks to a few pixels, so far hillsides read as soft forest instead of shimmering speckle.
+// Atlas: two conifers and two broadleaf crowns; R = painted shading (lit crown, darker base and tier undersides), A = coverage.
+let farTex = null;
+function farCardTexture() {
+  if (farTex) return farTex;
+  const W = 128, H = 256, cv = document.createElement('canvas'); cv.width = W * 4; cv.height = H;
+  const g = cv.getContext('2d'), rng = mulberry32(91);
+  const grey = v => { const c = Math.round(Math.min(255, Math.max(0, v))); return `rgb(${c},${c},${c})`; };
+  const conifer = (x0, seed) => {
+    const r = mulberry32(seed), cx = x0 + W / 2, K = 7;
+    g.fillStyle = grey(70); g.fillRect(cx - 3, H * 0.86, 6, H * 0.14);
+    for (let k = 0; k < K; k++) {
+      const f = k / (K - 1), yb = H * lerp(0.9, 0.3, f), th = H * lerp(0.3, 0.26, f), w = W * lerp(0.47, 0.16, f), ya = yb - th;
+      g.fillStyle = grey(lerp(150, 250, f) * (0.92 + 0.08 * r()));
+      g.beginPath(); g.moveTo(cx + (r() - 0.5) * 3, ya);
+      const n = 6;
+      for (let i = 0; i <= n; i++) { const t = i / n, x = cx + w - t * 2 * w, drop = (i % 2 ? -0.04 : 0.05) * H * (1 - f * 0.5); g.lineTo(x, yb + drop + (r() - 0.5) * 3); }
+      g.closePath(); g.fill();
+      g.globalCompositeOperation = 'source-atop'; // shade under each tier (drawn over by the next), only on painted pixels
+      g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(cx - w * 0.8, yb - H * 0.025, w * 1.6, H * 0.03);
+      g.globalCompositeOperation = 'source-over';
+    }
+  };
+  const broadleaf = (x0, seed) => {
+    const r = mulberry32(seed), cx = x0 + W / 2;
+    g.fillStyle = grey(70); g.fillRect(cx - 4, H * 0.7, 8, H * 0.3);
+    for (let i = 0; i < 26; i++) {
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 0.3, x = cx + Math.cos(a) * d * W * 1.2, y = H * (0.42 + Math.sin(a) * d * 0.55), rad = W * (0.14 + r() * 0.1);
+      g.fillStyle = grey(lerp(250, 150, (y - H * 0.2) / (H * 0.5)) * (0.9 + 0.1 * r()));
+      g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill();
+    }
+  };
+  conifer(0, 5); conifer(W, 9); broadleaf(W * 2, 13); broadleaf(W * 3, 17);
+  rng();
+  farTex = new THREE.CanvasTexture(cv);
+  farTex.colorSpace = THREE.NoColorSpace; farTex.wrapS = farTex.wrapT = THREE.ClampToEdgeWrapping; farTex.anisotropy = 4;
+  return farTex;
+}
+const farCardMats = {};
+function farCardMaterial(kind) {
+  if (farCardMats[kind]) return farCardMats[kind];
+  const m = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, alphaTest: 0.5, alphaToCoverage: Q.msaa > 0 });
+  m.defines = { CLOUD_SHADE_VARYING: '' };
+  const col0 = kind === 'fir' ? 0 : 2, wid = kind === 'fir' ? 0.64 : 0.95;
+  m.onBeforeCompile = sh => {
+    sh.uniforms.tFar = { value: farCardTexture() };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vFarUv; varying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
+      .replace('#include <beginnormal_vertex>', `
+        vec3 fc = instanceMatrix[3].xyz;
+        float fsx = length(instanceMatrix[0].xyz), fsy = length(instanceMatrix[1].xyz);
+        vec2 fto = normalize(cameraPosition.xz - fc.xz + 1e-4);
+        vec3 fright = vec3(fto.y, 0.0, -fto.x);
+        vec3 fwp = fc + fright * position.x * fsx * ${wid.toFixed(2)} + vec3(0.0, position.y * fsy, 0.0);
+        // a rounded crown: the card's normal bends out to the sides and up, so the sun side of each tree is brighter
+        vec3 objectNormal = normalize(fright * position.x * 1.3 + vec3(0.0, 0.35 + position.y * 0.9, 0.0) + vec3(fto.x, 0.0, fto.y) * 0.6);
+        float fcol = ${col0.toFixed(1)} + step(0.5, fract(fc.x * 0.1234 + fc.z * 0.3711));
+        vFarUv = vec2((fcol + position.x + 0.5) / 4.0, position.y);
+        vCloudLit = cloudShade(fwp);`)
+      .replace('#include <defaultnormal_vertex>', 'vec3 transformedNormal = normalMatrix * objectNormal;')
+      .replace('#include <project_vertex>', 'vec4 mvPosition = viewMatrix * vec4(fwp, 1.0); gl_Position = projectionMatrix * mvPosition;')
+      .replace('#include <worldpos_vertex>', 'vec4 worldPosition = vec4(fwp, 1.0);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tFar; varying vec2 vFarUv;')
+      .replace('#include <map_fragment>', `
+        vec4 ftc = texture2D(tFar, vFarUv);
+        vec2 ftdx = dFdx(vFarUv * vec2(512.0, 256.0)), ftdy = dFdy(vFarUv * vec2(512.0, 256.0));
+        float flod = 0.5 * log2(max(max(dot(ftdx, ftdx), dot(ftdy, ftdy)), 1e-6));
+        diffuseColor.a = ftc.a * (1.0 + max(flod, 0.0) * 0.35);   // mip levels lose coverage: keep far crowns solid
+        diffuseColor.rgb *= 0.35 + 0.75 * ftc.r;`);
+  };
+  m.customProgramCacheKey = () => 'farCard' + kind;
+  return (farCardMats[kind] = m);
+}
+let farCardGeo = null;
+const cardGeo = () => farCardGeo || (farCardGeo = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0));
+
+// far forest on the outer terrain: sets[i] = {fir, leaf} per distance ring; ring i is drawn while i < Q.far. The first
+// ring switches to even simpler trees past ~700 m; outer rings use the simplest version throughout.
+export function buildFarForest(sets, rings) {
+  const fir = materials('fir'), leaf = materials('leaf');
+  const g = { fir: coniferFarGeo(3, 6), leaf: broadleafGeo(false, 7, 'leaf', 1) };
+  const solid = (geo, M) => [{ geometry: geo.solid, material: M.solid, tint: true, castShadow: false }];
+  const card = kind => [{ geometry: cardGeo(), material: farCardMaterial(kind), tint: true, castShadow: false, receiveShadow: false }];
+  sets.forEach((set, i) => {
+    const on = () => i < (Q.far || 1) ? Infinity : -1;
+    for (const [list, M, kind] of [[set.fir, fir, 'fir'], [set.leaf, leaf, 'leaf']]) {
+      if (!list.length) continue;
+      if (i > 0) for (const t of list) { t.r = 0; t.tilt = 0; t.tilt2 = 0; }
+      const lods = i === 0 ? [{ dist: () => (i < (Q.far || 1) ? 900 : -1), parts: solid(g[kind], M) }, { dist: on, parts: card(kind) }] : [{ dist: on, parts: card(kind) }];
+      new Scatter(list, lods, i === 0 ? 256 : 1024);
+    }
+  });
+}
+
 // shrubs: no trunk collider worth having below ~1 m; only the big ones block
 export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * 0.6, farDist = () => Q.trees * 0.35 } = {}) {
   if (!bushes.length) return;

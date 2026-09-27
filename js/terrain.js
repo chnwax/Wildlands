@@ -1,8 +1,8 @@
 // Reusable outdoor systems: heightfield terrain with painted splat shading, GPU grass (and rice, reeds, flowers),
 // planar-reflection water, conifer forests (trees.js). Maps configure these and add their own content.
-import { THREE, scene, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters } from './core.js';
+import { THREE, scene, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt } from './core.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
-import { buildConiferForest, firColor } from './trees.js';
+import { buildConiferForest, buildFarForest, firColor, leafColor } from './trees.js';
 
 // ---------------------------------------------------------------- heightfield
 export class Heightfield {
@@ -118,24 +118,57 @@ export const MEADOW_GLSL = /* glsl */`
 
 // ---------------------------------------------------------------- splat terrain
 // layers: { grass, forest, rock, shore, urban } each { d: diffuse tex, n: normal tex, s: tile metres, tint: [r,g,b] }
+// All five diffuse maps live in one texture array and all five normal maps in another, so every layer gets its own
+// normal map while the whole ground shader uses 7 texture units (WebGL2 guarantees 16).
 const terrainTreeDist = { value: Q.trees }; // far-LOD tree cull distance (quality dependent)
 const terrainGrassR = { value: Q.tile * 0.5 }; // where the near grass blades end and the clump cards take over
+const terrainFarTrees = { value: 0 };           // half-extent of the outer far-forest (trees drawn up to there)
+const LAYER_RES = 1024;
+const arrayCache = new Map();
+// copies loaded textures into the layers of a DataArrayTexture as they arrive (flipped like three's image upload)
+function layerArray(texs, srgb, fill) {
+  const key = texs.map(t => t.uuid).join() + srgb;
+  if (arrayCache.has(key)) return arrayCache.get(key);
+  const N = texs.length, R = LAYER_RES, data = new Uint8Array(R * R * 4 * N);
+  for (let i = 0; i < data.length; i += 4) { data[i] = fill[0]; data[i + 1] = fill[1]; data[i + 2] = fill[2]; data[i + 3] = 255; }
+  const arr = new THREE.DataArrayTexture(data, R, R, N);
+  arr.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  arr.wrapS = arr.wrapT = THREE.RepeatWrapping; arr.magFilter = THREE.LinearFilter; arr.minFilter = THREE.LinearMipmapLinearFilter;
+  arr.generateMipmaps = true; arr.anisotropy = maxAniso; arr.needsUpdate = true;
+  const cv = document.createElement('canvas'); cv.width = cv.height = R;
+  const g = cv.getContext('2d', { willReadFrequently: true }), done = new Array(N).fill(false);
+  const poll = () => {
+    let dirty = false;
+    texs.forEach((t, li) => {
+      const im = t.image; if (done[li] || !im || !(im.width > 0)) return;
+      done[li] = true; dirty = true;
+      g.setTransform(1, 0, 0, -1, 0, R); g.clearRect(0, 0, R, R); g.drawImage(im, 0, 0, R, R);
+      data.set(g.getImageData(0, 0, R, R).data, li * R * R * 4);
+    });
+    if (dirty) arr.needsUpdate = true;
+    if (done.includes(false)) setTimeout(poll, 150);
+  };
+  poll();
+  arrayCache.set(key, arr);
+  return arr;
+}
 export function terrainMaterial(hf, L, opt = {}) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
-  // cloud shadows are evaluated per vertex: the splat shader already needs 15 textures, and WebGL2 GPUs only
-  // guarantee 16 per fragment shader (going over fails to link and the ground simply is not drawn)
+  // cloud shadows are evaluated per vertex (keeps the fragment shader light)
   mat.defines = opt.lite ? { CLOUD_SHADE_VARYING: '', TERRAIN_LITE: '' } : { CLOUD_SHADE_VARYING: '' };
   // if this GPU cannot run the full splat shader, main.js swaps in the painted-colour version (no photo textures)
   if (!opt.lite) mat.userData.fallback = () => terrainMaterial(hf, L, Object.assign({}, opt, { lite: true }));
+  mat.userData.opt = opt;
   const tintV = a => new THREE.Vector3(...(a || [1, 1, 1]));
+  const order = [L.grass, L.forest, L.rock, L.shore, L.urban];
+  const tLayD = opt.lite ? null : layerArray(order.map(l => l.d), true, [110, 110, 100]);
+  const tLayN = opt.lite ? null : layerArray(order.map(l => l.n), false, [128, 128, 255]);
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, hf.U, {
-      tGrassD: { value: L.grass.d }, tGrassN: { value: L.grass.n }, tForestD: { value: L.forest.d }, tForestN: { value: L.forest.n },
-      tRockD: { value: L.rock.d }, tRockN: { value: L.rock.n }, tSandD: { value: L.shore.d }, tSandN: { value: L.shore.n },
-      tUrbanD: { value: L.urban.d }, tUrbanN: { value: L.urban.n }, tNoise: S.tNoise,
+      tLayD: { value: tLayD }, tLayN: { value: tLayN }, tNoise: S.tNoise,
       uScales: { value: new THREE.Vector4(L.grass.s, L.forest.s, L.shore.s, L.urban.s) }, uRockS: { value: L.rock.s },
       uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uUrbanNorm: { value: L.urban.norm || 0 }, uTintS: { value: tintV(L.shore.tint) },
-      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist, uGrassR: terrainGrassR,
+      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist, uGrassR: terrainGrassR, uFarTrees: terrainFarTrees,
     }, paintU);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
@@ -143,17 +176,31 @@ export function terrainMaterial(hf, L, opt = {}) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; varying vec3 vWNorm;
-        uniform sampler2D tGrassD, tGrassN, tForestD, tForestN, tRockD, tRockN, tSandD, tSandN, tUrbanD, tUrbanN, tNoise, tMask, tMask2;
-        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist, uGrassR; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
+        uniform sampler2D tNoise, tMask, tMask2;
+        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist, uGrassR, uFarTrees; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
         vec3 unpackN(vec4 t){ return t.xyz * 2.0 - 1.0; }
+        // layers: 0 grass, 1 forest floor, 2 rock, 3 shore, 4 urban ground
         #ifdef TERRAIN_LITE
-          #define SMPD(t, uv) vec4(0.32)
-          #define SMPDL(t, uv, l) vec4(0.32)
-          #define SMPN(t, uv) vec4(0.5, 0.5, 1.0, 1.0)
+          vec4 layD(vec2 uv, float l){ return vec4(0.32); }
+          vec4 layDL(vec2 uv, float l, float lod){ return vec4(0.32); }
+          vec3 layN(vec2 uv, float l){ return vec3(0.0, 0.0, 1.0); }
+          vec4 layDA(vec2 uv, float l, float b){ return vec4(0.32); }
+          vec3 layNA(vec2 uv, float l, float b){ return vec3(0.0, 0.0, 1.0); }
         #else
-          #define SMPD(t, uv) texture2D(t, uv)
-          #define SMPDL(t, uv, l) textureLod(t, uv, l)
-          #define SMPN(t, uv) texture2D(t, uv)
+          uniform highp sampler2DArray tLayD, tLayN;
+          vec4 layD(vec2 uv, float l){ return texture(tLayD, vec3(uv, l)); }
+          vec4 layDL(vec2 uv, float l, float lod){ return textureLod(tLayD, vec3(uv, l), lod); }
+          vec3 layN(vec2 uv, float l){ return unpackN(texture(tLayN, vec3(uv, l))); }
+          // anti-tiling: a second lookup, rotated ~37 degrees and rescaled, is blended in by a slow noise so the
+          // repeats of a photo texture never line up into a visible grid
+          const mat2 ROT = mat2(0.8, 0.6, -0.6, 0.8);
+          vec2 uvB(vec2 uv){ return ROT * uv * 0.73 + vec2(0.31, 0.57); }
+          vec4 layDA(vec2 uv, float l, float b){ return mix(texture(tLayD, vec3(uv, l)), texture(tLayD, vec3(uvB(uv), l)), b); }
+          vec3 layNA(vec2 uv, float l, float b){
+            vec3 n0 = unpackN(texture(tLayN, vec3(uv, l))), n1 = unpackN(texture(tLayN, vec3(uvB(uv), l)));
+            n1.xy = transpose(ROT) * n1.xy; // back into the unrotated frame
+            return mix(n0, n1, b);
+          }
         #endif
         vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
         float lum3(vec3 c){ return dot(c, vec3(0.3, 0.55, 0.15)); }
@@ -162,53 +209,78 @@ export function terrainMaterial(hf, L, opt = {}) {
         vec3 wN = normalize(vWNorm);
         vec2 wuv = vWPos.xz;
         float camDist = length(vWPos - cameraPosition);
+        vec4 nz0 = texture2D(tNoise, wuv * 0.00041 + 0.37);   // regional (km scale) variation
         vec4 nz1 = texture2D(tNoise, wuv * 0.0021);
         vec4 nz2 = texture2D(tNoise, wuv * 0.013);
         vec4 nz3 = texture2D(tNoise, wuv * 0.06);
+        float tileB = smoothstep(0.35, 0.65, texture2D(tNoise, wuv * 0.031 + 0.11).g);
         float inside = step(abs(vWPos.x), uHalf) * step(abs(vWPos.z), uHalf);
         vec4 msk = texture2D(tMask, maskUV(wuv));
         vec4 msk2 = texture2D(tMask2, maskUV(wuv)) * inside;
-        float farForest = smoothstep(0.5, 0.64, nz1.r) * smoothstep(0.78, 0.86, wN.y) * (1.0 - smoothstep(uSnow - 45.0, uSnow + 5.0, vWPos.y)) * step(uWaterLv + 3.0, vWPos.y);
+        float slope = 1.0 - wN.y;
+        float h = vWPos.y - uWaterLv;
+        // beyond the gameplay area, forests follow the same noise the far-forest trees are planted from
+        float farForest = smoothstep(0.47, 0.6, nz1.r + (nz2.g - 0.5) * 0.12 + (nz0.b - 0.5) * 0.2) * smoothstep(0.2, 0.12, slope)
+          * (1.0 - smoothstep(uSnow - 45.0, uSnow + 5.0, vWPos.y)) * step(uWaterLv + 3.0, vWPos.y);
         float forest = mix(farForest, msk.r, inside);
         float ao = mix(1.0, msk.g, inside);
         float canopy = msk.b * inside;
-        float slope = 1.0 - wN.y;
-        float h = vWPos.y - uWaterLv;
-        float mixS = smoothstep(0.3, 0.7, nz2.g);
         float farT = smoothstep(60.0, 400.0, camDist);
-        float nearT = 1.0 - smoothstep(30.0, 220.0, camDist);
-        // meadow: painted colour patches + a faint brush texture from the photo map's luminance
+        float nearT = 1.0 - smoothstep(40.0, 320.0, camDist);
+        // meadow: painted colour patches + a faint brush texture from the photo map's luminance; regional shifts
+        // between lush valley green and drier, warmer uplands keep large views from reading as one flat colour
         vec3 cGrass = meadowColor(nz1, nz2, nz3);
-        cGrass *= mix(1.0, clamp(lum3(SMPD(tGrassD, wuv / uScales.x).rgb) * 3.6, 0.6, 1.4), 0.2 * nearT);
-        vec3 nGrass = unpackN(SMPN(tGrassN, wuv / uScales.x)) * 0.35;
-        vec3 cForest = uP_forest * mix(0.8, 1.12, nz2.r) * mix(1.0, clamp(lum3(SMPD(tForestD, wuv / uScales.y).rgb) * 3.2, 0.6, 1.4), 0.3 * nearT);
-        vec3 nForest = unpackN(SMPN(tGrassN, wuv / uScales.y)) * 0.5;
-        vec3 cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(SMPD(tSandD, wuv / uScales.z).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
-        vec3 nSand = unpackN(SMPN(tGrassN, wuv / uScales.z)) * 0.5;
-        vec3 uTex = SMPD(tUrbanD, wuv / uScales.w).rgb, uAvg = SMPDL(tUrbanD, wuv / uScales.w, 7.0).rgb;
+        float region = smoothstep(0.35, 0.75, nz0.r + (nz1.a - 0.5) * 0.3);
+        cGrass = mix(cGrass, mix(cGrass, uP_gDry, 0.35) * vec3(1.02, 0.98, 0.9), region * 0.55);
+        cGrass = mix(cGrass, uP_gDeep * 1.08, smoothstep(0.62, 0.9, nz0.g) * 0.35);
+        cGrass *= mix(1.0, clamp(lum3(layDA(wuv / uScales.x, 0.0, tileB).rgb) * 3.6, 0.6, 1.4), 0.2 * nearT);
+        vec3 nGrass = layNA(wuv / uScales.x, 0.0, tileB) * 0.35;
+        vec3 cForest = uP_forest * mix(0.8, 1.12, nz2.r) * mix(1.0, clamp(lum3(layDA(wuv / uScales.y, 1.0, tileB).rgb) * 3.2, 0.6, 1.4), 0.3 * nearT);
+        vec3 nForest = layNA(wuv / uScales.y, 1.0, tileB) * 0.55;
+        vec3 cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(layDA(wuv / uScales.z, 3.0, tileB).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
+        vec3 nSand = layNA(wuv / uScales.z, 3.0, tileB) * 0.5;
+        vec3 uTex = layDA(wuv / uScales.w, 4.0, tileB).rgb, uAvg = layDL(wuv / uScales.w, 4.0, 7.0).rgb;
         vec3 cUrban = mix(uAvg, uTex, 0.35) * uTintU * (uUrbanNorm > 0.0 ? uUrbanNorm / max(lum3(uAvg), 0.04) : 1.0); // optional painted brightness
-        vec3 nUrban = unpackN(SMPN(tGrassN, wuv / uScales.w)) * 0.6;
+        vec3 nUrban = layNA(wuv / uScales.w, 4.0, tileB) * 0.6;
+        // rock: tri-planar, each axis with the rock layer's own normal map; the scale widens with distance
         vec3 bw = pow(max(abs(wN), vec3(1e-4)), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
         float rs = mix(1.0 / uRockS, 1.0 / (uRockS * 3.4), farT * 0.7);
-        vec3 cRockT = SMPD(tRockD, vWPos.zy * rs).rgb * bw.x + SMPD(tRockD, vWPos.xz * rs).rgb * bw.y + SMPD(tRockD, vWPos.xy * rs).rgb * bw.z;
-        vec3 rnx = unpackN(SMPN(tRockN, vWPos.zy * rs)), rny = unpackN(SMPN(tRockN, vWPos.xz * rs)), rnz = unpackN(SMPN(tRockN, vWPos.xy * rs));
+        vec3 cRockT = layD(vWPos.zy * rs, 2.0).rgb * bw.x + layD(vWPos.xz * rs, 2.0).rgb * bw.y + layD(vWPos.xy * rs, 2.0).rgb * bw.z;
+        vec3 rnx = layN(vWPos.zy * rs, 2.0), rny = layN(vWPos.xz * rs, 2.0), rnz = layN(vWPos.xy * rs, 2.0);
         vec3 nRock = normalize(wN + vec3(0.0, rnx.y, rnx.x) * bw.x + vec3(rny.x, 0.0, rny.y) * bw.y + vec3(rnz.x, rnz.y, 0.0) * bw.z);
-        // rock: two painted tones picked by the photo's light/dark strata
-        vec3 cRock = mix(uP_rockD, uP_rockL, smoothstep(0.18, 0.42, lum3(cRockT) + (nz2.b - 0.5) * 0.12));
+        // rock: two painted tones picked by the photo's light/dark strata, plus horizontal bedding bands on cliffs
+        float strata = sin(vWPos.y * 0.9 + nz2.g * 6.0 + nz3.r * 2.0) * 0.5 + 0.5;
+        vec3 cRock = mix(uP_rockD, uP_rockL, smoothstep(0.18, 0.42, lum3(cRockT) + (nz2.b - 0.5) * 0.12 + (strata - 0.5) * 0.08 * smoothstep(0.35, 0.7, slope)));
+        cRock *= mix(0.92, 1.06, nz0.b);
         float shoreN = (nz2.r - 0.5) * 1.1 + (nz3.b - 0.5) * 0.6;
         float wSand = max(1.0 - smoothstep(uShore * 0.2, uShore, h + shoreN * uShore * 0.9), msk2.g);
         float wRock = smoothstep(0.30, 0.46, slope + (nz2.b - 0.5) * 0.14);
+        // scree: broken rock collects at the foot of cliffs and on steep upper slopes
+        float scree = smoothstep(0.2, 0.3, slope) * (1.0 - wRock) * smoothstep(0.55, 0.8, nz3.a + nz2.b * 0.3);
         float wSnow = smoothstep(uSnow, uSnow + 40.0, vWPos.y + (nz1.b - 0.5) * 70.0) * (1.0 - smoothstep(0.42, 0.62, slope));
         float wForest = smoothstep(0.2, 0.7, forest + (nz3.r - 0.5) * 0.35);
         float wUrban = smoothstep(0.15, 0.6, msk2.r + (nz3.g - 0.5) * 0.25);
-        // where far trees are no longer drawn, the forest floor takes the canopy colour
-        float treeGone = smoothstep(uTreeDist * 0.82, uTreeDist, camDist) * inside;
-        cForest = mix(cForest, uP_canopy * (0.8 + 0.4 * nz3.r), max(treeGone, 1.0 - inside) * smoothstep(0.3, 0.8, forest));
+        // where no trees stand any more (past the outermost far-forest ring) the forest reads as a painted canopy with
+        // soft crown relief; under drawn trees the floor stays the darker forest ground
+        float noTrees = (1.0 - inside) * step(uFarTrees, max(abs(vWPos.x), abs(vWPos.z)));
+        float crownW = noTrees * smoothstep(0.3, 0.8, forest);
+        vec2 cuv = wuv * 0.0045;
+        float cr0 = texture2D(tNoise, cuv).a, crx = texture2D(tNoise, cuv + vec2(0.0035, 0.0)).a, crz = texture2D(tNoise, cuv + vec2(0.0, 0.0035)).a;
+        vec3 crownN = normalize(vec3(-(crx - cr0) * 3.0, 1.0, -(crz - cr0) * 3.0));
+        vec3 cCanopy = uP_canopy * (0.72 + 0.5 * cr0) * mix(0.9, 1.12, nz2.r) * mix(vec3(1.0), vec3(1.08, 1.02, 0.86), region * 0.5);
+        // outside the map the ground under the far trees takes the canopy colour too, so the gaps between distant tree
+        // cards read as more forest rather than bright speckle
+        cForest = mix(cForest, cCanopy, max(crownW, (1.0 - inside) * smoothstep(0.25, 0.6, forest) * 0.9));
+        nForest = mix(nForest, vec3(crownN.x, crownN.z, 0.0), crownW);
         vec3 col = mix(cGrass, cForest, wForest);
         vec3 tn = mix(nGrass, nForest, wForest);
+        col = mix(col, mix(cRock, cSand, 0.25) * 0.9, scree * 0.7); tn = mix(tn, vec3(rny.x, rny.y, 0.0) * 0.6, scree * 0.7);
         col = mix(col, cSand, wSand); tn = mix(tn, nSand, wSand);
         col = mix(col, cUrban, wUrban); tn = mix(tn, nUrban, wUrban);
         vec3 nW = normalize(wN + vec3(tn.x, 0.0, tn.y));
+        // moss creeps over the flatter tops of rock in the forest and on shaded north faces
+        float moss = wRock * smoothstep(0.55, 0.85, wN.y + (nz3.g - 0.5) * 0.3) * smoothstep(0.2, 0.6, forest + max(-wN.z, 0.0) * 0.4);
+        cRock = mix(cRock, uP_forest * 1.1, moss * 0.6);
         col = mix(col, cRock, wRock * (1.0 - wUrban)); nW = normalize(mix(nW, nRock, wRock * (1.0 - wUrban)));
         col = mix(col, uP_snow, wSnow); nW = normalize(mix(nW, wN, wSnow * 0.7));
         float wet = max(1.0 - smoothstep(0.0, 0.7, h), msk2.g * 0.8);
@@ -233,18 +305,41 @@ export function terrainMaterial(hf, L, opt = {}) {
   return mat;
 }
 
-export function buildTerrainMeshes(hf, mat, { outer = true, outerDrop = 45 } = {}) {
+// JS twin of the shader's far-forest mask: forests beyond the gameplay area (and blended into each map's own forest mask
+// near its edge, so woods continue across the boundary). slope = 1 - normal.y
+export function farForestAt(x, z, y, slope, water = 0, snow = 175) {
+  const v = noiseAt(x * 0.0021, z * 0.0021, 0) + (noiseAt(x * 0.013, z * 0.013, 1) - 0.5) * 0.12 + (noiseAt(x * 0.00041 + 0.37, z * 0.00041 + 0.37, 2) - 0.5) * 0.2;
+  return smoothstep(0.47, 0.6, v) * smoothstep(0.2, 0.12, slope) * (1 - smoothstep(snow - 45, snow + 5, y)) * (y > water + 3 ? 1 : 0);
+}
+
+// Near: the gameplay heightfield (2 m cells). Beyond it, four rings of progressively coarser terrain (quality-dependent
+// spacing) evaluate the same height function, so ridgelines and valleys continue unbroken to the horizon. Each ring's
+// outer row is snapped onto the next ring's coarser edge (and the heightfield's edge onto the first ring), so there are
+// no T-junction cracks; far rings take their normals from the height function at a fine step, so distant slopes keep
+// their shading detail. Everything is tiled for frustum culling. The outer rings also carry the far forest: real (very
+// low-poly) trees planted from the same mask the ground shader paints, sitting exactly on the rendered triangles.
+export async function buildTerrainMeshes(hf, mat, { outer = true, farForest = true } = {}) {
   const { GRID, HN, CELL, HALF, H } = hf;
+  const q = Q.name, steps = q === 'extreme' || q === 'ultra' ? [4, 16, 64, 256] : q === 'high' ? [8, 16, 64, 256] : [8, 32, 64, 256];
   const CH = 64, NC = GRID / CH, n = CH + 1;
   const idx = [];
   for (let b = 0; b < CH; b++) for (let a = 0; a < CH; a++) { const v = b * n + a; idx.push(v, v + n, v + 1, v + 1, v + n, v + n + 1); }
   const index = new THREE.Uint32BufferAttribute(idx, 1);
   const group = new THREE.Group();
+  // heightfield edge vertices between the first ring's vertices sit on that ring's straight edge segments
+  const kEdge = Math.max(1, Math.round(steps[0] / CELL));
+  const edgeH = (i, j) => {
+    const onX = i === 0 || i === GRID, onZ = j === 0 || j === GRID;
+    if (!outer || !(onX || onZ)) return H[j * HN + i];
+    if (onZ && i % kEdge) { const i0 = i - i % kEdge, t = (i % kEdge) / kEdge; return lerp(H[j * HN + i0], H[j * HN + i0 + kEdge], t); }
+    if (onX && j % kEdge) { const j0 = j - j % kEdge, t = (j % kEdge) / kEdge; return lerp(H[j0 * HN + i], H[(j0 + kEdge) * HN + i], t); }
+    return H[j * HN + i];
+  };
   for (let cj = 0; cj < NC; cj++) for (let ci = 0; ci < NC; ci++) {
     const pos = new Float32Array(n * n * 3), nor = new Float32Array(n * n * 3);
     for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) {
       const i = ci * CH + a, j = cj * CH + b, k = (b * n + a) * 3;
-      pos[k] = -HALF + i * CELL; pos[k + 1] = H[j * HN + i]; pos[k + 2] = -HALF + j * CELL;
+      pos[k] = -HALF + i * CELL; pos[k + 1] = edgeH(i, j); pos[k + 2] = -HALF + j * CELL;
       const hx = hf.Hg(i + 1, j) - hf.Hg(i - 1, j), hz = hf.Hg(i, j + 1) - hf.Hg(i, j - 1), l = Math.hypot(hx, 2 * CELL, hz);
       nor[k] = -hx / l; nor[k + 1] = 2 * CELL / l; nor[k + 2] = -hz / l;
     }
@@ -255,35 +350,102 @@ export function buildTerrainMeshes(hf, mat, { outer = true, outerDrop = 45 } = {
     const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false;
     group.add(m);
   }
+  const ringData = [];
   if (outer) {
-    const OS = 32, EXT = HALF + OS * Math.ceil(5000 / OS), ON = Math.round(EXT * 2 / OS) + 1;
-    const oh = new Float32Array(ON * ON);
-    for (let j = 0; j < ON; j++) for (let i = 0; i < ON; i++) {
-      const x = -EXT + i * OS, z = -EXT + j * OS;
-      let h = hf.fn(x, z);
-      if (Math.abs(x) < HALF - 1 && Math.abs(z) < HALF - 1) h -= outerDrop;
-      oh[j * ON + i] = h;
+    const rings = [{ step: steps[0], inner: HALF, outer: HALF + 1024, tile: 256 }, { step: steps[1], inner: HALF + 1024, outer: HALF + 3072, tile: 1024 },
+      { step: steps[2], inner: HALF + 3072, outer: HALF + 8192, tile: 2048 }, { step: steps[3], inner: HALF + 8192, outer: HALF + 20480, tile: 6144 }];
+    for (let ri = 0; ri < rings.length; ri++) {
+      const R = rings[ri], S = R.step, N = Math.round(R.outer * 2 / S) + 1, E = R.outer, next = rings[ri + 1];
+      const hts = new Float32Array(N * N), fn = hf.fn;
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N; i++) {
+          const x = -E + i * S, z = -E + j * S;
+          if (Math.abs(x) < R.inner - 1e-3 && Math.abs(z) < R.inner - 1e-3) continue;
+          hts[j * N + i] = fn(x, z);
+        }
+        if ((j & 63) === 63) await tick();
+      }
+      if (next) { // outer row onto the next ring's coarser edge
+        const k = Math.round(next.step / S);
+        for (let t = 0; t < N; t++) if (t % k) {
+          const t0 = t - t % k, f = (t % k) / k;
+          for (const e of [0, N - 1]) { hts[e * N + t] = lerp(hts[e * N + t0], hts[e * N + t0 + k], f); hts[t * N + e] = lerp(hts[t0 * N + e], hts[(t0 + k) * N + e], f); }
+        }
+      }
+      const HT = (i, j) => hts[clamp(j, 0, N - 1) * N + clamp(i, 0, N - 1)];
+      ringData.push({ ...R, N, E, HT });
+      const eps = Math.min(S, 8);
+      const TQ = Math.round(R.tile / S);
+      for (let tz = -E; tz < E; tz += R.tile) {
+        for (let tx = -E; tx < E; tx += R.tile) {
+          if (tx >= -R.inner && tx + R.tile <= R.inner && tz >= -R.inner && tz + R.tile <= R.inner) continue;
+          const i0 = Math.round((tx + E) / S), j0 = Math.round((tz + E) / S), tn = TQ + 1;
+          const pos = new Float32Array(tn * tn * 3), nor = new Float32Array(tn * tn * 3), tidx = [];
+          for (let b = 0; b < tn; b++) for (let a = 0; a < tn; a++) {
+            const i = i0 + a, j = j0 + b, k = (b * tn + a) * 3, x = -E + i * S, z = -E + j * S;
+            pos[k] = x; pos[k + 1] = HT(i, j); pos[k + 2] = z;
+            let hx, hz, d;
+            if (S <= 4) { hx = HT(i + 1, j) - HT(i - 1, j); hz = HT(i, j + 1) - HT(i, j - 1); d = 2 * S; }
+            else { hx = fn(x + eps, z) - fn(x - eps, z); hz = fn(x, z + eps) - fn(x, z - eps); d = 2 * eps; }
+            const l = Math.hypot(hx, d, hz); nor[k] = -hx / l; nor[k + 1] = d / l; nor[k + 2] = -hz / l;
+          }
+          for (let b = 0; b < TQ; b++) for (let a = 0; a < TQ; a++) {
+            const cx = tx + (a + 0.5) * S, cz = tz + (b + 0.5) * S;
+            if (Math.abs(cx) < R.inner && Math.abs(cz) < R.inner) continue;
+            const v = b * tn + a; tidx.push(v, v + tn, v + 1, v + 1, v + tn, v + tn + 1);
+          }
+          if (!tidx.length) continue;
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+          g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+          g.setIndex(tidx); g.computeBoundingSphere();
+          const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.castShadow = ri === 0; m.matrixAutoUpdate = false;
+          group.add(m);
+        }
+        await tick();
+      }
     }
-    const opos = new Float32Array(ON * ON * 3), onor = new Float32Array(ON * ON * 3), oidx = [];
-    const OH = (i, j) => oh[clamp(j, 0, ON - 1) * ON + clamp(i, 0, ON - 1)];
-    for (let j = 0; j < ON; j++) for (let i = 0; i < ON; i++) {
-      const k = (j * ON + i) * 3;
-      opos[k] = -EXT + i * OS; opos[k + 1] = OH(i, j); opos[k + 2] = -EXT + j * OS;
-      const hx = OH(i + 1, j) - OH(i - 1, j), hz = OH(i, j + 1) - OH(i, j - 1), l = Math.hypot(hx, 2 * OS, hz);
-      onor[k] = -hx / l; onor[k + 1] = 2 * OS / l; onor[k + 2] = -hz / l;
-    }
-    for (let j = 0; j < ON - 1; j++) for (let i = 0; i < ON - 1; i++) {
-      if (Math.abs(-EXT + (i + 0.5) * OS) < HALF && Math.abs(-EXT + (j + 0.5) * OS) < HALF) continue;
-      const v = j * ON + i; oidx.push(v, v + ON, v + 1, v + 1, v + ON, v + ON + 1);
-    }
-    const og = new THREE.BufferGeometry();
-    og.setAttribute('position', new THREE.BufferAttribute(opos, 3));
-    og.setAttribute('normal', new THREE.BufferAttribute(onor, 3));
-    og.setIndex(oidx); og.computeBoundingSphere();
-    const om = new THREE.Mesh(og, mat); om.receiveShadow = true; om.matrixAutoUpdate = false;
-    group.add(om);
   }
-  group.userData.applyQuality = () => { terrainTreeDist.value = Q.trees; terrainGrassR.value = Q.tile * 0.5; };
+  // ---- far forest: F-rings of trees, sparser and larger with distance, cross-faded at their borders
+  const FR = [{ inner: HALF, outer: HALF + 1024, sp: 8, sc: 1, ring: 0 }, { inner: HALF + 1024, outer: HALF + 3072, sp: 13, sc: 1.2, ring: 1 },
+    { inner: HALF + 3072, outer: HALF + 5120, sp: 22, sc: 1.45, ring: 2 }, { inner: HALF + 5120, outer: HALF + 8192, sp: 34, sc: 1.75, ring: 2 }];
+  const farExt = () => FR[clamp((Q.far || 1) - 1, 0, FR.length - 1)].outer;
+  terrainFarTrees.value = outer && farForest ? farExt() : HALF;
+  if (outer && farForest && ringData.length) {
+    const o = mat.userData.opt || {}, water = o.water ?? 0, snow = o.snow ?? 175, conifer = o.conifer ?? 0.7;
+    // height on the rendered triangles (quads split along the (i+1,j)-(i,j+1) diagonal)
+    const groundOn = (R, x, z) => {
+      const gx = (x + R.E) / R.step, gz = (z + R.E) / R.step, i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
+      const h00 = R.HT(i, j), h10 = R.HT(i + 1, j), h01 = R.HT(i, j + 1), h11 = R.HT(i + 1, j + 1);
+      return fx + fz <= 1 ? h00 + (h10 - h00) * fx + (h01 - h00) * fz : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
+    };
+    const W = 160, rng = mulberry32(4711), sets = FR.map(() => ({ fir: [], leaf: [] }));
+    for (let fi = 0; fi < FR.length; fi++) {
+      const F = FR[fi], R = ringData[F.ring], sp = F.sp, lo = -(F.outer + W / 2), cnt = Math.ceil(2 * (F.outer + W / 2) / sp);
+      for (let b = 0; b < cnt; b++) {
+        for (let a = 0; a < cnt; a++) {
+          const x = lo + (a + 0.5 + (rng() - 0.5) * 0.9) * sp, z = lo + (b + 0.5 + (rng() - 0.5) * 0.9) * sp, r1 = rng(), r2 = rng(), r3 = rng(), r4 = rng();
+          const d = Math.max(Math.abs(x), Math.abs(z));
+          if (d < F.inner - (fi ? W / 2 : 0) || d > F.outer + W / 2) continue;
+          // stochastic cross-fade: this ring hands over to the next across a W-wide band
+          const pin = fi ? smoothstep(F.inner - W / 2, F.inner + W / 2, d) : 1, pout = fi < FR.length - 1 ? 1 - smoothstep(F.outer - W / 2, F.outer + W / 2, d) : 1 - smoothstep(F.outer - W, F.outer, d);
+          if (r1 > pin * pout) continue;
+          const Rr = d < R.inner ? ringData[Math.max(0, F.ring - 1)] : d > R.outer ? ringData[Math.min(ringData.length - 1, F.ring + 1)] : R;
+          const y = groundOn(Rr, x, z), e = Rr.step * 0.5;
+          const sx = groundOn(Rr, x + e, z) - groundOn(Rr, x - e, z), sz = groundOn(Rr, x, z + e) - groundOn(Rr, x, z - e);
+          const slope = 1 - 2 * e / Math.hypot(sx, 2 * e, sz);
+          const f = farForestAt(x, z, y, slope, water, snow);
+          if (r2 > smoothstep(0.25, 0.6, f)) continue; // closed stands with clean edges: sparse far trees read as speckle
+          const leafy = r3 > conifer + (y - water - 60) * 0.004;
+          const s = (leafy ? lerp(9, 15, r4) : lerp(13, 26, Math.pow(r4, 1.3))) * F.sc * (0.8 + 0.2 * f);
+          (leafy ? sets[fi].leaf : sets[fi].fir).push({ x, y: y - 0.3 - slope * 3, z, s, sx: 0.8 + 0.4 * rng(), r: rng() * 6.28, tilt: (rng() - 0.5) * 0.05, c: leafy ? leafColor(rng) : firColor(rng) });
+        }
+        if ((b & 127) === 127) await tick();
+      }
+    }
+    buildFarForest(sets, FR);
+  }
+  group.userData.applyQuality = () => { terrainTreeDist.value = Q.trees; terrainGrassR.value = Q.tile * 0.5; if (outer && farForest) terrainFarTrees.value = farExt(); };
   scene.add(group);
   return group;
 }

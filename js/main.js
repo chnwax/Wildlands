@@ -1,5 +1,5 @@
 // Boot, UI, and main loop. Map is chosen with ?map=nature|town.
-import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, smoothstep, tick } from './core.js';
+import { THREE, renderer, scene, camera, S, Q, QUALITY, pixelRatio, loadState, manager, scatters, clamp, smoothstep, tick } from './core.js';
 import { time, updateSky, followCamera, env, applyShadowQuality, sky } from './sky.js';
 import { post, buildComposer, updateRays } from './post.js';
 import { audio, Emitter } from './audio.js';
@@ -63,7 +63,7 @@ function setQuality(name) {
   if (!QUALITY[name]) return;
   Object.assign(Q, QUALITY[name], { name });
   try { localStorage.setItem('wl_quality', name); } catch (e) {}
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2) * Q.pr);
+  renderer.setPixelRatio(pixelRatio());
   applyShadowQuality();
   scene.traverse(o => { if (o.userData.applyQuality) o.userData.applyQuality(); if (o.material && o.material.alphaToCoverage !== undefined && o.material.alphaTest > 0) { const a = Q.msaa > 0; if (o.material.alphaToCoverage !== a) { o.material.alphaToCoverage = a; o.material.needsUpdate = true; } } });
   buildComposer();
@@ -136,7 +136,7 @@ addEventListener('keydown', e => {
   if (e.code === 'BracketRight') { time.hour = (time.hour + 0.5) % 24; updateSky(true); }
   if (e.code === 'KeyH') { hudOn = !hudOn; $('hud').style.display = hudOn ? '' : 'none'; $('credit').style.display = hudOn ? '' : 'none'; }
   if (e.code === 'KeyM') audio.toggleMute();
-  if (e.code.startsWith('Digit')) setQuality(['low', 'medium', 'high', 'ultra'][+e.code.slice(5) - 1]);
+  if (e.code.startsWith('Digit')) setQuality(['low', 'medium', 'high', 'ultra', 'extreme'][+e.code.slice(5) - 1]);
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
