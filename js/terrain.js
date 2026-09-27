@@ -122,6 +122,9 @@ const terrainTreeDist = { value: Q.trees }; // far-LOD tree cull distance (quali
 const terrainGrassR = { value: Q.tile * 0.5 }; // where the near grass blades end and the clump cards take over
 export function terrainMaterial(hf, L, opt = {}) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
+  // cloud shadows are evaluated per vertex: the splat shader already needs 15 textures, and WebGL2 GPUs only
+  // guarantee 16 per fragment shader (going over fails to link and the ground simply is not drawn)
+  mat.defines = { CLOUD_SHADE_VARYING: '' };
   const tintV = a => new THREE.Vector3(...(a || [1, 1, 1]));
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, hf.U, {
@@ -133,8 +136,8 @@ export function terrainMaterial(hf, L, opt = {}) {
       uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist, uGrassR: terrainGrassR,
     }, paintU);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal);');
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vCloudLit = cloudShade(vWPos);');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; varying vec3 vWNorm;
