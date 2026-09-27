@@ -62,6 +62,15 @@ export const QUALITY = {
   extreme: { pr: 1.5, grass: 1600000, tile: 124, shadow: 8192, box: 300, msaa: 8, ao: true,  treeHi: 520, trees: 5000, rocks: 700, props: 560, ferns: 220, bloom: true,  refl: 0.9, far: 4 },
 };
 QUALITY.low.far = 1; QUALITY.medium.far = 1; QUALITY.high.far = 2; // far: how many outer far-forest rings are drawn
+// grass distance hierarchy, one entry per ring: [outer radius (m), density (per m²)]
+//   ring 0: full animated blades, ring 1: simplified wide blades, ring 2: clump cards, ring 3: meadow cards,
+//   ring 4: wide meadow cards reaching past the map edge. A radius of 0 switches the ring off. Beyond the last ring the
+//   ground shader paints the meadow (tufts, wind-combed streaks, micro-shadowing), so grass never visibly ends.
+QUALITY.low.grassR = [[28, 70], [0, 0], [126, 1.1], [560, 0.02], [0, 0]];
+QUALITY.medium.grassR = [[32, 90], [0, 0], [150, 1.45], [720, 0.04], [0, 0]];
+QUALITY.high.grassR = [[36, 100], [62, 34], [210, 1.6], [1000, 0.05], [0, 0]];
+QUALITY.ultra.grassR = [[44, 105], [90, 40], [320, 1.75], [1350, 0.07], [2300, 0.018]];
+QUALITY.extreme.grassR = [[50, 110], [115, 46], [460, 1.9], [1650, 0.085], [2900, 0.024]];
 export const MAX_GRASS = 1600000;
 // supersampling never goes past ~8.3 million pixels (4K), so a 4K screen on Extreme renders natively instead of at 6K
 export const pixelRatio = () => { const d = Math.min(devicePixelRatio, 2) * Q.pr, px = innerWidth * innerHeight; return Math.max(Math.min(d, Math.sqrt(8.3e6 / Math.max(px, 1))), Math.min(devicePixelRatio, 1)); };
@@ -290,9 +299,11 @@ export class Scatter {
             e.set(it.tilt || 0, it.r || 0, it.tilt2 || 0); q.setFromEuler(e);
             s.set(it.s * (it.sx || 1), it.s * (it.sy || 1), it.s * (it.sz || it.sx || 1)); p.set(it.x, it.y, it.z);
             im.setMatrixAt(i, m.compose(p, q, s));
-            if (part.tint && it.c) im.setColorAt(i, it.c);
+            const tc = part.tint === true ? it.c : part.tint ? it[part.tint] : null; // tint: true = it.c, or another key
+            if (tc) im.setColorAt(i, tc);
           });
           im.castShadow = !!part.castShadow; im.receiveShadow = part.receiveShadow !== false; im.visible = false;
+          im.matrixAutoUpdate = false; im.matrixWorldAutoUpdate = false; // static at the origin: skip the per-frame matrix walk
           if (part.depth) im.customDepthMaterial = part.depth;
           im.computeBoundingSphere();
           meshes.push(im); scene.add(im);
@@ -332,6 +343,45 @@ export function normalizeParts(parts, byHeight) {
   const sc = byHeight === 'none' ? 1 : 1 / (byHeight ? size.y : Math.max(size.x, size.y, size.z));
   parts.forEach(p => { p.geometry.translate(-c.x, -box.min.y, -c.z); p.geometry.scale(sc, sc, sc); p.geometry.computeBoundingSphere(); });
   return { w: Math.max(size.x, size.z) * sc, h: size.y * sc, x: size.x * sc, z: size.z * sc };
+}
+
+// Cheap far LOD for scanned meshes: vertex clustering on a res^3 grid over the bounding box (vertices in one cell merge
+// into their average; triangles that collapse are dropped). Good enough for rocks, stumps and plants seen from afar,
+// where the toon look flattens their textures anyway.
+export function decimate(geo, res = 10) {
+  const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv, n = pos.count;
+  geo.computeBoundingBox();
+  const b = geo.boundingBox, sz = b.getSize(new THREE.Vector3()), cell = Math.max(sz.x, sz.y, sz.z) / res + 1e-6;
+  const ids = new Map(), remap = new Uint32Array(n), P = [], N = [], U = [], C = [];
+  for (let i = 0; i < n; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const k = Math.floor((x - b.min.x) / cell) + ',' + Math.floor((y - b.min.y) / cell) + ',' + Math.floor((z - b.min.z) / cell);
+    let id = ids.get(k);
+    if (id === undefined) { id = C.length; ids.set(k, id); P.push(0, 0, 0); N.push(0, 0, 0); U.push(0, 0); C.push(0); }
+    remap[i] = id; C[id]++;
+    P[id * 3] += x; P[id * 3 + 1] += y; P[id * 3 + 2] += z;
+    if (nor) { N[id * 3] += nor.getX(i); N[id * 3 + 1] += nor.getY(i); N[id * 3 + 2] += nor.getZ(i); }
+    if (uv) { U[id * 2] += uv.getX(i); U[id * 2 + 1] += uv.getY(i); }
+  }
+  for (let id = 0; id < C.length; id++) {
+    const c = C[id]; for (let k = 0; k < 3; k++) P[id * 3 + k] /= c;
+    const l = Math.hypot(N[id * 3], N[id * 3 + 1], N[id * 3 + 2]) || 1; for (let k = 0; k < 3; k++) N[id * 3 + k] /= l;
+    U[id * 2] /= c; U[id * 2 + 1] /= c;
+  }
+  const src = geo.index ? geo.index.array : null, tcount = (src ? src.length : n) / 3, I = [], seen = new Set();
+  for (let t = 0; t < tcount; t++) {
+    const a = remap[src ? src[t * 3] : t * 3], bb = remap[src ? src[t * 3 + 1] : t * 3 + 1], c = remap[src ? src[t * 3 + 2] : t * 3 + 2];
+    if (a === bb || bb === c || a === c) continue;
+    const key = a < bb ? (bb < c ? a + ',' + bb + ',' + c : a < c ? a + ',' + c + ',' + bb : c + ',' + a + ',' + bb) : (a < c ? bb + ',' + a + ',' + c : bb < c ? bb + ',' + c + ',' + a : c + ',' + bb + ',' + a);
+    if (seen.has(key)) continue; seen.add(key);
+    I.push(a, bb, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  if (nor) g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  g.setIndex(I); g.computeBoundingSphere();
+  return g;
 }
 
 // ---------------------------------------------------------------- misc shader helpers

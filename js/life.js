@@ -2,7 +2,7 @@
 // flower blossoms in colourful patches, butterflies, sakura petals, and a flock of birds wheeling over the valley.
 // Everything is GPU-animated from a handful of uniforms.
 import { THREE, scene, camera, renderer, S, fogU, clamp, smoothstep, mulberry32 } from './core.js';
-import { GLSL_HEIGHT } from './terrain.js';
+import { GLSL_HEIGHT, FLOWER_GLSL } from './terrain.js';
 import { env } from './sky.js';
 
 const U = { uPx: { value: 1 }, uPR: { value: 1 }, uFire: { value: 0 }, uMote: { value: 0 } };
@@ -101,7 +101,7 @@ function motes(world) {
 // ---------------------------------------------------------------- flowers: little five-petal sprites in colour patches
 // (the same patch noise as the grass shader, so far-off blade flowers and these close-up blossoms agree)
 function flowers(world) {
-  const R = 30;
+  const R = 30, COUNT = 14000;
   const mat = new THREE.ShaderMaterial({
     transparent: false, depthWrite: true, fog: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
@@ -111,18 +111,26 @@ function flowers(world) {
       varying vec3 vCol; varying float vAng;
       ${GLSL_HEIGHT}
       ${wrapGLSL}
+      ${FLOWER_GLSL}
       #include <common>
       #include <fog_pars_vertex>
       void main(){
         vec2 wp = wrapAround(aRnd.xy, ${R.toFixed(1)});
         float g = hAt(wp);
-        vec4 z2 = texture(tNoise, wp * 0.013), z3 = texture(tNoise, wp * 0.06);
+        vec4 z1 = textureLod(tNoise, wp * 0.0021, 0.0), z2 = textureLod(tNoise, wp * 0.013, 0.0), z3 = textureLod(tNoise, wp * 0.06, 0.0);
         vec4 m = texture(tMask, maskUV(wp)), m2 = texture(tMask2, maskUV(wp));
         float gx = hAt(wp + vec2(uCell, 0.0)) - hAt(wp - vec2(uCell, 0.0)), gz = hAt(wp + vec2(0.0, uCell)) - hAt(wp - vec2(0.0, uCell));
         float flat_ = 2.0 * uCell / length(vec3(gx, 2.0 * uCell, gz));
-        float patch_ = smoothstep(0.58, 0.8, z3.g * 0.65 + z2.a * 0.6);
-        // strictly off roads, lots, paddies, forest floor and tree shade (the masks are bilinear at metre scale)
-        float ok = step(aRnd.w, (patch_ * 0.9 + 0.04) * (1.0 - 0.6 * m2.a)) * step(uWaterLv + 1.0, g) * step(0.86, flat_) * step(m.b, 0.3) * step(m.r, 0.45) * step(m2.r, 0.05) * step(m2.b, 0.05) * step(m2.g, 0.3);
+        // the same flowers-per-square-metre budget as the grass blades beyond this radius: this set holds
+        // ${(COUNT / (4 * R * R)).toFixed(2)} sprites per m², each kept with probability density / that; the sward's own thinning
+        // (patchy density, forest, tree shade) applies as it does to the blades
+        float alpine = smoothstep(85.0, 150.0, g - uWaterLv);
+        // (the same factors as the blades' density: patchy sward, forest and tree shade, town ground, mown lawns)
+        float sward = smoothstep(0.1, 0.45, z2.g + z3.g * 0.35) * (1.0 - smoothstep(0.2, 0.75, m.r + (z3.r - 0.5) * 0.35) * 0.88) * (1.0 - m.b * 0.92)
+          * (1.0 - m2.b) * (1.0 - smoothstep(0.2, 0.7, m2.r) * 0.85) * (1.0 - 0.45 * m2.a);
+        float flD = flowerDensity(flowerPatch(z1, z2, z3, m.r), alpine) * sward * step(0.35, sward) * (1.0 - 0.6 * m2.a);
+        // strictly off roads, lots, paddies and water (the masks are bilinear at metre scale)
+        float ok = step(aRnd.w * ${(COUNT / (4 * R * R)).toFixed(3)}, flD) * step(uWaterLv + 1.0, g) * step(0.86, flat_) * step(m2.r, 0.05) * step(m2.b, 0.05) * step(m2.g, 0.3);
         float d = length(wp - uCam.xz);
         float fade = 1.0 - smoothstep(${(R * 0.7).toFixed(1)}, ${R.toFixed(1)}, d);
         float sway = sin(uTime * (1.5 + aRnd.z) + aRnd.x * 30.0) * 0.04 * uWind;
@@ -152,7 +160,7 @@ function flowers(world) {
       }`,
   });
   Object.assign(mat.uniforms, world.hf.U, U, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind, tNoise: S.tNoise, uWaterLv: { value: world.waterLevel ?? 0 } });
-  return wrappedPoints(9000, 29, mat);
+  return wrappedPoints(COUNT, 29, mat);
 }
 
 // ---------------------------------------------------------------- sakura petals drifting down from every blossom tree

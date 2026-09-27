@@ -524,7 +524,7 @@ export function house(B, lot, rng, extras) {
   const uvW = m => m === 'siding' ? 2.2 : m === 'wood' ? 2 : 3;
   const upperOnly = style === 'classic' && floors === 2 && rng() < 0.35;   // second floor over part of the house only
   const W2 = upperOnly ? Math.max(4.6, W * (0.55 + rng() * 0.12)) : W, x2 = upperOnly ? (rng() < 0.5 ? -1 : 1) * (W - W2) / 2 : 0;
-  let doorX = 0, roofTop = H, ridgeZ = 0, ridgeAlongX = true;
+  let doorX = 0, roofTop = H, ridgeZ = 0, ridgeAlongX = true, shedSide = 0;
   const Bf = (fn) => { const F = B.F; B.frame(...B.P([hx, 0, hz]), r); fn(); B.F = F; };
   Bf(() => {
     // body: foundation, ground floor, upper floor (possibly narrower), trim bands
@@ -671,7 +671,7 @@ export function house(B, lot, rng, extras) {
     }
     extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: W / 2, hz: D / 2, r });
     // backyard storage shed (the ubiquitous steel monooki) in a rear corner
-    if (rng() < 0.45) { const F7 = B.F, side = rng() < 0.5 ? -1 : 1; B.frame(...B.P([side * (W / 2 - 0.9), 0, -D / 2 - 0.52]), r);
+    if (rng() < 0.45) { const F7 = B.F, side = rng() < 0.5 ? -1 : 1; shedSide = side; B.frame(...B.P([side * (W / 2 - 0.9), 0, -D / 2 - 0.52]), r);
       const sc = pick(rng, [[0.86, 0.82, 0.7], [0.62, 0.72, 0.6], [0.8, 0.8, 0.78], [0.55, 0.62, 0.72]]);
       B.box('plain', 0, 0, 0, 1.5, 1.6, 0.6, { color: sc }); B.box('plain', 0, 1.6, 0, 1.6, 0.07, 0.7, { color: sc.map(v => v * 0.8) });
       for (const dx of [-0.37, 0.37]) B.box('dark', dx, 0.1, 0.31, 0.02, 1.35, 0.01, { color: [0.3, 0.3, 0.3] });
@@ -701,7 +701,7 @@ export function house(B, lot, rng, extras) {
     B.box('alu', -0.1, 2.3, 0, 2.9, 0.12, 5.2, { color: [0.6, 0.55, 0.5], skip: 'py ny' });
     extras.push({ t: 'poly', p: B.P([-0.1, 2.36, 0]), r, w: 2.8, d: 5.1 });
   }
-  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D };
+  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D, H: roofTop, shedSide, hasWall, wallH, gate: doorGap(LW, gateW) };
 }
 function doorGap(LW, gw) { return [LW / 2 - 0.5 - gw, LW / 2 - 0.5]; }
 
