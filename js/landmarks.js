@@ -159,6 +159,76 @@ export function bench(B, x, y, z, r) {
   const p = B.P([0, 0, 0]); addBox(p[0], p[2], 0.85, 0.25, r, y - 1, y + 0.5);
 }
 
+// abandoned stone hut: broken dry-stone walls of uneven height, a doorway, fallen roof timbers and tumbled stones,
+// moss on the wall tops. groundAt keeps every course sitting on the slope.
+export function ruin(B, x, z, r, groundAt, seed = 1) {
+  const rng = mulberry32(seed), W = 6 + rng() * 2, D = 4.5 + rng() * 1.5, y0 = groundAt(x, z);
+  B.frame(x, y0, z, r);
+  const course = (ax, az, bx, bz, hMax, door) => {
+    const L = Math.hypot(bx - ax, bz - az), n = Math.ceil(L / 0.62), ux = (bx - ax) / L, uz = (bz - az) / L;
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n * L; if (door && Math.abs(t - L / 2) < 0.6) continue;
+      const cx = ax + ux * t, cz = az + uz * t, p = B.P([cx, 0, cz]), gy = groundAt(p[0], p[2]) - y0;
+      const h = Math.max(0.25, hMax * (0.45 + 0.55 * Math.sin(t * 0.9 + seed) * Math.sin(t * 0.37 + 1)) + (rng() - 0.5) * 0.3);
+      for (let y = 0; y < h; y += 0.3) {
+        const mossy = y + 0.3 >= h ? 0.35 : 0;
+        const c = J(rng, [0.6 - mossy * 0.22, 0.59 - mossy * 0.02, 0.54 - mossy * 0.26], 0.2);
+        B.box('stone', cx + (rng() - 0.5) * 0.06, gy + y - 0.1, cz + (rng() - 0.5) * 0.06, Math.abs(ux) > 0.5 ? 0.64 : 0.46, 0.3, Math.abs(ux) > 0.5 ? 0.46 : 0.64, { color: c });
+      }
+      addBox(p[0], p[2], 0.36, 0.36, r, -1e9, y0 + gy + h);
+    }
+  };
+  course(-W / 2, -D / 2, W / 2, -D / 2, 2.2); course(-W / 2, D / 2, W / 2, D / 2, 1.2, true);
+  course(-W / 2, -D / 2, -W / 2, D / 2, 1.8); course(W / 2, -D / 2, W / 2, D / 2, 0.8);
+  // fallen roof beams and loose stones
+  for (let k = 0; k < 3; k++) { const a = (rng() - 0.5) * 0.9, bx = (rng() - 0.5) * W * 0.5, bz = (rng() - 0.5) * D * 0.5, L = D * (0.8 + rng() * 0.4);
+    B.beam('woodDark', [bx - Math.sin(a) * L / 2, 0.15 + rng() * 0.8, bz - Math.cos(a) * L / 2], [bx + Math.sin(a) * L / 2, 0.1, bz + Math.cos(a) * L / 2], 0.2, 0.18, { color: J(rng, [0.8, 0.75, 0.7], 0.2) }); }
+  for (let k = 0; k < 14; k++) { const a = rng() * 6.28, d = W * 0.5 + rng() * 2.5, sx = Math.cos(a) * d, sz = Math.sin(a) * d * 0.8, p = B.P([sx, 0, sz]);
+    B.box('stone', sx, groundAt(p[0], p[2]) - y0 - 0.12, sz, 0.3 + rng() * 0.3, 0.25, 0.3 + rng() * 0.3, { color: J(rng, [0.48, 0.54, 0.4], 0.2) }); }
+}
+
+// hilltop viewpoint: a small timber deck with a rail on the view side, a bench and a wooden sign post
+export function viewpoint(B, x, z, r, groundAt) {
+  const y = groundAt(x, z), top = y + 0.35;
+  B.frame(x, 0, z, r);
+  for (let s = -1.6; s <= 1.6; s += 0.3) B.box('wood', 0, top - 0.06, s, 4.2, 0.06, 0.27, { color: [0.95, 0.92, 0.88], uv: 2 });
+  for (const sx of [-2, 2]) for (const sz of [-1.6, 1.6]) { const p = B.P([sx, 0, sz]), gy = groundAt(p[0], p[2]); B.box('woodDark', sx, gy - 0.3, sz, 0.14, top - gy + 0.3, 0.14); }
+  for (const sx of [-2.05, 2.05]) B.box('woodDark', sx, top, 0, 0.1, 1.0, 3.4);
+  B.box('woodDark', 0, top, 1.75, 4.2, 1.0, 0.1, { skip: 'ny' });
+  B.box('wood', 0, top + 0.95, 1.75, 4.3, 0.08, 0.16);
+  const p = B.P([0, 0, 0]); addPlatform(p[0], p[2], 2.1, 1.7, r, top);
+  const b = B.P([0, 0, -0.5]); bench(B, b[0], top, b[2], r); // facing the rail and the view
+  B.frame(x, 0, z, r);
+  const sp = B.P([-2.6, 0, -2.2]), sy = groundAt(sp[0], sp[2]);
+  B.box('woodDark', -2.6, sy - 0.2, -2.2, 0.12, 1.9, 0.12);
+  B.box('wood', -2.6, sy + 1.45, -2.2, 0.9, 0.28, 0.05, { color: [0.9, 0.8, 0.62] });
+  addCircle(sp[0], sp[2], 0.12);
+}
+
+// roadside hokora: a tiny wooden shrine house on a stone plinth, with a red-bibbed stone Jizo beside it
+export function hokora(B, x, y, z, r) {
+  B.frame(x, y, z, r);
+  B.box('stone', 0, -0.1, 0, 0.9, 0.55, 0.8, { color: [0.72, 0.72, 0.68] });
+  B.box('wood', 0, 0.45, 0, 0.62, 0.55, 0.5, { color: [0.85, 0.7, 0.55] });
+  B.box('black', 0, 0.5, 0.26, 0.32, 0.36, 0.02);
+  B.quad('roof', [-0.5, 1.0, 0.42], [0.5, 1.0, 0.42], [0.5, 1.22, 0], [-0.5, 1.22, 0], { color: [0.32, 0.3, 0.3] });
+  B.quad('roof', [0.5, 1.0, -0.42], [-0.5, 1.0, -0.42], [-0.5, 1.22, 0], [0.5, 1.22, 0], { color: [0.32, 0.3, 0.3] });
+  B.cyl('stone', 0.75, -0.05, 0.1, 0.16, 0.19, 0.5, 8, { color: [0.7, 0.7, 0.66] });
+  B.cyl('stone', 0.75, 0.45, 0.1, 0.13, 0.13, 0.2, 8, { color: [0.72, 0.72, 0.68], cap: true });
+  B.box('red', 0.75, 0.3, 0.2, 0.3, 0.16, 0.06);
+  const p = B.P([0.2, 0, 0]); addBox(p[0], p[2], 0.7, 0.45, r, y - 1, y + 1.2);
+}
+
+// a plank footbridge from (x0,z0) to (x1,z1) at deck height `top` (walkable), with low rails
+export function footbridge(B, x0, z0, x1, z1, top, groundAt) {
+  const L = Math.hypot(x1 - x0, z1 - z0), r = Math.atan2(x1 - x0, z1 - z0);
+  B.frame(x0, 0, z0, r);
+  for (let s = 0.15; s < L; s += 0.3) B.box('wood', 0, top - 0.06, s, 1.6, 0.06, 0.27, { color: [0.92, 0.88, 0.82], uv: 2 });
+  for (const sx of [-0.72, 0.72]) { B.box('woodDark', sx, top - 0.26, L / 2, 0.12, 0.2, L); B.box('woodDark', sx, top + 0.62, L / 2, 0.07, 0.07, L); }
+  for (let s = 0; s <= L; s += L / 2) for (const sx of [-0.75, 0.75]) { const p = B.P([sx, 0, s]), gy = Math.min(groundAt(p[0], p[2]), top - 0.3); B.box('woodDark', sx, gy - 0.3, s, 0.1, top + 0.7 - gy + 0.3, 0.1); }
+  const c = B.P([0, 0, L / 2]); addPlatform(c[0], c[2], 0.8, L / 2, r, top);
+}
+
 export function flushLandmarks(B) {
   const MT = materials();
   B.flush(MT);

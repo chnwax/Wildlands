@@ -114,9 +114,63 @@ export function waterTank(B, x, y, z, rng) {
   B.cyl('plastic', 0, 0.7, 0, 0.78, 0.78, 1.3, 16, { color: c });
   B.cyl('plastic', 0, 2.0, 0, 0.78, 0.3, 0.3, 16, { color: c, cap: true });
 }
+// a house going up on a lot (local +Z faces the street): timber frame on a concrete footing, scaffolding wrapped in mesh
+// sheeting, a site fence along the street with a gate, cones, a portable toilet and the builder's sign board
+export function constructionSite(B, x, y, z, r, LW, LD, rng, extras) {
+  B.frame(x, y, z, r);
+  const W = Math.min(LW - 3, 9), D = Math.min(LD - 5, 8), hz = -LD / 2 + D / 2 + 1.2;
+  B.box('concrete', 0, -0.05, hz, W, 0.45, D, { color: [0.78, 0.78, 0.76], uv: 3 });
+  const post = (px, pz, h) => B.box('wood', px, 0.4, pz, 0.12, h, 0.12, { color: [0.95, 0.85, 0.66] });
+  for (let i = 0; i <= 4; i++) for (const sz of [-D / 2 + 0.1, D / 2 - 0.1]) post(-W / 2 + 0.1 + i * (W - 0.2) / 4, hz + sz, 5.6);
+  for (const sx of [-W / 2 + 0.1, W / 2 - 0.1]) for (let k = 1; k < 3; k++) post(sx, hz - D / 2 + k * D / 3, 5.6);
+  for (const h of [2.9, 5.9]) { B.box('wood', 0, 0.4 + h - 0.2, hz - D / 2 + 0.1, W, 0.22, 0.14, { color: [0.93, 0.83, 0.64] }); B.box('wood', 0, 0.4 + h - 0.2, hz + D / 2 - 0.1, W, 0.22, 0.14, { color: [0.93, 0.83, 0.64] });
+    B.box('wood', -W / 2 + 0.1, 0.4 + h - 0.2, hz, 0.14, 0.22, D, { color: [0.93, 0.83, 0.64] }); B.box('wood', W / 2 - 0.1, 0.4 + h - 0.2, hz, 0.14, 0.22, D, { color: [0.93, 0.83, 0.64] }); }
+  // roof rafters of the gable, first floor joists
+  for (let i = 0; i <= 6; i++) { const px = -W / 2 + 0.1 + i * (W - 0.2) / 6; B.beam('wood', [px, 6.2, hz - D / 2 - 0.3], [px, 7.6, hz], 0.1, 0.16, { color: [0.95, 0.86, 0.68] }); B.beam('wood', [px, 7.6, hz], [px, 6.2, hz + D / 2 + 0.3], 0.1, 0.16, { color: [0.95, 0.86, 0.68] }); }
+  // scaffolding with sheeting on the street side and one flank
+  const sc = { color: [0.55, 0.58, 0.6] }, sheet = pick(rng, [[0.25, 0.45, 0.62], [0.22, 0.5, 0.35], [0.3, 0.52, 0.66]]);
+  for (let i = 0; i <= 5; i++) { const px = -W / 2 - 0.8 + i * (W + 1.6) / 5; B.box('alu', px, 0, hz + D / 2 + 0.8, 0.05, 7.2, 0.05, sc); B.box('alu', px, 0, hz + D / 2 + 1.5, 0.05, 7.2, 0.05, sc); }
+  for (const h of [1.8, 3.6, 5.4]) { B.box('alu', 0, h, hz + D / 2 + 1.15, W + 1.6, 0.05, 0.75, sc); B.box('alu', 0, h + 0.9, hz + D / 2 + 1.5, W + 1.6, 0.04, 0.04, sc); }
+  // mesh sheeting hung in panels, alternating in shade, with gaps where the scaffold shows through
+  for (let px = -W / 2 - 0.8; px < W / 2 + 0.8 - 0.1; px += 1.8) { const qx = Math.min(px + 1.72, W / 2 + 0.8), sc2 = sheet.map(v => v * (Math.round(px / 1.8) % 2 ? 0.92 : 1.0));
+    B.quad('plain', [px, 1.9, hz + D / 2 + 1.56], [qx, 1.9, hz + D / 2 + 1.56], [qx, 7.2, hz + D / 2 + 1.56], [px, 7.2, hz + D / 2 + 1.56], { color: sc2 }); }
+  B.quad('plain', [-W / 2 - 0.8, 0.9, hz - D / 2], [-W / 2 - 0.8, 0.9, hz + D / 2 + 1.56], [-W / 2 - 0.8, 7.2, hz + D / 2 + 1.56], [-W / 2 - 0.8, 7.2, hz - D / 2], { color: sheet.map(v => v * 0.9) });
+  // site fence: white panels with a green stripe, a sliding gate left open
+  const fz = LD / 2 - 0.2;
+  for (let fx = -LW / 2 + 0.2; fx < LW / 2 - 3.6; fx += 1.8) {
+    B.box('plain', fx + 0.9, 0, fz, 1.76, 1.8, 0.05, { color: [0.95, 0.95, 0.93] });
+    B.box('plain', fx + 0.9, 1.2, fz + 0.03, 1.76, 0.18, 0.02, { color: [0.2, 0.55, 0.35] });
+  }
+  extras.push({ t: 'box', p: B.P([-1.8, 0, fz]), hx: LW / 2 - 1.8, hz: 0.1, r, h: 1.8 });
+  for (let k = 0; k < 3; k++) { const cx = LW / 2 - 3 + k * 0.9; B.cyl('plastic', cx, 0, fz + 0.6, 0.16, 0.03, 0.7, 8, { color: [1, 0.45, 0.1] }); B.cyl('plain', cx, 0.35, fz + 0.6, 0.1, 0.07, 0.12, 8, { color: WHITE }); }
+  B.box('plastic', LW / 2 - 1.2, 0, -LD / 2 + 1.4, 1.0, 2.2, 1.0, { color: [0.3, 0.55, 0.75] });
+  extras.push({ t: 'box', p: B.P([LW / 2 - 1.2, 0, -LD / 2 + 1.4]), hx: 0.5, hz: 0.5, r });
+  // builder's sign
+  const sign = signMesh(1.2, 0.9, (g, Wc, Hc) => { g.fillStyle = '#f7f7f2'; g.fillRect(0, 0, Wc, Hc); g.fillStyle = '#1f5f9b'; g.fillRect(0, 0, Wc, Hc * 0.22);
+    g.fillStyle = '#fff'; g.font = `bold ${Hc * 0.14}px ${JP_FONT}`; g.textAlign = 'center'; g.fillText('工事中', Wc / 2, Hc * 0.16);
+    g.fillStyle = '#222'; g.font = `${Hc * 0.1}px ${JP_FONT}`; ['建築主　山田様邸', '施工　桜川工務店', 'ご迷惑をおかけします'].forEach((t, i) => g.fillText(t, Wc / 2, Hc * (0.42 + i * 0.18))); }, 0.05);
+  const sp = B.P([-LW / 2 + 2.2, 1.2, fz + 0.05]); sign.position.set(...sp); sign.rotation.y = r; scene.add(sign);
+}
+
+// small roadside shrine: a hokora with a tiny torii and a stone Jizo (local +Z faces the street)
+export function streetShrine(B, x, y, z, r) {
+  B.frame(x, y, z, r);
+  B.box('concrete', 0, 0, 0, 1.4, 0.35, 1.1, { color: [0.7, 0.7, 0.68] });
+  B.box('wood', 0, 0.35, -0.1, 0.8, 0.7, 0.6, { color: [0.72, 0.52, 0.36] });
+  B.box('dark', 0, 0.45, 0.21, 0.4, 0.45, 0.02);
+  B.quad('roofMetal', [-0.62, 1.05, 0.38], [0.62, 1.05, 0.38], [0.62, 1.32, -0.1], [-0.62, 1.32, -0.1], { color: [0.35, 0.33, 0.33] });
+  B.quad('roofMetal', [0.62, 1.05, -0.58], [-0.62, 1.05, -0.58], [-0.62, 1.32, -0.1], [0.62, 1.32, -0.1], { color: [0.35, 0.33, 0.33] });
+  const red = { color: [0.86, 0.22, 0.14] };
+  for (const sx of [-0.35, 0.35]) B.box('plain', sx, 0.35, 0.5, 0.06, 0.85, 0.06, red);
+  B.box('plain', 0, 1.12, 0.5, 0.95, 0.06, 0.08, red); B.box('plain', 0, 1.0, 0.5, 0.8, 0.05, 0.05, red);
+  B.cyl('plastic', 0.55, 0.35, 0.25, 0.1, 0.12, 0.34, 8, { color: [0.7, 0.7, 0.67] }); B.cyl('plastic', 0.55, 0.69, 0.25, 0.09, 0.09, 0.14, 8, { color: [0.72, 0.72, 0.69], cap: true });
+  B.box('plain', 0.55, 0.56, 0.33, 0.2, 0.1, 0.03, red);
+  const p = B.P([0, 0, 0]); addBox(p[0], p[2], 0.72, 0.58, r, y - 1, y + 1.3);
+}
+
 // zebra crossing across a road: (x,z) on the centreline, (dx,dz) the road direction, W the carriageway width
 export function crosswalk(B, x, y, z, dx, dz, W, band = 3.2) {
-  B.frame(x, y + 0.014, z, Math.atan2(dx, dz));
+  B.frame(x, y + 0.028, z, Math.atan2(dx, dz));
   const n = Math.floor((W - 0.6) / 0.9);
   for (let k = 0; k < n; k++) {
     const cx = -((n - 1) * 0.9) / 2 + k * 0.9;

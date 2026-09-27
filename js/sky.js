@@ -10,20 +10,22 @@ const up = new THREE.Vector3(0, 1, 0);
 
 // ---------------------------------------------------------------- palette
 // zen/hor: sky gradient, glow: sun-side horizon glow, gnd: ground bounce / below-horizon, fog: distance haze,
-// sun: sunlight colour & intensity, cLit/cShade: cloud colours, glowAmt: strength of the sun glow, exp: exposure
+// sun: sunlight colour & intensity, cLit/cShade: cloud colours, glowAmt: strength of the sun glow, exp: exposure,
+// fogD / haze: base fog and distance haze (aerial perspective) multipliers — hazy dawn and golden hour, crisp midday
 const KEYS = [
-  [0.0, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#0b1022', fog: '#18264f', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.25 }],
-  [4.7, { zen: '#0f1c4a', hor: '#5a5596', glow: '#c4739e', gnd: '#171a36', fog: '#3d3f78', sun: '#ff9f66', sunI: 0, cLit: '#9a86c0', cShade: '#2e3066', glowAmt: 0.6, exp: 1.2 }],
-  [5.9, { zen: '#3056a0', hor: '#ffb690', glow: '#ff7f62', gnd: '#4a3a55', fog: '#e0a3a0', sun: '#ff9f66', sunI: 1.5, cLit: '#ffc9a8', cShade: '#8272b0', glowAmt: 1.0, exp: 1.05 }],
-  [7.2, { zen: '#3a8ae6', hor: '#d2ecff', glow: '#fff0c8', gnd: '#5d6b4a', fog: '#bfdcf6', sun: '#ffe6bd', sunI: 2.6, cLit: '#ffffff', cShade: '#a4b6de', glowAmt: 0.45, exp: 1.0 }],
-  [12.5, { zen: '#1e70e6', hor: '#aee0ff', glow: '#fffbe8', gnd: '#62804a', fog: '#aad6fb', sun: '#fff7e6', sunI: 3.0, cLit: '#ffffff', cShade: '#aebfe6', glowAmt: 0.3, exp: 1.0 }],
-  [15.8, { zen: '#2874dc', hor: '#c2e4ff', glow: '#fff3d4', gnd: '#647a48', fog: '#b6dafa', sun: '#fff1d6', sunI: 2.9, cLit: '#ffffff', cShade: '#b0bee2', glowAmt: 0.4, exp: 1.0 }],
-  [17.2, { zen: '#3b72cc', hor: '#ffe0a8', glow: '#ffb462', gnd: '#6e5c42', fog: '#f3cfa4', sun: '#ffc47a', sunI: 2.6, cLit: '#fff1d8', cShade: '#b4a4cc', glowAmt: 0.9, exp: 1.0 }],
-  [17.95, { zen: '#354a9e', hor: '#ffa070', glow: '#ff6258', gnd: '#4e3a4c', fog: '#e6918a', sun: '#ff7e48', sunI: 1.8, cLit: '#ffb894', cShade: '#8f6eac', glowAmt: 1.2, exp: 1.05 }],
-  [18.55, { zen: '#1b2663', hor: '#8e5d9e', glow: '#dc6a86', gnd: '#1d1b36', fog: '#4f3f78', sun: '#ff7e48', sunI: 0, cLit: '#c982a6', cShade: '#3c326e', glowAmt: 0.8, exp: 1.15 }],
-  [19.4, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#0b1022', fog: '#18264f', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.25 }],
+  [0.0, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#0b1022', fog: '#18264f', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.25, fogD: 1.0, haze: 0.8 }],
+  [4.7, { zen: '#0f1c4a', hor: '#5a5596', glow: '#c4739e', gnd: '#171a36', fog: '#3d3f78', sun: '#ff9f66', sunI: 0, cLit: '#9a86c0', cShade: '#2e3066', glowAmt: 0.6, exp: 1.2, fogD: 1.25, haze: 1.1 }],
+  [5.9, { zen: '#3056a0', hor: '#ffb690', glow: '#ff7f62', gnd: '#4a3a55', fog: '#e0a3a0', sun: '#ff9f66', sunI: 1.5, cLit: '#ffc9a8', cShade: '#8272b0', glowAmt: 1.0, exp: 1.05, fogD: 1.55, haze: 1.35 }],
+  [7.2, { zen: '#3a8ae6', hor: '#d2ecff', glow: '#fff0c8', gnd: '#5d6b4a', fog: '#bfdcf6', sun: '#ffe6bd', sunI: 2.6, cLit: '#ffffff', cShade: '#a4b6de', glowAmt: 0.45, exp: 1.0, fogD: 1.3, haze: 1.15 }],
+  [9.4, { zen: '#2f7fe8', hor: '#c4e6ff', glow: '#fff6dc', gnd: '#60784a', fog: '#b8dcf8', sun: '#fff1da', sunI: 2.85, cLit: '#ffffff', cShade: '#a8badf', glowAmt: 0.35, exp: 1.0, fogD: 0.95, haze: 0.9 }],
+  [12.5, { zen: '#1e70e6', hor: '#aee0ff', glow: '#fffbe8', gnd: '#62804a', fog: '#aad6fb', sun: '#fff7e6', sunI: 3.0, cLit: '#ffffff', cShade: '#aebfe6', glowAmt: 0.3, exp: 1.0, fogD: 0.75, haze: 0.72 }],
+  [15.8, { zen: '#2874dc', hor: '#c2e4ff', glow: '#fff3d4', gnd: '#647a48', fog: '#b6dafa', sun: '#fff1d6', sunI: 2.9, cLit: '#ffffff', cShade: '#b0bee2', glowAmt: 0.4, exp: 1.0, fogD: 0.95, haze: 1.0 }],
+  [17.2, { zen: '#3b72cc', hor: '#ffe0a8', glow: '#ffb462', gnd: '#6e5c42', fog: '#f3cfa4', sun: '#ffc47a', sunI: 2.6, cLit: '#fff1d8', cShade: '#b4a4cc', glowAmt: 0.9, exp: 1.0, fogD: 1.15, haze: 1.2 }],
+  [17.95, { zen: '#354a9e', hor: '#ffa070', glow: '#ff6258', gnd: '#4e3a4c', fog: '#e6918a', sun: '#ff7e48', sunI: 1.8, cLit: '#ffb894', cShade: '#8f6eac', glowAmt: 1.2, exp: 1.05, fogD: 1.25, haze: 1.3 }],
+  [18.55, { zen: '#1b2663', hor: '#8e5d9e', glow: '#dc6a86', gnd: '#1d1b36', fog: '#4f3f78', sun: '#ff7e48', sunI: 0, cLit: '#c982a6', cShade: '#3c326e', glowAmt: 0.8, exp: 1.15, fogD: 1.05, haze: 1.05 }],
+  [19.4, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#0b1022', fog: '#18264f', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.25, fogD: 0.9, haze: 0.8 }],
 ];
-const COLS = ['zen', 'hor', 'glow', 'gnd', 'fog', 'sun', 'cLit', 'cShade'], NUMS = ['sunI', 'glowAmt', 'exp'];
+const COLS = ['zen', 'hor', 'glow', 'gnd', 'fog', 'sun', 'cLit', 'cShade'], NUMS = ['sunI', 'glowAmt', 'exp', 'fogD', 'haze'];
 const PAL = KEYS.map(([h, k]) => { const o = { h }; for (const c of COLS) o[c] = new THREE.Color(k[c]); for (const n of NUMS) o[n] = k[n]; return o; });
 export const pal = {}; for (const c of COLS) pal[c] = new THREE.Color(); for (const n of NUMS) pal[n] = 0;
 function samplePalette(hour) {
@@ -190,7 +192,7 @@ export function applyShadowQuality() {
 applyShadowQuality();
 
 // ---------------------------------------------------------------- update
-export const env = { night: 0, day: 1, lightDir: S.uLightDir.value, azimuth: 2.2, exposure: 1, wb: new THREE.Vector3(1, 1, 1), moonDir: new THREE.Vector3() };
+export const env = { haze: 1, night: 0, day: 1, lightDir: S.uLightDir.value, azimuth: 2.2, exposure: 1, wb: new THREE.Vector3(1, 1, 1), moonDir: new THREE.Vector3() };
 const MOON = new THREE.Color('#a9bdff'), tmpC = new THREE.Color();
 let lastEnvHour = -99, envTimer = 0;
 export function updateSky(force) {
@@ -229,6 +231,7 @@ export function updateSky(force) {
   }
   scene.environmentIntensity = 1.0 + 1.8 * night; // anime nights stay readable: a brighter blue fill in the shadows
   scene.fog.color.copy(p.fog);
+  scene.fog.density = 0.00022 * p.fogD; env.haze = p.haze;
   S.uFogCol.value.set(p.fog.r, p.fog.g, p.fog.b);
   tmpC.copy(p.zen).lerp(p.hor, 0.55);
   S.uAmb.value.set(tmpC.r, tmpC.g, tmpC.b);
@@ -259,5 +262,7 @@ export function followCamera(groundAt, yaw) {
   sun.position.copy(center).addScaledVector(env.lightDir, 700);
   sun.target.updateMatrixWorld();
   fogU.fogParams.value.x = c.y;
-  fogU.fogHaze.value.x = Q.trees * 0.3; fogU.fogHaze.value.y = 1.25 / Q.trees;
+  // aerial perspective: terrain and forests now reach the horizon, so the haze no longer hides a draw distance; it only
+  // layers the far ridges into the sky (about half-hazed at 3 km, three quarters at 10 km, gone by ~20 km)
+  fogU.fogHaze.value.x = 600; fogU.fogHaze.value.y = 0.00015 * (env.haze || 1);
 }

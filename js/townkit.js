@@ -204,8 +204,11 @@ const SHOP_NAMES = [
   ['そば・うどん', '更科', '#1c1c1c', '#fff'], ['歯科医院', '桜川デンタル', '#ffffff', '#1a8a9a'], ['花', 'フラワー花子', '#f3d7e0', '#7a2a4a'],
   ['自転車', 'サイクル中村', '#ffcc00', '#222'], ['寿司', 'すし政', '#f4ecdc', '#1b1b1b'], ['整骨院', 'さくら整骨院', '#0e6b3a', '#fff'],
 ];
-export function shopSign(rng, w) {
-  const [kind, name, bg, fg] = SHOP_NAMES[Math.floor(rng() * SHOP_NAMES.length)];
+// what each kind of shop looks like inside (surface.js): 0 shelves, 1 café, 2 restaurant counter, 3 salon / clinic,
+// 4 office, 5 workshop, 6 bookshop, 7 bakery / sweets counter
+const SHOP_INTERIOR = [2, 0, 3, 2, 0, 4, 7, 1, 0, 3, 6, 7, 2, 3, 0, 5, 2, 3];
+export function shopSign(rng, w, pickIdx) {
+  const r0 = rng(), [kind, name, bg, fg] = SHOP_NAMES[pickIdx ?? Math.floor(r0 * SHOP_NAMES.length)];
   return signMesh(w, 0.9, (g, W, H) => {
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
     g.fillStyle = fg; g.textBaseline = 'middle'; g.textAlign = 'center';
@@ -213,8 +216,8 @@ export function shopSign(rng, w) {
     g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 6; g.strokeRect(3, 3, W - 6, H - 6);
   }, 0.9);
 }
-export function verticalSign(rng) {
-  const [kind, , bg, fg] = SHOP_NAMES[Math.floor(rng() * SHOP_NAMES.length)];
+export function verticalSign(rng, pickIdx) {
+  const r0 = rng(), [kind, , bg, fg] = SHOP_NAMES[pickIdx ?? Math.floor(r0 * SHOP_NAMES.length)];
   const chars = [...kind].slice(0, 4);
   return signMesh(0.55, 0.5 + chars.length * 0.5, (g, W, H) => {
     g.fillStyle = bg; g.fillRect(0, 0, W, H); g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -707,11 +710,13 @@ export function shopBuilding(B, s, rng, extras) {
   B.box('concrete', 0, H + 0.02, 0, w - 0.6, 0.4, d - 0.5, { skip: 'ny', color: [0.5, 0.5, 0.5] });
   // ground floor shopfront
   const open = rng() < 0.3, fz = d / 2 + 0.01;
+  // the shop's trade is fixed up front (from its position) so the sign and the interior agree
+  const tradeIdx = Math.floor(mulberry32(Math.floor(x * 131 + z * 71) | 0)() * SHOP_NAMES.length), interior = (SHOP_INTERIOR[tradeIdx] + 0.5) / 8;
   if (open) { // rolled-down shutter (closed shop)
     B.quad('shutter', [-w / 2 + 0.4, 0, fz], [w / 2 - 0.4, 0, fz], [w / 2 - 0.4, 2.6, fz], [-w / 2 + 0.4, 2.6, fz], { color: jitter(rng, [0.72, 0.74, 0.74], 0.08), uv: 1.2 });
     B.box('alu', 0, 2.6, fz + 0.1, w - 0.6, 0.35, 0.3, { color: [0.7, 0.7, 0.7] });
   } else {
-    B.quad('shopWindow', [-w / 2 + 0.4, 0.15, fz], [w / 2 - 0.4, 0.15, fz], [w / 2 - 0.4, 2.7, fz], [-w / 2 + 0.4, 2.7, fz], { color: [1, 0.95, 0.85], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+    B.quad('shopWindow', [-w / 2 + 0.4, 0.15, fz], [w / 2 - 0.4, 0.15, fz], [w / 2 - 0.4, 2.7, fz], [-w / 2 + 0.4, 2.7, fz], { color: [1, 0.95, interior], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
     for (let i = 0; i <= 3; i++) B.box('alu', -w / 2 + 0.4 + i * (w - 0.8) / 3, 0, fz + 0.02, 0.06, 2.75, 0.06);
     B.box('alu', 0, 2.7, fz + 0.02, w - 0.8, 0.08, 0.06);
     const nx = (deco() - 0.5) * (w - 3.5);
@@ -728,8 +733,8 @@ export function shopBuilding(B, s, rng, extras) {
     B.quad('plain', [-w / 2 + 0.3, 2.95, fz], [w / 2 - 0.3, 2.95, fz], [w / 2 - 0.3, 2.65, fz + 1.1], [-w / 2 + 0.3, 2.65, fz + 1.1], { color: ac });
     B.quad('plain', [-w / 2 + 0.3, 2.65, fz + 1.1], [w / 2 - 0.3, 2.65, fz + 1.1], [w / 2 - 0.3, 2.95, fz], [-w / 2 + 0.3, 2.95, fz], { color: ac.map(v => v * 0.6) });
   }
-  const sign = shopSign(rng, w - 1.2); const sp = B.P([0, 3.45, fz + 0.03]); sign.position.set(...sp); sign.rotation.y = r; scene.add(sign);
-  if (rng() < 0.5) { const vs = verticalSign(rng), vp = B.P([w / 2 - 0.5, 5.2, fz + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs); }
+  const sign = shopSign(rng, w - 1.2, tradeIdx); const sp = B.P([0, 3.45, fz + 0.03]); sign.position.set(...sp); sign.rotation.y = r; scene.add(sign);
+  if (rng() < 0.5) { const vs = verticalSign(rng, tradeIdx), vp = B.P([w / 2 - 0.5, 5.2, fz + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs); }
   // upper floors
   for (let f = 1; f < floors; f++) {
     const n = Math.max(1, Math.floor(w / 2.4));
@@ -771,7 +776,7 @@ export function konbini(B, s, rng, extras) {
   const stripes = [[0.05, 0.55, 0.3], [0.95, 0.95, 0.95], [0.1, 0.35, 0.75], [0.95, 0.95, 0.95], [0.95, 0.55, 0.1]];
   stripes.forEach((c, i) => B.box('plain', 0, 3.2 + i * 0.16, 0, w + 0.04, 0.16, d + 0.04, { color: c, skip: 'ny py' }));
   const fz = d / 2 + 0.03;
-  B.quad('shopWindow', [-w / 2 + 0.5, 0.1, fz], [w / 2 - 0.5, 0.1, fz], [w / 2 - 0.5, 2.9, fz], [-w / 2 + 0.5, 2.9, fz], { color: [1.4, 1.45, 1.5], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+  B.quad('shopWindow', [-w / 2 + 0.5, 0.1, fz], [w / 2 - 0.5, 0.1, fz], [w / 2 - 0.5, 2.9, fz], [-w / 2 + 0.5, 2.9, fz], { color: [1.4, 1.45, 0.0625], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
   for (let i = 0; i <= 6; i++) B.box('alu', -w / 2 + 0.5 + i * (w - 1) / 6, 0, fz, 0.08, 2.95, 0.08);
   const sign = signMesh(6, 1.0, (g, W, H) => {
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);

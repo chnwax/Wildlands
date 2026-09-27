@@ -244,10 +244,13 @@ export function terrainMaterial(hf, L, opt = {}) {
         vec3 nUrban = layNA(wuv / uScales.w, 4.0, tileB) * 0.6;
         // rock: tri-planar, each axis with the rock layer's own normal map; the scale widens with distance
         vec3 bw = pow(max(abs(wN), vec3(1e-4)), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
-        float rs = mix(1.0 / uRockS, 1.0 / (uRockS * 3.4), farT * 0.7);
+        // two fixed scales cross-faded by distance (a scale that changed with distance would make the rock swim)
+        float rs = 1.0 / uRockS, rs2 = 1.0 / (uRockS * 3.4), rw = farT * 0.7;
         vec3 cRockT = layD(vWPos.zy * rs, 2.0).rgb * bw.x + layD(vWPos.xz * rs, 2.0).rgb * bw.y + layD(vWPos.xy * rs, 2.0).rgb * bw.z;
+        vec3 cRockF = layD(vWPos.zy * rs2, 2.0).rgb * bw.x + layD(vWPos.xz * rs2, 2.0).rgb * bw.y + layD(vWPos.xy * rs2, 2.0).rgb * bw.z;
+        cRockT = mix(cRockT, cRockF, rw);
         vec3 rnx = layN(vWPos.zy * rs, 2.0), rny = layN(vWPos.xz * rs, 2.0), rnz = layN(vWPos.xy * rs, 2.0);
-        vec3 nRock = normalize(wN + vec3(0.0, rnx.y, rnx.x) * bw.x + vec3(rny.x, 0.0, rny.y) * bw.y + vec3(rnz.x, rnz.y, 0.0) * bw.z);
+        vec3 nRock = normalize(wN + (vec3(0.0, rnx.y, rnx.x) * bw.x + vec3(rny.x, 0.0, rny.y) * bw.y + vec3(rnz.x, rnz.y, 0.0) * bw.z) * (1.0 - rw * 0.6));
         // rock: two painted tones picked by the photo's light/dark strata, plus horizontal bedding bands on cliffs
         float strata = sin(vWPos.y * 0.9 + nz2.g * 6.0 + nz3.r * 2.0) * 0.5 + 0.5;
         vec3 cRock = mix(uP_rockD, uP_rockL, smoothstep(0.18, 0.42, lum3(cRockT) + (nz2.b - 0.5) * 0.12 + (strata - 0.5) * 0.08 * smoothstep(0.35, 0.7, slope)));
@@ -267,7 +270,8 @@ export function terrainMaterial(hf, L, opt = {}) {
         vec2 cuv = wuv * 0.0045;
         float cr0 = texture2D(tNoise, cuv).a, crx = texture2D(tNoise, cuv + vec2(0.0035, 0.0)).a, crz = texture2D(tNoise, cuv + vec2(0.0, 0.0035)).a;
         vec3 crownN = normalize(vec3(-(crx - cr0) * 3.0, 1.0, -(crz - cr0) * 3.0));
-        vec3 cCanopy = uP_canopy * (0.72 + 0.5 * cr0) * mix(0.9, 1.12, nz2.r) * mix(vec3(1.0), vec3(1.08, 1.02, 0.86), region * 0.5);
+        // canopy tone sits between the forest shade and the lit far-tree cards, so distant woods read as one mass
+        vec3 cCanopy = mix(uP_canopy, vec3(0.19, 0.44, 0.31), 0.45) * (0.78 + 0.4 * cr0) * mix(0.9, 1.1, nz2.r) * mix(vec3(1.0), vec3(1.08, 1.02, 0.86), region * 0.5);
         // outside the map the ground under the far trees takes the canopy colour too, so the gaps between distant tree
         // cards read as more forest rather than bright speckle
         cForest = mix(cForest, cCanopy, max(crownW, (1.0 - inside) * smoothstep(0.25, 0.6, forest) * 0.9));
@@ -477,6 +481,10 @@ function grassCardTexture() { // R: blade brightness, G: flower head mask, A: co
   };
   for (let i = 0; i < 150; i++) blade(rng() * W, H * (0.35 + 0.65 * Math.pow(rng(), 0.7)), 7 + rng() * 9, (rng() - 0.5) * 34, 0.55 + 0.45 * rng());
   for (let i = 0; i < 12; i++) { const x = rng() * W, y = H * (0.12 + rng() * 0.3); for (const dx of [-W, 0, W]) { g.fillStyle = 'rgb(255,255,0)'; g.beginPath(); g.arc(x + dx, y, 5 + rng() * 3, 0, 7); g.fill(); } }
+  // seed-head grasses standing above the sward (B channel marks the heads)
+  for (let i = 0; i < 16; i++) { const x = rng() * W, top = H * (0.02 + rng() * 0.12), lean = (rng() - 0.5) * 20;
+    blade(x, H - top, 3, lean, 0.85);
+    for (const dx of [-W, 0, W]) { g.fillStyle = 'rgb(210,0,255)'; g.beginPath(); g.ellipse(x + dx + lean, top + H * 0.07, 3.2, H * 0.08, lean * 0.01, 0, 7); g.fill(); } }
   cardTex = new THREE.CanvasTexture(cv);
   cardTex.colorSpace = THREE.NoColorSpace; cardTex.wrapS = THREE.RepeatWrapping; cardTex.wrapT = THREE.ClampToEdgeWrapping; cardTex.anisotropy = 4;
   return cardTex;
@@ -608,18 +616,32 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         dens *= step(abs(wp2.x), uHalf - 2.0) * step(abs(wp2.y), uHalf - 2.0);
         // ring cross-fade: blades thin out stochastically (so near and far rings keep the same blade height)
         float fade = (1.0 - smoothstep(uR * 0.55, uR, gdist)) * (uIn.y > 0.0 ? smoothstep(uIn.x, uIn.y, gdist) : 1.0);
-        float keep = step(iRand.w, dens) * step(fract(iRand.y * 13.73 + iRand.x * 5.31), fade * 1.02);
+        float keep = step(iRand.w + 0.002, dens) * step(fract(iRand.y * 13.73 + iRand.x * 5.31), fade * 1.02); // strict: dens 0 keeps nothing
         float gs = keep;
         float fPatch = smoothstep(0.58, 0.8, gz3.g * 0.65 + gz2.a * 0.6);
         bool flower = !rice && !reed && dens > 0.35 && iRand.w < (0.01 + 0.16 * fPatch * dens) * smoothstep(22.0, 30.0, gdist) * (uLod > 1.5 ? 0.5 : 1.0);
-        float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * mix(0.75, 1.0, fade) * keep;
+        // species: most blades are meadow grass; a share are seed-head grasses (more in drier patches), sun-dried straw
+        // blades, and broad low weed leaves (plantain / dock) in the unmown grass
+        float sp = fract(iRand.x * 7.13 + iRand.z * 3.71 + iRand.y * 1.37);
+        float dryness = smoothstep(0.5, 0.85, gz1.b + (gz3.g - 0.5) * 0.3);
+        bool plain = !rice && !reed && !flower;
+        bool seedG = plain && sp < 0.05 + 0.07 * dryness && gm2.a < 0.5;
+        bool dryB = plain && !seedG && sp < 0.12 + 0.2 * dryness;
+        bool broadB = plain && !seedG && !dryB && sp > 0.91 && gm2.a < 0.5;
+        // tall-grass patches stand out of the shorter sward
+        float tallP = smoothstep(0.55, 0.8, gz2.a * 0.7 + gz3.r * 0.5);
+        float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * (1.0 + 0.45 * tallP) * mix(0.75, 1.0, fade) * keep;
         Hh *= 1.0 - 0.68 * gm2.a;   // ...and short
+        if (seedG) Hh = Hh * 1.3 + 0.22 * keep;
+        if (broadB) Hh *= 0.42;
         if (flower) Hh = (0.28 + 0.32 * iRand.y) * mix(0.4, 1.0, fade);
         if (rice) Hh = (0.38 + 0.22 * iRand.y) * fade;
         if (reed) Hh = (1.0 + 1.1 * iRand.y * iRand.y + max(-hw, 0.0)) * mix(0.3, 1.0, fade);
         float Wd = (0.02 + 0.022 * iRand.z) * (1.0 + gdist * 0.06) * uTuft * step(0.001, gs);   // far rings: wider tufts
         if (rice) Wd *= 0.8;
         if (reed) Wd *= 0.75;
+        if (seedG) Wd *= 0.75;
+        if (broadB) Wd *= 2.8;
         float ang = iRand.x * 6.2831853;
         vec2 bdir = vec2(cos(ang), sin(ang)), bside = vec2(-bdir.y, bdir.x);
         #ifdef GRASS_CARD
@@ -633,7 +655,10 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         vec2 windDir = normalize(vec2(1.0, 0.35));
         float gust = textureLod(tNoise, wp2 * 0.012 - windDir * uTime * 0.05, 0.0).r;
         float flutter = sin(uTime * (2.2 + iRand.z * 2.5) + iRand.x * 40.0 + dot(wp2, windDir) * 0.8);
-        vec2 lean = bdir * (rice ? 0.35 + iRand.z * 0.3 : reed ? 0.04 + iRand.z * 0.14 : 0.12 + iRand.z * 0.4) + windDir * (gust * gust * 1.5 + 0.12) * uWind * (rice ? 0.6 : reed ? 0.35 : 1.0) + bside * flutter * 0.1 * uWind;
+        // gusts travel across the meadow as rolling waves
+        float roll = sin(dot(wp2, windDir) * 0.32 - uTime * 2.1 + gust * 4.0) * 0.5 + 0.5;
+        vec2 lean = bdir * (rice ? 0.35 + iRand.z * 0.3 : reed ? 0.04 + iRand.z * 0.14 : broadB ? 0.7 + iRand.z * 0.4 : 0.12 + iRand.z * 0.4)
+          + windDir * (gust * gust * 1.5 + 0.12) * (0.65 + 0.7 * roll) * uWind * (rice ? 0.6 : reed ? 0.35 : broadB ? 0.3 : seedG ? 1.25 : 1.0) + bside * flutter * 0.1 * uWind;
         #ifdef GRASS_CARD
           lean = windDir * (gust * gust * 1.2 + 0.1) * uWind * 0.45;
         #endif
@@ -651,7 +676,11 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
           vFlCol = pickF < 0.26 ? vec3(1.0, 0.95, 0.86) : pickF < 0.5 ? vec3(1.0, 0.72, 0.06) : pickF < 0.7 ? vec3(1.0, 0.36, 0.55) : pickF < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
           vFl = step(0.35, fPatch) * step(iRand.w, 0.65) * (rice ? 0.0 : 1.0);
         #else
-          gp.xz += bside * bladeUV.x * Wd * 0.5 * (flower ? 0.5 + smoothstep(0.55, 0.85, t) * 3.5 : 1.0 - t * 0.6);  // flowers open into a blossom
+          float prof = flower ? 0.5 + smoothstep(0.55, 0.85, t) * 3.5      // flowers open into a blossom
+            : seedG ? (t < 0.66 ? 0.6 - 0.25 * t : 0.35 + 1.5 * sin((t - 0.66) / 0.34 * 3.1416))   // thin stem, spindle seed head
+            : broadB ? 0.7 + 0.6 * sin(t * 3.1416) - 0.3 * t                    // broad rounded leaf
+            : 1.0 - t * 0.6;
+          gp.xz += bside * bladeUV.x * Wd * 0.5 * prof;
         #endif
         vGW = gp; vT = t; vCloudLit = cloudShade(gp);
         vec3 bn = normalize(vec3(bdir.x, 0.0, bdir.y) + vec3(0.0, 0.4 + t, 0.0) - vec3(lean.x, 0.0, lean.y) * 0.3);
@@ -661,8 +690,12 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         c = mix(c, uP_forest * 1.25, smoothstep(0.2, 0.75, gm.r) * 0.6);
         c *= 0.9 + 0.22 * iRand.y;
         vec3 tip = mix(c, uP_gLight, 0.45) * 1.12 + vec3(0.03, 0.03, 0.0);
-        // bright bands where the gusts roll across the meadow
-        float wave = smoothstep(0.52, 0.85, gust);
+        if (dryB) { c = mix(c, vec3(0.55, 0.5, 0.26), 0.65); tip = mix(tip, vec3(0.9, 0.8, 0.5), 0.75); }
+        if (broadB) { c *= vec3(0.78, 0.86, 0.74); tip = c * 1.2; }
+        if (seedG) { float head = smoothstep(0.62, 0.72, t); tip = mix(tip, mix(vec3(0.7, 0.58, 0.34), vec3(0.56, 0.4, 0.34), step(0.5, fract(iRand.z * 9.1))), head); c = mix(c, tip * 0.8, head); }
+        // bright bands where the gusts roll across the meadow (the rolling wave lays the blades over and shows their
+        // lighter undersides)
+        float wave = smoothstep(0.52, 0.85, gust) * (0.6 + 0.5 * roll);
         tip += vec3(0.07, 0.09, 0.02) * wave;
         if (rice) { c = mix(vec3(0.12, 0.36, 0.05), vec3(0.28, 0.5, 0.08), iRand.y) * (0.8 + 0.3 * gz3.r); tip = c * 1.2; }
         if (reed) {
@@ -693,6 +726,7 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
           diffuseColor.a = tc.a * (1.0 + max(tlod, 0.0) * 0.3);   // mip levels lose coverage: boost it so far clumps stay solid
           diffuseColor.rgb *= mix(vGCol * 0.55, vGTip, smoothstep(0.0, 1.0, vT)) * (0.7 + 0.4 * tc.r);
           if (tc.g > 0.5 && vFl > 0.5) diffuseColor.rgb = vFlCol * 0.9;
+          if (tc.b > 0.5) diffuseColor.rgb = mix(vec3(0.7, 0.58, 0.34), vec3(0.56, 0.4, 0.34), step(0.5, fract(vCardUv.x * 3.1))) * (0.8 + 0.3 * tc.r);
         #else
           diffuseColor.rgb *= mix(vGCol * 0.62, vGTip, smoothstep(0.0, 1.0, vT));
         #endif`)
@@ -820,6 +854,68 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
   water.userData.hide = hide;
   scene.add(water);
   return water;
+}
+
+// ---------------------------------------------------------------- streams
+// A flowing stream surface: a ribbon along the stream's centreline (pts: [{x, z, w: water level, W: width}]), with
+// streaks drifting downstream, white water where it runs steep, and a sun glint. The terrain carries the channel.
+export function buildStream(pts) {
+  const P = [], UV = [], F = [], I = [];
+  let v = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], p = pts[i];
+    const tx = b.x - a.x, tz = b.z - a.z, L = Math.hypot(tx, tz) || 1, nx = -tz / L, nz = tx / L, hw = p.W / 2 + 0.8;
+    if (i) v += Math.hypot(p.x - pts[i - 1].x, p.z - pts[i - 1].z);
+    const steep = clamp((a.w - b.w) / Math.max(L, 1) * 6, 0, 1);
+    P.push(p.x - nx * hw, p.w, p.z - nz * hw, p.x + nx * hw, p.w, p.z + nz * hw);
+    UV.push(0, v, 1, v); F.push(steep, steep);
+    if (i) { const k = (i - 1) * 2; I.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); } // counter-clockwise from above
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+  g.setAttribute('aSteep', new THREE.Float32BufferAttribute(F, 1));
+  g.setIndex(I); g.computeBoundingSphere();
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, fog: true, depthWrite: false,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
+    vertexShader: /* glsl */`
+      attribute float aSteep; varying vec2 vUv; varying float vSteep; varying vec3 vW;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main(){ vUv = uv; vSteep = aSteep; vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz;
+        vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      uniform sampler2D tNoise; uniform float uTime; uniform vec3 uLightDir, uSunCol, uAmb;
+      varying vec2 vUv; varying float vSteep; varying vec3 vW;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main(){
+        float edge = smoothstep(0.0, 0.16, vUv.x) * smoothstep(1.0, 0.84, vUv.x);
+        float flow = uTime * (0.6 + 1.6 * vSteep);
+        vec4 n1 = texture2D(tNoise, vec2(vUv.x * 0.35, vUv.y * 0.045 - flow * 0.05));
+        vec4 n2 = texture2D(tNoise, vec2(vUv.x * 0.9 + 0.3, vUv.y * 0.11 - flow * 0.12));
+        float streak = smoothstep(0.55, 0.8, n1.g * 0.6 + n2.b * 0.5);
+        vec3 deep = vec3(0.05, 0.25, 0.31), shallow = vec3(0.18, 0.5, 0.5);
+        vec3 col = mix(shallow, deep, edge * 0.8) * (uAmb * 0.8 + uSunCol * max(uLightDir.y, 0.0) * 0.3 + 0.05);
+        col += vec3(0.85, 0.95, 1.0) * (uAmb * 0.25 + uSunCol * 0.12) * streak * (0.25 + 0.5 * vSteep);
+        float foam = smoothstep(0.55, 0.85, n2.r * 0.6 + vSteep * 0.7 + (1.0 - edge) * 0.12) * (0.15 + vSteep);
+        col = mix(col, vec3(0.95, 0.98, 1.0) * (uAmb * 0.8 + uSunCol * max(uLightDir.y, 0.0) * 0.35 + 0.06), clamp(foam, 0.0, 0.9));
+        vec3 V = normalize(cameraPosition - vW), N = normalize(vec3((n2.g - 0.5) * 0.4, 1.0, (n1.b - 0.5) * 0.4));
+        col += uSunCol * pow(max(dot(reflect(-uLightDir, N), V), 1e-4), 60.0) * 0.5 * step(0.0, uLightDir.y);
+        col = mix(col, uAmb * 1.05, pow(1.0 - max(dot(V, N), 0.0), 3.0) * 0.45); // sky sheen at grazing angles
+        gl_FragColor = vec4(col, (0.55 + 0.35 * edge) * smoothstep(0.0, 0.05, vUv.x) * smoothstep(1.0, 0.95, vUv.x));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }`,
+  });
+  Object.assign(mat.uniforms, { tNoise: S.tNoise, uTime: S.uTime, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
+  const m = new THREE.Mesh(g, mat); m.renderOrder = 2;
+  scene.add(m);
+  return m;
 }
 
 export function windPatch(mat, key, amount = 1) {

@@ -113,9 +113,11 @@ export function buildComposer() {
   P.ao = null;
   if (Q.ao) {
     P.ao = new DepthGTAOPass(scene, camera, w * pr, h * pr, { depthTexture: P.scenePass.rt.depthTexture });
-    P.ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.0, samples: 12, distanceFallOff: 1.0 });
-    P.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
-    P.ao.blendIntensity = 0.85;
+    // contact shading only: a tight radius keeps it to creases, feet of walls and grass roots rather than dark halos
+    const ex = Q.name === 'extreme';
+    P.ao.updateGtaoMaterial({ radius: 0.8, distanceExponent: 1.6, thickness: 1.0, scale: 1.0, samples: ex ? 20 : 12, distanceFallOff: 1.0 });
+    P.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: ex ? 8 : 6, rings: 2, samples: ex ? 16 : 12 });
+    P.ao.blendIntensity = 0.78;
     P.composer.addPass(P.ao);
   }
   P.rays = new ShaderPass(RaysShader);

@@ -4,7 +4,7 @@ import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, ero
   Scatter, addBox, addCircle, addPlatform, colliders } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildForest, treeColor, farForestAt } from './terrain.js';
 import { buildSakura, buildBushes, buildBroadleafForest, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
-import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians } from './towndeco.js';
+import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, house, shopBuilding, konbini, apartment, shrine, utilityPole, wires, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
@@ -60,9 +60,13 @@ function baseHeight(x, z) {
   const rd = Math.abs(x - riverX(z)), wall = Y0 + Math.max(0, rd - 30) * 0.45;
   h = smin(h, wall, Math.min(14, (wall - Y0) * 0.6));
   h = lerp(h, Y0, smoothstep(60, 30, rd));
+  // channel: bed, then a sloped concrete revetment from rd 12.2 (y 0.45) up to the walkway at rd 14.6; the ground
+  // stays 1.3 m under the revetment slab (so the 2 m heightfield never pokes through it) and is level again under the
+  // walkway deck, well before the lanes along the banks
   if (rd < 17) {
-    const bed = rd < 5 ? -1.3 : rd < 12.5 ? lerp(-1.3, 0.45, (rd - 5) / 7.5) : 0.45;
-    h = rd < 14.5 ? bed : lerp(0.45, h, (rd - 14.5) / 2.5);
+    const bed = rd < 5 ? -1.3 : rd < 12.2 ? lerp(-1.3, 0.45, (rd - 5) / 7.2) : 0.45;
+    const rev = 0.45 + (rd - 12.2) / 2.4 * (Y0 - 0.3);
+    h = rd < 12.2 ? bed : Math.min(h, Math.max(0.45, rev - 1.3));
   }
   return h;
 }
@@ -176,19 +180,31 @@ export async function build(progress) {
         if (onRail((z0 + z1) / 2) && R.kind !== 'path') continue; // crossing deck is built by the railway
         B.frame(0, 0, 0, 0);
         const P = (x, z, s) => [x + nx * s, roadY(x + nx * s, z + nz * s), z + nz * s];
-        B.quad(R.mat, P(x0, z0, hw), P(x1, z1, hw), P(x1, z1, -hw), P(x0, z0, -hw), { uvs: [[t0 / 4, 0], [t1 / 4, 0], [t1 / 4, R.w / 4], [t0 / 4, R.w / 4]] });
+        // the carriageway is laid in strips no wider than 1.5 m, so it follows the ground across its width too
+        const ns = Math.ceil(R.w / 1.5);
+        for (let k2 = 0; k2 < ns; k2++) {
+          const sa = hw - k2 / ns * R.w, sb = hw - (k2 + 1) / ns * R.w, va = (hw - sa) / 4, vb = (hw - sb) / 4;
+          B.quad(R.mat, P(x0, z0, sa), P(x1, z1, sa), P(x1, z1, sb), P(x0, z0, sb), { uvs: [[t0 / 4, va], [t1 / 4, va], [t1 / 4, vb], [t0 / 4, vb]] });
+        }
         // markings
         const mid = [(x0 + x1) / 2, (z0 + z1) / 2];
         if (nearInter(mid[0], mid[1], R)) continue;
         const line = (off, wdt, col, dash) => {
           if (dash && Math.floor(t0 / 5) % 2) return;
-          const lift = 0.01, q = (x, z, s) => { const p = P(x, z, s); p[1] += lift; return p; };
+          const lift = 0.03, q = (x, z, s) => { const p = P(x, z, s); p[1] += lift; return p; };
           B.quad('paint', q(x0, z0, off + wdt / 2), q(x1, z1, off + wdt / 2), q(x1, z1, off - wdt / 2), q(x0, z0, off - wdt / 2), { color: col });
         };
         const white = [0.92, 0.92, 0.9], yellow = [0.95, 0.7, 0.1];
         if (R.kind === 'main') { line(0, 0.15, yellow); line(hw - 0.2, 0.15, white); line(-hw + 0.2, 0.15, white); }
         else if (R.kind === 'road') { line(0, 0.15, white, true); line(hw - 0.25, 0.15, white); line(-hw + 0.25, 0.15, white); }
         else if (R.kind === 'lane') { line(hw - 0.35, 0.15, white); line(-hw + 0.35, 0.15, white); }
+        // lanes: covered concrete gutters (the classic Japanese side ditch) along both edges, a grating every 5 m
+        if (R.kind === 'lane' && !onBridge(mid[0], mid[1]) && !nearInter(mid[0], mid[1], R, 0.5)) for (const sd of [-1, 1]) {
+          const g0 = sd * (hw + 0.02), g1 = sd * (hw + 0.42), q = (x, z, s2) => { const p = P(x, z, s2); p[1] += 0.035; return p; };
+          if (sd > 0) B.quad('concrete', q(x0, z0, g1), q(x1, z1, g1), q(x1, z1, g0), q(x0, z0, g0), { color: [0.74, 0.74, 0.72], uv: 1.5 });
+          else B.quad('concrete', q(x0, z0, g0), q(x1, z1, g0), q(x1, z1, g1), q(x0, z0, g1), { color: [0.74, 0.74, 0.72], uv: 1.5 });
+          if (k % 3 === 1) { const c = P((x0 + x1) / 2, (z0 + z1) / 2, sd * (hw + 0.22)); B.frame(c[0], c[1] + 0.04, c[2], Math.atan2(dx, dz)); B.box('dark', 0, 0, 0, 0.3, 0.012, 0.55, { color: [0.2, 0.2, 0.22] }); B.frame(0, 0, 0, 0); }
+        }
         // kerbs + sidewalks
         if (R.walk && !onBridge(mid[0], mid[1])) for (const sd of [-1, 1]) {
           const o0 = sd * hw, o1 = sd * (hw + R.walk), yk = 0.15;
@@ -228,7 +244,7 @@ export async function build(progress) {
   const stopSpots = []; // {x, z, hx, hz} approach heading
   const addStop = (x, z, hx, hz, w, sign) => {
     B.frame(0, 0, 0, 0);
-    const nx = -hz, nz = hx, y = roadY(x, z) + 0.012;
+    const nx = -hz, nz = hx, y = roadY(x, z) + 0.028;
     // stop line across the approach half (left lane) — full width on narrow lanes
     const half = w <= 5 ? w / 2 - 0.2 : 0.1;
     const q = (s, f) => [x + nx * s + hx * f, y, z + nz * s + hz * f];
@@ -285,15 +301,21 @@ export async function build(progress) {
     clockPole(B, -6, py, -40);
     for (const z of [-58, -55.4]) addBox(30.7, z, 5.2, 0.35, 0, -1e9, py + 1.1);
   }
-  // river banks: concrete revetments with railings, plus bridges
+  // river banks: concrete revetments with railings, plus bridges. Nothing grows through the revetment slabs or
+  // under the walkway deck (the ground there sits below the concrete)
+  hf.paint2(2, 100, -800, 330, 800, (x, z) => Math.abs(x - riverX(z)) < 15.6 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0);
   for (let z = -760; z < 760; z += 4) {
     for (const sd of [-1, 1]) {
-      const xa = riverX(z) + sd * 14.6, xb = riverX(z + 4) + sd * 14.6;
+      const xa = riverX(z) + sd * 14.6, xb = riverX(z + 4) + sd * 14.6, xa0 = riverX(z) + sd * 12.2, xb0 = riverX(z + 4) + sd * 12.2;
       B.frame(0, 0, 0, 0);
-      if (sd < 0) B.quad('stone', [xa, 0.2, z], [xb, 0.2, z + 4], [xb, Y0 + 0.15, z + 4], [xa, Y0 + 0.15, z], { uv: 2, color: [0.8, 0.8, 0.78] });
-      else B.quad('stone', [xb, 0.2, z + 4], [xa, 0.2, z], [xa, Y0 + 0.15, z], [xb, Y0 + 0.15, z + 4], { uv: 2, color: [0.8, 0.8, 0.78] });
-      // paved walkway on top of the bank, with a skirt down to the ground on its outer edge
-      if (Math.abs(z + 78) > 8) {
+      // sloped revetment slab, with a low toe wall where it meets the gravel margin
+      if (sd < 0) { B.quad('stone', [xa0, 0.45, z], [xb0, 0.45, z + 4], [xb, Y0 + 0.15, z + 4], [xa, Y0 + 0.15, z], { uv: 2, color: [0.8, 0.8, 0.78] });
+        B.quad('concrete', [xa0 + 0.35, 0.1, z], [xb0 + 0.35, 0.1, z + 4], [xb0, 0.45, z + 4], [xa0, 0.45, z], { color: [0.7, 0.7, 0.68] }); }
+      else { B.quad('stone', [xb0, 0.45, z + 4], [xa0, 0.45, z], [xa, Y0 + 0.15, z], [xb, Y0 + 0.15, z + 4], { uv: 2, color: [0.8, 0.8, 0.78] });
+        B.quad('concrete', [xb0 - 0.35, 0.1, z + 4], [xa0 - 0.35, 0.1, z], [xa0, 0.45, z], [xb0, 0.45, z + 4], { color: [0.7, 0.7, 0.68] }); }
+      // paved walkway on top of the bank, with a skirt down to the ground on its outer edge (it stops at the bridges,
+      // whose decks and parapets take over there)
+      if (Math.abs(z + 78) > 8 && Math.abs(z + 2 + 25) > 8.5 && Math.abs(z + 2 - 200) > 5.2) {
         const xo = riverX(z) + sd * 17.6, xo2 = riverX(z + 4) + sd * 17.6, yd = Y0 + 0.12, pc = { uv: 1.5, color: [0.88, 0.86, 0.82] }, sk = { uv: 2, color: [0.72, 0.72, 0.7] };
         if (sd > 0) { B.quad('pavement', [xa, yd, z], [xb, yd, z + 4], [xo2, yd, z + 4], [xo, yd, z], pc); B.quad('concrete', [xo2, Y0 - 1.2, z + 4], [xo, Y0 - 1.2, z], [xo, yd, z], [xo2, yd, z + 4], sk); }
         else { B.quad('pavement', [xo, yd, z], [xo2, yd, z + 4], [xb, yd, z + 4], [xa, yd, z], pc); B.quad('concrete', [xo, Y0 - 1.2, z], [xo2, Y0 - 1.2, z + 4], [xo2, yd, z + 4], [xo, yd, z], sk); }
@@ -390,9 +412,17 @@ export async function build(progress) {
   const vend = [];
   const srng = mulberry32(3131), sakura = [], hydras = [], bushes = [];
   const lotW = (lot, lx, lz) => { const c = Math.cos(lot.r), s = Math.sin(lot.r); return [lot.x + lx * c + lz * s, lot.z - lx * s + lz * c]; };
-  let li = 0;
+  let li = 0, building = 0, lastCon = null;
+  const conRng = mulberry32(515);
   for (const lot of lots) {
     const y = hf.groundAt(lot.x, lot.z);
+    // a couple of plots are building sites: a new house going up behind a site fence
+    if (!lot.shop && building < 2 && lot.w > 11 && lot.d > 13 && conRng() < 0.05 && !(lastCon && Math.hypot(lot.x - lastCon.x, lot.z - lastCon.z) < 200)) {
+      constructionSite(B, lot.x, y, lot.z, lot.r, lot.w, lot.d, rng, extras); building++; lastCon = lot;
+      hf.paint2(0, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 && Math.abs(dx * s2 + dz * c) < lot.d / 2 ? 1 : 0; });
+      hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 - 1 && Math.abs(dx * s2 + dz * c) < lot.d / 2 - 1 ? 1 : 0; });
+      continue;
+    }
     if (lot.shop) {
       shopBuilding(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: Math.min(lot.d, 12) }, rng, extras);
       hf.paint2(2, lot.x - 9, lot.z - 9, lot.x + 9, lot.z + 9, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z; return Math.abs(dx * c - dz * s) < lot.w / 2 && Math.abs(dx * s + dz * c) < lot.d / 2 ? 1 : 0; });
@@ -483,6 +513,17 @@ export async function build(progress) {
     const x = v.lot.x + lx * c + lz * s, z = v.lot.z - lx * s + lz * c;
     for (let k = 0; k < (rng() < 0.5 ? 2 : 1); k++) vendingMachine(x + c * k * 1.1, hf.groundAt(x, z), z - s * k * 1.1, v.lot.r, vi++);
   }
+  // little street shrines on free corners where lanes meet
+  { const shr = mulberry32(2718); let placed = 0;
+    for (const I of inters) {
+      if (placed >= 5 || I.roads.some(R => R.kind !== 'lane') || shr() > 0.5) continue;
+      const [a, b] = I.roads, off = Math.max(a.w, b.w) / 2 + 1.6;
+      for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        const x = I.p[0] + sx * off, z = I.p[1] + sz * off;
+        if (occRect(x, z, 0.9, 0.8, 0, 0, true) || Math.abs(x - riverX(z)) < 30) continue;
+        streetShrine(B, x, hf.groundAt(x, z), z, Math.atan2(-sx, -sz)); occRect(x, z, 0.9, 0.8, 0, 1); placed++; break;
+      }
+    } }
   progress('Stringing power lines', 0.64); await tick();
 
   // ---------------------------------------------------------------- utility poles and wires

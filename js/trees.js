@@ -374,7 +374,8 @@ function farCardMaterial(kind) {
         vec2 ftdx = dFdx(vFarUv * vec2(512.0, 256.0)), ftdy = dFdy(vFarUv * vec2(512.0, 256.0));
         float flod = 0.5 * log2(max(max(dot(ftdx, ftdx), dot(ftdy, ftdy)), 1e-6));
         diffuseColor.a = ftc.a * (1.0 + max(flod, 0.0) * 0.35);   // mip levels lose coverage: keep far crowns solid
-        diffuseColor.rgb *= 0.35 + 0.75 * ftc.r;`);
+        // painted shading up close; as a card shrinks to a few pixels it flattens to its mid tone (no speckle)
+        diffuseColor.rgb *= mix(0.35 + 0.75 * ftc.r, 0.86, smoothstep(1.0, 4.0, flod));`);
   };
   m.customProgramCacheKey = () => 'farCard' + kind;
   return (farCardMats[kind] = m);

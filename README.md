@@ -30,4 +30,4 @@ development branch), `-ResetToken` forgets the saved token, `Play-Wildlands.bat 
 ## Controls
 
 WASD to move, mouse to look, Shift to run, Space to jump, C to crouch, F to fly, `[` / `]` to change the time of day,
-T to pause time, H to hide the HUD, M to mute, 1–4 for quality presets (low, medium, high, ultra).
+T to pause time, H to hide the HUD, M to mute, 1–5 for quality presets (low, medium, high, ultra, extreme — Extreme is for high-end PCs: 8k shadows, supersampling and the densest grass and far forests).
