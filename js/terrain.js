@@ -119,6 +119,7 @@ export const MEADOW_GLSL = /* glsl */`
 // ---------------------------------------------------------------- splat terrain
 // layers: { grass, forest, rock, shore, urban } each { d: diffuse tex, n: normal tex, s: tile metres, tint: [r,g,b] }
 const terrainTreeDist = { value: Q.trees }; // far-LOD tree cull distance (quality dependent)
+const terrainGrassR = { value: Q.tile * 0.5 }; // where the near grass blades end and the clump cards take over
 export function terrainMaterial(hf, L, opt = {}) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
   const tintV = a => new THREE.Vector3(...(a || [1, 1, 1]));
@@ -129,7 +130,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       tUrbanD: { value: L.urban.d }, tUrbanN: { value: L.urban.n }, tNoise: S.tNoise,
       uScales: { value: new THREE.Vector4(L.grass.s, L.forest.s, L.shore.s, L.urban.s) }, uRockS: { value: L.rock.s },
       uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uUrbanNorm: { value: L.urban.norm || 0 }, uTintS: { value: tintV(L.shore.tint) },
-      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist,
+      uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uTreeDist: terrainTreeDist, uGrassR: terrainGrassR,
     }, paintU);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm;')
@@ -138,7 +139,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; varying vec3 vWNorm;
         uniform sampler2D tGrassD, tGrassN, tForestD, tForestN, tRockD, tRockN, tSandD, tSandN, tUrbanD, tUrbanN, tNoise, tMask, tMask2;
-        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
+        uniform float uHalf, uCell, uHN, uRockS, uWaterLv, uSnow, uShore, uTreeDist, uGrassR; uniform vec4 uScales; uniform vec3 uTintG, uTintF, uTintU, uTintS; uniform float uUrbanNorm;
         vec3 unpackN(vec4 t){ return t.xyz * 2.0 - 1.0; }
         vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
         float lum3(vec3 c){ return dot(c, vec3(0.3, 0.55, 0.15)); }
@@ -201,6 +202,9 @@ export function terrainMaterial(hf, L, opt = {}) {
         col = mix(col, uP_bed * (0.85 + 0.3 * nz3.g), smoothstep(0.0, 1.0, -h) * (1.0 - msk2.g)); // teal lake bed
         col *= mix(1.0, 0.7, smoothstep(1.0, 12.0, -h));
         col *= mix(1.0, ao, 0.6) * (1.0 - canopy * 0.35);
+        // under the far grass clumps the ground reads as the shade between blades, so the lit tips stand out
+        float meadowW = (1.0 - wForest) * (1.0 - wUrban) * (1.0 - wRock) * (1.0 - wSand) * (1.0 - wSnow) * (1.0 - msk2.b) * inside;
+        col *= mix(1.0, 0.8, meadowW * smoothstep(uGrassR * 0.6, uGrassR * 1.4, camDist) * (1.0 - smoothstep(uGrassR * 18.0, uGrassR * 26.0, camDist)));
         diffuseColor.rgb *= col;
         float splatRough = mix(mix(0.97, 0.92, wForest), 0.82, wRock);
         splatRough = mix(splatRough, 0.9, wUrban);
@@ -265,7 +269,7 @@ export function buildTerrainMeshes(hf, mat, { outer = true, outerDrop = 45 } = {
     const om = new THREE.Mesh(og, mat); om.receiveShadow = true; om.matrixAutoUpdate = false;
     group.add(om);
   }
-  group.userData.applyQuality = () => { terrainTreeDist.value = Q.trees; };
+  group.userData.applyQuality = () => { terrainTreeDist.value = Q.trees; terrainGrassR.value = Q.tile * 0.5; };
   scene.add(group);
   return group;
 }
@@ -276,11 +280,34 @@ export function buildTerrainMeshes(hf, mat, { outer = true, outerDrop = 45 } = {
 // bounding sphere, so three's frustum culling and a per-cell distance test skip everything off-screen or out of range.
 // Near cells are dense, with full blades; far rings are sparser with wider, simpler tufts, fading into each other.
 const GRASS_K = 8;
+// near ring: single animated blades. Far rings: camera-facing clump cards, each a painted strip of dozens of blades (dark
+// bases, light tips, a few flower heads), so distant meadows still read as grass rather than a flat floor
 const GRASS_RINGS = [
-  { seg: 4, r: 1, count: 1.3, tuft: 1.0, lod: 0 },       // r: radius in units of the quality's near radius
-  { seg: 3, r: 4, count: 0.6, tuft: 2.2, lod: 1 },
-  { seg: 2, r: 22, count: 0.42, tuft: 3.3, lod: 2 },
+  { seg: 4, r: 1, count: 1.3, tuft: 1.0, lod: 0 },                         // r: radius in units of the quality's near radius
+  { card: [1.3, 0.62], r: 4.5, count: 0.42, tuft: 1, lod: 1 },            // card: [width, height] in metres
+  { card: [3.4, 0.95], r: 24, count: 0.34, tuft: 1, lod: 2 },
 ];
+let cardTex = null;
+function grassCardTexture() { // R: blade brightness, G: flower head mask, A: coverage; tiles horizontally
+  if (cardTex) return cardTex;
+  const W = 512, H = 128, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'), rng = mulberry32(77);
+  const blade = (x0, h, w, lean, v) => {
+    for (const dx of [-W, 0, W]) {
+      const x = x0 + dx; g.fillStyle = `rgb(${Math.round(v * 255)},0,0)`;
+      g.beginPath(); g.moveTo(x - w / 2, H); g.quadraticCurveTo(x - w * 0.3 + lean * 0.4, H - h * 0.55, x + lean, H - h);
+      g.quadraticCurveTo(x + w * 0.3 + lean * 0.4, H - h * 0.55, x + w / 2, H); g.fill();
+    }
+  };
+  for (let i = 0; i < 150; i++) blade(rng() * W, H * (0.35 + 0.65 * Math.pow(rng(), 0.7)), 7 + rng() * 9, (rng() - 0.5) * 34, 0.55 + 0.45 * rng());
+  for (let i = 0; i < 12; i++) { const x = rng() * W, y = H * (0.12 + rng() * 0.3); for (const dx of [-W, 0, W]) { g.fillStyle = 'rgb(255,255,0)'; g.beginPath(); g.arc(x + dx, y, 5 + rng() * 3, 0, 7); g.fill(); } }
+  cardTex = new THREE.CanvasTexture(cv);
+  cardTex.colorSpace = THREE.NoColorSpace; cardTex.wrapS = THREE.RepeatWrapping; cardTex.wrapT = THREE.ClampToEdgeWrapping; cardTex.anisotropy = 4;
+  return cardTex;
+}
+function cardGeometry() {
+  return { position: new THREE.Float32BufferAttribute(new Float32Array(12), 3), bladeUV: new THREE.Float32BufferAttribute([-1, 0, 1, 0, -1, 1, 1, 1], 2), index: new THREE.Uint16BufferAttribute([0, 1, 3, 0, 3, 2], 1) };
+}
 function bladeGeometry(SEG) {
   const uv = [], idx = [];
   for (let i = 0; i < SEG; i++) { const t = i / SEG; uv.push(-1, t, 1, t); }
@@ -303,9 +330,10 @@ export function buildGrass(hf, grassTex, opt = {}) {
     c.cap = n;
   };
   const rings = GRASS_RINGS.map((R, ri) => {
-    const base = bladeGeometry(R.seg);
-    const ru = { uCellSize: { value: 1 }, uR: { value: 1 }, uIn: { value: new THREE.Vector2(0, 0) }, uLod: { value: R.lod }, uTuft: { value: R.tuft } };
-    const mat = grassMaterial(hf, grassTex, gu, ru);
+    const base = R.card ? cardGeometry() : bladeGeometry(R.seg);
+    const ru = { uCellSize: { value: 1 }, uR: { value: 1 }, uIn: { value: new THREE.Vector2(0, 0) }, uLod: { value: R.lod }, uTuft: { value: R.tuft },
+      uCard: { value: new THREE.Vector2(...(R.card || [0, 0])) }, tCard: { value: R.card ? grassCardTexture() : null } };
+    const mat = grassMaterial(hf, grassTex, gu, ru, !!R.card);
     const chunks = [];
     for (let c = 0; c < K2; c++) {
       const g = new THREE.InstancedBufferGeometry();
@@ -358,9 +386,9 @@ export function buildGrass(hf, grassTex, opt = {}) {
   scene.add(group);
   return group;
 }
-function grassMaterial(hf, grassTex, gu, ru) {
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
-  mat.defines = { CLOUD_SHADE_VARYING: '' };
+function grassMaterial(hf, grassTex, gu, ru, card) {
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, alphaTest: card ? 0.5 : 0, alphaToCoverage: card && Q.msaa > 0 });
+  mat.defines = card ? { CLOUD_SHADE_VARYING: '', GRASS_CARD: '' } : { CLOUD_SHADE_VARYING: '' };
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, gu, ru, hf.U, paintU, { tNoise: S.tNoise, tGrassD: { value: grassTex },
       uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
@@ -368,8 +396,9 @@ function grassMaterial(hf, grassTex, gu, ru) {
       .replace('#include <common>', `#include <common>
         attribute vec2 bladeUV; attribute vec2 iOffset; attribute vec4 iRand;
         uniform sampler2D tMask, tMask2, tNoise, tGrassD;
-        uniform vec3 uCam, uPlayer; uniform float uTime, uCellSize, uR, uLod, uTuft, uWind, uWaterLv, uSnow, uShore, uReeds; uniform vec2 uIn;
+        uniform vec3 uCam, uPlayer; uniform float uTime, uCellSize, uR, uLod, uTuft, uWind, uWaterLv, uSnow, uShore, uReeds; uniform vec2 uIn, uCard;
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
+        varying vec2 vCardUv; varying vec3 vFlCol; varying float vFl;
         ${GLSL_HEIGHT}
         ${CLOUD_SHADE_GLSL}
         ${MEADOW_GLSL}`)
@@ -398,7 +427,7 @@ function grassMaterial(hf, grassTex, gu, ru) {
         if (rice) dens = 1.0;
         // reed beds in clumps along the waterline (standing in the shallows and on the wet margin)
         float hw = gh - uWaterLv, reedN = gz3.b * 0.55 + gz2.g * 0.65 + gz1.r * 0.2;
-        bool reed = !rice && uReeds > 0.5 && uLod < 1.5 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
+        bool reed = !rice && uReeds > 0.5 && uLod < 0.5 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
         if (reed) dens = 1.0;
         dens *= step(abs(wp2.x), uHalf - 2.0) * step(abs(wp2.y), uHalf - 2.0);
         // ring cross-fade: blades thin out stochastically (so near and far rings keep the same blade height)
@@ -417,11 +446,21 @@ function grassMaterial(hf, grassTex, gu, ru) {
         if (reed) Wd *= 0.75;
         float ang = iRand.x * 6.2831853;
         vec2 bdir = vec2(cos(ang), sin(ang)), bside = vec2(-bdir.y, bdir.x);
+        #ifdef GRASS_CARD
+          // clump cards turn to face the camera and grow a little toward the far edge of their ring
+          vec2 toCam = uCam.xz - wp2; bdir = toCam / (length(toCam) + 1e-3); bside = vec2(-bdir.y, bdir.x);
+          Wd = uCard.x * (0.75 + 0.5 * iRand.z) * (0.8 + 0.45 * smoothstep(uIn.y, uR, gdist)) * step(0.001, gs);
+          Hh = uCard.y * (0.7 + 0.6 * iRand.y) * (0.55 + 0.65 * gz2.g) * mix(0.75, 1.0, fade) * keep * (1.0 - 0.6 * gm2.a) * (rice ? 0.75 : 1.0);
+          flower = false;
+        #endif
         float t = bladeUV.y;
         vec2 windDir = normalize(vec2(1.0, 0.35));
         float gust = textureLod(tNoise, wp2 * 0.012 - windDir * uTime * 0.05, 0.0).r;
         float flutter = sin(uTime * (2.2 + iRand.z * 2.5) + iRand.x * 40.0 + dot(wp2, windDir) * 0.8);
         vec2 lean = bdir * (rice ? 0.35 + iRand.z * 0.3 : reed ? 0.04 + iRand.z * 0.14 : 0.12 + iRand.z * 0.4) + windDir * (gust * gust * 1.5 + 0.12) * uWind * (rice ? 0.6 : reed ? 0.35 : 1.0) + bside * flutter * 0.1 * uWind;
+        #ifdef GRASS_CARD
+          lean = windDir * (gust * gust * 1.2 + 0.1) * uWind * 0.45;
+        #endif
         vec2 away = wp2 - uPlayer.xz; float pd = length(away);
         lean += away / (pd + 0.001) * (1.0 - smoothstep(0.25, 1.1, pd)) * 1.8 * step(abs(uPlayer.y - gh), 2.2);
         float ll = length(lean); if (ll > 1.3) { lean *= 1.3 / ll; ll = 1.3; }
@@ -429,7 +468,15 @@ function grassMaterial(hf, grassTex, gu, ru) {
         vec3 gp = vec3(wp2.x, gh - 0.03, wp2.y);
         gp.xz += lean * bt * Hh;
         gp.y += t * Hh * (1.0 - 0.35 * bt * ll / 1.3);
-        gp.xz += bside * bladeUV.x * Wd * 0.5 * (flower ? 0.5 + smoothstep(0.55, 0.85, t) * 3.5 : 1.0 - t * 0.6);  // flowers open into a blossom
+        #ifdef GRASS_CARD
+          gp.xz += bside * bladeUV.x * Wd * 0.5;
+          vCardUv = vec2((bladeUV.x * 0.5 + 0.5) * 0.33 * Wd / max(uCard.x, 0.01) + iRand.x * 7.0, t);   // same blade count on every card
+          float pickF = fract(gz2.g * 5.3 + gz3.b * 0.6);
+          vFlCol = pickF < 0.26 ? vec3(1.0, 0.95, 0.86) : pickF < 0.5 ? vec3(1.0, 0.72, 0.06) : pickF < 0.7 ? vec3(1.0, 0.36, 0.55) : pickF < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
+          vFl = step(0.35, fPatch) * step(iRand.w, 0.65) * (rice ? 0.0 : 1.0);
+        #else
+          gp.xz += bside * bladeUV.x * Wd * 0.5 * (flower ? 0.5 + smoothstep(0.55, 0.85, t) * 3.5 : 1.0 - t * 0.6);  // flowers open into a blossom
+        #endif
         vGW = gp; vT = t; vCloudLit = cloudShade(gp);
         vec3 bn = normalize(vec3(bdir.x, 0.0, bdir.y) + vec3(0.0, 0.4 + t, 0.0) - vec3(lean.x, 0.0, lean.y) * 0.3);
         vec3 objectNormal = normalize(mix(bn, gN, 0.82) + vec3(bside.x, 0.0, bside.y) * bladeUV.x * 0.08);
@@ -460,15 +507,26 @@ function grassMaterial(hf, grassTex, gu, ru) {
       .replace('#include <begin_vertex>', 'vec3 transformed = gp - modelMatrix[3].xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; uniform vec3 uSunDir, uSunCol;`)
-      .replace('#include <map_fragment>', 'diffuseColor.rgb *= mix(vGCol * 0.62, vGTip, smoothstep(0.0, 1.0, vT));')
+        varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; uniform vec3 uSunDir, uSunCol;
+        uniform sampler2D tCard; varying vec2 vCardUv; varying vec3 vFlCol; varying float vFl;`)
+      .replace('#include <map_fragment>', /* glsl */`
+        #ifdef GRASS_CARD
+          vec4 tc = texture2D(tCard, vCardUv);
+          vec2 tdx = dFdx(vCardUv * vec2(512.0, 128.0)), tdy = dFdy(vCardUv * vec2(512.0, 128.0));
+          float tlod = 0.5 * log2(max(max(dot(tdx, tdx), dot(tdy, tdy)), 1e-6));
+          diffuseColor.a = tc.a * (1.0 + max(tlod, 0.0) * 0.3);   // mip levels lose coverage: boost it so far clumps stay solid
+          diffuseColor.rgb *= mix(vGCol * 0.55, vGTip, smoothstep(0.0, 1.0, vT)) * (0.7 + 0.4 * tc.r);
+          if (tc.g > 0.5 && vFl > 0.5) diffuseColor.rgb = vFlCol * 0.9;
+        #else
+          diffuseColor.rgb *= mix(vGCol * 0.62, vGTip, smoothstep(0.0, 1.0, vT));
+        #endif`)
       .replace('#include <normal_fragment_begin>', 'float faceDirection = 1.0; vec3 normal = normalize(vNormal); vec3 nonPerturbedNormal = normal;')
       .replace('#include <emissivemap_fragment>', `
         vec3 gV = normalize(vGW - cameraPosition);
         float gTr = pow(max(dot(gV, uSunDir), 1e-4), 4.0) * vT;
         totalEmissiveRadiance += vGTip * uSunCol * (gTr * 0.22 + 0.02 * vT) * vCloudLit;`);
   };
-  mat.customProgramCacheKey = () => 'grass';
+  mat.customProgramCacheKey = () => card ? 'grassCard' : 'grass';
   return mat;
 }
 
