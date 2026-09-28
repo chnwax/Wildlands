@@ -298,7 +298,9 @@ export function terrainMaterial(hf, L, opt = {}) {
         float wSnow = smoothstep(snowL, snowL + 40.0, vWPos.y + (nz1.b - 0.5) * 70.0) * (1.0 - smoothstep(0.42, 0.62, slope));
         float wForest = smoothstep(0.2, 0.7, forest + (nz3.r - 0.5) * 0.35);
         wForest = mix(wForest, smoothstep(0.4, 0.54, forest), (1.0 - inside) * step(uHalf + 1024.0, max(abs(vWPos.x), abs(vWPos.z))));
-        float wUrban = smoothstep(0.15, 0.6, msk2.r + (nz3.g - 0.5) * 0.25);
+        // where the map removed the grass (yards, verges, pitches) the ground is gravel / packed soil, never bare meadow
+        // paint (a flat green patch with no blades on it)
+        float wUrban = max(smoothstep(0.15, 0.6, msk2.r + (nz3.g - 0.5) * 0.25), smoothstep(0.35, 0.8, msk2.b));
         // where no trees stand any more (past the outermost far-forest ring) the forest reads as a painted canopy with
         // soft crown relief; under drawn trees the floor stays the darker forest ground
         float noTrees = (1.0 - inside) * step(uFarTrees, max(abs(vWPos.x), abs(vWPos.z)));

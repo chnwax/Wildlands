@@ -12,7 +12,7 @@ import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment 
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, curveMirror, roadSign,
-  vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
+  vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
 import { RAIL, buildRailway, railFences, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads } from './roads.js';
@@ -23,6 +23,7 @@ const riverX = z => 215 + 22 * Math.sin(z * 0.0075) + 8 * Math.sin(z * 0.021 + 1
 const PADDIES = [[-650, -330, -430, -110], [-650, -40, -430, 330], [262, 0, 650, 330], [262, -330, 650, -100]];
 const inPaddyZone = (x, z) => PADDIES.some(([a, b, c, d]) => x > a && x < c && z > b && z < d);
 const SHRINE = { x: -60, z: -300 };
+const XINGS = [[110, 5.2], [-150, 2.7], [-400, 2.7]]; // level crossings: road centre x, half width incl. footways
 const LEVEL = [[-147, 190, -32.5, 256]]; // school block
 const RIVER_STAIRS = [[-170, 1], [-150, -1], [95, -1], [130, 1], [270, -1]]; // [z where the stair starts, bank side]
 const SHRINE_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
@@ -63,6 +64,11 @@ function baseHeight(x, z) {
   else if (ax < pr + 170) h = Math.max(h, Y0 + 12 + (ax - pr) * 0.04 - Math.max(0, Math.abs(z + 80) - 10) * 0.6); // cover over the bore
   if (ax < pd || bore(pd, Math.abs(z + 25), 7.6)) h = earthwork(h, roadGrade(x), Math.abs(z + 25), 8.6);
   else if (ax < pd + 190) h = Math.max(h, roadGrade(x) + 12 + (ax - pd) * 0.04 - Math.max(0, Math.abs(z + 25) - 11) * 0.6);
+  // level crossings: the roads ramp up over ~10 m onto the deck at rail-top level, on a small embankment
+  for (const [cx, hwx] of XINGS) {
+    const dx = Math.abs(x - cx) - hwx, dz = Math.abs(z + 80);
+    if (dx < 4 && dz < 18 && dz > 6.6) h = lerp(h, Math.max(h, Y0 + 0.4 * smoothstep(17, 6.6, dz)), smoothstep(4, 0, Math.max(dx, 0)));
+  }
   // shrine terrace
   h = lerp(h, Y0 + 0.4, smoothstep(34, 24, Math.hypot(x - SHRINE.x, z - SHRINE.z + 10)));
   // levelled grounds (the school yard): exactly at the valley floor, blending out over 6 m
@@ -95,10 +101,10 @@ function paddyOK(x, z) {
   return v;
 }
 function height(x, z) {
-  const h = baseHeight(x, z);
-  // rice paddies: flat terraces with levees
-  if (inPaddyZone(x, z) && paddyOK(x, z)) { const e = paddyCell(x, z); return Y0 - (e > 1.2 ? 0.35 : 0.05); }
-  return h;
+  let h = baseHeight(x, z);
+  // rice paddies: flat terraces with levees (farm roads then ride across them on their graded embankment)
+  if (inPaddyZone(x, z) && paddyOK(x, z)) { const e = paddyCell(x, z); h = Y0 - (e > 1.2 ? 0.35 : 0.05); }
+  return graded(x, z, h);
 }
 
 // ---------------------------------------------------------------- road network
@@ -136,6 +142,61 @@ function segInter(a, b, c, d) {
   return [a[0] + r[0] * t, a[1] + r[1] * t];
 }
 function roadSegs(R) { const out = []; for (let i = 0; i + 1 < R.pts.length; i++) out.push([R.pts[i], R.pts[i + 1]]); return out; }
+
+// Road grading: every road gets a designed longitudinal profile — the natural ground low-passed over ±14 m (farm roads
+// across the paddies ride on a low embankment at levee height) — and the ground is cut / filled to it across the
+// corridor, feathering out over 3.5 m. Roads, kerbs and the houses beside them then sit on clean, even grades instead
+// of copying every hummock of the valley floor. Bridges, the channel and the tunnel approaches keep their own levels.
+let GRADE = null;
+function buildGrades() {
+  const segs = [], grid = new Map(), CS = 16, key = (i, j) => i * 100003 + j;
+  for (const R of ROADS) {
+    if (R.kind === 'path') continue;
+    const S = [], H = [];
+    let s0 = 0;
+    for (const [a, b] of roadSegs(R)) {
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let t = 0; t < L; t += 2) {
+        const x = a[0] + (b[0] - a[0]) * t / L, z = a[1] + (b[1] - a[1]) * t / L;
+        let h = baseHeight(x, z);
+        if (inPaddyZone(x, z)) h = Math.max(h, Y0 + 0.02);
+        if (Math.abs(x - riverX(z)) < 24) h = Y0;                                        // bridge approaches stay level
+        S.push(s0 + t); H.push(h);
+      }
+      s0 += L;
+    }
+    const n = S.length, pre = new Float64Array(n + 1); for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + H[i];
+    const G = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const lo = Math.max(0, i - 7), hi = Math.min(n - 1, i + 7); G[i] = (pre[hi + 1] - pre[lo]) / (hi - lo + 1);
+    }
+    let sAcc = 0;
+    for (const [a, b] of roadSegs(R)) {
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]), seg = { R, a, b, L, d: [(b[0] - a[0]) / L, (b[1] - a[1]) / L], s0: sAcc, S, G, C: R.w / 2 + (R.walk || 0) + 0.8 };
+      segs.push(seg); sAcc += L;
+      const e = seg.C + 3.6;
+      for (let i = Math.floor((Math.min(a[0], b[0]) - e) / CS); i <= Math.floor((Math.max(a[0], b[0]) + e) / CS); i++)
+        for (let j = Math.floor((Math.min(a[1], b[1]) - e) / CS); j <= Math.floor((Math.max(a[1], b[1]) + e) / CS); j++) { const k = key(i, j); let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(seg); }
+    }
+  }
+  GRADE = { grid, CS, key };
+}
+function graded(x, z, h) {
+  if (Math.abs(x) > 1150 || Math.abs(z) > 420) return h;
+  if (!GRADE) buildGrades();
+  const list = GRADE.grid.get(GRADE.key(Math.floor(x / GRADE.CS), Math.floor(z / GRADE.CS))); if (!list) return h;
+  if (Math.abs(x - riverX(z)) < 24 || Math.abs(z + 80) < 17) return h;                 // channel and bridge ramps, rail formation + crossing ramps
+  let best = 0, gh = 0;
+  for (const g of list) {
+    const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t);
+    const w = smoothstep(g.C + 3.5, g.C, d); if (w <= best) continue;
+    const s = g.s0 + t, i = clamp(Math.floor(s / 2), 0, g.S.length - 2), f = clamp((s - g.S[i]) / 2, 0, 1);
+    best = w; gh = lerp(g.G[i], g.G[i + 1], f);
+  }
+  if (Math.abs(x) > 600 && Math.abs(z + 25) < 12) best *= 1 - smoothstep(600, 640, Math.abs(x)); // tunnel approach keeps its grade
+  best *= smoothstep(17, 22, Math.abs(z + 80)) * smoothstep(24, 29, Math.abs(x - riverX(z)));
+  return best > 0 ? lerp(h, gh, best) : h;
+}
 function nearestOnRoad(R, x, z) {
   let best = { d: 1e9 };
   for (const [a, b] of roadSegs(R)) {
@@ -195,7 +256,8 @@ export async function build(progress) {
   const sOf = (id, x, z) => { const n = RN.byId.get(id); let best = null; for (const g of n.PL.segs) { const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t); if (!best || d < best.d) best = { d, s: g.s0 + t }; } return best.s; };
   // zebra crossings on every arm of the main road and road B at their junctions, just past the curb returns;
   // stop lines on the minor approaches (behind the crossing where there is one)
-  const crossings = [], stops = [];
+  const zebras = [], stops = [];
+  const isSignal = I => I.roads.some(R => R.id === 'A') && I.roads.some(R => R.id === 'B'); // the one signalised junction
   for (const I of inters) {
     const [r1, r2] = I.roads;
     const [major, minor] = RN.RANK[r1.kind] >= RN.RANK[r2.kind] ? [r1, r2] : [r2, r1];
@@ -206,15 +268,18 @@ export async function build(progress) {
       const hasX = (R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340;
       const d = other.w / 2 + I.rF + 0.4 + band / 2;
       const cq = RN.sampleAt(arm.n, clamp(arm.s + arm.dir * d, 0, arm.n.PL.len));
-      if (hasX && !onBridge(cq.x, cq.z)) crossings.push({ id: R.id, s: arm.s + arm.dir * d, band }); else if (hasX) continue;
-      if (R === minor || R.kind === major.kind && R === r2 && R.kind === 'lane') {
+      if (hasX && !onBridge(cq.x, cq.z)) zebras.push({ id: R.id, s: arm.s + arm.dir * d, band }); else if (hasX) continue;
+      if (isSignal(I)) { // every approach stops at its line on red
+        const ss = arm.s + arm.dir * (d + band / 2 + 1.2); if (ss < 1 || ss > arm.n.PL.len - 1) continue;
+        stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, sign: false, legend: false, signal: R.id });
+      } else if (R === minor || R.kind === major.kind && R === r2 && R.kind === 'lane') {
         const ds = hasX ? d + band / 2 + 1.2 : arm.L + 0.3;
         const ss = arm.s + arm.dir * ds; if (ss < 1 || ss > arm.n.PL.len - 1) continue;
         stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, sign: true });
       }
     }
   }
-  RN.build(B, { crossings });
+  RN.build(B, { crossings: zebras });
   // occupancy + masks along every road (lots keep off the carriageway and sidewalks; no grass pokes through)
   for (const R of ROADS) {
     const hw = R.w / 2;
@@ -244,13 +309,42 @@ export async function build(progress) {
 
   // stop lines + 止まれ + stop signs on the minor approaches, and before level crossings (sign on the driver's left)
   const stopSpots = []; // {x, z, hx, hz} approach heading
-  const addStop = (id, s, dir, sign, legend = true) => {
+  const addStop = (id, s, dir, sign, legend = true, signal = null) => {
     RN.stop(B, id, s, dir, { legend });
     const n = RN.byId.get(id), q = RN.sampleAt(n, s), hx = q.d[0] * dir, hz = q.d[1] * dir;
-    if (sign) { const off = n.hw + (n.walk ? n.walk - 0.45 : 0.75), x = q.x - hz * off, z = q.z + hx * off; roadSign(B, x, topY(x, z), z, Math.atan2(-hx, -hz), 'stop'); }
-    stopSpots.push({ x: q.x, z: q.z, hx, hz });
+    if (sign) { const off = n.hw + (n.walk ? n.walk - 0.45 : 0.75), x = q.x + hz * off, z = q.z - hx * off; roadSign(B, x, topY(x, z), z, Math.atan2(-hx, -hz), 'stop'); }
+    stopSpots.push({ x: q.x, z: q.z, hx, hz, signal });
   };
-  for (const st of stops) addStop(st.id, st.s, st.dir, st.sign);
+  for (const st of stops) addStop(st.id, st.s, st.dir, st.sign, st.legend ?? true, st.signal ?? null);
+  // traffic signals at A x B: a mast on the far-left corner of every approach (arm over the approach lane), pedestrian
+  // heads facing across both crosswalks at each corner. 36 s cycle: A green 16 s, amber 3, all-red 1, B green 12, amber 3, all-red 1
+  const signals = { t: 0, lamps: [], mats: {} };
+  {
+    const I = inters.find(isSignal), mat = (g, k) => signals.mats[g + k] || (signals.mats[g + k] = signalLampMaterial(k));
+    const disc = new THREE.CircleGeometry(0.13, 20), sq = new THREE.PlaneGeometry(0.28, 0.28);
+    if (I) for (const arm of I.arms) {
+      const n = arm.n, other = I.nets.find(o => o !== n), h = [-arm.d[0], -arm.d[1]], L = [h[1], -h[0]];
+      const rF = I.rF, oh = other.hw + rF, ol = n.hw + rF, k = (rF - 0.6) / Math.SQRT2;
+      const ph = oh - k, pl = ol - k, x = I.p[0] + h[0] * ph + L[0] * pl, z = I.p[1] + h[1] * ph + L[1] * pl;
+      const g = n.R.id, og = other.R.id;
+      const out = signalMast(B, x, topY(x, z), z, Math.atan2(-h[0], -h[1]), { arm: pl - n.hw / 2 + 0.95, peds: [{ a: Math.PI / 2, group: og }, { a: 0, group: g }] });
+      for (const v of out.veh) { const m = new THREE.Mesh(disc, mat(g, v.k)); m.position.set(...v.p); m.rotation.y = v.r; scene.add(m); }
+      for (const v of out.ped) { const m = new THREE.Mesh(sq, mat('p' + v.group, v.k)); m.position.set(...v.p); m.rotation.y = v.r; scene.add(m); }
+    }
+    const cyc = () => signals.t % 36;
+    signals.state = g => { const c = cyc(); return g === 'A' ? (c < 16 ? 'g' : c < 19 ? 'y' : 'r') : (c >= 20 && c < 32 ? 'g' : c >= 32 && c < 35 ? 'y' : 'r'); };
+    // cars already within braking distance run the amber; nobody enters on red
+    signals.go = (g, d) => { const s = signals.state(g); return s === 'g' || s === 'y' && d < 7; };
+    signals.update = dt => {
+      signals.t += dt; const c = cyc(), blink = Math.floor(signals.t * 2) % 2;
+      for (const g of ['A', 'B']) { const s = signals.state(g); for (const k of ['g', 'y', 'r']) { const m = signals.mats[g + k]; if (m) m.emissiveIntensity = s === k ? m.userData.on : 0; } }
+      for (const g of ['A', 'B']) { // walkers parallel to that road's traffic: walk, then a flashing green, then red
+        const start = g === 'A' ? 0 : 20, e = c - start, walk = e >= 0 && e < 13 ? 1 : e >= 13 && e < 16 ? blink : 0;
+        const w = signals.mats['p' + g + 'walk'], r = signals.mats['p' + g + 'stop'];
+        if (w) w.emissiveIntensity = walk ? w.userData.on : 0; if (r) r.emissiveIntensity = walk || (e >= 13 && e < 16) ? 0 : r.userData.on;
+      }
+    };
+  }
   // level crossings on B, C, D
   const crossingRoads = ROADS.filter(R => ['B', 'C', 'D'].includes(R.id));
   const Bx = new GeoBuilder(192);
@@ -525,11 +619,11 @@ export async function build(progress) {
   { // direction arrows in the approach lanes of the main road at its junction with road B (left-hand traffic)
     const I = inters.find(I2 => I2.roads.some(R => R.id === 'A') && I2.roads.some(R => R.id === 'B'));
     if (I) for (const dir of [1, -1]) for (const back of [20, 34]) {
-      const t = [dir, 0], l = [0, dir], hw = 3.5, u = hw / 2, cx = I.p[0] - dir * back, cz = I.p[1] + l[1] * u;
+      const t = [dir, 0], l = [0, -dir], hw = 3.5, u = hw / 2, cx = I.p[0] - dir * back, cz = I.p[1] + l[1] * u;
       const P2 = (a2, b2) => { const x2 = cx + t[0] * a2 + l[0] * b2, z2 = cz + t[1] * a2 + l[1] * b2; return [x2, surfaceY(x2, z2) + 0.012, z2]; };
       RN.decal(B, 'paint', [cx + t[0] * -0.6, cz], t, 1.6, 0.075, { color: [0.94, 0.94, 0.92], cell: 0.8 });                     // shaft
       B.poly('paint', [P2(1.0, -0.33), P2(1.0, 0.33), P2(2.1, 0)], [0, 1, 0], { color: [0.94, 0.94, 0.92] });                  // head
-      if (back === 20) { RN.decal(B, 'paint', [cx + l[0] * -0.45, cz + l[1] * -0.45], [0, -dir], 0.45, 0.075, { color: [0.94, 0.94, 0.92], cell: 0.5 }); // right branch
+      if (back === 20) { RN.decal(B, 'paint', [cx + l[0] * -0.45, cz + l[1] * -0.45], [-l[0], -l[1]], 0.45, 0.075, { color: [0.94, 0.94, 0.92], cell: 0.5 }); // right branch
         B.poly('paint', [P2(-0.2, -0.85), P2(0.35, -0.85), P2(0.08, -1.45)], [0, 1, 0], { color: [0.94, 0.94, 0.92] }); }
     }
   }
@@ -746,7 +840,7 @@ export async function build(progress) {
 
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
-  B.flush(MT, { paint: false, stopLegend: false, tactileL: false, tactileD: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false, chain: false, poly: false });
+  B.flush(MT, { paint: false, stopLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false, chain: false, poly: false });
   Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
   const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg);
 
@@ -789,10 +883,15 @@ export async function build(progress) {
   scatterModel(weed, [...weeds, ...green.weeds], true, () => Q.props * 0.3, false, true);
   scatterModel(crate, crates, true, () => Q.props * 0.4);
   scatterModel(ubox, boxes, true, () => Q.props * 0.6);
-  // manholes in roads
-  const holes = [];
-  for (const R of ROADS) if (R.kind !== 'path') for (const [a, b] of roadSegs(R)) { const L = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let t = 20; t < L; t += 45 + prng() * 30) { const x = lerp(a[0], b[0], t / L), z = lerp(a[1], b[1], t / L); if (Math.abs(x) < 700 && Math.abs(z) < 350 && !onRail(z) && !onBridge(x, z)) holes.push({ x, y: surfaceY(x, z) - 0.01, z, s: 0.7, r: prng() * 6.28 }); } }
-  scatterModel(manhole, holes, false, () => Q.props * 0.5, false);
+  // sewer manholes: flush cast-iron covers on the sewer line, which runs a little off the crown in one lane
+  for (const R of ROADS) if (R.kind !== 'path') for (const [a, b] of roadSegs(R)) {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], off = (R.w / 2) * (0.25 + 0.2 * prng()) * (prng() < 0.5 ? -1 : 1);
+    for (let t = 20; t < L; t += 45 + prng() * 30) {
+      const x = a[0] + d[0] * t - d[1] * off, z = a[1] + d[1] * t + d[0] * off;
+      if (Math.abs(x) < 700 && Math.abs(z) < 350 && !onRail(z) && !onBridge(x, z) && !nearInter(x, z, R, 3)) B.detail(1, () => RN.decal(B, 'manhole', [x, z], d, 0.33, 0.33, { uv01: true, lift: 0.004, cell: 0.33, road: false }));
+    }
+  }
+  void manhole;
 
   // ---------------------------------------------------------------- vehicles
   progress('Starting traffic', 0.9); await tick();
@@ -818,7 +917,7 @@ export async function build(progress) {
       for (const st of stopSpots) {
         if (Math.hypot(tmp.x - st.x, tmp.z - st.z) < 2.2 && tmp.dx * st.hx + tmp.dz * st.hz > 0.8 && !R.stops.some(q => Math.abs(q.s - s) < 6)) {
           const cr = Math.abs(st.z + 80) < 10 ? crossings.reduce((b, c) => Math.abs(c.x - st.x) < Math.abs(b.x - st.x) ? c : b) : null;
-          R.stops.push({ s, crossing: cr });
+          R.stops.push({ s, crossing: cr, signal: st.signal ? { go: d => signals.go(st.signal, d) } : null });
         }
       }
     }
@@ -828,7 +927,7 @@ export async function build(progress) {
   loops.forEach((L, i) => { for (let k = 0; k < L.n; k++) moving.push({ route: routes[i], s: routes[i].len * (k + crng() * 0.5) / L.n, spec: randomCar(crng) }); });
   const fleet = new Fleet([...parked.map(p => p.spec), ...moving.map(m => m.spec)]);
   parked.forEach((p, i) => { const car = fleet.cars[i]; fleet.place(car, p.sp.p[0], p.sp.y ?? hf.groundAt(p.sp.p[0], p.sp.p[2]) + (p.sp.p[1] > Y0 + 0.1 ? 0.14 : 0), p.sp.p[2], p.sp.r + Math.PI / 2, 0, 0, 0); const T = carDims(car.type); addBox(p.sp.p[0], p.sp.p[2], T.L / 2, T.W / 2, p.sp.r + Math.PI / 2, -1e9, Y0 + 1.6); });
-  const traffic = new Traffic(fleet, (x, z) => surfaceY(x, z) - 0.04);
+  const traffic = new Traffic(fleet, (x, z) => (Math.abs(z + 80) < 6.8 && XINGS.some(([cx, hw]) => Math.abs(x - cx) < hw) ? Y0 + 0.45 : surfaceY(x, z)) - 0.04);
   moving.forEach((m, i) => traffic.add(fleet.cars[parked.length + i], m.route, m.s));
   fleet.commit();
   // trains
@@ -861,6 +960,7 @@ export async function build(progress) {
     bounds: { minX: -990, maxX: 990, minZ: -990, maxZ: 990 },
     groundAt(x, z) {
       const f = forecourt.heightAt(x, z); if (f !== null) return f;
+      if (Math.abs(z + 80) < 6.8 && XINGS.some(([cx, hw]) => Math.abs(x - cx) < hw + 0.2)) return Y0 + 0.45; // crossing deck
       const w = RN.walkY(x, z); if (w !== null) return w;
       if (RN.roadAt(x, z)) return surfaceY(x, z);
       const g = hf.groundAt(x, z); if (onBridge(x, z) && (Math.abs(z + 25) < 7 || Math.abs(z - 200) < 3.5)) return Math.max(g, Y0 + 0.35);
@@ -889,7 +989,7 @@ export async function build(progress) {
       const pl = { x: cam.position.x, y: cam.position.y - 1.6, z: cam.position.z };
       for (const tr of trains) tr.update(dt, pl);
       for (const c of crossings) c.active = crossingActive(c, trains);
-      updateCrossings(dt, t);
+      updateCrossings(dt, t); signals.update(dt);
       traffic.update(dt, pl, night.value > 0.35);
       fleet.commit();
       lightTimer -= dt;

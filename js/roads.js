@@ -13,7 +13,7 @@ const CROWN = { main: 0.075, road: 0.055, lane: 0.035, path: 0 };
 const RANK = { main: 3, road: 2, lane: 1, path: 0 };
 const FADE = 10;                                         // the crown fades out over this distance before a junction
 const V = (x, y, z) => [x, y, z];
-const rot = d => [-d[1], d[0]];                          // (x, z) turned +90 degrees: the left-hand normal
+const rot = d => [-d[1], d[0]];                          // (x, z) turned +90 degrees: the right-hand normal (y up)
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
 const norm2 = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -186,7 +186,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     const cell = opt.cell || 0.6, lift = opt.lift ?? 0.012, l = rot(f), yf = opt.y || surfaceY;
     const nl = Math.max(1, Math.ceil(2 * hl / cell)), nw = Math.max(1, Math.ceil(2 * hwid / cell));
     const pt = (i, j) => { const a = -hl + 2 * hl * i / nl, b = -hwid + 2 * hwid * j / nw, x = c[0] + f[0] * a + l[0] * b, z = c[1] + f[1] * a + l[1] * b; return V(x, yf(x, z) + lift, z); };
-    const uv = (i, j) => opt.uv01 ? [1 - j / nw, i / nl] : [(c[0] + f[0] * (-hl + 2 * hl * i / nl)) / 2, (c[1] + f[1] * (-hl + 2 * hl * i / nl)) / 2 + j / nw];
+    const uv = (i, j) => opt.uv01 ? [j / nw, i / nl] : [(c[0] + f[0] * (-hl + 2 * hl * i / nl)) / 2, (c[1] + f[1] * (-hl + 2 * hl * i / nl)) / 2 + j / nw];
     B.frame(0, 0, 0, 0);
     for (let i = 0; i < nl; i++) for (let j = 0; j < nw; j++) {
       const q = [pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1)];
@@ -255,7 +255,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
 
   // stop line across the approach lane (left-hand traffic) and 止まれ written before it
   RN.stop = (B, id, s, dir, { legend = true } = {}) => {
-    const n = byId.get(id), q = sampleAt(n.PL, s), t = [q.d[0] * dir, q.d[1] * dir], l = rot(t), full = n.hw <= 2.5;
+    const n = byId.get(id), q = sampleAt(n.PL, s), t = [q.d[0] * dir, q.d[1] * dir], r = rot(t), l = [-r[0], -r[1]], full = n.hw <= 2.5;
     const u0 = full ? -n.hw + 0.25 : 0.1, u1 = n.hw - 0.25, um = (u0 + u1) / 2;
     RN.decal(B, 'paint', [q.x + l[0] * um, q.z + l[1] * um], t, 0.225, (u1 - u0) / 2, { color: [0.94, 0.94, 0.92], cell: 0.7 });
     if (legend) {
@@ -307,7 +307,9 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         let rel = aa - a1; while (rel > Math.PI) rel -= 2 * Math.PI; while (rel < -Math.PI) rel += 2 * Math.PI;
         if (rel * Math.sign(span) < 0 || Math.abs(rel) > Math.abs(span)) continue;
         const e = [cr.O[0] + (x - cr.O[0]) / r * cr.rF, cr.O[1] + (z - cr.O[1]) / r * cr.rF];
-        return baseY(e[0], e[1]) + profileY(kerbProfile(cr.walk, 0), cr.rF - r);
+        const arcL = Math.abs(span) * cr.rF, sa = Math.abs(rel) * cr.rF;
+        const drop = Math.max(!cr.a.n.walk ? 1 - smoothstep(0.6, 2.2, sa) : 0, !cr.b.n.walk ? smoothstep(arcL - 2.2, arcL - 0.6, sa) : 0);
+        return baseY(e[0], e[1]) + profileY(kerbProfile(cr.walk, drop), cr.rF - r);
       }
       const { n, g } = it; if (!n.walk) continue;
       const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), l = rot(g.d), u = (x - g.a[0] - g.d[0] * t) * l[0] + (z - g.a[1] - g.d[1] * t) * l[1];
@@ -336,9 +338,10 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         let col = kind === 'walk' ? (k === 0 ? GUT : isWalk ? WALK : k === prA.length - 2 ? BACK : KERB) : kind === 'gutter' ? [0.78, 0.78, 0.75] : [1, 1, 1];
         if (k >= 1 && k <= 4 && kind === 'walk') col = shade(col, 0.93 + 0.12 * jitter);
         const sc = isWalk ? 1.2 : 1.5;
-        const uvs = isWalk ? [fa.at(qa0), fb.at(qb0), fb.at(qb1), fa.at(qa1)].map(p => [p[0] / sc, p[2] / sc])
+        const uvs = isWalk ? [[alongA / sc, qa0[0] / sc], [alongB / sc, qb0[0] / sc], [alongB / sc, qb1[0] / sc], [alongA / sc, qa1[0] / sc]]
           : [[alongA / sc, acc / sc], [alongB / sc, acc / sc], [alongB / sc, (acc + pl) / sc], [alongA / sc, (acc + pl) / sc]];
         const opt = { color: col, uvs };
+        if (isWalk) opt.attr = { aPave: [[alongA, qa0[0]], [alongB, qb0[0]], [alongB, qb1[0]], [alongA, qa1[0]]] };
         if (mat === 'asphalt') opt.attr = { aRoad: [0, 0, 0, 0].map(() => [n ? n.hw : 0, n ? hwAge(n) : 0]) };
         B.poly(mat, [fa.at(qa0), fb.at(qb0), fb.at(qb1), fa.at(qa1)], hint, opt);
         acc += pl;
@@ -396,14 +399,17 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     // curb returns: the edge profile swept around each fillet (toward the block)
     for (const I of inters) for (const cr of I.corners) {
       const pr = profOf(cr.kind, cr.walk, 0), k = cr.arc.length - 1;
+      const dropA = cr.kind === 'walk' && !cr.a.n.walk, dropB = cr.kind === 'walk' && !cr.b.n.walk;
       const frame = j => {
         const p = cr.arc[j], inw = [(cr.O[0] - p[0]) / cr.rF, (cr.O[1] - p[1]) / cr.rF];
         return { o: inw, at: q => { const x = p[0] + inw[0] * q[0], z = p[1] + inw[1] * q[0]; return V(x, baseY(p[0], p[1]) + q[1], z); } };
       };
       const segLen = Math.hypot(cr.arc[1][0] - cr.arc[0][0], cr.arc[1][1] - cr.arc[0][1]);
-      for (let j = 0; j < k; j++) sweepSeg(cr.kind, pr, pr, frame(j), frame(j + 1), j * segLen, (j + 1) * segLen, hash(j, cr.O[0]), cr.a.n);
+      const arcL = k * segLen, dropAt = j => { const s = j * segLen; return cr.kind !== 'walk' ? 0 : Math.max(dropA ? 1 - smoothstep(0.6, 2.2, s) : 0, dropB ? smoothstep(arcL - 2.2, arcL - 0.6, s) : 0); };
+      const prJ = j => profOf(cr.kind, cr.walk, dropAt(j));
+      for (let j = 0; j < k; j++) sweepSeg(cr.kind, prJ(j), prJ(j + 1), frame(j), frame(j + 1), j * segLen, (j + 1) * segLen, hash(j, cr.O[0]), cr.a.n);
       const f0 = frame(0), fk = frame(k), t0 = norm2([cr.arc[0][0] - cr.arc[1][0], cr.arc[0][1] - cr.arc[1][1]]), tk = norm2([cr.arc[k][0] - cr.arc[k - 1][0], cr.arc[k][1] - cr.arc[k - 1][1]]);
-      cap(cr.kind, pr, f0, t0); cap(cr.kind, pr, fk, tk);
+      cap(cr.kind, prJ(0), f0, t0); cap(cr.kind, prJ(k), fk, tk);
     }
     // warning blocks (dots) where crossings meet a lowered kerb
     for (const cw of RN.crossings || []) {

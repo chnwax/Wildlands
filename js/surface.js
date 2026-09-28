@@ -208,6 +208,29 @@ export function asphaltAge(mat, key) {
       .replace('#include <metalnessmap_fragment>', 'roughnessFactor = clamp(roughnessFactor + aspRough, 0.62, 1.0);\n#include <metalnessmap_fragment>'); // dry asphalt: never glossy
   });
 }
+// Footway paving laid along the kerb: 60 cm slabs with filtered joints, a sealed expansion joint every 9 m, a few
+// replaced slabs in a fresher tone, per-slab tone drift and grime collecting along the kerb. aPave = [along, from kerb].
+export function paving(mat, key) {
+  return patch(mat, 'pave' + key, sh => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aPave; varying vec2 vPave;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvPave = aPave;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vPave;' + HASH + ROADFN)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        if (vPave.y > 0.3) {
+          vec2 q = vec2(vPave.x, vPave.y - 0.46) / 0.6, cell = floor(q), fq = fract(q);
+          vec2 fw = fwidth(q);
+          float jx = aaLine(min(fq.x, 1.0 - fq.x), 0.008, fw.x), jy = aaLine(min(fq.y, 1.0 - fq.y), 0.008, fw.y);
+          float h = h31(vec3(cell, 7.3)), h2 = h31(vec3(cell, 19.1));
+          diffuseColor.rgb *= mix(0.95, 1.05, h);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.05, 1.05, 1.07), step(0.955, h2));   // replaced slab
+          float ex = vPave.x / 9.0, exj = aaLine(abs(fract(ex + 0.5) - 0.5) * 9.0, 0.012, fwidth(vPave.x));
+          diffuseColor.rgb *= 1.0 - 0.28 * max(jx, jy) - 0.5 * exj;
+          diffuseColor.rgb *= 1.0 - 0.08 * (1.0 - smoothstep(0.0, 0.5, vPave.y - 0.46));                      // grime at the kerb
+        }`);
+  });
+}
 // thermoplastic road paint: worn through in patches (and where tyres run), dissolved with alpha-to-coverage under MSAA
 // so the worn edges never alias
 export function wornPaint(mat, key) {

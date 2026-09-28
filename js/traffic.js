@@ -331,7 +331,7 @@ export class Traffic {
     for (const m of M) {
       const R = m.route, pos = R.at(m.s, tmpA);
       const hx = pos.dx, hz = pos.dz;
-      m.wx = pos.x - hz * R.lane; m.wz = pos.z + hx * R.lane; m.hx = hx; m.hz = hz; // drive on the left: offset to the left of travel
+      m.wx = pos.x + hz * R.lane; m.wz = pos.z - hx * R.lane; m.hx = hx; m.hz = hz; // drive on the left: offset to the left of travel (x right, z toward the viewer)
     }
     for (const m of M) {
       const R = m.route;
@@ -354,7 +354,10 @@ export class Traffic {
         const st = R.stops[m.stopIdx];
         let d = ((st.s - m.s) % R.len + R.len) % R.len - m.car.T.L / 2 - 0.5;
         if (d > R.len - 20) d = -1;
-        if (d < 40) {
+        if (st.signal) {
+          if (d <= 0.6 && st.signal.go(d)) { m.stopIdx = (m.stopIdx + 1) % R.stops.length; m.stoppedHere = false; }
+          else if (d < 40 && !st.signal.go(d)) target = Math.min(target, d > 0.6 ? Math.sqrt(2 * 2.8 * Math.max(0, d - 0.3)) : 0);
+        } else if (d < 40) {
           const blocked = st.crossing && (st.crossing.active || st.crossing.down > 0.02);
           if (m.wait <= 0 && d > 0.6) target = Math.min(target, Math.sqrt(2 * 2.8 * Math.max(0, d - 0.3)));
           else if (d <= 0.6) {

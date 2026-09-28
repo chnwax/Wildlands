@@ -1,7 +1,7 @@
 // Town construction kit: batched geometry builder, PBR materials, canvas-drawn signage, buildings and street props.
 import { THREE, scene, S, Q, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform } from './core.js';
 import { env } from './sky.js';
-import { relief, weather, asphaltAge, wornPaint, windowMaterial } from './surface.js';
+import { relief, weather, asphaltAge, wornPaint, windowMaterial, paving } from './surface.js';
 
 // ---------------------------------------------------------------- batched builder
 // Geometry is accumulated per (material, 96 m chunk) and flushed into a few hundred meshes.
@@ -240,6 +240,30 @@ function tactileMat(dots) {
   m.userData.toonNorm = 0.7;
   return m;
 }
+// cast-iron sewer cover set flush in the road (マンホール蓋): rim, radial ribs, the town's sakura crest and 汚水, as
+// colour + normal maps on a circular cut-out (laid as a road decal, so it follows the crown instead of standing proud)
+function manholeMat() {
+  const N = 256, H = new Float32Array(N * N), c = N / 2;
+  const hc = document.createElement('canvas'); hc.width = hc.height = N; const g = hc.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, N, N);
+  g.fillStyle = '#777'; g.beginPath(); g.arc(c, c, 124, 0, Math.PI * 2); g.fill();          // frame
+  g.fillStyle = '#333'; g.beginPath(); g.arc(c, c, 112, 0, Math.PI * 2); g.fill();          // gap
+  g.fillStyle = '#666'; g.beginPath(); g.arc(c, c, 109, 0, Math.PI * 2); g.fill();          // lid
+  g.strokeStyle = '#aaa'; g.lineWidth = 5;                                                   // anti-slip lattice
+  for (let r = 36; r < 106; r += 14) { g.beginPath(); g.arc(c, c, r, 0, Math.PI * 2); g.stroke(); }
+  for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; g.beginPath(); g.moveTo(c + Math.cos(a) * 36, c + Math.sin(a) * 36); g.lineTo(c + Math.cos(a) * 104, c + Math.sin(a) * 104); g.stroke(); }
+  g.fillStyle = '#555'; g.beginPath(); g.arc(c, c, 32, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#bbb'; for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2 - Math.PI / 2; g.beginPath(); g.ellipse(c + Math.cos(a) * 14, c + Math.sin(a) * 14, 9, 12, a + Math.PI / 2, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = '#ccc'; g.font = `bold 20px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('汚水', c, c + 60);
+  const d = g.getImageData(0, 0, N, N).data; for (let i = 0; i < N * N; i++) H[i] = d[i * 4] / 255;
+  const at = (x, y) => H[Math.min(N - 1, Math.max(0, y)) * N + Math.min(N - 1, Math.max(0, x))];
+  const col = canvasTex(N, N, (g2) => { const im = g2.createImageData(N, N); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const i = y * N + x, r = Math.hypot(x + 0.5 - c, y + 0.5 - c), h = H[i], k = 40 + h * 70;
+    im.data[i * 4] = k * 1.02; im.data[i * 4 + 1] = k; im.data[i * 4 + 2] = k * 0.96; im.data[i * 4 + 3] = r < 125 ? 255 : 0; } g2.putImageData(im, 0, 0); });
+  const nor = canvasTex(N, N, (g2) => { const im = g2.createImageData(N, N); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const i = y * N + x, dx = (at(x + 1, y) - at(x - 1, y)) * 3, dy = (at(x, y + 1) - at(x, y - 1)) * 3, l = Math.hypot(dx, dy, 1);
+    im.data[i * 4] = (-dx / l * 0.5 + 0.5) * 255; im.data[i * 4 + 1] = (dy / l * 0.5 + 0.5) * 255; im.data[i * 4 + 2] = (1 / l * 0.5 + 0.5) * 255; im.data[i * 4 + 3] = 255; } g2.putImageData(im, 0, 0); }, false);
+  const m = std({ map: col, normalMap: nor, roughness: 0.5, metalness: 0.55, alphaTest: 0.5, alphaToCoverage: true });
+  return m;
+}
 // one asphalt for every road: age, lane layout and wear come per vertex from the road builder (roads.js)
 function asphaltMat() {
   const m = std({ map: tex('asphalt_pit_lane', 'diff', '2k'), normalMap: tex('asphalt_pit_lane', 'nor_gl', '1k', false), roughnessMap: tex('asphalt_pit_lane', 'rough', '1k', false) });
@@ -262,7 +286,7 @@ export function materials() {
     metalWall: weather(std({ normalMap: tex('box_profile_metal_sheet', 'nor_gl', '1k', false), metalness: 0.3, roughness: 0.48 }), { grime: 0.4, streaks: 0.55, moss: 0, vary: 0.4 }, 'metalWall'),
     wood: pbrX('japanese_cedar_planks', 0.006, { grime: 0.6, streaks: 0.5, moss: 0.4 }),
     asphalt: asphaltMat(),
-    pavement: pbrX('concrete_pavement', 0.008, { grime: 0.3, streaks: 0, moss: 0.35 }),
+    pavement: paving(pbrX('concrete_pavement', 0.008, { grime: 0.3, streaks: 0, moss: 0.35 }), 'walk'),
     ballast: pbrX('bicolour_gravel', 0.02, null),
     paint: wornPaint(std({ roughness: 0.62 }), 'road'),
     metal: weather(std({ roughness: 0.45, metalness: 0.4 }), { grime: 0.3, streaks: 0.3, moss: 0, vary: 0.5 }, 'metal'),
@@ -282,7 +306,7 @@ export function materials() {
   M.asphaltMain = M.asphaltRoad = M.asphaltLane = M.asphaltLane2 = M.asphalt;
   M.gravelPath = pbrX('bicolour_gravel', 0.02, null, { color: 0xf2e6cf });
   M.stopLegend = stopMat;
-  M.tactileL = tactileMat(false); M.tactileD = tactileMat(true);
+  M.tactileL = tactileMat(false); M.tactileD = tactileMat(true); M.manhole = manholeMat();
   // painted brightness per surface (toon.js): light pastel walls, pale concrete and gravel, warm wood
   for (const [k, v] of Object.entries({ siding: 0.58, stucco: 0.6, plaster: 0.6, tiles: 0.56, concrete: 0.64, block: 0.6, pavement: 0.66, ballast: 0.5, wood: 0.46, stone: 0.56, roofTile: 0.62, gravelPath: 0.66 }))
     M[k].userData.toonNorm = v;
@@ -546,6 +570,61 @@ export function roadSign(B, x, y, z, r, kind) {
   for (let i = 0; i < outline.length; i++) { const a = outline[i], b = outline[(i + 1) % outline.length];
     B.poly('alu', [[c[0], sy + c[1], 0.042], [a[0], sy + a[1], 0.042], [b[0], sy + b[1], 0.042]], [0, 0, -1], { color: [0.62, 0.64, 0.66] }); }
   B.detail(1, () => { for (const dy of [-0.18, 0.18]) B.bbox('steel', 0, sy + dy - 0.03, 0.02, 0.1, 0.06, 0.1, 0.008, { color: [0.6, 0.62, 0.64] }); });
+}
+
+// ---------------------------------------------------------------- traffic signals (信号機)
+// Galvanised mast with a cantilever arm; a horizontal LED head (green / yellow / red from the left, hooded) hangs over the
+// approach lane, pedestrian heads (red standing figure over green walking figure) face across the crosswalks.
+// Local frame: pole at the origin, arm along +x over the road, heads facing +z (toward the traffic they control).
+// Returns lamp placements; town.js owns the lamp meshes and their shared per-phase materials.
+function pedPictogram(walk) {
+  return canvasTex(64, 64, (g, W, H) => {
+    g.fillStyle = '#101010'; g.fillRect(0, 0, W, H); g.fillStyle = '#fff'; g.strokeStyle = '#fff'; g.lineCap = 'round';
+    g.beginPath(); g.arc(W / 2, 12, 6, 0, Math.PI * 2); g.fill();
+    g.lineWidth = 8; g.beginPath(); g.moveTo(W / 2, 22); g.lineTo(W / 2, 40); g.stroke();
+    g.lineWidth = 6; g.beginPath();
+    if (walk) { g.moveTo(W / 2, 40); g.lineTo(W / 2 - 10, 58); g.moveTo(W / 2, 40); g.lineTo(W / 2 + 11, 56); g.moveTo(W / 2, 26); g.lineTo(W / 2 - 11, 36); g.moveTo(W / 2, 26); g.lineTo(W / 2 + 10, 35); }
+    else { g.moveTo(W / 2 - 3, 40); g.lineTo(W / 2 - 4, 58); g.moveTo(W / 2 + 3, 40); g.lineTo(W / 2 + 4, 58); g.moveTo(W / 2, 25); g.lineTo(W / 2 - 8, 40); g.moveTo(W / 2, 25); g.lineTo(W / 2 + 8, 40); }
+    g.stroke();
+  });
+}
+let sigTex = null;
+export function signalLampMaterial(kind) { // kind: 'g' | 'y' | 'r' | 'walk' | 'stop'
+  if (!sigTex) sigTex = { walk: pedPictogram(true), stop: pedPictogram(false) };
+  const col = { g: 0x19e0b0, y: 0xffb21a, r: 0xff2a18, walk: 0x1fe6b4, stop: 0xff3020 }[kind];
+  const ped = kind === 'walk' || kind === 'stop';
+  const m = new THREE.MeshStandardMaterial({ color: 0x1b1d1f, roughness: 0.25, emissive: col, emissiveIntensity: 0, emissiveMap: ped ? sigTex[kind] : null });
+  m.userData.on = ped ? 2.2 : 3.2;
+  return m;
+}
+export function signalMast(B, x, y, z, r, { arm = 4, peds = [] } = {}) {
+  B.frame(x, y, z, r);
+  const G = [0.74, 0.76, 0.78], HOUSE = [0.8, 0.81, 0.8];
+  B.cyl('concrete', 0, -0.08, 0, 0.24, 0.22, 0.16, 16, { color: [0.7, 0.7, 0.68] });            // footing collar
+  B.cyl('steel', 0, 0, 0, 0.115, 0.09, 6.3, 16, { color: G });                                  // tapered mast
+  B.cyl('steel', 0, 6.3, 0, 0.1, 0.02, 0.12, 12, { color: G, cap: true });                    // cap
+  B.beam('steel', [0, 5.82, 0], [arm, 5.82, 0], 0.095, 0.095, { color: G });                   // cantilever arm
+  B.beam('steel', [0.05, 5.05, 0], [1.5, 5.78, 0], 0.05, 0.05, { color: G });                  // brace
+  B.detail(1, () => { B.box('steel', 0, 5.72, 0, 0.3, 0.2, 0.3, { color: G }); B.box('plastic', 0, 2.9, 0.12, 0.22, 0.45, 0.16, { color: [0.88, 0.88, 0.84] }); }); // arm clamp, control box
+  const hx = arm - 0.75, hy = 5.24, out = { veh: [], ped: [] };
+  B.box('steel', hx, 5.66, 0, 0.05, 0.16, 0.05, { color: G }); B.box('steel', hx - 0.45, 5.66, 0, 0.05, 0.16, 0.05, { color: G });
+  B.bbox('plastic', hx - 0.2, hy, 0, 1.28, 0.42, 0.2, 0.04, { color: HOUSE });                 // flat LED head
+  ['g', 'y', 'r'].forEach((k, i) => {
+    const lx = hx - 0.2 - 0.4 + i * 0.4;
+    B.detail(1, () => { B.box('plastic', lx, hy + 0.37, 0.17, 0.34, 0.02, 0.16, { color: [0.2, 0.21, 0.22] }); }); // visor
+    const p = B.P([lx, hy + 0.21, 0.102]); out.veh.push({ p, r, k });
+  });
+  for (const { a, group } of peds) {
+    const c = Math.cos(a), s = Math.sin(a), off = [0.2 * s, 0, 0.2 * c], base = B.P(off), F = B.F;
+    B.frame(base[0], base[1], base[2], F.r + a);
+    B.box('steel', 0, 2.5, -0.13, 0.08, 0.06, 0.1, { color: G }); B.box('steel', 0, 3.15, -0.13, 0.08, 0.06, 0.1, { color: G });
+    B.bbox('plastic', 0, 2.36, 0, 0.36, 0.9, 0.18, 0.03, { color: HOUSE });
+    B.detail(1, () => { for (const yy of [2.83, 2.38]) B.box('plastic', 0, yy + 0.38, 0.14, 0.34, 0.02, 0.11, { color: [0.2, 0.21, 0.22] }); });
+    out.ped.push({ p: B.P([0, 3.0, 0.092]), r: F.r + a, k: 'stop', group }, { p: B.P([0, 2.57, 0.092]), r: F.r + a, k: 'walk', group });
+    B.frame(x, y, z, r);
+  }
+  addCircle(x, z, 0.2);
+  return out;
 }
 
 // painted "止まれ" legend + stop line texture for road surfaces
