@@ -1,7 +1,8 @@
 // Railway: double track (1067 mm gauge), catenary, tunnels, girder bridge, station, level crossings, EMU trains.
 import { THREE, scene, S, clamp, lerp, smoothstep, mulberry32, addBox, addCircle, addPlatform } from './core.js';
-import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints, glowMats } from './townkit.js';
+import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints, glowMats, wireMat } from './townkit.js';
 import { Emitter, audio } from './audio.js';
+import { stationBuilding } from './station.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const RAIL = { z: [-82.1, -77.9], gauge: 1.067, portal: 700, portalW: 700, portalE: 700, stationX: -8, platformLen: 100 };
@@ -95,11 +96,13 @@ export function buildRailway(ctx) {
   for (const tz of RAIL.z) for (let x = X0 + 20; x < X1 - 60; x += 50) {
     const zz = (i) => tz + (i % 2 ? 0.2 : -0.2);
     const a = [x, rt + 4.85, zz(x / 50)], b = [x + 50, rt + 4.85, zz(x / 50 + 1)];
-    for (let s = 0; s < 6; s++) { const t0 = s / 6, t1 = (s + 1) / 6; cw.push(lerp(a[0], b[0], t0), a[1], lerp(a[2], b[2], t0), lerp(a[0], b[0], t1), a[1], lerp(a[2], b[2], t1)); }
-    for (let s = 0; s < 6; s++) { const t0 = s / 6, t1 = (s + 1) / 6, sag = t => 0.5 * 4 * t * (1 - t); cw.push(lerp(a[0], b[0], t0), rt + 6.0 - sag(t0), tz, lerp(a[0], b[0], t1), rt + 6.0 - sag(t1), tz); }
+    for (let s = 0; s < 4; s++) { const t0 = s / 4, t1 = (s + 1) / 4; cw.push(lerp(a[0], b[0], t0), a[1], lerp(a[2], b[2], t0), lerp(a[0], b[0], t1), a[1], lerp(a[2], b[2], t1)); }  // contact wire (zig-zag stagger)
+    for (let s = 0; s < 16; s++) { const t0 = s / 16, t1 = (s + 1) / 16, sag = t => 0.5 * 4 * t * (1 - t); cw.push(lerp(a[0], b[0], t0), rt + 6.0 - sag(t0), tz, lerp(a[0], b[0], t1), rt + 6.0 - sag(t1), tz); } // messenger
+    for (let s = 1; s < 8; s++) { const t = s / 8, xh = lerp(a[0], b[0], t); cw.push(xh, rt + 6.0 - 0.5 * 4 * t * (1 - t), tz, xh, a[1], lerp(a[2], b[2], t)); }                          // droppers
   }
+  // anti-aliased by pixel coverage like the town's overhead wires (a hard 1-px line would crawl and sparkle)
   const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(cw, 3));
-  const cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x3a3a38 })); cl.frustumCulled = false; scene.add(cl);
+  const cl = new THREE.LineSegments(cg, wireMat); cl.frustumCulled = false; scene.add(cl);
 
   // tunnel portals: set into the hills by the map (town.js), which knows the terrain they must plug
 
@@ -120,20 +123,25 @@ export function buildRailway(ctx) {
     B.box('concrete', (sx0 + sx1) / 2, y0 - 0.3, zc, sx1 - sx0, ptop - y0 + 0.3, dz, { color: [0.74, 0.74, 0.72], skip: 'py', uv: 3 });
     B.box('pavement', (sx0 + sx1) / 2, ptop - 0.001, zc, sx1 - sx0, 0.001, dz, { color: [0.9, 0.9, 0.88], uv: 1.5, skip: 'ny' });
     B.box('plain', (sx0 + sx1) / 2, ptop, edge + P.side * 0.12, sx1 - sx0, 0.01, 0.2, { color: [0.95, 0.95, 0.93] });
-    B.box('plain', (sx0 + sx1) / 2, ptop, edge + P.side * 0.95, sx1 - sx0, 0.012, 0.3, { color: [0.95, 0.78, 0.05] }); // tactile strip
+    { const tz = edge + P.side * 0.95, ty = ptop + 0.004, L = sx1 - sx0; // warning blocks along the platform edge
+      B.poly('tactileD', [[sx0, ty, tz - 0.15], [sx1, ty, tz - 0.15], [sx1, ty, tz + 0.15], [sx0, ty, tz + 0.15]], [0, 1, 0], { uvs: [[0, 0], [L / 0.3, 0], [L / 0.3, 1], [0, 1]] }); }
     addPlatform((sx0 + sx1) / 2, zc, (sx1 - sx0) / 2, dz / 2, 0, ptop);
     // canopy over the middle
     const c0 = RAIL.stationX - 24, c1 = RAIL.stationX + 24, back = P.side > 0 ? P.z1 - 0.8 : P.z0 + 0.8;
-    for (let x = c0; x <= c1; x += 8) { B.frame(x, ptop, back, 0); B.box('metal', 0, 0, 0, 0.2, 3.3, 0.2, { color: [0.3, 0.33, 0.36] }); addBox(x, back, 0.15, 0.15, 0); }
+    for (let x0 = c0; x0 <= c1; x0 += 8) { const dx = x0 - (RAIL.stationX + 6), x = P.side > 0 && Math.abs(dx) < 2.6 ? RAIL.stationX + 6 + 2.7 * (Math.sign(dx) || 1) : x0; // clear of the station door
+      B.frame(x, ptop, back, 0); B.box('metal', 0, 0, 0, 0.2, 3.3, 0.2, { color: [0.3, 0.33, 0.36] }); addBox(x, back, 0.15, 0.15, 0); }
     B.frame(0, 0, 0, 0);
     const cz0 = P.side > 0 ? P.z0 + 0.3 : P.z0 - 0.4, cz1 = P.side > 0 ? P.z1 + 0.4 : P.z1 - 0.3;
     B.quad('roofMetal', [c0 - 1, ptop + 3.4, cz1], [c1 + 1, ptop + 3.4, cz1], [c1 + 1, ptop + 3.6, cz0], [c0 - 1, ptop + 3.6, cz0], { color: [0.55, 0.57, 0.58], uv: 2 });
     B.quad('plain', [c1 + 1, ptop + 3.4, cz1], [c0 - 1, ptop + 3.4, cz1], [c0 - 1, ptop + 3.6, cz0], [c1 + 1, ptop + 3.6, cz0], { color: [0.8, 0.8, 0.78] });
+    for (const [zf, yf] of [[cz1, ptop + 3.4], [cz0, ptop + 3.6]]) B.bbox('metal', (c0 + c1) / 2, yf - 0.2, zf + Math.sign(zf - (cz0 + cz1) / 2) * 0.03, c1 - c0 + 2.06, 0.28, 0.06, 0.01, { color: [0.5, 0.53, 0.55] }); // fascias
+    for (const xe of [c0 - 1.03, c1 + 1.03]) B.poly('metal', [[xe, ptop + 3.2, cz1], [xe, ptop + 3.2, cz0], [xe, ptop + 3.66, cz0], [xe, ptop + 3.46, cz1]], [Math.sign(xe - RAIL.stationX), 0, 0], { color: [0.5, 0.53, 0.55] });
     for (let x = c0 + 2; x < c1; x += 6) { B.frame(x, ptop + 3.3, (cz0 + cz1) / 2, 0); B.box('lamp', 0, 0, 0, 1.2, 0.05, 0.12); lampPoints.push({ p: [x, ptop + 3.0, (cz0 + cz1) / 2], s: 0.7 }); }
     // fence along the back edge
     B.frame(0, 0, 0, 0);
     const fz = P.side > 0 ? P.z1 - 0.05 : P.z0 + 0.05;
-    const gapX = sx0 + 6, fence = P.side > 0 ? [[sx0, gapX - 1.8], [gapX + 1.8, sx1]] : [[sx0, sx1]]; // opening at the stairs
+    const gapX = sx0 + 6, doorX = RAIL.stationX + 6; // openings at the stairs and at the station building's platform door
+    const fence = P.side > 0 ? [[sx0, gapX - 1.8], [gapX + 1.8, doorX - 2.3], [doorX + 2.3, sx1]] : [[sx0, sx1]];
     for (const [fa, fb] of fence) {
       for (let x = fa; x <= fb; x += 2) B.box('alu', x, ptop, fz, 0.05, 1.2, 0.05, { color: [0.3, 0.45, 0.35] });
       B.box('alu', (fa + fb) / 2, ptop + 1.15, fz, fb - fa, 0.06, 0.06, { color: [0.3, 0.45, 0.35] });
@@ -169,19 +177,33 @@ export function buildRailway(ctx) {
     for (let i = 0; i < n; i++) { const x = sx0 - 0.5 - i * 0.6, h = ptop - (i + 1) * (ptop - y0 - 0.46) / n; B.frame(x, 0, zc, 0); B.box('concrete', 0, y0, 0, 0.6, h - y0, P.z1 - P.z0, { color: [0.72, 0.72, 0.7] }); addPlatform(x, zc, 0.3, (P.z1 - P.z0) / 2, 0, h); }
   }
   // station building on the plaza side
-  const bx = RAIL.stationX + 6, bz = -68;
-  B.frame(bx, y0, bz, 0);
-  B.box('concrete', 0, 0, 0, 16, 0.25, 9, { color: [0.7, 0.7, 0.68] });
-  B.box('stucco', 0, 0.25, 0, 15, 3.6, 8, { color: [0.95, 0.94, 0.9], skip: 'ny', uv: 3 });
-  B.quad('shopWindow', [-3, 0.35, 4.02], [3, 0.35, 4.02], [3, 2.7, 4.02], [-3, 2.7, 4.02], { color: [1.1, 1.05, 0.95], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
-  for (let i = 0; i <= 4; i++) B.box('alu', -3 + i * 1.5, 0.3, 4.03, 0.06, 2.45, 0.06);
-  B.box('roofMetal', 0, 3.85, 0.5, 17, 0.25, 10.5, { color: [0.25, 0.3, 0.38], uv: 2 });
-  B.box('plain', 0, 2.75, 5.0, 8, 0.1, 2.0, { color: [0.3, 0.3, 0.32] });
-  addBox(bx, bz, 7.5, 4, 0);
-  const nameBoard = signMesh(6, 0.9, (g, W, H) => { g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = '#146c43'; g.fillRect(0, H * 0.82, W, H * 0.18); g.fillStyle = '#111'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H * 0.52}px ${JP_FONT}`; g.fillText('桜川駅', W * 0.36, H * 0.42); g.font = `bold ${H * 0.2}px Arial`; g.fillText('SAKURAGAWA Sta.', W * 0.78, H * 0.42); }, 1.1);
-  nameBoard.position.set(bx, y0 + 3.3, bz + 4.05); scene.add(nameBoard);
-  lampPoints.push({ p: [bx, y0 + 2.6, bz + 5.5], s: 1 });
+  stationBuilding(B, RAIL.stationX + 6, y0, -68, mulberry32(77));
   return { ptop, platforms };
+}
+
+// lineside fences: green chain-link on steel posts along both edges of the railway corridor through the valley floor,
+// following the ground, with openings at the road crossings, the river, the station building and the platform stairs.
+// gaps: [x0, x1, side?] (side 1 = the town / station side at z = -67.6, -1 the far side; omitted = both)
+export function railFences(B, groundAt, Y0, gaps) {
+  const G = [0.26, 0.42, 0.34], h = 1.5, step = 2.5;
+  for (const [z, side] of [[-67.6, 1], [-92.4, -1]]) {
+    const open = x => Math.abs(groundAt(x, z) - Y0) > 0.8 || gaps.some(([a, b, s]) => (s === undefined || s === side) && x > a && x < b);
+    let x = -440;
+    while (x < 440) {
+      if (open(x)) { x += 0.5; continue; }
+      let xe = x; while (xe + step < 440 && !open(xe + step) && xe - x < 30) xe += step;
+      if (xe - x < step) { x += step; continue; }
+      B.frame(0, 0, 0, 0);
+      for (let px = x; px < xe - 1e-3; px += step) {
+        const qx = px + step, ya = groundAt(px, z), yb = groundAt(qx, z);
+        B.quad('chain', [px, ya + 0.05, z], [qx, yb + 0.05, z], [qx, yb + h, z], [px, ya + h, z], { uv: 0.15, color: G });
+        B.beam('steel', [px, ya + h, z], [qx, yb + h, z], 0.034, 0.034, { color: G });
+      }
+      for (let px = x; px <= xe + 1e-3; px += step) { const yy = groundAt(px, z); B.cyl('steel', px, yy - 0.15, z, 0.03, 0.03, h + 0.18, 8, { color: G, cap: true }); }
+      addBox((x + xe) / 2, z, (xe - x) / 2, 0.06, 0, Y0 - 3, Y0 + 2);
+      x = xe + 0.01;
+    }
+  }
 }
 
 function stationSign() {

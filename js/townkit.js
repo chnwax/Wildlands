@@ -456,7 +456,7 @@ export function utilityPole(B, x, y, z, r, rng, { transformer = false, light = f
 // sagging wires between consecutive poles (lines are the right visual weight for 1-2 cm cables)
 // 1 px lines at any distance would read far too heavy and crawl: coverage follows the cable's real ~16 mm diameter in
 // pixels (never below a faint 12 %), resolved through alpha-to-coverage, so distant spans thin out instead of flickering
-const wireMat = new THREE.ShaderMaterial({
+export const wireMat = new THREE.ShaderMaterial({
   alphaToCoverage: true, fog: true, uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uPx: { value: 800 } }]),
   vertexShader: `uniform float uPx; varying float vCov;
     #include <common>

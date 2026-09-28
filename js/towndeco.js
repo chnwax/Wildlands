@@ -7,7 +7,7 @@ import { canvasTex, signMesh, JP_FONT, lampPoints, materials } from './townkit.j
 import { wallFill, reveals, windowUnit } from './building.js';
 
 // chain-link fence mesh: a diamond wire pattern, alpha-tested so it stays see-through (one texture repeat = 0.5 m)
-function chainMaterial() {
+export function chainMaterial() {
   const MT = materials();
   if (MT.chain) return MT.chain;
   const t = canvasTex(64, 64, (g, W, H) => {
@@ -155,6 +155,9 @@ export function constructionSite(B, x, y, z, r, LW, LD, rng, extras) {
   for (let k = 0; k < 3; k++) { const cx = LW / 2 - 3 + k * 0.9; B.cyl('plastic', cx, 0, fz + 0.6, 0.16, 0.03, 0.7, 8, { color: [1, 0.45, 0.1] }); B.cyl('plain', cx, 0.35, fz + 0.6, 0.1, 0.07, 0.12, 8, { color: WHITE }); }
   B.box('plastic', LW / 2 - 1.2, 0, -LD / 2 + 1.4, 1.0, 2.2, 1.0, { color: [0.3, 0.55, 0.75] });
   extras.push({ t: 'box', p: B.P([LW / 2 - 1.2, 0, -LD / 2 + 1.4]), hx: 0.5, hz: 0.5, r });
+  // a mini excavator parked in the front yard
+  { const F0 = B.F; B.frame(...B.P([Math.min(W / 2, LW / 2 - 2.2), 0, Math.min(hz + D / 2 + 3.4, LD / 2 - 1.8)]), r + 2.4 + rng() * 0.8); excavator(B, rng); B.F = F0;
+    extras.push({ t: 'box', p: B.P([Math.min(W / 2, LW / 2 - 2.2), 0, Math.min(hz + D / 2 + 3.4, LD / 2 - 1.8)]), hx: 0.9, hz: 1.2, r }); }
   // builder's sign
   const sign = signMesh(1.2, 0.9, (g, Wc, Hc) => { g.fillStyle = '#f7f7f2'; g.fillRect(0, 0, Wc, Hc); g.fillStyle = '#1f5f9b'; g.fillRect(0, 0, Wc, Hc * 0.22);
     g.fillStyle = '#fff'; g.font = `bold ${Hc * 0.14}px ${JP_FONT}`; g.textAlign = 'center'; g.fillText('工事中', Wc / 2, Hc * 0.16);
@@ -162,6 +165,30 @@ export function constructionSite(B, x, y, z, r, LW, LD, rng, extras) {
   const sp = B.P([-LW / 2 + 2.2, 1.2, fz + 0.05]); sign.position.set(...sp); sign.rotation.y = r; scene.add(sign);
 }
 
+// mini excavator (~1.5 t): rubber tracks with rounded ends, dozer blade, slewing body with counterweight, open cab,
+// boom and arm with hydraulic rams, bucket. Local +Z is the digging side.
+export function excavator(B, rng) {
+  const yel = [0.98, 0.72, 0.1], dark = [0.14, 0.14, 0.15], grey = [0.55, 0.56, 0.58];
+  const stadium = []; for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, c = Math.cos(a) > 0 ? 0.62 : -0.62; stadium.push([c + Math.cos(a) * 0.19, 0.19 + Math.sin(a) * 0.19]); }
+  for (const sx of [-0.52, 0.22]) B.sweep('dark', stadium, [[sx, 0, 0], [sx + 0.3, 0, 0]], { closed: true, caps: true, color: dark, uv: 0.5 });
+  B.bbox('metal', 0, 0.12, 0, 0.8, 0.26, 1.2, 0.03, { color: [0.3, 0.3, 0.32] });
+  B.bbox('metal', 0, 0.06, 0.98, 1.1, 0.34, 0.08, 0.02, { color: yel });                      // blade
+  for (const sx of [-0.3, 0.3]) B.beam('metal', [sx, 0.25, 0.5], [sx, 0.2, 0.95], 0.06, 0.06, { color: yel });
+  B.cyl('metal', 0, 0.38, 0, 0.42, 0.42, 0.08, 16, { color: [0.2, 0.2, 0.2], cap: true });           // slewing ring
+  B.bbox('metal', 0, 0.46, -0.1, 1.05, 0.5, 1.2, 0.06, { color: yel });
+  B.cyl('metal', 0, 0.46, -0.55, 0.5, 0.5, 0.5, 16, { color: yel, cap: true });                      // counterweight
+  for (const [px, pz] of [[-0.48, -0.05], [0.05, -0.05], [-0.48, 0.45], [0.05, 0.45]]) B.bbox('metal', px, 0.96, pz, 0.05, 1.05, 0.05, 0.01, { color: dark });
+  B.bbox('metal', -0.21, 2.0, 0.2, 0.62, 0.06, 0.62, 0.015, { color: dark });
+  B.bbox('plastic', -0.21, 0.96, 0.05, 0.4, 0.34, 0.4, 0.04, { color: [0.2, 0.2, 0.22] });              // seat
+  B.quad('glass', [-0.46, 1.1, 0.46], [0.02, 1.1, 0.46], [0.02, 1.95, 0.46], [-0.46, 1.95, 0.46], { color: [0.5, 0.6, 0.7] });
+  // boom, arm, rams, bucket
+  const b0 = [0.3, 0.8, 0.5], b1 = [0.3, 2.05, 1.35], b2 = [0.3, 0.95, 2.15];
+  B.beam('metal', b0, b1, 0.16, 0.2, { color: yel }); B.beam('metal', b1, b2, 0.12, 0.16, { color: yel });
+  B.beam('steel', [0.3, 0.7, 0.62], [0.3, 1.6, 1.1], 0.07, 0.07, { color: grey }); B.beam('steel', [0.3, 2.15, 1.2], [0.3, 1.6, 1.95], 0.06, 0.06, { color: grey });
+  B.bbox('metal', 0.3, 0.55, 2.2, 0.42, 0.4, 0.32, 0.03, { color: dark });
+  for (let k = -1; k <= 1; k++) B.bbox('steel', 0.3 + k * 0.13, 0.5, 2.36, 0.05, 0.08, 0.08, 0.01, { color: grey }); // teeth
+  void rng;
+}
 // small roadside shrine: a hokora with a tiny torii and a stone Jizo (local +Z faces the street)
 export function streetShrine(B, x, y, z, r) {
   B.frame(x, y, z, r);

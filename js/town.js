@@ -6,13 +6,14 @@ import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWate
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js';
 import { plantTown } from './towngreen.js';
-import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine } from './towndeco.js';
+import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
 import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment } from './building.js';
 import { shrineCompound, sacredRope } from './shrine.js';
+import { stationForecourt } from './station.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
-import { RAIL, buildRailway, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
+import { RAIL, buildRailway, railFences, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads } from './roads.js';
 
@@ -23,6 +24,7 @@ const PADDIES = [[-650, -330, -430, -110], [-650, -40, -430, 330], [262, 0, 650,
 const inPaddyZone = (x, z) => PADDIES.some(([a, b, c, d]) => x > a && x < c && z > b && z < d);
 const SHRINE = { x: -60, z: -300 };
 const LEVEL = [[-147, 190, -32.5, 256]]; // school block
+const RIVER_STAIRS = [[-170, 1], [-150, -1], [95, -1], [130, 1], [270, -1]]; // [z where the stair starts, bank side]
 const SHRINE_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
 
 function paddyCell(x, z) { // returns {inside (0..1), levee} for the paddy grid
@@ -221,7 +223,7 @@ export async function build(progress) {
       for (let t = 0; t <= L; t += 1) {
         const x = a[0] + dx * t, z = a[1] + dz * t;
         if (Math.abs(x) > 800 || Math.abs(z) > 800) continue;
-        occRect(x, z, hw + (R.walk || 0) + 1, 1, Math.atan2(dx, dz), 1);
+        occRect(x, z, hw + (R.walk ? R.walk + 0.05 : 1), 1, Math.atan2(dx, dz), 1); // footways have a hard edge; lanes keep a margin
       }
       const ext = hw + (R.walk || 0) + (R.kind === 'lane' ? 0.5 : 0) + 0.6;
       hf.paint2(2, Math.min(a[0], b[0]) - ext, Math.min(a[1], b[1]) - ext, Math.max(a[0], b[0]) + ext, Math.max(a[1], b[1]) + ext, (x, z) => { const q = nearestOnRoad({ pts: [a, b] }, x, z); return q.d < ext ? 1 : 0; });
@@ -260,27 +262,18 @@ export async function build(progress) {
     const sgn = [[-1, -89.5], [1, -70.5]];
     for (const [sd, z] of sgn) { const sx = x + sd * (R.w / 2 + (R.walk ? R.walk - 0.5 : 1.4)); roadSign(B, sx, topY(sx, z + sd * 2), z + sd * 2, sd > 0 ? 0 : Math.PI, 'crossing'); }
   }
+  chainMaterial();
+  railFences(Bx, (x, z) => hf.groundAt(x, z), Y0, [
+    ...crossingRoads.map(R => [R.pts[0][0] - R.w / 2 - (R.walk || 0) - 3, R.pts[0][0] + R.w / 2 + (R.walk || 0) + 3]),
+    [riverX(-80) - 24, riverX(-80) + 24], [RAIL.stationX + 6 - 9.6, RAIL.stationX + 6 + 9.6, 1], [RAIL.stationX - RAIL.platformLen / 2 + 2.5, RAIL.stationX - RAIL.platformLen / 2 + 9.5, 1]]);
   // occupancy/masks for railway corridor, river corridor, station
   occRect(0, -80, 1000, 13, 0, 1);
   for (let z = -800; z < 800; z += 1) { const rx = riverX(z); occRect(rx, z, 24, 0.6, 0, 1); }
   hf.paint2(2, -PORTALS.railW, -92, PORTALS.railE, -68, (x, z) => Math.abs(z + 80) < 11 ? 1 : 0);
-  // station plaza
-  B.frame(0, 0, 0, 0);
-  B.bbox('pavement', RAIL.stationX + 6, Y0 - 0.2, -47.25, 64, 0.42, 32.5, 0.02, { color: [0.86, 0.85, 0.82], uv: 1.2, skip: 'ny' }); // flush with the main road's sidewalk
+  // station forecourt: paved square, bus / taxi loop round a raised island (station.js)
   occRect(RAIL.stationX + 6, -47.5, 34, 17, 0, 1);
-  hf.paint2(2, -60, -66, 75, -30, () => 1); hf.paint2(0, -60, -66, 75, -30, () => 1);
-  addPlatform(RAIL.stationX + 6, -47.25, 32, 16.25, 0, Y0 + 0.22);
-  { // plaza furniture: bicycle parking under a shelter, clock, bus stop
-    const py = Y0 + 0.22, prng0 = mulberry32(55), bikes = [];
-    for (let row = 0; row < 2; row++) for (let i = 0; i < 16; i++) if (prng0() < 0.85) bikes.push({ x: 20 + i * 0.62, y: py, z: -58 + row * 2.6, r: Math.PI / 2 + (row ? Math.PI : 0) + (prng0() - 0.5) * 0.1 });
-    bicycles(bikes.map(b => ({ ...b, x: b.x + 6 })), prng0);
-    B.frame(35.6, py, -56.7, 0);
-    for (const sx of [-5.2, 5.2]) for (const sz of [-2.2, 2.2]) B.box('alu', sx, 0, sz, 0.1, 2.3, 0.1, { color: [0.55, 0.58, 0.6] });
-    B.box('roofMetal', 0, 2.3, 0, 11, 0.08, 5.2, { color: [0.35, 0.45, 0.5], uv: 2 });
-    addBox(35.6, -56.7, 5.4, 2.4, 0, -1e9, py + 1.2);
-    clockPole(B, -6, py, -40);
-    for (const z of [-58, -55.4]) addBox(30.7, z, 5.2, 0.35, 0, -1e9, py + 1.1);
-  }
+  hf.paint2(2, -60, -66, 40, -30, (x, z) => x < -34.5 || x > 32 ? 0 : 1); hf.paint2(0, -60, -66, 40, -30, (x, z) => x < -34.5 || x > 32 ? 0 : 1);
+  const stationCars = [], forecourt = stationForecourt(B, { Y0, RN, sOf, rng: mulberry32(55), parked: stationCars });
   // river banks: concrete revetments with railings, plus bridges. Nothing grows through the revetment slabs or
   // under the walkway deck (the ground there sits below the concrete)
   hf.paint2(2, 100, -800, 330, 800, (x, z) => Math.abs(x - riverX(z)) < 18.2 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
@@ -301,6 +294,7 @@ export async function build(progress) {
         else { B.quad('pavement', [xo, yd, z], [xo2, yd, z + 4], [xb, yd, z + 4], [xa, yd, z], pc); B.quad('concrete', [xo, Y0 - 1.2, z], [xo2, Y0 - 1.2, z + 4], [xo2, yd, z + 4], [xo, yd, z], sk); }
       }
       if (Math.abs(z + 25) < 12 || Math.abs(z + 80) < 12 || Math.abs(z - 200) < 10) continue;
+      if (RIVER_STAIRS.some(([z0, s2]) => s2 === sd && z + 4 > z0 - 1 && z < z0 + 2.5)) continue; // opening at the head of a stair
       // railing: rails follow the bank's curve segment by segment, posts every 2 m
       const ra = xa + sd * 0.4, rb = xb + sd * 0.4, rc = { color: [0.3, 0.52, 0.47] };
       B.beam('alu', [ra, Y0 + 1.07, z], [rb, Y0 + 1.07, z + 4], 0.07, 0.07, rc);
@@ -311,6 +305,17 @@ export async function build(progress) {
   }
   // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
   // an aluminium railing, name pillars (親柱) at the four corners, lamps, and steel expansion joints across the road
+  // river access: concrete stairs let into the revetment, running down along the bank to the gravel margin, with a rail
+  for (const [z0, sd] of RIVER_STAIRS) {
+    const rise = 0.19, run = 0.34, n = Math.ceil((Y0 + 0.12 - 0.45) / rise), slopeRd = y2 => 12.2 + (y2 - 0.45) / (Y0 - 0.3) * 2.4;
+    for (let k = 0; k < n; k++) {
+      const yt = Y0 + 0.12 - (k + 1) * rise, zz = z0 + k * run, rd = slopeRd(yt), rx = riverX(zz);
+      B.frame(rx + sd * (rd + 0.55), yt - 1.2, zz, 0); B.bbox('concrete', 0, 0, 0, 1.1, 1.2, run + 0.01, 0.01, { color: [0.76, 0.76, 0.74], skip: 'ny' });
+      if (k % 4 === 0) { B.frame(rx + sd * (rd + 1.12), yt, zz, 0); B.cyl('steel', 0, 0, 0, 0.025, 0.025, 0.9, 8, { color: [0.3, 0.52, 0.47], cap: true }); }
+    }
+    const top = [riverX(z0) + sd * (slopeRd(Y0 + 0.12 - rise) + 1.12), Y0 + 0.12 - rise + 0.9, z0], bot = [riverX(z0 + (n - 1) * run) + sd * (slopeRd(Y0 + 0.12 - n * rise) + 1.12), Y0 + 0.12 - n * rise + 0.9, z0 + (n - 1) * run];
+    B.frame(0, 0, 0, 0); B.sweep('steel', [[-0.022, -0.022], [0.022, -0.022], [0.022, 0.022], [-0.022, 0.022]], [top, bot], { closed: true, caps: true, color: [0.3, 0.52, 0.47] });
+  }
   for (const [bz, bw, id, names] of [[-25, 12, 'A', ['桜川橋', 'さくらがわばし']], [200, 5, 'F', ['舟橋', 'ふなばし']]]) {
     const rx = riverX(bz), L = 34, gc = [0.76, 0.76, 0.74];
     B.frame(rx, Y0, bz, 0);
@@ -426,10 +431,11 @@ export async function build(progress) {
         if (R.id === 'R' && Math.abs(a[0] + nx * 10 - riverX(a[1] + nz * 10)) < Math.abs(a[0] - riverX(a[1]))) continue; // not on the river side
         let t = alley ? 3.2 : 4 + rng() * 2;
         while (t < L - (alley ? 1 : 4)) {
-          const dist = ind ? 'yard' : district(a[0] + dx * t, a[1] + dz * t);
+          const dist = ind ? 'yard' : district(a[0] + dx * t, a[1] + dz * t), shopZone = R.id === 'A' && a[0] + dx * t > -272 && a[0] + dx * t < 200;
           const w = ind ? 18 + rng() * 6 : alley ? 8 + rng() * 2 : dist === 'old' ? 8.5 + rng() * 3 : dist === 'new' ? 11 + rng() * 4 : 10 + rng() * 3.5;
-          const d = ind ? 17 + rng() * 4 : alley ? 11.5 + rng() * 2 : dist === 'old' ? 14 + rng() * 4 : 13.5 + rng() * 3;
-          const set = R.w / 2 + (R.walk || 0) + (dist === 'new' ? 1.3 : 1.05); // just clear of the road corridor's reservation
+          const d = ind ? 17 + rng() * 4 : shopZone ? 12 : alley ? 11.5 + rng() * 2 : dist === 'old' ? 14 + rng() * 4 : 13.5 + rng() * 3;
+          // shops front straight onto the footway; houses sit behind a front yard, just clear of the corridor reservation
+          const set = R.w / 2 + (R.walk || 0) + (shopZone ? 0.12 : dist === 'new' ? 1.3 : 1.05);
           const cx = a[0] + dx * (t + w / 2) + nx * (set + d / 2), cz = a[1] + dz * (t + w / 2) + nz * (set + d / 2);
           const r = Math.atan2(-nx, -nz);
           t += w + (dist === 'old' ? 0.15 : 0.3 + rng() * 0.6);
@@ -438,11 +444,11 @@ export async function build(progress) {
           if (occRect(cx, cz, w / 2, d / 2, r, 0, true)) continue;
           if (rng() < 0.04) continue; // empty lot
           occRect(cx, cz, w / 2, d / 2, r, 1);
-          const shop = R.id === 'A' && cx > -270 && cx < 200;
+          const shop = shopZone;
           const roll = rng(), kind = ind ? 'yard' : shop ? 'shop' : roll < 0.035 ? 'carpark' : roll < 0.07 && dist !== 'new' ? 'garden' : 'house';
           lots.push({ x: cx, z: cz, r, w, d, shop, road: R, kind, district: dist });
           // flag lot behind (旗竿地) reached by a narrow driveway beside the front lot
-          if (!shop && !ind && !alley) for (let row = 1; row <= 2; row++) {
+          if (!ind && !alley) for (let row = 1; row <= (shop ? 3 : 2); row++) {
             const off = (d + 0.6) * row, bw = 10 + rng() * 3, bd = 13 + rng() * 3;
             const bx = cx - nx * off, bz = cz - nz * off;
             if (Math.abs(bx) > 640 || Math.abs(bz) > 345 || inPaddyZone(bx, bz) || hf.groundAt(bx, bz) > Y0 + 1.2) break;
@@ -568,8 +574,8 @@ export async function build(progress) {
   for (let x = -252; x < 190; x += 21) {
     if (nearInter(x, -25, ROADS[0], 5) || Math.abs(x - riverX(-25)) < 26) continue;
     B.frame(x, Y0, -25, 0);
-    for (const sd of [-1, 1]) { B.box('wood', 0, 0.1, sd * 6.35, 0.15, 5.35, 0.15, { color: [0.52, 0.37, 0.26] }); B.box('wood', 0, 5.4, sd * 6.35, 0.2, 0.08, 0.2, { color: [0.3, 0.22, 0.16] }); addCircle(x, -25 + sd * 6.35, 0.16); }
-    const N = 10, pt = i => { const t = i / N; return [0, 5.2 - 0.75 * 4 * t * (1 - t), -6.35 + 12.7 * t]; };
+    for (const sd of [-1, 1]) { B.box('wood', 0, 0.1, sd * 5.75, 0.15, 5.35, 0.15, { color: [0.52, 0.37, 0.26] }); B.box('wood', 0, 5.4, sd * 5.75, 0.2, 0.08, 0.2, { color: [0.3, 0.22, 0.16] }); addCircle(x, -25 + sd * 5.75, 0.16); }
+    const N = 10, pt = i => { const t = i / N; return [0, 5.2 - 0.75 * 4 * t * (1 - t), -5.75 + 11.5 * t]; };
     for (let i = 0; i < N; i++) B.beam('dark', pt(i), pt(i + 1), 0.025, 0.025);
     for (let i = 1; i < N; i++) { const p = pt(i); B.box('dark', 0, p[1] - 0.16, p[2], 0.015, 0.16, 0.015); chochin(B, 0, p[1] - 0.62, p[2], i % 2 ? [1, 0.3, 0.2] : [1, 0.88, 0.7], 0.8); }
     lampPoints.push({ p: [x, 4.4, -25], s: 0.6 });
@@ -583,7 +589,7 @@ export async function build(progress) {
   for (const e of extras) if (e.t === 'poly') { const m = new THREE.Mesh(new THREE.PlaneGeometry(e.w, e.d).rotateX(-Math.PI / 2), MT.poly); m.position.set(...e.p); m.rotation.y = e.r; scene.add(m); }
   // vending machines: station plaza, konbini, scattered along lanes
   let vi = 0;
-  for (const [x, z, r] of [[RAIL.stationX + 18, -35.5, 0], [RAIL.stationX + 19.1, -35.5, 0], [RAIL.stationX + 20.2, -35.5, 0], [150, 4.5, Math.PI], [151.1, 4.5, Math.PI], [-120, -34, Math.PI]]) vendingMachine(x, z < -30 && z > -64 && x > -30 && x < 75 ? Y0 + 0.22 : topY(x, z), z, r, vi++, B);
+  for (const [x, z, r] of [[-26.5, -35.4, 0], [-25.4, -35.4, 0], [-24.3, -35.4, 0],[150, 4.5, Math.PI], [151.1, 4.5, Math.PI], [-120, -34, Math.PI]]) vendingMachine(x, z < -30 && z > -64 && x > -30 && x < 75 ? Y0 + 0.22 : topY(x, z), z, r, vi++, B);
   for (const v of vend) {
     const c = Math.cos(v.lot.r), s = Math.sin(v.lot.r), lx = v.off[0], lz = v.off[1];
     const x = v.lot.x + lx * c + lz * s, z = v.lot.z - lx * s + lz * c;
@@ -740,7 +746,7 @@ export async function build(progress) {
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
   B.flush(MT, { paint: false, stopLegend: false, tactileL: false, tactileD: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false, chain: false, poly: false });
-  Bx.flush(MT, { paint: false });
+  Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
   const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg);
 
   // ---------------------------------------------------------------- scanned props (gardens, shops)
@@ -791,8 +797,7 @@ export async function build(progress) {
   progress('Starting traffic', 0.9); await tick();
   const crng = mulberry32(7);
   const parked = carSpots.filter(() => crng() < 0.85).map(sp => ({ sp, spec: randomCar(crng, false) }));
-  // taxis waiting at the station
-  for (let i = 0; i < 3; i++) parked.push({ sp: { p: [RAIL.stationX + 30 - i * 5.2, Y0 + 0.22, -41], r: -Math.PI / 2 }, spec: { type: 'taxi', color: [0.08, 0.1, 0.2] } });
+  parked.push(...stationCars); // taxis waiting in the station rank beside the island
   // routes (closed loops; driving on the left)
   const loops = [
     { pts: [[-400, -25], [110, -25], [110, -225], [-400, -225]], n: 5, v: 11 },
@@ -821,7 +826,7 @@ export async function build(progress) {
   const moving = [];
   loops.forEach((L, i) => { for (let k = 0; k < L.n; k++) moving.push({ route: routes[i], s: routes[i].len * (k + crng() * 0.5) / L.n, spec: randomCar(crng) }); });
   const fleet = new Fleet([...parked.map(p => p.spec), ...moving.map(m => m.spec)]);
-  parked.forEach((p, i) => { const car = fleet.cars[i]; fleet.place(car, p.sp.p[0], hf.groundAt(p.sp.p[0], p.sp.p[2]) + (p.sp.p[1] > Y0 + 0.1 ? 0.14 : 0), p.sp.p[2], p.sp.r + Math.PI / 2, 0, 0, 0); const T = carDims(car.type); addBox(p.sp.p[0], p.sp.p[2], T.L / 2, T.W / 2, p.sp.r + Math.PI / 2, -1e9, Y0 + 1.6); });
+  parked.forEach((p, i) => { const car = fleet.cars[i]; fleet.place(car, p.sp.p[0], p.sp.y ?? hf.groundAt(p.sp.p[0], p.sp.p[2]) + (p.sp.p[1] > Y0 + 0.1 ? 0.14 : 0), p.sp.p[2], p.sp.r + Math.PI / 2, 0, 0, 0); const T = carDims(car.type); addBox(p.sp.p[0], p.sp.p[2], T.L / 2, T.W / 2, p.sp.r + Math.PI / 2, -1e9, Y0 + 1.6); });
   const traffic = new Traffic(fleet, (x, z) => surfaceY(x, z) - 0.04);
   moving.forEach((m, i) => traffic.add(fleet.cars[parked.length + i], m.route, m.s));
   fleet.commit();
@@ -845,6 +850,8 @@ export async function build(progress) {
     walkPaths.push({ pts, off: R.kind === 'path' ? 1.0 : R.w / 2 + (R.walk ? R.walk / 2 : 0.55), lift: null, w: R.id === 'A' ? 3 : 1 });
   }
   for (const sd of [-1, 1]) for (const [z0, z1] of [[-330, -94], [-66, 330]]) walkPaths.push({ pts: Array.from({ length: 13 }, (_, i) => { const z = lerp(z0, z1, i / 12); return [riverX(z) + sd * 16.1, z]; }), off: 0, lift: null });
+  // across the station forecourt: from the main road to the ticket hall, and over the crossing to the bus berths
+  walkPaths.push({ pts: [[-2.5, -30.2], [-2.5, -62.8]], off: 1.1, lift: null, w: 2 }, { pts: [[-1, -48.5], [12.7, -48.5], [12.7, -32]], off: 0.4, lift: null });
   const people = pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 260);
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3();
@@ -852,6 +859,7 @@ export async function build(progress) {
     hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN,
     bounds: { minX: -990, maxX: 990, minZ: -990, maxZ: 990 },
     groundAt(x, z) {
+      const f = forecourt.heightAt(x, z); if (f !== null) return f;
       const w = RN.walkY(x, z); if (w !== null) return w;
       if (RN.roadAt(x, z)) return surfaceY(x, z);
       const g = hf.groundAt(x, z); if (onBridge(x, z) && (Math.abs(z + 25) < 7 || Math.abs(z - 200) < 3.5)) return Math.max(g, Y0 + 0.35);

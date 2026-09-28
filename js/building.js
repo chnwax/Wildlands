@@ -604,7 +604,7 @@ export function shopBuilding(B, s, rng, extras) {
     for (let k = 0; k < n; k++) { const cx = ((k + 0.5) / n - 0.5) * (W - 1), h = { x0: cx - 0.7, x1: cx + 0.7, y0: f * fh + 0.9, y1: f * fh + 2.2, d: 0.16 }; holes[0].push(h); wins[0].push([h, { shutterBox: rng() < 0.3, shutter: rng() < 0.2 ? 0.6 : 0 }]); }
     const nb = Math.max(1, Math.floor(W / 3));
     for (let k = 0; k < nb; k++) if (rng() < 0.85) { const cx = ((k + 0.5) / nb - 0.5) * (W - 1.6), h = { x0: cx - 0.45, x1: cx + 0.45, y0: f * fh + 0.9, y1: f * fh + 2.0, d: 0.14 }; holes[1].push(h); wins[1].push([h, {}]); }
-    for (const fi of [2, 3]) if (rng() < 0.35) { const h = { x0: -0.35, x1: 0.35, y0: f * fh + 1.2, y1: f * fh + 1.9, d: 0.14 }; holes[fi].push(h); wins[fi].push([h, { frosted: rng() < 0.5 }]); }
+    for (const fi of [2, 3]) for (const zc of [-d / 4, d / 4]) if (rng() < 0.4) { const big = rng() < 0.5, h = { x0: zc - (big ? 0.7 : 0.35), x1: zc + (big ? 0.7 : 0.35), y0: f * fh + (big ? 0.9 : 1.2), y1: f * fh + (big ? 2.1 : 1.9), d: 0.14 }; holes[fi].push(h); wins[fi].push([h, { frosted: !big && rng() < 0.5, shutterBox: big && rng() < 0.5 }]); }
   }
   const back = { x0: W / 2 - 1.75, x1: W / 2 - 0.85, y0: 0.15, y1: 2.15, d: 0.12 }; holes[1].push(back);
   const bw0 = { x0: -W / 4 - 0.4, x1: -W / 4 + 0.4, y0: 1.2, y1: 1.9, d: 0.12 }; holes[1].push(bw0); wins[1].push([bw0, { grille: true, frosted: true }]);

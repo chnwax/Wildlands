@@ -132,7 +132,8 @@ export function weather(mat, w, key) {
 // footprint, so it fades to its average tone instead of sparkling at distance or at grazing angles.
 const ROADFN = /* glsl */`
 float aaLine(float d, float w, float fw) { float W = max(w, fw); return (1.0 - smoothstep(W - fw * 0.5, W + fw * 0.5, d)) * (w / W); }
-float aaBand(float x, float a, float b, float fw) { return smoothstep(a - fw, a + fw, x) * (1.0 - smoothstep(b - fw, b + fw, x)); }`;
+float aaBand(float x, float a, float b, float fw) { return smoothstep(a - fw, a + fw, x) * (1.0 - smoothstep(b - fw, b + fw, x)); }
+float sqr1(float x) { return x * x; }`;
 export function asphaltAge(mat, key) {
   return patch(mat, 'asp2' + key, sh => {
     worldVaryings(sh);
@@ -154,7 +155,7 @@ export function asphaltAge(mat, key) {
           float tone = mix(0.9, 1.22, age) * mix(0.86, 1.14, a.r) * mix(1.0 - 0.1 * age, 1.0 + 0.1 * age, c.g);
           diffuseColor.rgb *= tone;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.33))) * vec3(1.0, 0.99, 0.96), 0.3 + 0.4 * age);
-          float rough = mix(-0.12, 0.06, age);
+          float rough = mix(0.02, 0.1, age);
           if (strip) {
             float au = abs(u);
             // wheel paths: two per lane, polished darker bands; a faint oil drip line between them
@@ -163,7 +164,7 @@ export function asphaltAge(mat, key) {
             float tq = (du - 0.85) / 0.32, track = exp(-tq * tq) * (0.6 + 0.4 * b.r);
             float dq = du / 0.35, drip = exp(-dq * dq) * smoothstep(0.35, 0.7, b.g) * (1.0 - 0.6 * age);
             diffuseColor.rgb *= 1.0 - track * mix(0.1, 0.2, age) - drip * 0.14;
-            rough -= track * 0.14 + drip * 0.12;
+            rough -= track * 0.07 + drip * 0.06;
             // ravelled, lighter edge strip where the asphalt meets the gutter, broken up by noise
             float edge = smoothstep(hw - 0.55 - 0.25 * c.r, hw - 0.05, au) * (0.35 + 0.65 * age);
             diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.16, 1.12), edge * 0.7);
@@ -185,17 +186,24 @@ export function asphaltAge(mat, key) {
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.035, 0.035, 0.038), tar * 0.85);
             rough -= tar * 0.35;
           }
-          // cracks: noise iso-lines, only where the surface is old enough; alligator cracking in the wheel paths
-          float n1 = texture2D(tNoise, p * 0.11 + 0.3).b, n2 = texture2D(tNoise, p * 0.37 + 0.7).a;
-          float crW = 0.012;
-          float cr = aaLine(abs(n1 - 0.5), crW, fwidth(n1)) * smoothstep(0.52, 0.62, a.g) * smoothstep(0.25, 0.8, age);
-          cr = max(cr, aaLine(abs(n2 - 0.5), crW * 0.8, fwidth(n2)) * smoothstep(0.55, 0.8, age) * smoothstep(0.45, 0.6, b.b));
-          diffuseColor.rgb *= 1.0 - cr * 0.6;
+          // cracks, only where the surface is old enough: on the strips they run along the road (longitudinal, strongest
+          // near the edges and the centre joint) and across it (transverse), stretched noise iso-lines; fine alligator
+          // cracking in the wheel paths; elsewhere (junction pads) short irregular ones
+          vec2 rc = strip ? vec2(s, vRoad.x) : p;
+          float n1 = texture2D(tNoise, strip ? vec2(rc.x * 0.035, rc.y * 0.55) + 0.3 : p * 0.11 + 0.3).b;
+          float n3 = texture2D(tNoise, strip ? vec2(rc.x * 0.5, rc.y * 0.045) + 0.61 : p * 0.23 + 0.5).b;
+          float n2 = texture2D(tNoise, p * 0.45 + 0.7).a;
+          float crW = 0.007, old = smoothstep(0.3, 0.85, age);
+          float cr = aaLine(abs(n1 - 0.5), crW, fwidth(n1)) * smoothstep(0.5, 0.62, a.g) * old;
+          cr = max(cr, aaLine(abs(n3 - 0.5), crW, fwidth(n3)) * smoothstep(0.58, 0.7, b.r) * old);
+          float wheel = strip ? exp(-sqr1((abs(abs(vRoad.x) - step(2.9, hw) * hw * 0.5) - 0.85) / 0.4)) : 0.0;
+          cr = max(cr, aaLine(abs(n2 - 0.5), crW * 0.7, fwidth(n2)) * smoothstep(0.6, 0.9, age) * smoothstep(0.45, 0.6, b.b) * (0.3 + 0.7 * wheel));
+          diffuseColor.rgb *= 1.0 - cr * 0.45;
           // oil and water stains
           diffuseColor.rgb *= 1.0 - smoothstep(0.62, 0.88, c.r) * 0.12 * (0.5 + age);
           aspRough = rough + cr * 0.25;
         }`)
-      .replace('#include <metalnessmap_fragment>', 'roughnessFactor = clamp(roughnessFactor + aspRough, 0.3, 1.0);\n#include <metalnessmap_fragment>');
+      .replace('#include <metalnessmap_fragment>', 'roughnessFactor = clamp(roughnessFactor + aspRough, 0.62, 1.0);\n#include <metalnessmap_fragment>'); // dry asphalt: never glossy
   });
 }
 // thermoplastic road paint: worn through in patches (and where tyres run), dissolved with alpha-to-coverage under MSAA

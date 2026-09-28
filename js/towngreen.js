@@ -131,7 +131,12 @@ export function plantTown(ctx) {
   // ---------------------------------------------------------------- station plaza, shrine, parking edges
   if (ctx.B) {
     const sx = ctx.stationX ?? -8;
-    for (const [x, z] of [[sx - 23, -34.6], [sx - 12, -34.6], [sx - 23, -47], [sx + 13, -34.6]]) {
+    // cherries and shrubs in the raised bed on the loop's island (its soil sits 0.56 above the town datum)
+    for (const [x, z] of [[17.9, -47.6], [17.9, -41.2]]) {
+      const t = tree('sakura', x, z, { scale: 0.62, a: 0.5 }); t.y = Y0 + 0.5; add(t, 0.2);
+      for (let k = 0; k < 4; k++) out.bushes.push({ x: x + (rng() - 0.5) * 3.2, y: Y0 + 0.52, z: z + (rng() - 0.5) * 4.4, s: 0.5 + rng() * 0.3, sx: 1, r: rng() * 6.28, c: rng() < 0.4 ? hydraColor(rng) : bushColor(rng) });
+    }
+    for (const [x, z] of [[sx - 23, -34.6], [sx - 12, -34.6], [sx - 23, -47], [sx + 1, -34.6]]) {
       const t = tree('zelkova', x, z, { scale: 0.7, a: 0.6 }); t.y = Y0 + 0.14; add(t, 0.2);
       ctx.B.frame(x, Y0 + 0.14, z, 0); ctx.B.box('concrete', 0, 0, 0, 1.9, 0.42, 1.9, { color: [0.78, 0.78, 0.76] }); ctx.B.box('plain', 0, 0.3, 0, 1.6, 0.14, 1.6, { color: [0.34, 0.26, 0.2] });
       addBox(x, z, 0.95, 0.95, 0, Y0 - 1, Y0 + 0.56);
