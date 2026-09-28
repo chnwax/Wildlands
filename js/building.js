@@ -894,6 +894,23 @@ export function carPark(B, s, rng, extras) {
   return spots;
 }
 // allotment (家庭菜園): raised soil ridges with crops, a cucumber frame, a tool box
+// plastic tunnel greenhouse (ビニールハウス): galvanised hoops every 1.5 m, milky film, rolled-up side vents, end doors
+export function greenhouse(B, s, rng) {
+  const { x, y, z, r, w = 5.4, d = 24 } = s, h = 3.0, R2 = w / 2, n = 10;
+  B.frame(x, y, z, r);
+  const arc = i => { const a = Math.PI * i / n; return [-Math.cos(a) * R2, 0.9 + Math.sin(a) * (h - 0.9)]; };
+  for (let zz = -d / 2; zz <= d / 2 + 1e-3; zz += 1.5) for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); B.beam('steel', [p[0], p[1], zz], [q[0], q[1], zz], 0.03, 0.03, { color: [0.7, 0.72, 0.74] }); }
+  for (const s2 of [-1, 1]) for (let zz = -d / 2; zz <= d / 2 + 1e-3; zz += 1.5) B.box('steel', s2 * R2, 0, zz, 0.03, 0.9, 0.03, { color: [0.7, 0.72, 0.74] });
+  const film = [0.92, 0.95, 0.96];
+  for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); if (i === 0 || i === n - 1) continue; B.quad('poly', [p[0], p[1], -d / 2], [p[0], p[1], d / 2], [q[0], q[1], d / 2], [q[0], q[1], -d / 2], { color: film }); }
+  for (const s2 of [-1, 1]) { B.quad('poly', [s2 * R2, 0.1, -d / 2], [s2 * R2, 0.1, d / 2], [s2 * R2, 0.45, d / 2], [s2 * R2, 0.45, -d / 2], { color: film });
+    B.sweep('plain', [[0.05, 0], [0, 0.05], [-0.05, 0], [0, -0.05]], [[s2 * R2, 0.95, -d / 2], [s2 * R2, 0.95, d / 2]], { closed: true, color: [0.85, 0.87, 0.86] }); } // rolled vent
+  for (const e of [-1, 1]) { const zz = e * d / 2; for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); B.poly('poly', [[0, 0.9, zz], [p[0], p[1], zz], [q[0], q[1], zz]], [0, 0, e], { color: film }); }
+    B.quad('poly', [-R2, 0.1, zz], [R2, 0.1, zz], [R2, 0.9, zz], [-R2, 0.9, zz], { color: film });
+    B.box('alu', 0, 0, zz + e * 0.02, 1.2, 2.0, 0.04, { color: [0.72, 0.74, 0.76] }); }
+  B.detail(1, () => { for (let k = -1; k <= 1; k++) B.bbox('plain', k * 1.5, -0.02, 0, 0.8, 0.22, d - 1.2, 0.06, { color: [0.4, 0.3, 0.22] });
+    for (let k = -1; k <= 1; k++) for (let zz = -d / 2 + 1; zz < d / 2 - 0.6; zz += 0.6) B.bbox('plain', k * 1.5, 0.2, zz, 0.3, 0.25 + rng() * 0.2, 0.3, 0.08, { color: jitter(rng, [0.3, 0.6, 0.3], 0.1) }); });
+}
 export function allotment(B, s, rng) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);

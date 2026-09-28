@@ -8,7 +8,7 @@ import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js'
 import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
-import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment } from './building.js';
+import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse } from './building.js';
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, curveMirror, roadSign,
@@ -679,6 +679,20 @@ export async function build(progress) {
       if (rng() < 0.07) vend.push({ lot, off: [-lot.w / 2 + 0.8, lot.d / 2 + 0.55] });
     }
     if (++li % 40 === 0) { progress('Building houses', 0.5 + 0.12 * li / lots.length); await tick(); }
+  }
+  // agricultural edge: vegetable fields and tunnel greenhouses on the flat land past the last streets, along farm tracks
+  {
+    const frng = mulberry32(4711);
+    for (let fx = -392; fx < 104; fx += 23 + frng() * 6) for (let fz = 274; fz < 330; fz += 27 + frng() * 5) {
+      const w = 16 + frng() * 5, d = 20 + frng() * 5, y = hf.groundAt(fx, fz);
+      if (occRect(fx, fz, w / 2 + 1, d / 2 + 1, 0, 0, true) || inPaddyZone(fx, fz) || Math.abs(y - Y0) > 0.8 || Math.abs(hf.groundAt(fx + w / 2, fz + d / 2) - y) > 0.6) continue;
+      const roll = frng(); if (roll < 0.25) continue;
+      occRect(fx, fz, w / 2, d / 2, 0, 1);
+      if (roll < 0.55) { greenhouse(B, { x: fx - 3.1, y, z: fz, r: 0, w: 5.4, d: d - 2 }, frng); greenhouse(B, { x: fx + 3.1, y, z: fz, r: 0, w: 5.4, d: d - 2 }, frng); addBox(fx, fz, 5.8, d / 2 - 1, 0); }
+      else allotment(B, { x: fx, y, z: fz, r: frng() < 0.5 ? 0 : Math.PI / 2 * 0, w, d }, frng);
+      hf.paint2(2, fx - w / 2, fz - d / 2, fx + w / 2, fz + d / 2, () => 1);
+      hf.paint2(0, fx - w / 2, fz - d / 2, fx + w / 2, fz + d / 2, () => 0.35);
+    }
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
   RN.buildEdges(B, { tactile: n => n.R.id === 'A' });
