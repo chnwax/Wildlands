@@ -74,7 +74,7 @@ export function stationBuilding(B, x0, y0, z0, rng) {
   B.frame(x0, y0, z0, 0);
   // plinth (its front meets the forecourt paving), floor finish, ceiling
   B.bbox('concrete', 0, -0.3, 0.15, W + 0.4, FL + 0.3, D + 0.7, 0.03, { color: [0.72, 0.72, 0.7] });
-  B.quad('pavement', [-iw, FL + 0.004, id], [iw, FL + 0.004, id], [iw, FL + 0.004, -id], [-iw, FL + 0.004, -id], { color: [0.86, 0.84, 0.8], uv: 1.2 });
+  B.quad('pavement', [-iw, FL + 0.004, id], [iw, FL + 0.004, id], [iw, FL + 0.004, -id], [-iw, FL + 0.004, -id], { color: [0.92, 0.86, 0.76], uv: 1.2 });
   B.quad('plain', [-iw, CEIL, -id], [iw, CEIL, -id], [iw, CEIL, id], [-iw, CEIL, id], { color: [0.94, 0.94, 0.92] });
   addPlatform(x0, z0, W / 2, D / 2, 0, y0 + FL);
 
@@ -469,8 +469,8 @@ export function stationForecourt(B, { Y0, RN, sOf, rng, parked }) {
   addBox((bed.x0 + bed.x1) / 2, (bed.z0 + bed.z1) / 2, (bed.x1 - bed.x0) / 2, (bed.z1 - bed.z0) / 2, 0, py - 1, py + 0.44);
   B.frame(17.9, py, -34.2, 0);
   B.bbox('stone', 0, 0, 0, 2.2, 0.32, 1.1, 0.04, { color: [0.64, 0.62, 0.58] });
-  B.bbox('stone', 0, 0.32, 0, 1.3, 1.55, 0.34, 0.07, { color: [0.4, 0.42, 0.41] });
-  place(signMesh(1.0, 1.25, (g, W2, H2) => { g.fillStyle = '#5b5f5d'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9e4d6'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${W2 * 0.3}px ${JP_FONT}`; g.fillText('桜', W2 / 2, H2 * 0.28); g.fillText('川', W2 / 2, H2 * 0.58); g.font = `${W2 * 0.07}px ${JP_FONT}`; g.fillText('町制施行六十周年記念', W2 / 2, H2 * 0.86); }, 0.05, 256), B, [0, 1.1, 0.172]);
+  B.bbox('plastic', 0, 0.32, 0, 1.3, 1.55, 0.34, 0.05, { color: [0.2, 0.22, 0.21] });   // polished granite
+  place(signMesh(1.0, 1.25, (g, W2, H2) => { g.fillStyle = '#373b3a'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9e4d6'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${W2 * 0.3}px ${JP_FONT}`; g.fillText('桜', W2 / 2, H2 * 0.28); g.fillText('川', W2 / 2, H2 * 0.58); g.font = `${W2 * 0.07}px ${JP_FONT}`; g.fillText('町制施行六十周年記念', W2 / 2, H2 * 0.86); }, 0.05, 256), B, [0, 1.1, 0.172]);
   addBox(17.9, -34.2, 1.1, 0.55, 0, py - 1, py + 1.9);
   B.frame(0, 0, 0, 0);
 

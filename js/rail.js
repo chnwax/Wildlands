@@ -159,6 +159,9 @@ export function buildRailway(ctx) {
       B.frame(x, ptop, back + (P.side > 0 ? -0.3 : 0.3), 0); for (const o of [-1.1, 1.1]) B.box('metal', o, 0, 0, 0.08, 2.5, 0.08, { color: [0.3, 0.3, 0.3] });
     }
   }
+  // home and starting signals (left-hand running: westbound trains on the south track, eastbound on the north)
+  signal(B, sx1 + 45, y0, -75.6, Math.PI / 2, 1); signal(B, sx0 - 12, y0, -75.6, Math.PI / 2, 0);
+  signal(B, sx0 - 45, y0, -84.4, -Math.PI / 2, 0); signal(B, sx1 + 12, y0, -84.4, -Math.PI / 2, 2);
   // stairs/ramps: south platform to plaza (west end) and pedestrian crossing between platforms at the west end
   const steps = Math.ceil((ptop - y0) / 0.16), stx = sx0 + 6;
   for (let i = 0; i < steps; i++) {
@@ -179,6 +182,26 @@ export function buildRailway(ctx) {
   // station building on the plaza side
   stationBuilding(B, RAIL.stationX + 6, y0, -68, mulberry32(77));
   return { ptop, platforms };
+}
+
+// colour-light signal on a mast beside the track, head facing local +Z (the approaching train); aspect 0 G, 1 Y, 2 R
+function signal(B, x, y0, z, r, aspect) {
+  B.frame(x, y0, z, r);
+  B.bbox('concrete', 0, -0.15, 0, 0.6, 0.4, 0.6, 0.03, { color: [0.7, 0.7, 0.68] });
+  B.cyl('steel', 0, 0.25, 0, 0.085, 0.075, 5.25, 12, { color: [0.56, 0.58, 0.6] });
+  B.bbox('dark', 0, 3.72, 0.02, 0.72, 1.72, 0.03, 0.03);                // backboard
+  B.bbox('dark', 0, 3.88, 0.15, 0.44, 1.4, 0.24, 0.05);                 // lamp case
+  const cols = [[0.2, 1, 0.5], [1, 0.72, 0.1], [1, 0.12, 0.06]];
+  for (let i = 0; i < 3; i++) {
+    const ly = 4.98 - i * 0.44, on = i === aspect, n = 16, c = on ? cols[i] : cols[i].map(v => v * 0.12);
+    for (let k = 0; k < n; k++) { const a0 = k / n * Math.PI * 2, a1 = (k + 1) / n * Math.PI * 2;
+      B.poly(on ? 'lamp' : 'plastic', [[0, ly, 0.275], [Math.cos(a0) * 0.1, ly + Math.sin(a0) * 0.1, 0.275], [Math.cos(a1) * 0.1, ly + Math.sin(a1) * 0.1, 0.275]], [0, 0, 1], { color: c }); }
+    B.bbox('dark', 0, ly + 0.11, 0.37, 0.28, 0.025, 0.2, 0.008);          // hood
+  }
+  for (let k = 0; k < 9; k++) B.box('steel', 0, 0.6 + k * 0.33, -0.12, 0.3, 0.025, 0.025, { color: [0.5, 0.52, 0.54] }); // ladder rungs
+  for (const e of [-0.15, 0.15]) B.box('steel', e, 0.5, -0.12, 0.025, 2.9, 0.025, { color: [0.5, 0.52, 0.54] });
+  const p = B.P([0, 0, 0]); addCircle(p[0], p[2], 0.2);
+  B.frame(0, 0, 0, 0);
 }
 
 // lineside fences: green chain-link on steel posts along both edges of the railway corridor through the valley floor,

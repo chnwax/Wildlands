@@ -131,6 +131,13 @@ export function plantTown(ctx) {
   // ---------------------------------------------------------------- station plaza, shrine, parking edges
   if (ctx.B) {
     const sx = ctx.stationX ?? -8;
+    // flower troughs on the station square
+    for (const [x, z] of [[-11.5, -32.4], [-15.5, -32.4], [-26.5, -52], [-21.5, -52]]) {
+      ctx.B.frame(x, Y0 + 0.22, z, 0); ctx.B.bbox('concrete', 0, 0, 0, 2.6, 0.5, 0.9, 0.03, { color: [0.8, 0.8, 0.78] }); ctx.B.box('plain', 0, 0.42, 0, 2.4, 0.06, 0.7, { color: [0.3, 0.23, 0.17] });
+      addBox(x, z, 1.3, 0.45, 0, Y0 - 1, Y0 + 0.75);
+      for (let k = 0; k < 4; k++) out.hydras.push({ x: x - 0.9 + k * 0.6, y: Y0 + 0.64, z: z + (rng() - 0.5) * 0.2, s: 0.42 + rng() * 0.14, sx: 1, r: rng() * 6.28, c: rng() < 0.5 ? hydraColor(rng) : bushColor(rng) });
+    }
+    ctx.B.frame(0, 0, 0, 0);
     // cherries and shrubs in the raised bed on the loop's island (its soil sits 0.56 above the town datum)
     for (const [x, z] of [[17.9, -47.6], [17.9, -41.2]]) {
       const t = tree('sakura', x, z, { scale: 0.62, a: 0.5 }); t.y = Y0 + 0.5; add(t, 0.2);

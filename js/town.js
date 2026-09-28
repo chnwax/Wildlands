@@ -273,6 +273,7 @@ export async function build(progress) {
   // station forecourt: paved square, bus / taxi loop round a raised island (station.js)
   occRect(RAIL.stationX + 6, -47.5, 34, 17, 0, 1);
   hf.paint2(2, -60, -66, 40, -30, (x, z) => x < -34.5 || x > 32 ? 0 : 1); hf.paint2(0, -60, -66, 40, -30, (x, z) => x < -34.5 || x > 32 ? 0 : 1);
+  hf.paint2(2, RAIL.stationX - 4, -74, RAIL.stationX + 16, -63, () => 1); // nothing grows in or under the station building
   const stationCars = [], forecourt = stationForecourt(B, { Y0, RN, sOf, rng: mulberry32(55), parked: stationCars });
   // river banks: concrete revetments with railings, plus bridges. Nothing grows through the revetment slabs or
   // under the walkway deck (the ground there sits below the concrete)
