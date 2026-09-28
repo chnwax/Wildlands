@@ -738,7 +738,7 @@ export async function build(progress) {
     }
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
-  RN.buildEdges(B, { tactile: n => n.R.id === 'A' });
+  RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470 }); // guide blocks in town, not out on the valley road
   { // direction arrows in the approach lanes of the main road at its junction with road B (left-hand traffic)
     const I = inters.find(I2 => I2.roads.some(R => R.id === 'A') && I2.roads.some(R => R.id === 'B'));
     if (I) for (const dir of [1, -1]) for (const back of [20, 34]) {
@@ -826,6 +826,38 @@ export async function build(progress) {
     } }
   progress('Stringing power lines', 0.64); await tick();
 
+  // ---------------------------------------------------------------- retaining walls where the streets cut into the foothills
+  // Along every road edge, wherever the ground just beyond the corridor stands more than ~0.7 m above the road, a
+  // fitted-stone retaining wall (masonry in the old quarter, concrete block with a coping elsewhere) holds the bank back.
+  {
+    const wallRuns = [];
+    for (const R of ROADS) {
+      if (R.kind === 'path') continue;
+      for (const [a, b] of roadSegs(R)) {
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+        for (const side of [-1, 1]) {
+          const nx = -dz * side, nz = dx * side, off = R.w / 2 + (R.walk || 0) + (R.walk ? 0.1 : 0.55);
+          let run = [];
+          const flush = () => { if (run.length > 2) wallRuns.push({ pts: run, old: district(run[0][0], run[0][2]) === 'old' }); run = []; };
+          for (let t = 0; t <= L; t += 2) {
+            const x = a[0] + dx * t + nx * off, z = a[1] + dz * t + nz * off;
+            if (Math.abs(x) > 900 || Math.abs(z) > 700 || Math.abs(z + 80) < 14 || Math.abs(x - riverX(z)) < 26 || nearInter(x, z, R, 2)) { flush(); continue; }
+            const ry = topY(x - nx * 0.6, z - nz * 0.6), g = hf.groundAt(x + nx * 1.5, z + nz * 1.5);
+            if (g - ry > 0.7) run.push([x, ry, z, Math.min(g - ry + 0.25, 4.5)]); else flush();
+          }
+          flush();
+        }
+      }
+    }
+    for (const W of wallRuns) for (let i = 0; i + 1 < W.pts.length; i++) {
+      const [x0, y0, z0, h0] = W.pts[i], [x1, y1, z1, h1] = W.pts[i + 1], h = Math.max(h0, h1), yb = Math.min(y0, y1) - 0.3;
+      B.frame(0, 0, 0, 0);
+      B.beam(W.old ? 'stone' : 'block', [x0, yb + (h + 0.3) / 2, z0], [x1, yb + (h + 0.3) / 2, z1], 0.45, h + 0.3, { color: W.old ? [0.66, 0.64, 0.6] : [0.74, 0.73, 0.7], uv: W.old ? 1.6 : 1.4 });
+      B.beam('concrete', [x0, yb + h + 0.36, z0], [x1, yb + h + 0.36, z1], 0.52, 0.12, { color: [0.68, 0.68, 0.66] });
+      if (i % 2 === 0) B.detail(2, () => B.cyl('plastic', (x0 + x1) / 2, yb + 0.55, (z0 + z1) / 2, 0.05, 0.05, 0.06, 8, { color: [0.2, 0.2, 0.2] })); // weep hole
+      addBox((x0 + x1) / 2, (z0 + z1) / 2, 0.25, 1.05, Math.atan2(x1 - x0, z1 - z0), yb, yb + h);
+    }
+  }
   // ---------------------------------------------------------------- utility poles and wires
   const allPoles = [];
   for (const R of ROADS) {

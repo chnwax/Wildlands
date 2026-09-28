@@ -384,7 +384,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
           B.frame(0, 0, 0, 0);
         });
         // tactile guide line on main-road sidewalks: yellow bar blocks 30 cm wide, 5 mm proud of the paving
-        if (kind === 'walk' && tactile(n)) {
+        if (kind === 'walk' && tactile(n, frame(s0).at([0, 0]))) {
           const qc = n.walk * 0.64, fa = frame(s0), fb = frame(s1), pa = prA, pb = prB;
           const at = (f, pr, q) => { const p = f.at([q, profileY(pr, q) + 0.005]); return p; };
           const a0 = at(fa, pa, qc - 0.15), a1 = at(fa, pa, qc + 0.15), b0 = at(fb, pb, qc - 0.15), b1 = at(fb, pb, qc + 0.15);
