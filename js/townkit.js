@@ -179,7 +179,7 @@ export class GeoBuilder {
       const m = new THREE.Mesh(g, materials[b.mat]);
       if (!materials[b.mat]) console.warn('missing material', b.mat);
       m.castShadow = shadow[b.mat] !== false; m.receiveShadow = true; m.matrixAutoUpdate = false;
-      if (b.lod) { m.userData.lodDist = LOD_DIST[b.lod]; lodMeshes.push(m); }
+      if (b.lod) { m.userData.lodDist = LOD_DIST[b.lod]; lodMeshes.push(m); m.layers.set(3); }
       scene.add(m); meshes.push(m);
     }
     this.parts.clear();

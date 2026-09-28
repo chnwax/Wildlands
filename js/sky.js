@@ -235,6 +235,7 @@ export function applyShadowQuality() {
   cascades.forEach((l, i) => {
     const [half, size] = spec[i], texel = half * 2 / size, c = l.shadow.camera;
     l.shadow.mapSize.set(size, size);
+    if (i >= 2) l.shadow.camera.layers.disable(3); else l.shadow.camera.layers.enable(3); // far cascades skip fine detail
     c.left = -half; c.right = half; c.top = half; c.bottom = -half; c.near = 1; c.far = CSM_D + half + 160; c.updateProjectionMatrix();
     l.shadow.bias = -1.0 * texel / (c.far - c.near); l.shadow.normalBias = 2.0 * texel;
     l.shadow.needsUpdate = true;

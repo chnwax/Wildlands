@@ -1131,6 +1131,16 @@ export async function build(progress) {
       for (const L of plights) L.intensity = lerp(L.intensity, L.userData.target || 0, 1 - Math.exp(-dt * 4));
     },
   };
+  // signage LOD: canvas-textured signs, plates and machine fronts are separate meshes (one texture each); they cast no
+  // shadow (thin plates) and are skipped past ~190 m, where they are a few pixels — ~1700 fewer draws per pass
+  const smallSigns = [];
+  scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || !o.material || !o.material.map || !o.material.map.isCanvasTexture) return;
+    o.geometry.computeBoundingSphere(); if (o.geometry.boundingSphere.radius > 4) return; o.castShadow = false; smallSigns.push(o); });
+  let signTick = 0;
+  const baseUpdate = world.update;
+  world.update = (dt, t, cam) => { baseUpdate(dt, t, cam);
+    if (signTick++ % 6 === 0) { const R = 190 * (Q.lodScale || 1), R2 = R * R, p = cam.position;
+      for (const o of smallSigns) { const dx = o.position.x - p.x, dz = o.position.z - p.z; o.visible = dx * dx + dz * dz < R2; } } };
   people.update(0);
   return world;
 }

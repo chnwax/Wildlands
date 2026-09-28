@@ -69,7 +69,7 @@ Object.assign(QUALITY.low, { csm: [[40, 2048], [150, 2048]], csmRate: [1, 2] });
 Object.assign(QUALITY.medium, { csm: [[26, 2048], [100, 2048], [340, 2048]], csmRate: [1, 1, 3] });
 Object.assign(QUALITY.high, { csm: [[20, 2048], [70, 4096], [240, 4096], [640, 2048]], csmRate: [1, 1, 2, 4] });
 Object.assign(QUALITY.ultra, { csm: [[16, 4096], [56, 4096], [200, 4096], [640, 2048]], csmRate: [1, 1, 2, 3] });
-Object.assign(QUALITY.extreme, { csm: [[14, 4096], [50, 4096], [180, 4096], [640, 4096]], csmRate: [1, 1, 1, 2] });
+Object.assign(QUALITY.extreme, { csm: [[14, 4096], [50, 4096], [180, 4096], [640, 4096]], csmRate: [1, 1, 2, 3] });
 // grass distance hierarchy, one entry per ring: [outer radius (m), density (per m²)]
 //   ring 0: full animated blades, ring 1: simplified wide blades, ring 2: clump cards, ring 3: meadow cards,
 //   ring 4: wide meadow cards reaching past the map edge. A radius of 0 switches the ring off. Beyond the last ring the
@@ -140,6 +140,7 @@ scene.fog = new THREE.FogExp2(0xa8b8c8, 0.00032);
 export const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.2, 26000);
 camera.rotation.order = 'YXZ';
 camera.layers.enable(1); // layer 1: rendered normally but skipped by water reflections
+camera.layers.enable(3); // layer 3: fine building detail — drawn, shadowed only by the near cascades, not reflected
 
 export const sunDir = new THREE.Vector3(0, 1, 0);
 // shared uniforms (objects are shared by reference between materials)
@@ -347,6 +348,10 @@ export class Scatter {
             if (tc) im.setColorAt(i, tc);
           });
           im.castShadow = !!part.castShadow; im.receiveShadow = part.receiveShadow !== false; im.visible = false;
+          // small things (crates, pots, weeds, bikes) cast shadows only into the near cascades (layer 3, see sky.js)
+          if (!part.geometry.boundingSphere) part.geometry.computeBoundingSphere();
+          const smax = list.reduce((m, it) => Math.max(m, it.s * Math.max(it.sx || 1, it.sy || 1, it.sz || it.sx || 1)), 0);
+          if (part.geometry.boundingSphere.radius * smax < 1.2) im.layers.set(3);
           im.matrixAutoUpdate = false; im.matrixWorldAutoUpdate = false; // static at the origin: skip the per-frame matrix walk
           if (part.depth) im.customDepthMaterial = part.depth;
           im.computeBoundingSphere();
