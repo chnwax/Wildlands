@@ -371,6 +371,7 @@ export function house(B, lot, rng, extras) {
   const { x, y, z, r, w: LW, d: LD } = lot;
   B.frame(x, y, z, r);
   const farm = lot.district === 'farm';
+  B.defAttr = { aWear: [clamp((lot.era === 'old' ? 0.62 : 0.18) + (lot.district === 'old' || farm ? 0.2 : 0) + (rng() - 0.5) * 0.3, 0, 1), 1] };
   const W = clamp(LW - 2.2 - rng() * 1.2, 6.5, farm ? 13 : 10), D = clamp(LD - (lot.front ?? 4.8) - 1.2 - rng() * 1.5, 7, farm ? 12 : 10.5);
   // the district biases the style: old quarters keep timber-and-plaster houses, the newer estates are modern
   const WTS = { old: [0.28, 0.12, 0.04, 0.5, 0.06], river: [0.32, 0.18, 0.08, 0.36, 0.06], new: [0.22, 0.26, 0.3, 0.03, 0.19], mid: [0.3, 0.23, 0.18, 0.16, 0.13],
@@ -447,7 +448,7 @@ export function house(B, lot, rng, extras) {
     const faceOff = fi => { const [fr, off] = faces[fi]; return [Math.sin(fr) * off, Math.cos(fr) * off]; };
     const holesOf = pref => (fi) => (openings[pref + ':' + fi] || []).map(o => o.h);
     // ---- foundation
-    B.bbox('concrete', 0, 0, 0, W + 0.05, base, D + 0.05, 0.012, { color: [0.72, 0.72, 0.7], skip: 'ny', uv: 2 });
+    B.bbox('concrete', 0, -0.6, 0, W + 0.05, base + 0.6, D + 0.05, 0.012, { color: [0.72, 0.72, 0.7], skip: 'ny', uv: 2 });
     faces.forEach(([fr, off, fw], fi) => inFrame(B, [Math.sin(fr) * (off + 0.025), 0, Math.cos(fr) * (off + 0.025)], fr, () => foundationFace(B, fw, base, fi === 0 ? [[doorX - 0.6, doorX + 0.6]] : [])));
     // ---- walls
     const revC = frameMat === 'plain' ? mul(wc, 0.95) : [0.9, 0.9, 0.88];
@@ -597,7 +598,7 @@ export function house(B, lot, rng, extras) {
       ? (ax, az, bx2, bz) => { B.beam('concrete', [ax, 0.15, az], [bx2, 0.15, bz], 0.2, 0.3, { color: [0.62, 0.62, 0.6] });
         B.beam('wood', [ax, 0.3 + (wallH - 0.3) / 2, az], [bx2, 0.3 + (wallH - 0.3) / 2, bz], 0.06, wallH - 0.3, { color: wc2, uv: 1.2 });
         B.beam('roofTile', [ax, wallH + 0.04, az], [bx2, wallH + 0.04, bz], 0.34, 0.08, { color: [0.3, 0.32, 0.36] }); }
-      : (ax, az, bx2, bz) => { B.beam('block', [ax, wallH / 2, az], [bx2, wallH / 2, bz], 0.15, wallH, { color: wc2, uv: 1.6 }); B.beam('concrete', [ax, wallH + 0.03, az], [bx2, wallH + 0.03, bz], 0.2, 0.06, { color: [0.66, 0.66, 0.64] }); };
+      : (ax, az, bx2, bz) => { B.beam('block', [ax, wallH / 2 - 0.2, az], [bx2, wallH / 2 - 0.2, bz], 0.15, wallH + 0.4, { color: wc2, uv: 1.6 }); B.beam('concrete', [ax, wallH + 0.03, az], [bx2, wallH + 0.03, bz], 0.2, 0.06, { color: [0.66, 0.66, 0.64] }); };
     seg(-LW / 2, -LD / 2, LW / 2, -LD / 2);
     seg(-LW / 2, -LD / 2, -LW / 2, LD / 2 - 0.1); seg(LW / 2, -LD / 2, LW / 2, LD / 2 - 0.1);
     const gx = doorGap(LW, gateW);
@@ -627,6 +628,7 @@ export function house(B, lot, rng, extras) {
     B.frame(x, y, z, r);
     inFrame(B, [sx * (LW / 2 - bw / 2 - 0.6), 0, hz], 0, () => barn(B, bw, bd, rng, extras));
   }
+  B.defAttr = null;
   return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D, H: roofTop, eave: H, shedSide, hasWall, wallH, gate: doorGap(LW, gateW) };
 }
 function barn(B, w, d, rng, extras) {
@@ -661,6 +663,8 @@ export function shopBuilding(B, s, rng, extras) {
   const floors = type === 'flat' ? 2 + (rng() < 0.4 ? 1 : 0) : 2, fh = type === 'machiya' ? 2.9 : 3.1, H = floors * fh, W = w - 0.1;
   let mat = pick(rng, ['tiles', 'tiles', 'stucco', 'plaster', 'siding']), wc = jitter(rng, pick(rng, WALL_TINTS), 0.06), uv = mat === 'tiles' ? 2.5 : 3;
   if (type === 'machiya') { mat = 'plaster'; wc = jitter(rng, [0.96, 0.94, 0.88], 0.03); uv = 3; }
+  B.defAttr = { aWear: [clamp((s.old ? 0.6 : 0.3) + (rng() - 0.5) * 0.4, 0, 1), 1] };
+  B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
   const para = type === 'flat' ? 0.6 : 0, winY = type === 'machiya' ? 1.45 : 0.9, winH = type === 'machiya' ? 1.0 : 1.3, signY = type === 'machiya' ? fh + 0.45 : 3.02;
   const tradeIdx = Math.floor(mulberry32(Math.floor(x * 131 + z * 71) | 0)() * SHOP_NAMES.length), interior = (SHOP_INTERIOR[tradeIdx] + 0.5) / 8;
   const closed = rng() < 0.3, frameC = pick(rng, [[0.78, 0.8, 0.82], [0.3, 0.3, 0.32], [0.55, 0.42, 0.3]]);
@@ -768,7 +772,7 @@ export function shopBuilding(B, s, rng, extras) {
     }
   });
   // roof: water tank on a stand, condensers, vent stack (flat roofs); pitched roofs get an aerial
-  if (type !== 'flat') { if (rng() < 0.4) antenna(B, 0, roofY - 0.1, 0); extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r }); return; }
+  if (type !== 'flat') { if (rng() < 0.4) antenna(B, 0, roofY - 0.1, 0); extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r }); B.defAttr = null; return; }
   if (deco() < 0.45) {
     const tc = pick(deco, [[0.92, 0.92, 0.9], [0.4, 0.6, 0.82], [0.85, 0.86, 0.88]]), tx = (deco() - 0.5) * (W - 3), tz = -d / 4;
     for (const [sx, sz] of [[-0.55, -0.55], [0.55, -0.55], [-0.55, 0.55], [0.55, 0.55]]) B.bbox('alu', tx + sx, H + 0.03, tz + sz, 0.08, 0.7, 0.08, 0.006, { color: [0.5, 0.5, 0.52] });
@@ -778,6 +782,7 @@ export function shopBuilding(B, s, rng, extras) {
   inFrame(B, [W / 4, 0, 0], 0, () => { acUnit(B, 0, H + 0.03, rng, { pipeTo: H + 0.5 }); if (rng() < 0.5) acUnit(B, -1.2, H + 0.03, rng, { pipeTo: H + 0.5 }); });
   B.cyl('steel', -W / 3, H, d / 4, 0.05, 0.05, 1.2, 8, { color: [0.6, 0.6, 0.6] }); B.cyl('steel', -W / 3, H + 1.2, d / 4, 0.09, 0.09, 0.08, 8, { color: [0.5, 0.5, 0.5], cap: true });
   if (rng() < 0.4) antenna(B, W / 3, roofY, -d / 4);
+  B.defAttr = null;
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
 }
 

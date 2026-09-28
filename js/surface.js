@@ -99,8 +99,11 @@ export function weather(mat, w, key) {
     sh.uniforms.tNoise = S.tNoise;
     sh.uniforms.uWx = { value: new THREE.Vector4(w.grime ?? 0.6, w.streaks ?? 0.5, w.moss ?? 0.3, w.vary ?? 1) };
     sh.uniforms.uGround = { value: w.ground ?? 6 };
+    // per-building wear (aWear = [0 new .. 1 old, 1 = present]): older buildings carry more grime, rain streaks and moss
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aWear; varying float vWear;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvWear = aWear.y > 0.5 ? mix(0.35, 3.2, aWear.x) : 1.0;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; uniform vec4 uWx; uniform float uGround; float wxRough = 0.0;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; uniform vec4 uWx; uniform float uGround; float wxRough = 0.0; varying float vWear;')
       .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
         {
           vec3 wn = normalize(vSWNrm), wp = vSWPos;
@@ -112,9 +115,9 @@ export function weather(mat, w, key) {
           vec4 nC = texture2D(tNoise, wuv * 0.45 + wp.xz * 0.01);
           float hg = wp.y - uGround;
           diffuseColor.rgb *= mix(vec3(1.0), mix(0.86, 1.1, nA.g) * mix(vec3(1.02, 1.0, 0.96), vec3(0.97, 1.0, 1.03), nA.r), uWx.w);
-          float streak = smoothstep(0.42, 0.78, nB.r) * smoothstep(0.2, 0.7, nC.b) * vert * uWx.y;
-          float gg = (1.0 - smoothstep(0.0, 0.5 + nC.r * 0.9, hg)) * vert * uWx.x;
-          float up = smoothstep(0.55, 0.95, wn.y) * smoothstep(0.35, 0.75, nA.b + nC.g * 0.3) * uWx.z;
+          float streak = smoothstep(0.42, 0.78, nB.r) * smoothstep(0.2, 0.7, nC.b) * vert * uWx.y * vWear;
+          float gg = (1.0 - smoothstep(0.0, 0.5 + nC.r * 0.9, hg)) * vert * uWx.x * vWear;
+          float up = smoothstep(0.55, 0.95, wn.y) * smoothstep(0.35, 0.75, nA.b + nC.g * 0.3) * uWx.z * vWear;
           vec3 dirt = diffuseColor.rgb * vec3(0.55, 0.52, 0.47);
           diffuseColor.rgb = mix(diffuseColor.rgb, dirt, clamp(streak * 0.45 + gg * 0.55, 0.0, 0.8));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.14, 0.08), clamp(gg * nC.g * uWx.z * 1.2 + up * 0.55, 0.0, 0.75));

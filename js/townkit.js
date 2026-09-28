@@ -26,6 +26,7 @@ export class GeoBuilder {
   }
   // optional extra per-vertex attributes (opt.attr = { name: [v0, v1, v2(, v3)] }, each a 2-vector); other vertices get 0
   _extra(B, n, attr) {
+    if (this.defAttr) { attr = Object.assign({}, attr); for (const k in this.defAttr) if (!(k in attr)) attr[k] = Array(n).fill(this.defAttr[k]); }
     const count = B.pos.length / 3 - n;           // vertices already in the bucket before this primitive
     for (const name in B.extra) if (!attr || !(name in attr)) for (let i = 0; i < n; i++) B.extra[name].push(0, 0);
     if (attr) for (const name in attr) {
