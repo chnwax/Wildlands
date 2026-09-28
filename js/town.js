@@ -383,7 +383,8 @@ export async function build(progress) {
   const railInfo = buildRailway({ y0: Y0, riverX, B: Bx });
   for (const R of crossingRoads) {
     const x = R.pts[0][0];
-    buildCrossing(Bx, x, Y0, R.w + 2 * (R.walk || 0) + 0.4);
+    buildCrossing(Bx, x, Y0, R.w + 2 * (R.walk || 0) + 0.4, { hw: R.w / 2, walk: R.walk || 0 });
+    if (R.walk) for (const side of [-1, 1]) for (const [za, zb] of [[-73.4, -70.6], [-89.4, -86.6]]) { const sa = sOf(R.id, x, za), sb = sOf(R.id, x, zb); RN.cuts.push({ id: R.id, side, s0: Math.min(sa, sb), s1: Math.max(sa, sb) }); } // footways step down to the crossing
     for (const dir of [-1, 1]) addStop(R.id, sOf(R.id, x, -80 - dir * 8.6), dir, false);
     const sgn = [[-1, -89.5], [1, -70.5]];
     for (const [sd, z] of sgn) { const sx = x + sd * (R.w / 2 + (R.walk ? R.walk - 0.5 : 1.4)); roadSign(B, sx, topY(sx, z + sd * 2), z + sd * 2, sd > 0 ? 0 : Math.PI, 'crossing'); }
@@ -1184,7 +1185,7 @@ export async function build(progress) {
   // signage LOD: canvas-textured signs, plates and machine fronts are separate meshes (one texture each); they cast no
   // shadow (thin plates) and are skipped past ~190 m, where they are a few pixels — ~1700 fewer draws per pass
   const smallSigns = [];
-  scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || !o.material || !o.material.map || !o.material.map.isCanvasTexture) return;
+  scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || o.parent !== scene || !o.material || !o.material.map || !o.material.map.isCanvasTexture) return;
     o.geometry.computeBoundingSphere(); if (o.geometry.boundingSphere.radius > 4) return; o.castShadow = false; smallSigns.push(o); });
   let signTick = 0;
   const baseUpdate = world.update;
