@@ -8,7 +8,7 @@ import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js'
 import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
-import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse } from './building.js';
+import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, inFrame, shedRoof } from './building.js';
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
@@ -135,6 +135,10 @@ const ROADS = [
   // roji off the through roads, short cross lanes that stop the grid from lining up, a rear lane along the railway, and
   // the old highway (旧街道) cutting diagonally through the old quarter
   ...[
+    // service lanes behind the shopping street, between the shops' backs and the railway fence
+    ['Q0a', 3.4, true, 0.85, [[-150, -55], [-110, -54], [-72, -56], [-40, -55]]],
+    ['Q0b', 3.4, true, 0.8, [[110, -56], [80, -55], [50, -56]]],
+    ['Q0c', 3.4, true, 0.9, [[-150, -54], [-200, -55], [-240, -53], [-262, -54]]],
     ['M0a', 3.4, true, 0.9, [[-275, 12], [-236, 10], [-196, 13], [-150, 11]]],
     ['M0b', 3.6, true, 0.8, [[-150, 12], [-108, 10], [-66, 13], [-30, 11]]],
     ['M0c', 3.8, false, 0.55, [[-30, 15], [20, 13], [60, 16], [110, 14]]],
@@ -529,6 +533,19 @@ export async function build(progress) {
   reserve(SHRINE.x, SHRINE.z - 15, 12.5, 24.5, 0);
   // an elementary school fills the block between lanes C, V1, S2 and S3; a playground park opens onto lane S0
   const drng = mulberry32(2024), schoolSak = [], parkTrees = [], bikeList = [];
+  { // covered bicycle park beside the station forecourt (駐輪場): steel frames, a long mono-pitch roof, racks, bikes
+    const bx = 37, z0 = -62, z1 = -34, y = hf.groundAt(bx, (z0 + z1) / 2), L = z1 - z0;
+    reserve(bx, (z0 + z1) / 2, 4.6, L / 2 + 0.5, 0);
+    B.frame(bx, y, (z0 + z1) / 2, 0);
+    B.bbox('concrete', 0, -0.05, 0, 8.4, 0.1, L + 0.6, 0.01, { color: [0.7, 0.7, 0.68], skip: 'ny', uv: 2 });
+    for (let zz = -L / 2 + 0.5; zz <= L / 2 - 0.4; zz += 4.5) { B.bbox('steel', 2.6, 0, zz, 0.1, 2.4, 0.1, 0.01, { color: [0.6, 0.63, 0.66] }); B.bbox('steel', -2.6, 0, zz, 0.1, 2.7, 0.1, 0.01, { color: [0.6, 0.63, 0.66] });
+      B.beam('steel', [-2.6, 2.66, zz], [2.6, 2.36, zz], 0.08, 0.14, { color: [0.6, 0.63, 0.66] }); }
+    inFrame(B, [0, 0, 0], Math.PI / 2, () => shedRoof(B, { w: L, d: 5.4, y: 2.4, pitch: 0.06, over: 0.5, mat: 'roofMetal', color: [0.36, 0.5, 0.52], gutterColor: [0.6, 0.6, 0.6] }));
+    for (const sx of [-1.1, 1.1]) { B.box('steel', sx, 0.35, 0, 0.04, 0.04, L - 1, { color: [0.7, 0.7, 0.72] });
+      for (let zz = -L / 2 + 0.8; zz < L / 2 - 0.5; zz += 0.62) { B.box('steel', sx, 0, zz, 0.03, 0.35, 0.03, { color: [0.7, 0.7, 0.72] }); if (drng() < 0.72) bikeList.push({ x: bx + sx * 1.6, y, z: (z0 + z1) / 2 + zz, r: sx > 0 ? 0 : Math.PI }); } }
+    B.frame(0, 0, 0, 0);
+    hf.paint2(2, bx - 5, z0 - 1, bx + 5, z1 + 1, () => 1);
+  }
   const SCH = { x: -89.75, z: 223, w: 113, d: 64 }, PK = { x: -212, z: 69.5, w: 42, d: 32 };
   reserve(SCH.x, SCH.z, SCH.w / 2 + 1, SCH.d / 2 + 1, 0);
   school(B, SCH.x, hf.groundAt(SCH.x, SCH.z), SCH.z, Math.PI, SCH.w, SCH.d, drng, schoolSak, bikeList, extras);
