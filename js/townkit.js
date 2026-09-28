@@ -1,5 +1,5 @@
 // Town construction kit: batched geometry builder, PBR materials, canvas-drawn signage, buildings and street props.
-import { THREE, scene, S, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform } from './core.js';
+import { THREE, scene, S, Q, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform } from './core.js';
 import { env } from './sky.js';
 import { relief, weather, asphaltAge, wornPaint, windowMaterial } from './surface.js';
 
@@ -13,13 +13,15 @@ const norm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]
 const WHITE = [1, 1, 1];
 
 export class GeoBuilder {
-  constructor(chunk = 96) { this.chunk = chunk; this.parts = new Map(); this.frame(0, 0, 0, 0); }
+  constructor(chunk = 96) { this.chunk = chunk; this.parts = new Map(); this.lod = 0; this.frame(0, 0, 0, 0); }
+  // emit fn's geometry as detail of level n (1: fine parts, 2: micro details); those meshes are drawn only near the camera
+  detail(n, fn) { const o = this.lod; this.lod = Math.max(o, n); try { return fn(); } finally { this.lod = o; } }
   frame(x, y, z, r = 0) { this.F = { x, y, z, c: Math.cos(r), s: Math.sin(r), r }; return this; }
   P(l) { const F = this.F; return [F.x + l[0] * F.c + l[2] * F.s, F.y + l[1], F.z - l[0] * F.s + l[2] * F.c]; }
   N(n) { const F = this.F; return [n[0] * F.c + n[2] * F.s, n[1], -n[0] * F.s + n[2] * F.c]; }
   bucket(mat, x, z) {
-    const k = mat + '|' + Math.floor(x / this.chunk) + ',' + Math.floor(z / this.chunk);
-    let b = this.parts.get(k); if (!b) { b = { mat, pos: [], nor: [], uv: [], col: [], idx: [], extra: {} }; this.parts.set(k, b); }
+    const c = this.lod ? this.chunk / 2 : this.chunk, k = mat + '|' + this.lod + '|' + Math.floor(x / c) + ',' + Math.floor(z / c);
+    let b = this.parts.get(k); if (!b) { b = { mat, lod: this.lod, pos: [], nor: [], uv: [], col: [], idx: [], extra: {} }; this.parts.set(k, b); }
     return b;
   }
   // optional extra per-vertex attributes (opt.attr = { name: [v0, v1, v2(, v3)] }, each a 2-vector); other vertices get 0
@@ -105,7 +107,7 @@ export class GeoBuilder {
     const n = path.length, frames = [];
     for (let i = 0; i < n; i++) {
       const a = path[Math.max(0, i - 1)], b = path[Math.min(n - 1, i + 1)];
-      const t = norm(sub(b, a)), r = norm(cross(t, [0, 1, 0])), u = cross(r, t);
+      const t = norm(sub(b, a)), rc = cross(t, [0, 1, 0]), r = len(rc) < 1e-4 ? [1, 0, 0] : norm(rc), u = cross(r, t);
       frames.push({ p: path[i], r, u });
     }
     const at = (f, q) => [f.p[0] + f.r[0] * q[0] + f.u[0] * q[1], f.p[1] + f.r[1] * q[0] + f.u[1] * q[1], f.p[2] + f.r[2] * q[0] + f.u[2] * q[1]];
@@ -121,6 +123,13 @@ export class GeoBuilder {
           uvs: [[along / sc, 0], [(along + seg) / sc, 0], [(along + seg) / sc, pl / sc], [along / sc, pl / sc]] });
       }
       along += seg;
+    }
+    if (opt.caps && opt.closed) { // flat end caps (fan from the profile centroid; convex-ish profiles)
+      const c = profile.reduce((a, q) => [a[0] + q[0] / profile.length, a[1] + q[1] / profile.length], [0, 0]);
+      for (const [f, s] of [[frames[0], -1], [frames[n - 1], 1]]) {
+        const t = norm(sub(path[s < 0 ? Math.min(1, n - 1) : n - 1], path[s < 0 ? 0 : Math.max(0, n - 2)])), hint = [t[0] * s, t[1] * s, t[2] * s];
+        for (let k = 0; k < profile.length; k++) this.poly(mat, [at(f, c), at(f, profile[k]), at(f, profile[(k + 1) % profile.length])], hint, { color: opt.capColor || opt.color });
+      }
     }
   }
   // box between two local points (for beams, rails, wires-as-bars)
@@ -168,11 +177,22 @@ export class GeoBuilder {
       const m = new THREE.Mesh(g, materials[b.mat]);
       if (!materials[b.mat]) console.warn('missing material', b.mat);
       m.castShadow = shadow[b.mat] !== false; m.receiveShadow = true; m.matrixAutoUpdate = false;
+      if (b.lod) { m.userData.lodDist = LOD_DIST[b.lod]; lodMeshes.push(m); }
       scene.add(m); meshes.push(m);
     }
     this.parts.clear();
     return meshes;
   }
+}
+
+// detail levels: fine parts (frames, sills, gutters, railings, AC units) and micro details (meters, vents, grates, bolts)
+// are batched into their own smaller chunks and drawn only within these distances (scaled by the quality preset)
+const LOD_DIST = [Infinity, 190, 70];
+export const lodMeshes = [];
+const _lc = new THREE.Vector3();
+export function updateLod(cam) {
+  const k = Q.lodScale || 1;
+  for (const m of lodMeshes) { const bs = m.geometry.boundingSphere; m.visible = _lc.copy(bs.center).distanceTo(cam.position) - bs.radius < m.userData.lodDist * k; }
 }
 
 // ---------------------------------------------------------------- materials
@@ -201,10 +221,29 @@ function pbrX(name, depth, wx, o = {}) {
   if (wx) weather(m, Object.assign({ ground: 6 }, wx, { grime: (wx.grime ?? 0.6) * 0.18, streaks: (wx.streaks ?? 0.5) * 0.12, moss: (wx.moss ?? 0.3) * 0.15, vary: 0.35 }), name);
   return m;
 }
-function asphaltVariant(key, units, factor) {
-  const m = std({ map: tex('asphalt_pit_lane', 'diff', '2k'), normalMap: tex('asphalt_pit_lane', 'nor_gl', '1k', false), roughnessMap: tex('asphalt_pit_lane', 'rough', '1k', false),
-    polygonOffset: units !== 0, polygonOffsetFactor: factor, polygonOffsetUnits: units });
-  return asphaltAge(m, key);
+// tactile paving (点字ブロック): yellow 30 cm tiles with raised guide bars (dots = warning), as colour + normal maps
+function tactileMat(dots) {
+  const N = 128, H = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = (x + 0.5) / N, v = (y + 0.5) / N; let h = 0;
+    if (dots) { const cu = (u * 5) % 1 - 0.5, cv = (v * 5) % 1 - 0.5, r = Math.hypot(cu, cv); h = clamp((0.3 - r) / 0.08, 0, 1); }
+    else { const cv = (v * 4) % 1 - 0.5, ends = Math.min(u, 1 - u); h = clamp((0.2 - Math.abs(cv)) / 0.07, 0, 1) * clamp((ends - 0.05) / 0.04, 0, 1); }
+    const e = Math.min(u, 1 - u, v, 1 - v); h -= clamp((0.012 - e) / 0.012, 0, 1) * 0.6;   // joints between tiles
+    H[y * N + x] = h;
+  }
+  const at = (x, y) => H[((y + N) % N) * N + (x + N) % N];
+  const col = canvasTex(N, N, (g) => { const im = g.createImageData(N, N); for (let i = 0; i < N * N; i++) { const h = H[i], ao = 0.82 + 0.18 * clamp(h + 0.3, 0, 1), k = h < -0.2 ? 0.55 : ao; im.data[i * 4] = 238 * k; im.data[i * 4 + 1] = 186 * k; im.data[i * 4 + 2] = 40 * k; im.data[i * 4 + 3] = 255; } g.putImageData(im, 0, 0); });
+  const nor = canvasTex(N, N, (g) => { const im = g.createImageData(N, N); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const i = y * N + x, dx = (at(x + 1, y) - at(x - 1, y)) * 2.2, dy = (at(x, y + 1) - at(x, y - 1)) * 2.2, l = Math.hypot(dx, dy, 1); im.data[i * 4] = (-dx / l * 0.5 + 0.5) * 255; im.data[i * 4 + 1] = (dy / l * 0.5 + 0.5) * 255; im.data[i * 4 + 2] = (1 / l * 0.5 + 0.5) * 255; im.data[i * 4 + 3] = 255; } g.putImageData(im, 0, 0); }, false);
+  for (const t of [col, nor]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
+  const m = std({ map: col, normalMap: nor, roughness: 0.62 });
+  m.userData.toonNorm = 0.7;
+  return m;
+}
+// one asphalt for every road: age, lane layout and wear come per vertex from the road builder (roads.js)
+function asphaltMat() {
+  const m = std({ map: tex('asphalt_pit_lane', 'diff', '2k'), normalMap: tex('asphalt_pit_lane', 'nor_gl', '2k', false), roughnessMap: tex('asphalt_pit_lane', 'rough', '1k', false) });
+  m.normalScale.set(0.8, 0.8);
+  return asphaltAge(m, 'road');
 }
 export function materials() {
   if (M) return M;
@@ -219,11 +258,10 @@ export function materials() {
     roofTile: pbrX('grey_roof_tiles', 0.024, { grime: 0, streaks: 0.3, moss: 0.55 }, { metalness: 0.12, roughness: 0.75 }),
     roofMetal: weather(std({ normalMap: tex('box_profile_metal_sheet', 'nor_gl', '1k', false), roughnessMap: tex('box_profile_metal_sheet', 'rough', '1k', false), metalness: 0.55, roughness: 0.6 }), { grime: 0, streaks: 0.4, moss: 0.15 }, 'roofMetal'),
     wood: pbrX('japanese_cedar_planks', 0.006, { grime: 0.6, streaks: 0.5, moss: 0.4 }),
-    asphalt: asphaltVariant('main', -2, -1),
-    asphaltMain: null, asphaltRoad: asphaltVariant('road', -1, -0.5), asphaltLane: asphaltVariant('lane', -0.5, -0.25), asphaltLane2: asphaltVariant('lane2', 0, 0),
+    asphalt: asphaltMat(),
     pavement: pbrX('concrete_pavement', 0.008, { grime: 0.3, streaks: 0, moss: 0.35 }),
     ballast: pbrX('bicolour_gravel', 0.02, null),
-    paint: wornPaint(std({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }), 'road'),
+    paint: wornPaint(std({ roughness: 0.62 }), 'road'),
     metal: weather(std({ roughness: 0.45, metalness: 0.4 }), { grime: 0.3, streaks: 0.3, moss: 0, vary: 0.5 }, 'metal'),
     alu: std({ roughness: 0.35, metalness: 0.85, color: 0xc8ccd0 }),
     steel: std({ roughness: 0.3, metalness: 1.0, color: 0x9a9ea2 }),
@@ -238,8 +276,10 @@ export function materials() {
     lamp: nightGlow(std({ color: 0xf4f4f0, roughness: 0.4, emissive: 0xfff2dc, emissiveIntensity: 1 }), 6.0, 'lampGlow'),
     poly: new THREE.MeshStandardMaterial({ color: 0xcfe0e6, roughness: 0.2, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
   };
-  M.asphaltMain = M.asphalt;
-  M.gravelPath = pbrX('bicolour_gravel', 0.02, null, { polygonOffset: true, polygonOffsetUnits: -1, color: 0xf2e6cf });
+  M.asphaltMain = M.asphaltRoad = M.asphaltLane = M.asphaltLane2 = M.asphalt;
+  M.gravelPath = pbrX('bicolour_gravel', 0.02, null, { color: 0xf2e6cf });
+  M.stopLegend = stopMat;
+  M.tactileL = tactileMat(false); M.tactileD = tactileMat(true);
   // painted brightness per surface (toon.js): light pastel walls, pale concrete and gravel, warm wood
   for (const [k, v] of Object.entries({ siding: 0.58, stucco: 0.6, plaster: 0.6, tiles: 0.56, concrete: 0.64, block: 0.6, pavement: 0.66, ballast: 0.5, wood: 0.46, stone: 0.56, roofTile: 0.62, gravelPath: 0.66 }))
     M[k].userData.toonNorm = v;
@@ -272,7 +312,7 @@ export function signMesh(w, h, draw, glow = 0.8, px = 256) {
 export const glowMats = [];
 export function updateGlow() { for (const m of glowMats) m.emissiveIntensity = m.userData.glow * (0.15 + night.value * 1.6); }
 
-const SHOP_NAMES = [
+export const SHOP_NAMES = [
   ['ラーメン', '桜屋', '#b3261e', '#fff'], ['薬局', 'くすりのヤマダ', '#1f6fb5', '#fff'], ['美容室', 'hair salon Lumi', '#f4efe6', '#333'],
   ['居酒屋', 'とり吉', '#2b2320', '#f2d49b'], ['クリーニング', 'ホワイト急便', '#e9f1f7', '#1f5f9b'], ['不動産', '桜川ホーム', '#f5f5f0', '#1f7a3a'],
   ['和菓子', '福田堂', '#3d2b1f', '#f2e3c6'], ['喫茶', 'ひだまり', '#6b4f36', '#fff3dd'], ['酒', 'たなか酒店', '#1d3557', '#fff'],
@@ -282,7 +322,7 @@ const SHOP_NAMES = [
 ];
 // what each kind of shop looks like inside (surface.js): 0 shelves, 1 café, 2 restaurant counter, 3 salon / clinic,
 // 4 office, 5 workshop, 6 bookshop, 7 bakery / sweets counter
-const SHOP_INTERIOR = [2, 0, 3, 2, 0, 4, 7, 1, 0, 3, 6, 7, 2, 3, 0, 5, 2, 3];
+export const SHOP_INTERIOR = [2, 0, 3, 2, 0, 4, 7, 1, 0, 3, 6, 7, 2, 3, 0, 5, 2, 3];
 export function shopSign(rng, w, pickIdx) {
   const r0 = rng(), [kind, name, bg, fg] = SHOP_NAMES[pickIdx ?? Math.floor(r0 * SHOP_NAMES.length)];
   return signMesh(w, 0.9, (g, W, H) => {
@@ -450,11 +490,11 @@ export const stopTex = canvasTex(256, 512, (g, W, H) => {
   g.save(); g.scale(1, 1.45); g.font = `bold 112px ${JP_FONT}`; // glyphs stretched lengthwise like real road paint
   ['止', 'ま', 'れ'].forEach((c, i) => g.fillText(c, W / 2, 58 + i * 116)); g.restore();
 });
-export const stopMat = new THREE.MeshStandardMaterial({ map: stopTex, transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, depthWrite: false, color: 0xe8e8e2 });
+export const stopMat = new THREE.MeshStandardMaterial({ map: stopTex, alphaToCoverage: true, roughness: 0.62, color: 0xe8e8e2 });
 
 // ---------------------------------------------------------------- buildings
 // anime palettes: clean pastel walls and saturated roofs (Shinkai / Ghibli town streets)
-const WALL_TINTS = [[1, 0.97, 0.9], [0.98, 0.98, 0.96], [0.9, 0.95, 1], [0.92, 1, 0.93], [1, 0.9, 0.84], [1, 0.97, 0.8], [1, 0.9, 0.9], [0.9, 0.88, 0.86], [0.86, 0.92, 0.98]];
+export const WALL_TINTS = [[1, 0.97, 0.9], [0.98, 0.98, 0.96], [0.9, 0.95, 1], [0.92, 1, 0.93], [1, 0.9, 0.84], [1, 0.97, 0.8], [1, 0.9, 0.9], [0.9, 0.88, 0.86], [0.86, 0.92, 0.98]];
 const ROOF_METAL = [[0.2, 0.33, 0.6], [0.2, 0.5, 0.52], [0.72, 0.28, 0.2], [0.26, 0.3, 0.42], [0.3, 0.5, 0.32], [0.55, 0.22, 0.2], [0.18, 0.42, 0.7]];
 const ROOF_TILE = [[0.42, 0.52, 0.72], [0.36, 0.42, 0.55], [0.5, 0.56, 0.64], [0.7, 0.4, 0.32], [0.35, 0.55, 0.58]];
 const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];

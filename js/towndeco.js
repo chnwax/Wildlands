@@ -4,6 +4,7 @@
 import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvasTex, signMesh, JP_FONT, lampPoints, materials } from './townkit.js';
+import { wallFill, reveals, windowUnit } from './building.js';
 
 // chain-link fence mesh: a diamond wire pattern, alpha-tested so it stays see-through (one texture repeat = 0.5 m)
 function chainMaterial() {
@@ -15,6 +16,15 @@ function chainMaterial() {
   });
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   MT.chain = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true, roughness: 0.5, metalness: 0.4 });
+  // mesh wire keeps its coverage down the mip chain (alpha scaled by mip level), so fences and nets neither fade out nor
+  // shimmer into moire at distance; alpha-to-coverage (MSAA) then resolves the thin wires smoothly
+  MT.chain.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', `
+    #ifdef USE_MAP
+      { vec2 tdx = dFdx(vMapUv * 64.0), tdy = dFdy(vMapUv * 64.0); float lod = max(0.0, 0.5 * log2(max(dot(tdx, tdx), dot(tdy, tdy))));
+        diffuseColor.a *= 1.0 + lod * 0.32; }
+    #endif
+    #include <alphatest_fragment>`); };
+  MT.chain.customProgramCacheKey = () => 'chainAA';
   return MT.chain;
 }
 
@@ -262,19 +272,21 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   // main building along the back of the grounds
   const bw = Math.min(64, BW - 38), bd = 12, bx = -BW / 2 + 4 + bw / 2, bz = -BD / 2 + 3 + bd / 2;
   at(bx, bz);
-  B.box('stucco', 0, 0, 0, bw, H, bd, { color: wall, skip: 'ny', uv: 3 });
-  B.box('stucco', 0, H, 0, bw, 1.0, bd, { color: [0.93, 0.93, 0.9], skip: 'ny', uv: 3 });
-  B.box('concrete', 0, H + 1.0, 0, bw + 0.1, 0.08, bd + 0.1, { color: [0.7, 0.72, 0.72] });
+  // walls with real ribbon-window openings (recessed frames, sills) on both long faces
+  const bays = Math.floor((bw - 3) / 1.8), bay0 = -bays * 1.8 / 2;
+  for (const [fr, off, fw] of [[0, bd / 2, bw], [Math.PI, bd / 2, bw], [Math.PI / 2, bw / 2, bd], [-Math.PI / 2, bw / 2, bd]]) {
+    const F0 = B.F; B.frame(...B.P([Math.sin(fr) * off, 0, Math.cos(fr) * off]), r + fr);
+    const holes = [];
+    if (fw === bw) for (let f = 0; f < floors; f++) for (let k = 0; k < bays; k++) holes.push({ x0: bay0 + k * 1.8 + 0.06, x1: bay0 + (k + 1) * 1.8 - 0.06, y0: f * fh + 0.95, y1: f * fh + 2.9, d: 0.2 });
+    else for (let f = 0; f < floors; f++) holes.push({ x0: -0.6, x1: 0.6, y0: f * fh + 1.2, y1: f * fh + 2.6, d: 0.2 });
+    wallFill(B, 'stucco', -fw / 2, fw / 2, 0, H + 1.0, holes, wall, 3);
+    for (const h of holes) { reveals(B, 'stucco', h, [0.92, 0.92, 0.9]); windowUnit(B, h, { rng, frame: [0.82, 0.84, 0.86], transom: true, glass: [1, 0.94, 0.8] }); }
+    for (let f = 1; f <= floors; f++) B.bbox('concrete', 0, f * fh - 0.1, 0.03, fw + 0.06, 0.12, 0.06, 0.01, { color: [0.86, 0.86, 0.84] }); // floor bands
+    B.F = F0;
+  }
+  B.quad('concrete', [-bw / 2, H + 1.0, bd / 2], [bw / 2, H + 1.0, bd / 2], [bw / 2, H + 1.0, -bd / 2], [-bw / 2, H + 1.0, -bd / 2], { color: [0.62, 0.64, 0.64] });
+  B.bbox('concrete', 0, H + 1.0, 0, bw + 0.14, 0.09, bd + 0.14, 0.02, { color: [0.7, 0.72, 0.72], skip: 'ny' });
   for (let f = 0; f < floors; f++) {
-    const y0 = f * fh + 0.95, y1 = f * fh + 2.9;
-    for (const side of [1, -1]) {
-      const zz = side * (bd / 2 + 0.02);
-      const q = [[-bw / 2 + 1.5, y0, zz], [bw / 2 - 1.5, y0, zz], [bw / 2 - 1.5, y1, zz], [-bw / 2 + 1.5, y1, zz]];
-      if (side > 0) B.quad('window', ...q, { color: [1, 0.94, 0.8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
-      else B.quad('window', q[1], q[0], q[3], q[2], { color: [1, 0.94, 0.8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
-      for (let k = 0; k <= Math.floor((bw - 3) / 1.8); k++) B.box('alu', -bw / 2 + 1.5 + k * 1.8, y0, zz + side * 0.02, 0.07, y1 - y0, 0.06, { color: [0.82, 0.84, 0.86] });
-      B.box('alu', 0, y0 + 1.1, zz + side * 0.03, bw - 3, 0.05, 0.05, { color: [0.82, 0.84, 0.86] });
-    }
     // sunshade balconies on the grounds side
     B.box('concrete', 0, f * fh + 3.2, bd / 2 + 0.55, bw, 0.14, 1.1, { color: [0.9, 0.9, 0.88] });
     B.box('alu', 0, f * fh + 3.34 + 0.9, bd / 2 + 1.08, bw, 0.05, 0.05, { color: [0.82, 0.84, 0.86] });
@@ -314,22 +326,76 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
     for (let k = 0; k < 4; k++) B.box('alu', -gw / 2 + 3 + k * (gw - 6) / 3, 0.2, gd / 2 + 0.02, 2.2, 2.4, 0.05, { color: [0.72, 0.74, 0.76] }); // doors
     extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: gw / 2, hz: gd / 2, r });
   }
-  // sports ground: running track, goals, climbing bars, a morning-assembly stage and a flagpole
-  const fx = -8, fz = BD / 2 - 3 - 19, fw = Math.min(78, BW - 20), fd = 32;
+  // sports ground: a levelled dirt field inside concrete edging with covered drainage channels; chalk track lanes and
+  // pitch lines laid on it; football goals with nets, ball-stop nets behind both ends, a baseball backstop, floodlights,
+  // team benches under shelters
+  const fx = -8, fz = BD / 2 - 3 - 19, fw = Math.min(78, BW - 20), fd = 32, fy = 0.07, sand = [1.0, 0.86, 0.66];
   at(fx, fz);
-  const line = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0), nx = -(z1 - z0) / L * 0.07, nz = (x1 - x0) / L * 0.07; B.quad('paint', [x0 - nx, 0.02, z0 - nz], [x0 + nx, 0.02, z0 + nz], [x1 + nx, 0.02, z1 + nz], [x1 - nx, 0.02, z1 - nz], { color: [0.97, 0.97, 0.95] }); };
-  for (const lane of [0, 1.2, 2.4]) {
-    const rx = fd / 2 - 3 - lane, sx = fw / 2 - fd / 2;
-    line(-sx, -rx, sx, -rx); line(sx, rx, -sx, rx);
-    for (const e of [-1, 1]) { const N = 16; for (let k = 0; k < N; k++) { const a0 = -Math.PI / 2 + k / N * Math.PI, a1 = a0 + Math.PI / N; line(e * (sx + Math.cos(a0) * rx), Math.sin(a0) * rx * e, e * (sx + Math.cos(a1) * rx), Math.sin(a1) * rx * e); } }
+  B.box('ballast', 0, fy - 0.2, 0, fw, 0.2, fd, { color: sand, uv: 3, skip: 'ny' });
+  for (const s of [-1, 1]) { B.bbox('concrete', 0, fy - 0.16, s * (fd / 2 + 0.08), fw + 0.32, 0.22, 0.16, 0.02, { color: [0.78, 0.78, 0.75] }); B.bbox('concrete', s * (fw / 2 + 0.08), fy - 0.16, 0, 0.16, 0.22, fd, 0.02, { color: [0.78, 0.78, 0.75] }); }
+  for (const s of [-1, 1]) { // U-channel drains with steel gratings along the long sides
+    const zc = s * (fd / 2 + 0.42);
+    B.box('dark', 0, fy - 0.12, zc, fw, 0.1, 0.36, { color: [0.1, 0.1, 0.1] });
+    for (const e of [-1, 1]) B.bbox('concrete', 0, fy - 0.16, zc + e * 0.24, fw + 0.3, 0.2, 0.12, 0.015, { color: [0.74, 0.74, 0.72] });
+    B.quad('chain', [-fw / 2, fy + 0.02, zc - 0.18], [fw / 2, fy + 0.02, zc - 0.18], [fw / 2, fy + 0.02, zc + 0.18], [-fw / 2, fy + 0.02, zc + 0.18], { uv: 0.12, color: [0.3, 0.3, 0.32] });
   }
-  for (const e of [-1, 1]) { // goals
-    const gx0 = e * (fw / 2 - fd / 2 - 3);
-    at(fx + gx0, fz, e > 0 ? -Math.PI / 2 : Math.PI / 2);
-    for (const sx of [-2.5, 2.5]) B.box('alu', sx, 0, 0, 0.1, 2.1, 0.1, { color: WHITE });
-    B.box('alu', 0, 2.05, 0, 5.1, 0.1, 0.1, { color: WHITE });
-    for (const sx of [-2.5, 2.5]) B.beam('alu', [sx, 2.1, 0], [sx, 0, -1.6], 0.05, 0.05, { color: [0.85, 0.85, 0.85] });
-    B.quad('poly', [2.5, 0, -1.6], [-2.5, 0, -1.6], [-2.5, 2.1, 0], [2.5, 2.1, 0]);
+  const chalk = [0.97, 0.97, 0.95], ly = fy + 0.006;
+  const line = (x0, z0, x1, z1, wd = 0.1) => { const L = Math.hypot(x1 - x0, z1 - z0), nx = -(z1 - z0) / L * wd / 2, nz = (x1 - x0) / L * wd / 2; B.quad('paint', [x0 - nx, ly, z0 - nz], [x0 + nx, ly, z0 + nz], [x1 + nx, ly, z1 + nz], [x1 - nx, ly, z1 - nz], { color: chalk }); };
+  const arc = (cx, cz, rad, a0, a1, n = 32) => { for (let k = 0; k < n; k++) { const t0 = a0 + (a1 - a0) * k / n, t1 = a0 + (a1 - a0) * (k + 1) / n; line(cx + Math.cos(t0) * rad, cz + Math.sin(t0) * rad, cx + Math.cos(t1) * rad, cz + Math.sin(t1) * rad); } };
+  const sxT = fw / 2 - fd / 2;
+  for (const lane of [0, 1.22, 2.44, 3.66]) {
+    const rx = fd / 2 - 1.5 - lane;
+    line(-sxT, -rx, sxT, -rx); line(sxT, rx, -sxT, rx);
+    arc(sxT, 0, rx, -Math.PI / 2, Math.PI / 2); arc(-sxT, 0, rx, Math.PI / 2, Math.PI * 1.5);
+  }
+  for (let k = 0; k < 4; k++) line(-4 + k * 1.22, fd / 2 - 1.5, -4 + k * 1.22, fd / 2 - 5.2, 0.06); // start marks
+  const pw = 2 * sxT - 6, pd = fd - 10;
+  line(-pw / 2, -pd / 2, pw / 2, -pd / 2); line(-pw / 2, pd / 2, pw / 2, pd / 2); line(-pw / 2, -pd / 2, -pw / 2, pd / 2); line(pw / 2, -pd / 2, pw / 2, pd / 2);
+  line(0, -pd / 2, 0, pd / 2); arc(0, 0, 4, 0, Math.PI * 2, 40);
+  for (const e of [-1, 1]) { const x0 = e * pw / 2, x1 = e * (pw / 2 - 5); line(x0, -6, x1, -6); line(x1, -6, x1, 6); line(x1, 6, x0, 6); }
+  const goal = (gx, face) => { // posts, crossbar, ground frame, nets
+    at(fx + gx, fz, face);
+    const gw = 5, gh = 2.1, gd = 1.6, wc = [0.97, 0.97, 0.95];
+    for (const sx of [-gw / 2, gw / 2]) { B.cyl('alu', sx, fy, 0, 0.06, 0.06, gh, 10, { color: wc }); B.beam('alu', [sx, gh + fy, 0], [sx, fy + 0.05, -gd], 0.04, 0.04, { color: [0.85, 0.85, 0.85] }); B.beam('alu', [sx, fy + 0.03, 0], [sx, fy + 0.03, -gd], 0.04, 0.04, { color: [0.85, 0.85, 0.85] }); }
+    B.sweep('alu', [[-0.06, -0.06], [0.06, -0.06], [0.06, 0.06], [-0.06, 0.06]], [[-gw / 2 - 0.06, fy + gh, 0], [gw / 2 + 0.06, fy + gh, 0]], { closed: true, caps: true, color: wc });
+    B.beam('alu', [-gw / 2, fy + 0.03, -gd], [gw / 2, fy + 0.03, -gd], 0.04, 0.04, { color: [0.85, 0.85, 0.85] });
+    const nc = { uv: 0.1, color: [0.95, 0.95, 0.95] };
+    B.quad('chain', [gw / 2, fy, -gd], [-gw / 2, fy, -gd], [-gw / 2, fy + gh, 0], [gw / 2, fy + gh, 0], nc);
+    for (const sx of [-gw / 2, gw / 2]) B.tri('chain', [sx, fy, 0], [sx, fy, -gd], [sx, fy + gh, 0], nc);
+    extras.push({ t: 'box', p: B.P([0, 0, -gd / 2]), hx: gw / 2, hz: gd / 2, r: r + face, h: gh });
+  };
+  goal(-(pw / 2 - 0.2), Math.PI / 2); goal(pw / 2 - 0.2, -Math.PI / 2);
+  for (const e of [-1, 1]) { // ball-stop nets behind both ends
+    at(fx + e * (fw / 2 + 1.2), fz, e > 0 ? -Math.PI / 2 : Math.PI / 2);
+    const nw = fd + 4, nh = 8, n = Math.round(nw / 5);
+    for (let k = 0; k <= n; k++) { const px = -nw / 2 + k * nw / n; B.cyl('steel', px, 0, 0, 0.09, 0.075, nh, 10, { color: [0.4, 0.5, 0.44] }); B.cyl('steel', px, nh, 0, 0.1, 0.1, 0.06, 10, { color: [0.35, 0.42, 0.38], cap: true }); }
+    for (const yy of [0.15, 2.0, nh - 0.1]) B.beam('steel', [-nw / 2, yy, 0], [nw / 2, yy, 0], 0.05, 0.05, { color: [0.4, 0.5, 0.44] });
+    B.quad('chain', [-nw / 2, 0.1, 0], [nw / 2, 0.1, 0], [nw / 2, nh, 0], [-nw / 2, nh, 0], { uv: 0.35, color: [0.26, 0.4, 0.32] });
+    extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: nw / 2, hz: 0.12, r: r + (e > 0 ? -Math.PI / 2 : Math.PI / 2), h: nh });
+  }
+  { // baseball backstop in one corner (angled net panels)
+    at(fx - fw / 2 + 9, fz + fd / 2 - 4, Math.PI * 0.75);
+    const pts = [[-5, 0], [-2.2, 2.2], [2.2, 2.2], [5, 0]];
+    for (const [px, pz] of pts) B.cyl('steel', px, 0, pz, 0.08, 0.07, 6, 10, { color: [0.4, 0.5, 0.44] });
+    for (let i = 0; i + 1 < pts.length; i++) { const [ax, az] = pts[i], [bx2, bz] = pts[i + 1];
+      B.quad('chain', [ax, 0.1, az], [bx2, 0.1, bz], [bx2, 6, bz], [ax, 6, az], { uv: 0.35, color: [0.26, 0.4, 0.32] }); B.beam('steel', [ax, 6, az], [bx2, 6, bz], 0.05, 0.05, { color: [0.4, 0.5, 0.44] }); }
+  }
+  for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { // floodlights
+    at(fx + lx * (fw / 2 + 2.5), fz + lz * (fd / 2 + 2.5), Math.atan2(lx, lz) + Math.PI);
+    B.cyl('steel', 0, 0, 0, 0.2, 0.12, 14, 12, { color: [0.72, 0.74, 0.76] });
+    B.bbox('steel', 0, 14, 0.2, 2.6, 0.1, 0.1, 0.01, { color: [0.6, 0.62, 0.64] }); B.bbox('steel', 0, 14.9, 0.2, 2.6, 0.1, 0.1, 0.01, { color: [0.6, 0.62, 0.64] });
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) { B.bbox('steel', -0.9 + i * 0.6, 14.12 + j * 0.9, 0.3, 0.44, 0.34, 0.3, 0.03, { color: [0.3, 0.32, 0.34] }); B.box('lamp', -0.9 + i * 0.6, 14.16 + j * 0.9, 0.455, 0.36, 0.26, 0.01, { color: [1, 0.97, 0.9] }); }
+    for (let k = 0; k < 18; k++) B.box('steel', 0.14, 0.8 + k * 0.7, -0.12, 0.25, 0.03, 0.03, { color: [0.6, 0.62, 0.64] }); // climbing rungs
+    extras.push({ t: 'circle', p: B.P([0, 0, 0]), r: 0.25 });
+  }
+  for (const e of [-1, 1]) { // team benches under polycarbonate shelters
+    at(fx + e * 12, fz + fd / 2 + 2.2, Math.PI);
+    for (const sx of [-2.4, 2.4]) for (const sz of [-0.7, 0.7]) B.bbox('alu', sx, 0, sz, 0.08, 2.3 - sz * 0.2, 0.08, 0.008, { color: [0.62, 0.64, 0.66] });
+    B.quad('poly', [-2.6, 2.44, -0.9], [2.6, 2.44, -0.9], [2.6, 2.16, 0.9], [-2.6, 2.16, 0.9]);
+    B.bbox('alu', 0, 2.2, 0.85, 5.3, 0.06, 0.06, 0.008, { color: [0.62, 0.64, 0.66] }); B.bbox('alu', 0, 2.48, -0.85, 5.3, 0.06, 0.06, 0.008, { color: [0.62, 0.64, 0.66] });
+    B.bbox('wood', 0, 0.42, -0.3, 4.6, 0.05, 0.36, 0.008, { color: [0.72, 0.52, 0.36] }); B.bbox('wood', 0, 0.62, -0.55, 4.6, 0.3, 0.04, 0.006, { color: [0.72, 0.52, 0.36] });
+    for (const sx of [-2, 0, 2]) B.bbox('alu', sx, 0, -0.3, 0.05, 0.42, 0.34, 0.005, { color: [0.4, 0.4, 0.42] });
+    extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 2.6, hz: 0.9, r: r + Math.PI, h: 2.4 });
   }
   at(bx + bw / 2 - 6, bz + bd / 2 + 4); // tetsubo: horizontal bars of three heights
   for (let k = 0; k < 4; k++) B.box('plain', -2.1 + k * 1.4, 0, 0, 0.1, 0.9 + k * 0.25, 0.1, { color: [0.9, 0.3, 0.25] });

@@ -127,38 +127,96 @@ export function weather(mat, w, key) {
 }
 
 // ---------------------------------------------------------------- roads
+// Road-local data comes in per vertex (aRoad = [lateral offset u in metres, floor(10 hw) + age]); pads and parking
+// lots without it read as fresh surface. Everything thin (cracks, seams, sealing tar) is filtered against the pixel
+// footprint, so it fades to its average tone instead of sparkling at distance or at grazing angles.
+const ROADFN = /* glsl */`
+float aaLine(float d, float w, float fw) { float W = max(w, fw); return (1.0 - smoothstep(W - fw * 0.5, W + fw * 0.5, d)) * (w / W); }
+float aaBand(float x, float a, float b, float fw) { return smoothstep(a - fw, a + fw, x) * (1.0 - smoothstep(b - fw, b + fw, x)); }`;
 export function asphaltAge(mat, key) {
-  return patch(mat, 'asp' + key, sh => {
+  return patch(mat, 'asp2' + key, sh => {
     worldVaryings(sh);
     sh.uniforms.tNoise = S.tNoise;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aRoad, aRoadS; varying vec2 vRoad; varying float vRoadS;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvRoad = aRoad; vRoadS = aRoadS.x;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; float aspRough = 0.0;' + HASH)
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; varying vec2 vRoad; varying float vRoadS; float aspRough = 0.0;' + HASH + ROADFN)
       .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
         {
           vec2 p = vSWPos.xz;
-          vec4 a = texture2D(tNoise, p * 0.017), b = texture2D(tNoise, p * 0.09), c = texture2D(tNoise, p * 0.7);
-          diffuseColor.rgb *= mix(0.8, 1.18, a.r) * mix(0.95, 1.05, c.g);
-          vec2 cell = floor(p / vec2(3.2, 2.4));
-          float pm = step(0.94, h31(vec3(cell, 1.7))) * step(0.35, b.g);            // cut-and-fill repair patches
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.68, pm);
-          float cr = (1.0 - smoothstep(0.0, 0.012, abs(b.b - 0.5))) * step(0.52, a.g); // cracks
-          diffuseColor.rgb *= 1.0 - cr * 0.55;
-          diffuseColor.rgb *= 1.0 - smoothstep(0.62, 0.88, c.r) * 0.16;                   // stains
-          aspRough = cr * 0.3 - pm * 0.1;
+          float fp = length(fwidth(p));                          // metres per pixel
+          float hw = max(floor(vRoad.y) * 0.1, 0.0), age = fract(vRoad.y), u = vRoad.x;
+          bool strip = hw > 0.5;
+          float s = strip ? vRoadS : dot(p, vec2(0.7071));
+          vec4 a = texture2D(tNoise, p * 0.017), b = texture2D(tNoise, p * 0.09), c = texture2D(tNoise, p * 0.7), d = texture2D(tNoise, vec2(s * 0.031, u * 0.4 + 0.37));
+          // binder colour: fresh asphalt is near black and even; with age it greys and the aggregate shows
+          float tone = mix(0.9, 1.22, age) * mix(0.86, 1.14, a.r) * mix(1.0 - 0.1 * age, 1.0 + 0.1 * age, c.g);
+          diffuseColor.rgb *= tone;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.33))) * vec3(1.0, 0.99, 0.96), 0.3 + 0.4 * age);
+          float rough = mix(-0.12, 0.06, age);
+          if (strip) {
+            float au = abs(u);
+            // wheel paths: two per lane, polished darker bands; a faint oil drip line between them
+            float two = step(2.9, hw), lc = two * hw * 0.5;
+            float du = abs(au - lc);
+            float tq = (du - 0.85) / 0.32, track = exp(-tq * tq) * (0.6 + 0.4 * b.r);
+            float dq = du / 0.35, drip = exp(-dq * dq) * smoothstep(0.35, 0.7, b.g) * (1.0 - 0.6 * age);
+            diffuseColor.rgb *= 1.0 - track * mix(0.1, 0.2, age) - drip * 0.14;
+            rough -= track * 0.14 + drip * 0.12;
+            // ravelled, lighter edge strip where the asphalt meets the gutter, broken up by noise
+            float edge = smoothstep(hw - 0.55 - 0.25 * c.r, hw - 0.05, au) * (0.35 + 0.65 * age);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.16, 1.12), edge * 0.7);
+            rough += edge * 0.08;
+            // utility-trench reinstatement patches across the lane, and long patches along a wheel path
+            float cellS = floor(s / 11.0), hx = h31(vec3(cellS, hw, 3.1)), s0 = cellS * 11.0 + hx * 5.0;
+            float wide = mix(0.7, 1.6, fract(hx * 17.0));
+            float on = step(0.72 - age * 0.25, fract(hx * 7.3)), uM = aaBand(u, -hw - 1.0, mix(-0.2, hw + 1.0, step(0.5, fract(hx * 3.7))), fp);
+            float across = aaBand(s, s0, s0 + wide, fp) * on * uM;
+            float cellL = floor(s / 37.0), hl = h31(vec3(cellL, hw, 8.4)), l0 = cellL * 37.0 + hl * 12.0;
+            float along = aaBand(s, l0, l0 + 6.0 + hl * 14.0, fp) * aaBand(u * sign(hl - 0.5), lc - 0.2, lc + 1.5, fp) * step(0.8 - age * 0.35, fract(hl * 5.1));
+            float pm = max(across, along);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(0.62, 0.74, age), pm);
+            rough -= pm * 0.1;
+            // sealing tar along patch edges and along the centre joint of older roads
+            float seam = aaLine(min(abs(s - s0), abs(s - s0 - wide)), 0.03, fp) * on * uM;
+            float joint = aaLine(abs(u + (d.r - 0.5) * 0.3), 0.035, fp) * smoothstep(0.35, 0.6, age) * smoothstep(0.3, 0.5, d.g) * two;
+            float tar = max(seam, joint);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.035, 0.035, 0.038), tar * 0.85);
+            rough -= tar * 0.35;
+          }
+          // cracks: noise iso-lines, only where the surface is old enough; alligator cracking in the wheel paths
+          float n1 = texture2D(tNoise, p * 0.11 + 0.3).b, n2 = texture2D(tNoise, p * 0.37 + 0.7).a;
+          float crW = 0.012;
+          float cr = aaLine(abs(n1 - 0.5), crW, fwidth(n1)) * smoothstep(0.52, 0.62, a.g) * smoothstep(0.25, 0.8, age);
+          cr = max(cr, aaLine(abs(n2 - 0.5), crW * 0.8, fwidth(n2)) * smoothstep(0.55, 0.8, age) * smoothstep(0.45, 0.6, b.b));
+          diffuseColor.rgb *= 1.0 - cr * 0.6;
+          // oil and water stains
+          diffuseColor.rgb *= 1.0 - smoothstep(0.62, 0.88, c.r) * 0.12 * (0.5 + age);
+          aspRough = rough + cr * 0.25;
         }`)
       .replace('#include <metalnessmap_fragment>', 'roughnessFactor = clamp(roughnessFactor + aspRough, 0.3, 1.0);\n#include <metalnessmap_fragment>');
   });
 }
+// thermoplastic road paint: worn through in patches (and where tyres run), dissolved with alpha-to-coverage under MSAA
+// so the worn edges never alias
 export function wornPaint(mat, key) {
-  return patch(mat, 'paint' + key, sh => {
+  mat.alphaToCoverage = true;
+  return patch(mat, 'paint2' + key, sh => {
     worldVaryings(sh);
     sh.uniforms.tNoise = S.tNoise;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aRoad; varying vec2 vRoad;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvRoad = aRoad;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; varying vec2 vRoad;')
       .replace('#include <color_fragment>', `#include <color_fragment>
         { vec2 p = vSWPos.xz; float wr = texture2D(tNoise, p * 1.6).r * 0.65 + texture2D(tNoise, p * 0.23).g * 0.55;
-          if (wr > 0.86) discard;
-          diffuseColor.rgb *= mix(1.0, 0.72, smoothstep(0.55, 0.8, wr)); }`);
+          float hw = floor(vRoad.y) * 0.1, age = fract(vRoad.y);
+          if (hw > 0.5) { float lc = step(2.9, hw) * hw * 0.5, du = abs(abs(vRoad.x) - lc), tq = (du - 0.85) / 0.3; wr = wr * mix(0.72, 1.08, age) + exp(-tq * tq) * 0.22 * age; }
+          float fw = max(fwidth(wr), 1e-3);
+          diffuseColor.a *= 1.0 - smoothstep(0.86 - fw, 0.86 + fw, wr);
+          diffuseColor.rgb *= mix(1.0, 0.74, smoothstep(0.55, 0.8, wr)); }`);
   });
 }
 

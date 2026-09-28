@@ -54,6 +54,7 @@ function fireflies(world) {
         float px = pointPx(0.2, -mv.z), minPx = 5.0 * uPR;
         vA *= min(1.0, (px * px) / (minPx * minPx));
         gl_PointSize = vA > 0.002 ? clamp(px, minPx, 16.0 * uPR) : 0.0;
+        if (gl_PointSize <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // a 0-sized point still rasterises as one pixel
       }`,
     fragmentShader: /* glsl */`
       varying float vA;
@@ -90,6 +91,7 @@ function motes(world) {
         vec4 mv = viewMatrix * vec4(w, 1.0);
         gl_Position = projectionMatrix * mv;
         gl_PointSize = uMote > 0.001 ? clamp(pointPx(0.02, -mv.z), 1.0, 2.0 * uPR) : 0.0;
+        if (gl_PointSize <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // a 0-sized point still rasterises as one pixel
       }`,
     fragmentShader: /* glsl */`
       varying vec3 vC;
@@ -142,7 +144,10 @@ function flowers(world) {
         vAng = aRnd.y * 6.2831;
         vec4 mvPosition = viewMatrix * vec4(w, 1.0);
         gl_Position = projectionMatrix * mvPosition;
-        gl_PointSize = ok * fade > 0.01 ? clamp(pointPx(0.16 + 0.08 * aRnd.x, -mvPosition.z) * fade, 1.0, 40.0 * uPR) : 0.0;
+        // sub-pixel blossoms are thinned out by coverage instead of all drawing as full pixels (no sparkle at distance)
+        float fsz = pointPx(0.16 + 0.08 * aRnd.x, -mvPosition.z) * fade;
+        gl_PointSize = ok * fade > 0.01 && (fsz >= 1.0 || fract(aRnd.y * 91.7 + aRnd.z * 7.3) < fsz * fsz) ? clamp(fsz, 1.0, 40.0 * uPR) : 0.0;
+        if (gl_PointSize <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // a 0-sized point still rasterises as one pixel
         #include <fog_vertex>
       }`,
     fragmentShader: /* glsl */`
@@ -200,7 +205,9 @@ function petals(trees) {
         vAng = uTime * (1.5 + aRnd.w * 2.0) + aRnd.z * 6.2831;
         vec4 mvPosition = viewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mvPosition;
-        gl_PointSize = d < 70.0 && fade > 0.01 ? clamp(0.075 * uPx / max(-mvPosition.z, 0.1), 1.5, 26.0 * uPR) * fade : 0.0;
+        float psz = 0.075 * uPx / max(-mvPosition.z, 0.1) * fade;
+        gl_PointSize = d < 70.0 && fade > 0.01 && (psz >= 1.0 || fract(aRnd.y * 53.1 + aRnd.x * 3.7) < psz * psz) ? clamp(psz, 1.0, 26.0 * uPR) : 0.0;
+        if (gl_PointSize <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // a 0-sized point still rasterises as one pixel
         #include <fog_vertex>
       }`,
     fragmentShader: /* glsl */`

@@ -185,15 +185,61 @@ const moon = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), moonMat);
 moon.scale.setScalar(260); moon.frustumCulled = false; scene.add(moon);
 
 // ---------------------------------------------------------------- lights
+// ---------------------------------------------------------------- sun + cascaded shadow maps
+// The sun is cascade 0; the other cascades are directional lights of zero intensity that only render shadow maps.
+// lights_fragment_begin is rewritten so the sun takes, per fragment, the finest cascade whose box holds it and blends
+// into the next one across that box's outer rim; past the last cascade the shadow fades out instead of ending in a line.
+// Near cascades are centimetre-sharp, far ones broad and soft; every box is texel-snapped so edges never shimmer.
+{
+  const src = THREE.ShaderChunk.lights_fragment_begin;
+  const a = src.indexOf('#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )'), b = src.indexOf('#if ( NUM_RECT_AREA_LIGHTS > 0 )');
+  if (a < 0 || b < 0) throw new Error('sky: three light chunk changed');
+  const cloud = src.slice(a, b).includes('cloudLit') ? '\n\tdirectLight.color *= cloudLit;' : '';
+  THREE.ShaderChunk.lights_fragment_begin = src.slice(0, a) + `#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )
+	DirectionalLight directionalLight = directionalLights[ 0 ];
+	getDirectionalLightInfo( directionalLight, directLight );${cloud}
+	#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
+	{
+		DirectionalLightShadow directionalLightShadow;
+		float csmS = 1.0, csmW = 1.0;
+		#pragma unroll_loop_start
+		for ( int i = 0; i < NUM_DIR_LIGHT_SHADOWS; i ++ ) {
+			{
+				vec4 csmC = vDirectionalShadowCoord[ i ];
+				vec2 csmE = abs( csmC.xy / csmC.w * 2.0 - 1.0 );
+				float csmIn = ( 1.0 - smoothstep( 0.84, 0.97, max( csmE.x, csmE.y ) ) ) * csmW;
+				if ( csmIn > 0.0 ) {
+					directionalLightShadow = directionalLightShadows[ i ];
+					float csmV = getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, csmC );
+					csmS -= csmIn * ( 1.0 - csmV ); csmW -= csmIn;
+				}
+			}
+		}
+		#pragma unroll_loop_end
+		directLight.color *= ( directLight.visible && receiveShadow ) ? csmS : 1.0;
+	}
+	#endif
+	RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
+#endif
+` + src.slice(b);
+}
 export const sun = new THREE.DirectionalLight(0xffffff, 3);
-sun.castShadow = true;
-sun.shadow.camera.layers.enableAll();
-sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.06;
-scene.add(sun, sun.target);
+export const cascades = [sun];
+const CSM_D = 2600; // how far up-sun casters are gathered: a low sun behind the hills still shades the valley's near cascades
+function cascadeLight(l) { l.castShadow = true; l.shadow.camera.layers.enableAll(); l.shadow.autoUpdate = false; scene.add(l, l.target); return l; }
+cascadeLight(sun);
 export function applyShadowQuality() {
-  sun.shadow.mapSize.set(Q.shadow, Q.shadow);
-  const c = sun.shadow.camera; c.left = -Q.box; c.right = Q.box; c.top = Q.box; c.bottom = -Q.box; c.near = 1; c.far = 1600; c.updateProjectionMatrix();
-  if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  const spec = Q.csm;
+  while (cascades.length < spec.length) cascades.push(cascadeLight(new THREE.DirectionalLight(0x000000, 0)));
+  while (cascades.length > spec.length) { const l = cascades.pop(); scene.remove(l, l.target); if (l.shadow.map) l.shadow.map.dispose(); l.dispose(); }
+  cascades.forEach((l, i) => {
+    const [half, size] = spec[i], texel = half * 2 / size, c = l.shadow.camera;
+    l.shadow.mapSize.set(size, size);
+    c.left = -half; c.right = half; c.top = half; c.bottom = -half; c.near = 1; c.far = CSM_D + half + 160; c.updateProjectionMatrix();
+    l.shadow.bias = -1.0 * texel / (c.far - c.near); l.shadow.normalBias = 2.0 * texel;
+    l.shadow.needsUpdate = true;
+    if (l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
+  });
 }
 applyShadowQuality();
 
@@ -248,6 +294,7 @@ export function updateSky(force) {
 }
 
 const lsInv = new THREE.Matrix4(), lsMat = new THREE.Matrix4(), snapV = new THREE.Vector3(), origin = new THREE.Vector3();
+let csmFrame = 0;
 export function followCamera(groundAt, yaw) {
   const c = camera.position;
   clouds.position.copy(c);
@@ -255,18 +302,27 @@ export function followCamera(groundAt, yaw) {
   cs.sun.x = env.lightDir.x; cs.sun.y = env.lightDir.y; cs.sun.z = env.lightDir.z;
   stars.position.copy(c); stars.quaternion.copy(celestial.q);
   moon.position.copy(c).addScaledVector(env.moonDir, 9000); moon.lookAt(c);
-  // shadow frustum centred ahead of the camera, snapped to shadow texels to avoid shimmering
-  const center = snapV.set(c.x - Math.sin(yaw) * Q.box * 0.35, 0, c.z - Math.cos(yaw) * Q.box * 0.35);
-  center.y = groundAt(center.x, center.z);
+  // every cascade box sits a little ahead of the camera, snapped to its shadow texels so edges never crawl; far
+  // cascades re-render every few frames (staggered), which the eye cannot tell at their distance
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   lsMat.lookAt(origin, env.lightDir.clone().negate(), up);
   lsInv.copy(lsMat).invert();
-  center.applyMatrix4(lsInv);
-  const texel = (Q.box * 2) / Q.shadow;
-  center.x = Math.round(center.x / texel) * texel; center.y = Math.round(center.y / texel) * texel;
-  center.applyMatrix4(lsMat);
-  sun.target.position.copy(center);
-  sun.position.copy(center).addScaledVector(env.lightDir, 700);
-  sun.target.updateMatrixWorld();
+  csmFrame++;
+  cascades.forEach((l, i) => {
+    const [half, size] = Q.csm[i], rate = Q.csmRate[i] || 1;
+    if (csmFrame % rate !== i % rate && l.shadow.map) return;
+    const center = snapV.set(c.x + fx * half * 0.5, 0, c.z + fz * half * 0.5);
+    center.y = groundAt(center.x, center.z);
+    center.applyMatrix4(lsInv);
+    const texel = (half * 2) / size;
+    center.x = Math.round(center.x / texel) * texel; center.y = Math.round(center.y / texel) * texel;
+    center.applyMatrix4(lsMat);
+    l.target.position.copy(center);
+    l.position.copy(center).addScaledVector(env.lightDir, CSM_D);
+    l.target.updateMatrixWorld(); l.updateMatrixWorld();
+    l.shadow.needsUpdate = true;
+  });
+  for (let i = 1; i < cascades.length; i++) cascades[i].color.setRGB(0, 0, 0);
   fogU.fogParams.value.x = c.y;
   // aerial perspective: terrain and forests now reach the horizon, so the haze no longer hides a draw distance; it only
   // layers the far ridges into the sky (about half-hazed at 3 km, three quarters at 10 km, gone by ~20 km)

@@ -3,6 +3,7 @@
 // Everything is batched through the town GeoBuilder into a handful of meshes; lanterns and windows glow at night.
 import { THREE, phTex, addBox, addCircle, addPlatform, mulberry32 } from './core.js';
 import { GeoBuilder } from './townkit.js';
+import { wildShrine } from './shrine.js';
 import { env } from './sky.js';
 
 let M = null;
@@ -21,6 +22,10 @@ function materials() {
     glow: std({ color: 0xfff1d0, emissive: 0xffc774, emissiveIntensity: 0 }),
     window: std({ color: 0x4a6fa5, roughness: 0.2, emissive: 0xffb866, emissiveIntensity: 0 }),
     paint: std({ roughness: 0.8 }),
+    // white-based sets for the shared building / shrine kits (colour comes per vertex)
+    plain: std({ roughness: 0.85 }), alu: std({ roughness: 0.35, metalness: 0.8 }), lacq: std({ roughness: 0.42 }),
+    stoneW: std({ roughness: 0.92 }), woodW: std({ map: planks }), roofW: std({ roughness: 0.6, metalness: 0.3 }),
+    steelW: std({ roughness: 0.3, metalness: 1 }), waterW: std({ roughness: 0.05, metalness: 0.4 }),
   };
   return M;
 }
@@ -71,32 +76,13 @@ export function lantern(B, x, y, z, r = 0) {
   const p = B.P([0, 0, 0]); addCircle(p[0], p[2], 0.32);
 }
 
-// vermilion torii with a small shrine (hokora) behind it; local +Z faces the approach
+// vermilion torii with a roped hokora behind it (shrine.js kit); local +Z faces the approach
+export const KIT_M = { lac: 'lacq', dark: 'lacq', wood: 'woodW', stone: 'stoneW', roof: 'roofW', glow: 'glow', paper: 'plain', rope: 'plain', metal: 'steelW', water: 'waterW' };
 export function shrine(B, x, y, z, r) {
-  B.frame(x, y, z, r);
-  for (const sx of [-1.8, 1.8]) {
-    B.cyl('black', sx, -0.2, 0, 0.25, 0.25, 0.5, 12);
-    B.cyl('red', sx, 0.3, 0, 0.19, 0.16, 4.05, 12);
-    const p = B.P([sx, 0, 0]); addCircle(p[0], p[2], 0.25);
-  }
-  B.box('red', 0, 3.15, 0, 4.7, 0.28, 0.2);                 // nuki
-  B.box('red', 0, 3.43, 0, 0.24, 0.62, 0.18);               // gakuzuka
-  B.box('black', 0, 3.54, 0.1, 0.5, 0.38, 0.04);            // name plaque
-  B.box('red', 0, 4.02, 0, 5.3, 0.3, 0.32);                 // shimaki
-  B.box('black', 0, 4.32, 0, 5.2, 0.2, 0.44);               // kasagi
-  for (const sd of [-1, 1]) B.beam('black', [sd * 2.55, 4.42, 0], [sd * 3.25, 4.66, 0], 0.44, 0.2);
-  // approach stones, the shrine house and a pair of lanterns
-  for (let k = 0; k < 7; k++) B.box('stone', (k % 2 - 0.5) * 0.15, -0.05, 2 - k * 1.2, 1.1, 0.12, 0.8);
-  B.frame(...B.P([0, 0, -5.2]), r);
-  B.box('stone', 0, -0.1, 0, 2.2, 0.45, 1.9);
-  B.box('wood', 0, 0.35, 0, 1.3, 1.15, 1.1, { color: [0.95, 0.82, 0.65] });
-  B.box('black', 0, 0.45, 0.56, 0.7, 0.8, 0.02);
-  gable(B, 'roof', 1.3, 1.1, 1.5, 0.55, 0.35, [0.22, 0.26, 0.36]);
-  const hp = B.P([0, 0, 0]); addBox(hp[0], hp[2], 1.1, 0.95, r, y - 1, y + 2.5);
-  B.frame(x, y, z, r);
-  for (const sx of [-1.9, 1.9]) { const p = B.P([sx, 0, -3.2]); lantern(B, p[0], y - 0.05, p[2], r); B.frame(x, y, z, r); }
+  const S = wildShrine(B, KIT_M, x, y, z, r);
+  for (const p of S.cols) addCircle(p[0], p[2], 0.28);
+  addBox(S.hall[0], S.hall[2], 1.6, 1.5, r, y - 1, y + 3);
 }
-
 // Ghibli cottage: white plaster between dark timbers, red tiled roof, chimney, flower boxes, fenced garden (+Z front)
 export function cottage(B, x, y, z, r, garden = true) {
   const W = 6.4, D = 5.2, H = 2.9, rng = mulberry32(9);

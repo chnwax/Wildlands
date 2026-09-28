@@ -21,7 +21,7 @@ import { PoissonDenoiseShader } from 'three/addons/shaders/PoissonDenoiseShader.
   void GTAODepthShader;
 }
 
-export const post = { composer: null, bloom: null, grade: null, ao: null, scenePass: null, rays: null, onRebuild: [], exposure: { value: 0.2 }, wb: { value: new THREE.Vector3(1, 1, 1) } };
+export const post = { composer: null, bloom: null, grade: null, ao: null, scenePass: null, rays: null, taa: null, onRebuild: [], exposure: { value: 0.2 }, wb: { value: new THREE.Vector3(1, 1, 1) } };
 
 // Renders the scene into its own (optionally multisampled) target with a depth texture, then resolves into the
 // composer chain, pre-multiplied by the exposure (so bloom / ray thresholds work in display-referred units).
@@ -40,11 +40,112 @@ class ScenePass extends Pass {
   }
   setSize(w, h) { this.rt.setSize(w, h); }
   render(r, writeBuffer, readBuffer) {
+    if (post.taa) post.taa.begin();
     r.setRenderTarget(this.rt); r.clear(); r.render(scene, camera);
     this.quad.material.uniforms.tDiffuse.value = this.rt.texture;
     r.setRenderTarget(readBuffer); this.quad.render(r);
   }
   dispose() { this.rt.dispose(); this.quad.dispose(); }
+}
+
+// Temporal anti-aliasing. Every frame the camera is shifted by a sub-pixel Halton offset; the resolve reprojects last
+// frame's result through this frame's depth (camera motion), clips it to the current 3x3 neighbourhood in YCoCg
+// (variance clipping, so cars, trains and swaying grass never leave ghosts) and blends in ~1/9 of the new frame.
+// History is read with a Catmull-Rom filter and the blend is luminance-weighted, so the result stays sharp and bright
+// highlights don't smear. Shader aliasing (specular sparkle, thin wires, worn paint, grass tips) settles into a stable
+// image; the grade pass adds a light contrast-adaptive sharpen on top.
+const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
+const TAAShader = {
+  uniforms: { tCur: { value: null }, tHist: { value: null }, tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uPrevVP: { value: new THREE.Matrix4() },
+    uJit: { value: new THREE.Vector2() }, uRes: { value: new THREE.Vector2(1, 1) }, uReset: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tCur, tHist, tDepth; uniform mat4 uInvVP, uPrevVP; uniform vec2 uJit, uRes; uniform float uReset; varying vec2 vUv;
+    vec3 toY(vec3 c){ return vec3(dot(c, vec3(0.25, 0.5, 0.25)), dot(c, vec3(0.5, 0.0, -0.5)), dot(c, vec3(-0.25, 0.5, -0.25))); }
+    vec3 fromY(vec3 c){ return vec3(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
+    float ndcZ(float d){
+      #ifdef USE_REVERSEDEPTHBUF
+        return (1.0 - d) * 2.0 - 1.0;
+      #else
+        return d * 2.0 - 1.0;
+      #endif
+    }
+    // 5-tap Catmull-Rom history fetch (bilinear taps at the kernel's weighted centres)
+    vec3 histCR(vec2 uv){
+      vec2 p = uv * uRes, t1 = floor(p - 0.5) + 0.5, f = p - t1;
+      vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f), w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
+      vec2 w12 = w1 + w2, tc0 = (t1 - 1.0) / uRes, tc3 = (t1 + 2.0) / uRes, tc12 = (t1 + w2 / w12) / uRes;
+      vec3 c = texture2D(tHist, vec2(tc12.x, tc0.y)).rgb * (w12.x * w0.y) + texture2D(tHist, vec2(tc0.x, tc12.y)).rgb * (w0.x * w12.y)
+             + texture2D(tHist, tc12).rgb * (w12.x * w12.y) + texture2D(tHist, vec2(tc3.x, tc12.y)).rgb * (w3.x * w12.y) + texture2D(tHist, vec2(tc12.x, tc3.y)).rgb * (w12.x * w3.y);
+      float ws = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+      return max(c / ws, vec3(0.0));
+    }
+    void main(){
+      vec2 px = 1.0 / uRes;
+      vec3 cur = texture2D(tCur, vUv).rgb;
+      if (uReset > 0.5) { gl_FragColor = vec4(cur, 1.0); return; }
+      // neighbourhood moments (YCoCg) and the nearest depth in the 3x3 (edges reproject with their foreground)
+      vec3 m1 = vec3(0.0), m2 = vec3(0.0); float dN = texture2D(tDepth, vUv).r; vec2 dUv = vUv;
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 o = vec2(float(i), float(j)) * px;
+        vec3 c = toY(texture2D(tCur, vUv + o).rgb); m1 += c; m2 += c * c;
+        float d = texture2D(tDepth, vUv + o).r;
+        #ifdef USE_REVERSEDEPTHBUF
+          if (d > dN) { dN = d; dUv = vUv + o; }
+        #else
+          if (d < dN) { dN = d; dUv = vUv + o; }
+        #endif
+      }
+      m1 /= 9.0; vec3 sig = sqrt(max(m2 / 9.0 - m1 * m1, 0.0));
+      vec4 wp = uInvVP * vec4((dUv + uJit) * 2.0 - 1.0, ndcZ(dN), 1.0); wp /= wp.w;
+      vec4 pp = uPrevVP * wp; vec2 prevUv = pp.xy / pp.w * 0.5 + 0.5 + (vUv - dUv);
+      if (any(lessThan(prevUv, vec2(0.0))) || any(greaterThan(prevUv, vec2(1.0))) || pp.w <= 0.0) { gl_FragColor = vec4(cur, 1.0); return; }
+      vec3 hist = toY(histCR(prevUv));
+      // clip the history toward the neighbourhood mean, into mean +- 1.1 sigma
+      vec3 lo = m1 - sig * 1.1, hi = m1 + sig * 1.1, ctr = 0.5 * (hi + lo), ext = 0.5 * (hi - lo) + 1e-4;
+      vec3 v = hist - ctr, a = abs(v / ext); float ma = max(a.x, max(a.y, a.z));
+      if (ma > 1.0) hist = ctr + v / ma;
+      vec3 c = toY(cur);
+      // faster response while the view moves quickly (less smear), luminance-weighted blend (no fireflies)
+      float vel = length((prevUv - vUv) * uRes), alpha = mix(0.11, 0.3, clamp(vel / 24.0, 0.0, 1.0));
+      float wc = alpha / (1.0 + c.x), wh = (1.0 - alpha) / (1.0 + hist.x);
+      gl_FragColor = vec4(max(fromY((c * wc + hist * wh) / (wc + wh)), vec3(0.0)), 1.0);
+    }`,
+};
+class TAAPass extends Pass {
+  constructor(depthTexture) {
+    super();
+    const opt = { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
+    this.hist = [new THREE.WebGLRenderTarget(1, 1, opt), new THREE.WebGLRenderTarget(1, 1, opt)]; this.idx = 0;
+    this.mat = new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(TAAShader.uniforms), vertexShader: TAAShader.vertexShader, fragmentShader: TAAShader.fragmentShader, depthTest: false, depthWrite: false });
+    this.mat.uniforms.tDepth.value = depthTexture;
+    this.quad = new FullScreenQuad(this.mat);
+    this.copy = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: THREE.UniformsUtils.clone(CopyShader.uniforms), vertexShader: CopyShader.vertexShader, fragmentShader: CopyShader.fragmentShader, depthTest: false, depthWrite: false }));
+    this.frame = 0; this.reset = true; this.w = 1; this.h = 1;
+    this.vp = new THREE.Matrix4(); this.prevVP = new THREE.Matrix4(); this.lastPos = new THREE.Vector3(1e9, 0, 0);
+  }
+  setSize(w, h) { this.hist.forEach(r => r.setSize(w, h)); this.w = w; this.h = h; this.reset = true; this.mat.uniforms.uRes.value.set(w, h); }
+  // before the scene renders: note the unjittered view-projection, then shift the camera by this frame's sub-pixel offset
+  begin() {
+    camera.clearViewOffset(); camera.updateMatrixWorld();
+    this.vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.mat.uniforms.uInvVP.value.copy(this.vp).invert();
+    if (camera.position.distanceTo(this.lastPos) > 25) this.reset = true;   // teleports and map changes
+    this.lastPos.copy(camera.position);
+    const k = (this.frame++ % 16) + 1, jx = halton(k, 2) - 0.5, jy = halton(k, 3) - 0.5;
+    this.mat.uniforms.uJit.value.set(jx / this.w, -jy / this.h);
+    camera.setViewOffset(this.w, this.h, jx, jy, this.w, this.h);
+  }
+  render(r, writeBuffer, readBuffer) {
+    camera.clearViewOffset();
+    const u = this.mat.uniforms, out = this.hist[1 - this.idx];
+    u.tCur.value = readBuffer.texture; u.tHist.value = this.hist[this.idx].texture; u.uPrevVP.value.copy(this.prevVP); u.uReset.value = this.reset ? 1 : 0;
+    r.setRenderTarget(out); this.quad.render(r);
+    this.copy.material.uniforms.tDiffuse.value = out.texture;
+    r.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.copy.render(r);
+    this.idx = 1 - this.idx; this.prevVP.copy(this.vp); this.reset = false;
+  }
+  dispose() { this.hist.forEach(r => r.dispose()); this.quad.dispose(); this.copy.dispose(); this.mat.dispose(); }
 }
 
 // three r170's GTAOPass dereferences a normal target that doesn't exist when an external depth texture is supplied
@@ -56,14 +157,21 @@ class DepthGTAOPass extends GTAOPass {
 }
 
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uUnder: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uUnder: { value: 0 }, uTexel: { value: new THREE.Vector2(1e-3, 1e-3) }, uSharp: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse; uniform float uTime, uUnder; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uTime, uUnder, uSharp; uniform vec2 uTexel; varying vec2 vUv;
     void main(){
       vec2 uv = vUv;
       if (uUnder > 0.5) uv += vec2(sin(uv.y * 24.0 + uTime * 2.0), cos(uv.x * 20.0 + uTime * 1.7)) * 0.003;
       vec4 c = texture2D(tDiffuse, uv);
+      if (uSharp > 0.0 && uUnder < 0.5) { // contrast-adaptive sharpening (restores the crispness temporal AA takes off)
+        vec3 n = texture2D(tDiffuse, uv + vec2(0.0, uTexel.y)).rgb, s = texture2D(tDiffuse, uv - vec2(0.0, uTexel.y)).rgb;
+        vec3 e = texture2D(tDiffuse, uv + vec2(uTexel.x, 0.0)).rgb, w = texture2D(tDiffuse, uv - vec2(uTexel.x, 0.0)).rgb;
+        vec3 mn = min(c.rgb, min(min(n, s), min(e, w))), mx = max(c.rgb, max(max(n, s), max(e, w)));
+        vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0)), wt = -amp * uSharp;
+        c.rgb = clamp((c.rgb + (n + s + e + w) * wt) / (1.0 + 4.0 * wt), 0.0, 1.0);
+      }
       // anime grade: vivid but soft — saturation up, a gentle S-curve, lifted cool shadows, warm highlights
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb = mix(vec3(l), c.rgb, 1.16);
@@ -121,7 +229,7 @@ export function updateRays(sunDir, sunCol, dayFactor) {
 }
 export function buildComposer() {
   const P = post;
-  if (P.composer) { P.composer.renderTarget1.dispose(); P.composer.renderTarget2.dispose(); P.scenePass.dispose(); if (P.ao) P.ao.dispose(); }
+  if (P.composer) { P.composer.renderTarget1.dispose(); P.composer.renderTarget2.dispose(); P.scenePass.dispose(); if (P.ao) P.ao.dispose(); if (P.taa) { P.taa.dispose(); camera.clearViewOffset(); } }
   const pr = renderer.getPixelRatio(), w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
   P.composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType }));
   P.composer.setPixelRatio(pr);
@@ -137,6 +245,8 @@ export function buildComposer() {
     P.ao.blendIntensity = 0.78;
     P.composer.addPass(P.ao);
   }
+  P.taa = null;
+  if (Q.taa) { P.taa = new TAAPass(P.scenePass.rt.depthTexture); P.composer.addPass(P.taa); }
   P.rays = new ShaderPass(RaysShader);
   P.rays.uniforms.tDepth.value = P.scenePass.rt.depthTexture;
   P.composer.addPass(P.rays);
@@ -145,6 +255,7 @@ export function buildComposer() {
   P.composer.addPass(P.bloom);
   P.composer.addPass(new OutputPass());
   P.grade = new ShaderPass(GradeShader);
+  P.grade.uniforms.uTexel.value.set(1 / (w * pr), 1 / (h * pr)); P.grade.uniforms.uSharp.value = Q.taa ? 0.16 : 0;
   P.composer.addPass(P.grade);
   P.composer.setSize(w, h);
   P.onRebuild.forEach(f => f());

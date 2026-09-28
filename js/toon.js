@@ -35,17 +35,6 @@ THREE.ShaderChunk.color_fragment = /* glsl */`
 #endif
 ` + THREE.ShaderChunk.color_fragment;
 
-// the sun's shadow map covers a box that follows the camera: shadows fade out over its last ~10 % instead of ending
-// in a hard line, so objects never visibly pop from shadowed to lit at the edge of shadow range
-{
-  const a = 'return mix( 1.0, shadow, shadowIntensity );\n\t}\n\tvec2 cubeToUV';
-  const sp = THREE.ShaderChunk.shadowmap_pars_fragment;
-  if (!sp.includes(a)) throw new Error('toon: three shadow chunk changed');
-  THREE.ShaderChunk.shadowmap_pars_fragment = sp.replace(a, `vec2 shEdge = abs( shadowCoord.xy * 2.0 - 1.0 );
-		shadowIntensity *= 1.0 - smoothstep( 0.8, 0.97, max( shEdge.x, shEdge.y ) );
-		` + a);
-}
-
 // photo textures (Poly Haven maps, scanned glTF models) are tagged by the loaders in core.js; canvas textures (signs,
 // text) are not, so they stay crisp
 export function flattenPhotoMaterials(root = scene) {

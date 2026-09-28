@@ -62,6 +62,14 @@ export const QUALITY = {
   extreme: { pr: 1.5, grass: 1600000, tile: 124, shadow: 8192, box: 300, msaa: 8, ao: true,  treeHi: 520, trees: 5000, rocks: 700, props: 560, ferns: 220, bloom: true,  refl: 0.9, far: 4 },
 };
 QUALITY.low.far = 1; QUALITY.medium.far = 1; QUALITY.high.far = 2; // far: how many outer far-forest rings are drawn
+// cascaded sun shadows: [half extent (m), map size] per cascade, finest first, and how often each re-renders (frames)
+QUALITY.high.taa = QUALITY.ultra.taa = QUALITY.extreme.taa = true; // temporal anti-aliasing (post.js)
+QUALITY.low.lodScale = 0.6; QUALITY.medium.lodScale = 0.8; QUALITY.high.lodScale = 1; QUALITY.ultra.lodScale = 1.3; QUALITY.extreme.lodScale = 1.7; // detail draw distance
+Object.assign(QUALITY.low, { csm: [[40, 2048], [150, 2048]], csmRate: [1, 2] });
+Object.assign(QUALITY.medium, { csm: [[26, 2048], [100, 2048], [340, 2048]], csmRate: [1, 1, 3] });
+Object.assign(QUALITY.high, { csm: [[20, 2048], [70, 4096], [240, 4096], [640, 2048]], csmRate: [1, 1, 2, 4] });
+Object.assign(QUALITY.ultra, { csm: [[16, 4096], [56, 4096], [200, 4096], [640, 2048]], csmRate: [1, 1, 2, 3] });
+Object.assign(QUALITY.extreme, { csm: [[14, 4096], [50, 4096], [180, 4096], [640, 4096]], csmRate: [1, 1, 1, 2] });
 // grass distance hierarchy, one entry per ring: [outer radius (m), density (per m²)]
 //   ring 0: full animated blades, ring 1: simplified wide blades, ring 2: clump cards, ring 3: meadow cards,
 //   ring 4: wide meadow cards reaching past the map edge. A radius of 0 switches the ring off. Beyond the last ring the
