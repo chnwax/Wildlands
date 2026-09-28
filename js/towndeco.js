@@ -62,29 +62,29 @@ export function standBoard(B, x, y, z, r, col) {
 export function postBox(B, x, y, z, r) {
   B.frame(x, y, z, r);
   const red = [0.86, 0.14, 0.1];
-  B.box('concrete', 0, 0, 0, 0.5, 0.1, 0.5, { color: [0.7, 0.7, 0.68] });
+  B.bbox('concrete', 0, 0, 0, 0.5, 0.1, 0.5, 0.012, { color: [0.7, 0.7, 0.68] });
   B.cyl('plain', 0, 0.1, 0, 0.23, 0.23, 1.05, 14, { color: red });
   B.cyl('plain', 0, 1.15, 0, 0.25, 0.08, 0.2, 14, { color: red, cap: true });
-  B.box('dark', 0, 0.95, 0.225, 0.22, 0.04, 0.03);
-  B.box('plain', 0, 0.55, 0.23, 0.2, 0.26, 0.02, { color: WHITE });
+  B.bbox('dark', 0, 0.95, 0.225, 0.22, 0.04, 0.03, 0.012);
+  B.bbox('plain', 0, 0.55, 0.23, 0.2, 0.26, 0.02, 0.012, { color: WHITE });
   const p = B.P([0, 0, 0]); addCircle(p[0], p[2], 0.3);
 }
 // bus stop: sign pole, timetable, shelter with a bench
 export function busStop(B, x, y, z, r, shelter = true) {
   B.frame(x, y, z, r);
-  B.box('concrete', 0, 0, 0, 0.5, 0.15, 0.5, { color: [0.6, 0.6, 0.6] });
+  B.bbox('concrete', 0, 0, 0, 0.5, 0.15, 0.5, 0.012, { color: [0.6, 0.6, 0.6] });
   B.cyl('alu', 0, 0.15, 0, 0.035, 0.035, 2.35, 6, { color: [0.85, 0.86, 0.88] });
   B.cyl('plain', 0, 2.1, 0, 0.3, 0.3, 0.06, 16, { color: [0.2, 0.42, 0.78], cap: true });
   B.cyl('plain', 0, 2.1, 0, 0.24, 0.24, 0.065, 16, { color: WHITE, cap: true });
-  B.box('plain', 0, 1.1, 0.04, 0.34, 0.5, 0.04, { color: WHITE });
+  B.bbox('plain', 0, 1.1, 0.04, 0.34, 0.5, 0.04, 0.012, { color: WHITE });
   if (!shelter) { const p = B.P([0, 0, 0]); addCircle(p[0], p[2], 0.2); return; }
   // shelter
   B.frame(...B.P([2.2, 0, -0.6]), r);
-  for (const sx of [-1.4, 1.4]) B.box('alu', sx, 0, -0.55, 0.08, 2.4, 0.08, { color: [0.3, 0.45, 0.62] });
-  B.box('roofMetal', 0, 2.4, -0.1, 3.3, 0.08, 1.5, { color: [0.3, 0.45, 0.62] });
+  for (const sx of [-1.4, 1.4]) B.bbox('alu', sx, 0, -0.55, 0.08, 2.4, 0.08, 0.012, { color: [0.3, 0.45, 0.62] });
+  B.bbox('roofMetal', 0, 2.4, -0.1, 3.3, 0.08, 1.5, 0.012, { color: [0.3, 0.45, 0.62] });
   B.quad('poly', [1.4, 0.3, -0.58], [-1.4, 0.3, -0.58], [-1.4, 2.3, -0.58], [1.4, 2.3, -0.58]);
-  B.box('wood', 0, 0.42, -0.3, 2.4, 0.06, 0.38, { color: [0.8, 0.58, 0.4] });
-  for (const sx of [-1, 1]) B.box('alu', sx, 0, -0.3, 0.05, 0.42, 0.3, { color: [0.6, 0.62, 0.64] });
+  B.bbox('wood', 0, 0.42, -0.3, 2.4, 0.06, 0.38, 0.012, { color: [0.8, 0.58, 0.4] });
+  for (const sx of [-1, 1]) B.bbox('alu', sx, 0, -0.3, 0.05, 0.42, 0.3, 0.012, { color: [0.6, 0.62, 0.64] });
   const p = B.P([0, 0, -0.35]); addBox(p[0], p[2], 1.5, 0.3, r, y - 1, y + 2.4);
 }
 // garbage collection point: a folding green cage with a few bags
@@ -112,10 +112,10 @@ export function dryingRack(B, x, y, z, r, rng, len = 2.4) {
 }
 export function mailbox(B, x, y, z, r, col) {
   B.frame(x, y, z, r);
-  B.box('alu', 0, 0, 0, 0.06, 0.95, 0.06, { color: [0.4, 0.4, 0.42] });
-  B.box('plain', 0, 0.95, 0, 0.36, 0.34, 0.22, { color: col });
-  B.box('dark', 0, 1.18, 0.112, 0.22, 0.03, 0.01);
-  B.box('plain', 0, 1.02, 0.112, 0.2, 0.08, 0.01, { color: WHITE }); // name plate
+  B.bbox('alu', 0, 0, 0, 0.06, 0.95, 0.06, 0.012, { color: [0.4, 0.4, 0.42] });
+  B.bbox('plain', 0, 0.95, 0, 0.36, 0.34, 0.22, 0.012, { color: col });
+  B.bbox('dark', 0, 1.18, 0.112, 0.22, 0.03, 0.01, 0.012);
+  B.bbox('plain', 0, 1.02, 0.112, 0.2, 0.08, 0.01, 0.012, { color: WHITE }); // name plate
 }
 export function waterTank(B, x, y, z, rng) {
   B.frame(x, y, z, 0);
@@ -193,61 +193,78 @@ export function playground(B, x, y, z, r, W, D, rng, trees, extras) {
   B.frame(x, y, z, r);
   const F = B.F, at = (lx, lz, rr = 0) => { B.F = F; B.frame(...B.P([lx, 0, lz]), r + rr); };
   const red = [0.9, 0.25, 0.2], yel = [1, 0.8, 0.2], blu = [0.25, 0.5, 0.9], grn = [0.3, 0.72, 0.4];
-  // low fence with an opening to the street
-  const fc = { color: [0.35, 0.6, 0.45] };
+  const tube = (mat, pts, rad, col, caps = true) => B.sweep(mat, circ(rad, 10), pts, { closed: true, caps, color: col, uv: 1 });
+  // low tubular fence with an opening to the street, posts every 2.2 m
+  const fcol = [0.35, 0.6, 0.45];
   const run = (ax, az, bx, bz) => {
     const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 2.2));
-    B.F = F; B.beam('alu', [ax, 0.85, az], [bx, 0.85, bz], 0.05, 0.05, fc); B.beam('alu', [ax, 0.45, az], [bx, 0.45, bz], 0.04, 0.04, fc);
-    for (let k = 0; k <= n; k++) B.box('alu', lerp(ax, bx, k / n), 0, lerp(az, bz, k / n), 0.05, 0.88, 0.05, fc);
+    B.F = F; tube('alu', [[ax, 0.85, az], [bx, 0.85, bz]], 0.03, fcol); tube('alu', [[ax, 0.45, az], [bx, 0.45, bz]], 0.022, fcol);
+    for (let k = 0; k <= n; k++) B.cyl('alu', lerp(ax, bx, k / n), -0.1, lerp(az, bz, k / n), 0.035, 0.035, 0.98, 10, { color: fcol, cap: true });
     const p = B.P([(ax + bx) / 2, 0, (az + bz) / 2]); extras.push({ t: 'box', p, hx: Math.abs(bx - ax) > 0.1 ? L / 2 : 0.08, hz: Math.abs(bx - ax) > 0.1 ? 0.08 : L / 2, r, h: 0.9 });
   };
   run(-W / 2, -D / 2, W / 2, -D / 2); run(-W / 2, -D / 2, -W / 2, D / 2); run(W / 2, -D / 2, W / 2, D / 2);
   run(-W / 2, D / 2, -2.5, D / 2); run(2.5, D / 2, W / 2, D / 2);
-  // swings
+  for (const sx of [-2.6, 2.6]) { at(sx, D / 2); B.bbox('concrete', 0, 0, 0, 0.4, 1.1, 0.4, 0.02, { color: [0.78, 0.78, 0.76] }); } // gate posts
+  at(-3.4, D / 2 + 0.05);
+  const sign = signMesh(1.6, 0.5, (g, W2, H2) => { g.fillStyle = '#2f6b4a'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H2 * 0.5}px ${JP_FONT}`; g.fillText('桜川児童公園', W2 / 2, H2 * 0.54); }, 0.2);
+  sign.position.set(...B.P([0, 1.4, 0.08])); sign.rotation.y = r; scene.add(sign);
+  B.cyl('steel', -0.7, 0, 0, 0.03, 0.03, 1.7, 8, { color: [0.6, 0.6, 0.6], cap: true }); B.cyl('steel', 0.7, 0, 0, 0.03, 0.03, 1.7, 8, { color: [0.6, 0.6, 0.6], cap: true });
+  // swings: tubular A-frames, a top bar, chain-hung seats over rubber mats
   at(-W / 4, -D / 4);
-  for (const sx of [-2.4, 2.4]) { B.beam('plain', [sx, 0, -0.9], [sx, 2.45, 0], 0.09, 0.09, { color: red }); B.beam('plain', [sx, 0, 0.9], [sx, 2.45, 0], 0.09, 0.09, { color: red }); }
-  B.box('plain', 0, 2.42, 0, 5.0, 0.11, 0.11, { color: blu });
+  for (const sx of [-2.4, 2.4]) { tube('plain', [[sx, 0, -0.95], [sx, 2.45, 0]], 0.055, red); tube('plain', [[sx, 0, 0.95], [sx, 2.45, 0]], 0.055, red); }
+  tube('plain', [[-2.6, 2.45, 0], [2.6, 2.45, 0]], 0.06, blu);
   for (const sx of [-1.2, 1.2]) {
-    for (const d of [-0.2, 0.2]) B.box('alu', sx + d, 0.5, 0, 0.02, 1.92, 0.02, { color: [0.7, 0.7, 0.72] });
-    B.box('plain', sx, 0.45, 0, 0.5, 0.05, 0.22, { color: yel });
+    B.detail(1, () => { for (const d of [-0.2, 0.2]) B.beam('steel', [sx + d, 2.42, 0], [sx + d, 0.5, 0], 0.012, 0.012, { color: [0.72, 0.72, 0.74] }); });
+    B.bbox('plastic', sx, 0.44, 0, 0.5, 0.05, 0.2, 0.015, { color: yel });
+    B.bbox('plastic', sx, 0.0, 0, 1.1, 0.03, 1.8, 0.01, { color: [0.2, 0.42, 0.3] });
   }
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 2.6, hz: 1.0, r, h: 2.5 });
-  // slide: tower, ladder and chute
+  // slide: four posts, a deck with a little hipped hood, rung ladder, a chute with side walls and a run-out
   at(W / 4, -D / 4);
-  for (const [sx, sz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) B.box('plain', sx, 0, sz, 0.1, 2.6, 0.1, { color: blu });
-  B.box('wood', 0, 1.55, 0, 1.3, 0.08, 1.3, { color: [0.85, 0.6, 0.4] });
-  B.box('plain', 0, 2.55, 0, 1.4, 0.3, 1.4, { color: red });
-  for (let k = 0; k < 6; k++) B.box('plain', 0, 0.25 + k * 0.26, -0.75, 0.6, 0.05, 0.06, { color: yel });
-  const ch = (a, b, c, d, col) => { B.quad('plain', a, b, c, d, { color: col }); B.quad('plain', b, a, d, c, { color: col }); };
-  ch([-0.35, 0.3, 3.6], [0.35, 0.3, 3.6], [0.35, 1.6, 0.65], [-0.35, 1.6, 0.65], yel);
-  for (const sx of [-0.38, 0.38]) B.beam('plain', [sx, 1.75, 0.65], [sx, 0.45, 3.6], 0.05, 0.3, { color: yel });
+  for (const [sx, sz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) B.cyl('plain', sx, 0, sz, 0.06, 0.06, 2.6, 10, { color: blu, cap: true });
+  B.bbox('wood', 0, 1.5, 0, 1.3, 0.08, 1.3, 0.015, { color: [0.85, 0.6, 0.4] });
+  B.cyl('plain', 0, 2.6, 0, 1.05, 0.08, 0.55, 4, { color: red, cap: true, smooth: false });
+  for (let k = 0; k < 6; k++) tube('alu', [[-0.3, 0.25 + k * 0.25, -0.72], [0.3, 0.25 + k * 0.25, -0.72]], 0.02, yel);
+  for (const sx of [-0.32, 0.32]) tube('plain', [[sx, 0, -0.95], [sx, 1.95, -0.62]], 0.035, yel);
+  const chute = [[0, 1.55, 0.65], [0, 1.2, 1.45], [0, 0.72, 2.4], [0, 0.4, 3.3], [0, 0.32, 3.8]];
+  B.sweep('plastic', [[-0.36, 0], [0.36, 0], [0.36, 0.3], [0.32, 0.3], [0.32, 0.03], [-0.32, 0.03], [-0.32, 0.3], [-0.36, 0.3]], chute, { closed: true, color: yel });
+  for (const sx of [-0.3, 0.3]) B.cyl('plain', sx, 0, 3.5, 0.04, 0.04, 0.38, 8, { color: blu });
   extras.push({ t: 'box', p: B.P([0, 0, 1.2]), hx: 0.7, hz: 2.2, r, h: 2.6 });
-  // climbing frame (jungle gym)
+  // climbing frame (jungle gym) of tubes
   at(-W / 4, D / 5);
-  for (let a = 0; a <= 3; a++) for (let b = 0; b <= 3; b++) B.box('alu', -1.2 + a * 0.8, 0, -1.2 + b * 0.8, 0.05, 2.1, 0.05, { color: pick(rng, [red, yel, blu, grn]) });
-  for (let h = 1; h <= 3; h++) for (let a = 0; a <= 3; a++) { B.box('alu', 0, h * 0.7, -1.2 + a * 0.8, 2.45, 0.04, 0.04, { color: grn }); B.box('alu', -1.2 + a * 0.8, h * 0.7, 0, 0.04, 0.04, 2.45, { color: yel }); }
+  for (let a = 0; a <= 3; a++) for (let b = 0; b <= 3; b++) B.cyl('alu', -1.2 + a * 0.8, 0, -1.2 + b * 0.8, 0.03, 0.03, 2.1, 8, { color: pick(rng, [red, yel, blu, grn]), cap: true });
+  for (let h = 1; h <= 3; h++) for (let a = 0; a <= 3; a++) { tube('alu', [[-1.2, h * 0.7, -1.2 + a * 0.8], [1.2, h * 0.7, -1.2 + a * 0.8]], 0.022, grn, false); tube('alu', [[-1.2 + a * 0.8, h * 0.7, -1.2], [-1.2 + a * 0.8, h * 0.7, 1.2]], 0.022, yel, false); }
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 1.25, hz: 1.25, r, h: 2.1 });
-  // sandbox
+  // sandbox with a timber edge
   at(W / 4, D / 5);
-  B.box('wood', 0, 0, 0, 3.4, 0.28, 3.4, { color: [0.85, 0.62, 0.42] });
-  B.box('plain', 0, 0.01, 0, 3.1, 0.25, 3.1, { color: [0.96, 0.88, 0.66] });
-  B.box('plain', 0.6, 0.26, 0.4, 0.3, 0.12, 0.3, { color: red }); B.box('plain', -0.7, 0.26, -0.5, 0.25, 0.1, 0.35, { color: blu }); // toy buckets
-  // benches along the back fence and a drinking fountain
+  for (const s2 of [-1, 1]) { B.bbox('wood', 0, 0, s2 * 1.62, 3.4, 0.3, 0.16, 0.03, { color: [0.85, 0.62, 0.42] }); B.bbox('wood', s2 * 1.62, 0, 0, 0.16, 0.3, 3.1, 0.03, { color: [0.85, 0.62, 0.42] }); }
+  B.box('plain', 0, 0.01, 0, 3.1, 0.2, 3.1, { color: [0.96, 0.88, 0.66], skip: 'ny' });
+  B.bbox('plastic', 0.6, 0.21, 0.4, 0.3, 0.12, 0.3, 0.03, { color: red }); B.bbox('plastic', -0.7, 0.21, -0.5, 0.25, 0.1, 0.35, 0.03, { color: blu });
+  // benches (slatted seat and back on cast legs) along the back fence and a drinking fountain
   for (const bx of [-W / 2 + 4, 0, W / 2 - 4]) {
     at(bx, -D / 2 + 1.4);
-    B.box('wood', 0, 0.42, 0, 1.8, 0.06, 0.42, { color: [0.82, 0.6, 0.42] }); B.box('wood', 0, 0.6, -0.2, 1.8, 0.35, 0.05, { color: [0.82, 0.6, 0.42] });
-    for (const sx of [-0.8, 0.8]) B.box('alu', sx, 0, 0, 0.06, 0.42, 0.42, { color: [0.35, 0.36, 0.38] });
+    for (let k = 0; k < 4; k++) B.bbox('wood', 0, 0.42, -0.15 + k * 0.1, 1.8, 0.04, 0.085, 0.01, { color: [0.82, 0.6, 0.42] });
+    for (let k = 0; k < 3; k++) B.bbox('wood', 0, 0.55 + k * 0.12, -0.24, 1.8, 0.09, 0.03, 0.01, { color: [0.82, 0.6, 0.42] });
+    for (const sx of [-0.8, 0.8]) { B.bbox('metal', sx, 0, 0, 0.05, 0.42, 0.44, 0.01, { color: [0.24, 0.25, 0.27] }); B.bbox('metal', sx, 0.42, -0.24, 0.05, 0.42, 0.05, 0.01, { color: [0.24, 0.25, 0.27] }); }
     extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 0.95, hz: 0.25, r, h: 0.5 });
   }
   at(W / 2 - 3, D / 2 - 3);
-  B.cyl('concrete', 0, 0, 0, 0.25, 0.2, 0.85, 10, { color: [0.78, 0.78, 0.76] }); B.cyl('alu', 0, 0.85, 0, 0.3, 0.3, 0.08, 10, { color: [0.8, 0.82, 0.84], cap: true });
+  B.cyl('concrete', 0, 0, 0, 0.25, 0.2, 0.85, 12, { color: [0.78, 0.78, 0.76] }); B.cyl('alu', 0, 0.85, 0, 0.3, 0.3, 0.08, 12, { color: [0.8, 0.82, 0.84], cap: true });
+  B.cyl('steel', 0.1, 0.93, 0, 0.02, 0.02, 0.08, 6, { color: [0.7, 0.7, 0.7], cap: true });
+  // public toilet block in a corner
+  at(-W / 2 + 3.2, D / 2 - 3.6, Math.PI / 2);
+  B.bbox('block', 0, 0, 0, 3.6, 2.6, 2.8, 0.02, { color: [0.88, 0.86, 0.8], uv: 1.6 });
+  B.bbox('roofMetal', 0, 2.6, 0, 4.2, 0.12, 3.4, 0.02, { color: [0.35, 0.5, 0.42] });
+  for (const [sx, c] of [[-0.9, [0.2, 0.35, 0.75]], [0.9, [0.85, 0.25, 0.3]]]) { B.bbox('metal', sx, 0.05, 1.41, 0.8, 1.95, 0.04, 0.01, { color: [0.72, 0.74, 0.76] }); B.bbox('plastic', sx, 2.15, 1.43, 0.3, 0.3, 0.02, 0.01, { color: c }); }
+  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 1.8, hz: 1.4, r: r + Math.PI / 2 });
   // shade trees around the edge
   for (let k = 0; k < 10; k++) {
-    const t = k / 10, side = k % 4, lx = side < 2 ? (side ? W / 2 - 2 : -W / 2 + 2) : lerp(-W / 2 + 4, W / 2 - 4, rng()), lz = side < 2 ? lerp(-D / 2 + 3, D / 2 - 3, rng()) : -D / 2 + 2.5;
+    const side = k % 4, lx = side < 2 ? (side ? W / 2 - 2 : -W / 2 + 2) : lerp(-W / 2 + 4, W / 2 - 4, rng()), lz = side < 2 ? lerp(-D / 2 + 3, D / 2 - 3, rng()) : -D / 2 + 2.5;
     B.F = F; const p = B.P([lx, 0, lz]); trees.push({ x: p[0], z: p[2] });
   }
   B.F = F;
 }
+const circ = (rad, n) => Array.from({ length: n }, (_, i) => [Math.cos(i / n * Math.PI * 2) * rad, Math.sin(i / n * Math.PI * 2) * rad]);
 
 // ---------------------------------------------------------------- elementary school (local +Z faces the entrance road)
 let clockMat = null;
@@ -308,7 +325,20 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   const gw = 24, gd = 18, gx = bx + bw / 2 + 4 + gw / 2, gz = -BD / 2 + 3 + gd / 2, gh = 7;
   if (gx + gw / 2 < BW / 2 - 2) {
     at(gx, gz);
-    B.box('siding', 0, 0, 0, gw, gh, gd, { color: [0.86, 0.94, 0.9], skip: 'ny', uv: 2.2 });
+    // walls with real openings: tall window bands along both sides, four steel doors on the front
+    const gcol = [0.86, 0.94, 0.9];
+    for (const [fr, off, fw] of [[0, gd / 2, gw], [Math.PI, gd / 2, gw], [Math.PI / 2, gw / 2, gd], [-Math.PI / 2, gw / 2, gd]]) {
+      const F0 = B.F; B.frame(...B.P([Math.sin(fr) * off, 0, Math.cos(fr) * off]), r + fr);
+      const holes = [];
+      if (fw === gd) for (let k = 0; k < 4; k++) { const zz = -gd / 2 + 2.5 + k * (gd - 5) / 3; holes.push({ x0: zz - 1.2, x1: zz + 1.2, y0: 3.6, y1: 6.2, d: 0.16 }); }
+      if (fr === 0) for (let k = 0; k < 4; k++) { const dx = -gw / 2 + 3 + k * (gw - 6) / 3; holes.push({ x0: dx - 1.1, x1: dx + 1.1, y0: 0.2, y1: 2.6, d: 0.14, door: true }); }
+      wallFill(B, 'siding', -fw / 2, fw / 2, 0, gh, holes, gcol, 2.2);
+      for (const h of holes) { reveals(B, 'siding', h, [0.8, 0.86, 0.84]);
+        if (h.door) { B.quad('shutter', [h.x0, h.y0, -0.1], [h.x1, h.y0, -0.1], [h.x1, h.y1, -0.1], [h.x0, h.y1, -0.1], { color: [0.72, 0.74, 0.76], uv: 1.2 }); B.bbox('concrete', (h.x0 + h.x1) / 2, 0, 0.5, 2.6, 0.2, 1.0, 0.02, { color: [0.72, 0.72, 0.7] }); }
+        else windowUnit(B, h, { rng, type: 'grid', glass: [1, 0.95, 0.85], grille: true, grilleColor: [0.3, 0.45, 0.4] }); }
+      B.F = F0;
+    }
+    B.bbox('concrete', 0, 0, 0, gw + 0.1, 0.4, gd + 0.1, 0.02, { color: [0.72, 0.72, 0.7], skip: 'ny' });
     const segs = 12, rise = 3.2, rc = [0.3, 0.55, 0.62];
     const arc = k => { const t = k / segs, a = (t - 0.5) * Math.PI * 0.8; return [Math.sin(a) / Math.sin(Math.PI * 0.4) * (gd / 2 + 0.4), gh + (Math.cos(a) - Math.cos(Math.PI * 0.4)) / (1 - Math.cos(Math.PI * 0.4)) * rise]; };
     for (let k = 0; k < segs; k++) {
@@ -317,13 +347,6 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
       B.quad('plain', [-gw / 2 - 0.4, y0 - 0.05, z0], [gw / 2 + 0.4, y0 - 0.05, z0], [gw / 2 + 0.4, y1 - 0.05, z1], [-gw / 2 - 0.4, y1 - 0.05, z1], { color: [0.9, 0.9, 0.88] });
       for (const sx of [-1, 1]) { const X = sx * gw / 2; const t = sx > 0 ? [[X, gh, 0], [X, y0, z0], [X, y1, z1]] : [[X, gh, 0], [X, y1, z1], [X, y0, z0]]; B.tri('siding', ...t, { color: [0.86, 0.94, 0.9], uv: 2.2 }); }
     }
-    for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) {
-      const zz = -gd / 2 + 2.5 + k * (gd - 5) / 3, X = sx * (gw / 2 + 0.02);
-      const q = [[X, 3.6, zz - 1.2], [X, 3.6, zz + 1.2], [X, 6.2, zz + 1.2], [X, 6.2, zz - 1.2]];
-      if (sx > 0) B.quad('window', q[1], q[0], q[3], q[2], { color: [1, 0.95, 0.85], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
-      else B.quad('window', ...q, { color: [1, 0.95, 0.85], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
-    }
-    for (let k = 0; k < 4; k++) B.box('alu', -gw / 2 + 3 + k * (gw - 6) / 3, 0.2, gd / 2 + 0.02, 2.2, 2.4, 0.05, { color: [0.72, 0.74, 0.76] }); // doors
     extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: gw / 2, hz: gd / 2, r });
   }
   // sports ground: a levelled dirt field inside concrete edging with covered drainage channels; chalk track lanes and

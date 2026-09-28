@@ -238,9 +238,9 @@ export function sando(B, M, z0, z1, w = 2.2) {
 }
 
 // sacred tree marker: shimenawa round the trunk with shide
-export function sacredRope(B, M, x, z, rad = 0.62, y = 1.9) {
+export function sacredRope(B, M, x, z, rad = 0.98, y = 1.9) {
   const pts = []; for (let i = 0; i <= 20; i++) { const a = i / 20 * TAU; pts.push([x + Math.cos(a) * rad, y + Math.sin(a * 2) * 0.03, z + Math.sin(a) * rad]); }
-  B.sweep(M.rope, circle(0.07, 8), pts, { closed: true, color: STRAW, uv: 0.3 });
+  B.sweep(M.rope, circle(0.085, 8), pts, { closed: true, color: STRAW, uv: 0.3 });
   for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4, px = x + Math.cos(a) * (rad + 0.07), pz = z + Math.sin(a) * (rad + 0.07);
     inFrame(B, [px, 0, pz], Math.atan2(Math.cos(a), Math.sin(a)), () => { for (let j = 0; j < 4; j++) { const xx = j % 2 ? 0.05 : -0.05, yy = y - 0.08 - j * 0.1;
       B.quad(M.paper, [xx - 0.06, yy - 0.1, 0], [xx + 0.06, yy - 0.1, 0], [xx + 0.06, yy, 0], [xx - 0.06, yy, 0], { color: WHITE }); B.quad(M.paper, [xx + 0.06, yy - 0.1, -0.004], [xx - 0.06, yy - 0.1, -0.004], [xx - 0.06, yy, -0.004], [xx + 0.06, yy, -0.004], { color: mul(WHITE, 0.85) }); } }); }
@@ -275,8 +275,6 @@ export function shrineCompound(B, M, x, y, z, r, extras, rng) {
     gableRoof(B, { w: W, d: D, y: Hh, pitch: 0.5, over: 0.7, mat: M.roof, color: [0.34, 0.36, 0.4], wallMat: M.paper, wallColor: WHITE, gutters: true });
     box(0, 0, W / 2 + 0.2, D / 2 + 0.2);
   });
-  // sacred tree with its rope, beside the hall
-  sacredRope(B, M, 6.8, -19.2);
   // banners (nobori) along the approach
   for (const zz of [1.5, -6.5, -13.5]) for (const s of [-1, 1]) {
     const px = s * 1.75; B.cyl(M.wood, px, 0, zz, 0.03, 0.03, 4.2, 6, { color: [0.85, 0.8, 0.7], cap: true });

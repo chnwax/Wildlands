@@ -9,7 +9,7 @@ import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
 import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment } from './building.js';
-import { shrineCompound } from './shrine.js';
+import { shrineCompound, sacredRope } from './shrine.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
 import { RAIL, buildRailway, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
@@ -23,6 +23,7 @@ const PADDIES = [[-650, -330, -430, -110], [-650, -40, -430, 330], [262, 0, 650,
 const inPaddyZone = (x, z) => PADDIES.some(([a, b, c, d]) => x > a && x < c && z > b && z < d);
 const SHRINE = { x: -60, z: -300 };
 const LEVEL = [[-147, 190, -32.5, 256]]; // school block
+const SHRINE_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
 
 function paddyCell(x, z) { // returns {inside (0..1), levee} for the paddy grid
   const cx = ((x % 30) + 30) % 30, cz = ((z % 20) + 20) % 20;
@@ -105,10 +106,20 @@ const ROADS = [
   { id: 'B', kind: 'road', w: 6.0, walk: 2.0, center: 'white', pts: [[110, -340], [110, 330]], mat: 'asphalt' },
   { id: 'C', kind: 'lane', w: 5.0, pts: [[-150, -300], [-150, 300]], mat: 'asphalt', age: 0.55 },
   { id: 'D', kind: 'lane', w: 5.0, pts: [[-400, -312], [-400, 322]], mat: 'asphalt', age: 0.8 },
-  ...[48, 118, 188, 258].map((z, i) => ({ id: 'S' + i, kind: 'lane', w: 4.2, pts: [[-400, z], [110, z]], mat: 'asphalt', age: [0.62, 0.85, 0.3, 0.5][i] })),
-  ...[-150, -225].map((z, i) => ({ id: 'N' + i, kind: 'lane', w: 4.2, pts: [[-400, z], [110, z]], mat: 'asphalt', age: [0.9, 0.7][i] })),
-  ...[-275, -30].map((x, i) => ({ id: 'V' + i, kind: 'lane', w: 4.0, pts: [[x, -25], [x, 258]], mat: 'asphalt', age: [0.78, 0.45][i] })),
-  ...[-275, -30].map((x, i) => ({ id: 'W' + i, kind: 'lane', w: 4.0, pts: [[x, -100], [x, -225]], mat: 'asphalt', age: [0.92, 0.66][i] })),
+  // residential lanes: the ones the bus loops use run straight; the others bend gently with the old field boundaries
+  ...[48, 118, 188, 258].map((z, i) => ({ id: 'S' + i, kind: 'lane', w: 4.2, mat: 'asphalt', age: [0.62, 0.85, 0.3, 0.5][i],
+    pts: i === 1 ? [[-400, 118], [-340, 121], [-275, 116], [-210, 120], [-150, 118], [-95, 116], [-30, 118], [40, 121], [110, 118]] : [[-400, z], [110, z]] })),
+  { id: 'N0', kind: 'lane', w: 4.2, mat: 'asphalt', age: 0.9, pts: [[-400, -150], [-330, -147], [-240, -153], [-150, -150], [-80, -146], [-30, -150], [40, -154], [110, -150]] },
+  { id: 'N1', kind: 'lane', w: 4.2, mat: 'asphalt', age: 0.7, pts: [[-400, -225], [110, -225]] },
+  { id: 'V0', kind: 'lane', w: 4.0, mat: 'asphalt', age: 0.78, pts: [[-275, -25], [-278, 20], [-273, 85], [-277, 150], [-274, 210], [-275, 258]] },
+  { id: 'V1', kind: 'lane', w: 4.0, mat: 'asphalt', age: 0.45, pts: [[-30, -25], [-30, 258]] },
+  { id: 'W0', kind: 'lane', w: 4.0, mat: 'asphalt', age: 0.92, pts: [[-275, -100], [-278, -130], [-274, -170], [-275, -225]] },
+  { id: 'W1', kind: 'lane', w: 4.0, mat: 'asphalt', age: 0.66, pts: [[-30, -100], [-33, -125], [-29, -175], [-30, -225]] },
+  // narrow unmarked dead-end alleys (roji) into the blocks
+  { id: 'Y0', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.95, pts: [[-340, 48], [-338, 30], [-341, 12]] },
+  { id: 'Y1', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.97, pts: [[-210, -150], [-212, -170], [-209, -190]] },
+  { id: 'Y2', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.9, pts: [[-90, 188], [-88, 170], [-91, 158]] },
+  { id: 'Y3', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.93, pts: [[40, -225], [42, -245], [39, -262]] },
   { id: 'R', kind: 'lane', w: 4.5, pts: Array.from({ length: 34 }, (_, i) => { const z = -335 + i * 20; return [riverX(z) - 21, z]; }), mat: 'asphalt', age: 0.6 },
   { id: 'F', kind: 'lane', w: 4.0, pts: [[110, 200], [640, 200]], mat: 'asphalt', age: 0.95 },
   { id: 'P', kind: 'path', w: 3.0, pts: [[SHRINE.x, -225], [SHRINE.x, SHRINE.z + 4]], mat: 'gravelPath' },
@@ -255,12 +266,12 @@ export async function build(progress) {
   hf.paint2(2, -PORTALS.railW, -92, PORTALS.railE, -68, (x, z) => Math.abs(z + 80) < 11 ? 1 : 0);
   // station plaza
   B.frame(0, 0, 0, 0);
-  B.box('pavement', RAIL.stationX + 6, Y0 - 0.2, -47.5, 64, 0.34, 32, { color: [0.86, 0.85, 0.82], uv: 1.2, skip: 'ny' });
+  B.bbox('pavement', RAIL.stationX + 6, Y0 - 0.2, -47.25, 64, 0.42, 32.5, 0.02, { color: [0.86, 0.85, 0.82], uv: 1.2, skip: 'ny' }); // flush with the main road's sidewalk
   occRect(RAIL.stationX + 6, -47.5, 34, 17, 0, 1);
   hf.paint2(2, -60, -66, 75, -30, () => 1); hf.paint2(0, -60, -66, 75, -30, () => 1);
-  addPlatform(RAIL.stationX + 6, -47.5, 32, 16, 0, Y0 + 0.14);
+  addPlatform(RAIL.stationX + 6, -47.25, 32, 16.25, 0, Y0 + 0.22);
   { // plaza furniture: bicycle parking under a shelter, clock, bus stop
-    const py = Y0 + 0.14, prng0 = mulberry32(55), bikes = [];
+    const py = Y0 + 0.22, prng0 = mulberry32(55), bikes = [];
     for (let row = 0; row < 2; row++) for (let i = 0; i < 16; i++) if (prng0() < 0.85) bikes.push({ x: 20 + i * 0.62, y: py, z: -58 + row * 2.6, r: Math.PI / 2 + (row ? Math.PI : 0) + (prng0() - 0.5) * 0.1 });
     bicycles(bikes.map(b => ({ ...b, x: b.x + 6 })), prng0);
     B.frame(35.6, py, -56.7, 0);
@@ -298,13 +309,51 @@ export async function build(progress) {
       addBox((ra + rb) / 2, z + 2, 0.1, 2.05, Math.atan2(rb - ra, 4));
     }
   }
-  for (const [bz, bw] of [[-25, 7 + 5], [200, 4.0 + 1]]) {
-    const rx = riverX(bz);
+  // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
+  // an aluminium railing, name pillars (親柱) at the four corners, lamps, and steel expansion joints across the road
+  for (const [bz, bw, id, names] of [[-25, 12, 'A', ['桜川橋', 'さくらがわばし']], [200, 5, 'F', ['舟橋', 'ふなばし']]]) {
+    const rx = riverX(bz), L = 34, gc = [0.76, 0.76, 0.74];
     B.frame(rx, Y0, bz, 0);
-    B.box('concrete', 0, -0.9, 0, 34, 1.2, bw + 1.2, { color: [0.74, 0.74, 0.72], uv: 3 });
-    for (const sd of [-1, 1]) { B.box('concrete', 0, 0.3, sd * (bw / 2 + 0.45), 34, 0.8, 0.3, { color: [0.78, 0.78, 0.76], uv: 3 }); addBox(rx, bz + sd * (bw / 2 + 0.45), 17, 0.2, 0); }
-    for (const px of [-7, 7]) B.box('concrete', px, -8, 0, 1.6, 6.5, bw, { color: [0.7, 0.7, 0.68], uv: 3 });
-    addPlatform(rx, bz, 17, bw / 2 + 0.3, 0, Y0 + 0.35);
+    B.bbox('concrete', 0, -0.5, 0, L, 0.8, bw + 0.9, 0.03, { color: gc, uv: 3 });
+    for (const sd of [-1, 1]) B.bbox('concrete', 0, -0.72, sd * (bw / 2 + 0.3), L, 0.34, 0.5, 0.03, { color: [0.72, 0.72, 0.7], uv: 3 }); // edge beams
+    const ng = Math.max(2, Math.round(bw / 3));
+    for (let g = 0; g < ng; g++) B.bbox('concrete', 0, -1.55, (g / (ng - 1) - 0.5) * (bw - 1), L - 0.4, 1.06, 0.45, 0.03, { color: [0.7, 0.7, 0.68], uv: 3 });
+    for (let x = -L / 2 + 1; x <= L / 2 - 1; x += 5.5) B.bbox('concrete', x, -1.3, 0, 0.3, 0.8, bw - 0.6, 0.02, { color: [0.68, 0.68, 0.66] });
+    for (const px of [-7, 7]) {
+      B.bbox('concrete', px, -1.9, 0, 1.9, 0.4, bw + 0.2, 0.03, { color: [0.72, 0.72, 0.7], uv: 3 });                 // pier cap
+      B.bbox('concrete', px, -8, 0, 1.3, 6.1, bw - 1.3, 0.02, { color: [0.68, 0.68, 0.66], uv: 3 });
+      for (const sd of [-1, 1]) B.cyl('concrete', px, -8, sd * (bw / 2 - 0.65), 0.65, 0.65, 6.1, 16, { color: [0.68, 0.68, 0.66], uv: 3 });
+    }
+    for (const ax of [-L / 2, L / 2]) B.bbox('concrete', ax, -3.2, 0, 0.9, 3.5, bw + 1.6, 0.03, { color: [0.7, 0.7, 0.68], uv: 3 });  // abutments
+    for (const sd of [-1, 1]) {
+      const zp = sd * (bw / 2 + 0.16);
+      B.bbox('concrete', 0, 0.3, zp, L, 0.5, 0.3, 0.025, { color: [0.8, 0.8, 0.78], uv: 3 });
+      B.bbox('concrete', 0, 0.8, zp, L + 0.02, 0.06, 0.36, 0.015, { color: [0.72, 0.72, 0.7] });
+      B.detail(1, () => {
+        for (let x = -L / 2 + 1; x <= L / 2 - 1; x += 2) B.bbox('alu', x, 0.86, zp, 0.06, 0.52, 0.06, 0.008, { color: [0.62, 0.66, 0.7] });
+        for (const yy of [1.1, 1.36]) B.bbox('alu', 0, yy, zp, L - 1.6, 0.05, 0.05, 0.008, { color: [0.66, 0.7, 0.74] });
+      });
+      addBox(rx, bz + zp, 17, 0.2, 0);
+      if (bw < 8) B.bbox('concrete', 0, 0.3, sd * (bw / 2 - 0.25), L, 0.2, 0.5, 0.02, { color: [0.78, 0.78, 0.76] });   // narrow ledge beside the lane
+      for (const ex of [-1, 1]) { // name pillars
+        const px = ex * (L / 2 - 0.4);
+        B.bbox('stone', px, 0.3, zp, 0.62, 1.15, 0.62, 0.03, { color: [0.7, 0.68, 0.64] });
+        B.bbox('stone', px, 1.45, zp, 0.72, 0.12, 0.72, 0.03, { color: [0.64, 0.62, 0.58] });
+        B.bbox('stone', px, 1.57, zp, 0.4, 0.14, 0.4, 0.04, { color: [0.62, 0.6, 0.56] });
+        const txt = names[(ex > 0) !== (sd > 0) ? 0 : 1];
+        const plate = signMesh(0.3, 0.8, (g, W, H) => { g.fillStyle = '#3a3630'; g.fillRect(0, 0, W, H); g.fillStyle = '#d8cfb8'; g.fillRect(6, 6, W - 12, H - 12); g.fillStyle = '#2b2620'; g.textAlign = 'center'; g.textBaseline = 'middle';
+          const cs = [...txt]; g.font = `bold ${Math.min(W * 0.66, H / (cs.length + 0.6))}px ${JP_FONT}`; cs.forEach((c, i) => g.fillText(c, W / 2, H * (i + 0.8) / (cs.length + 0.6))); }, 0.05, 128);
+        plate.position.set(...B.P([px, 0.95, zp - sd * 0.32])); plate.rotation.y = sd > 0 ? Math.PI : 0; scene.add(plate);
+      }
+      for (const lx of [-8, 8]) { // lamp posts
+        B.detail(1, () => { B.cyl('steel', lx, 0.86, zp, 0.08, 0.06, 4.6, 12, { color: [0.3, 0.34, 0.38] }); B.sweep('steel', [[-0.025, -0.025], [0.025, -0.025], [0.025, 0.025], [-0.025, 0.025]], [[lx, 5.3, zp], [lx, 5.55, zp - sd * 0.3], [lx, 5.5, zp - sd * 0.7]], { closed: true, caps: true, color: [0.3, 0.34, 0.38] }); });
+        B.bbox('steel', lx, 5.28, zp - sd * 0.72, 0.36, 0.16, 0.24, 0.03, { color: [0.28, 0.3, 0.33] }); B.box('lamp', lx, 5.26, zp - sd * 0.72, 0.3, 0.03, 0.18);
+        lampPoints.push({ p: [rx + lx, Y0 + 5.1, bz + zp - sd * 0.72], s: 0.9 });
+      }
+    }
+    addPlatform(rx, bz, 17, bw / 2, 0, Y0 + 0.35);
+    // steel finger joints across the road at both deck ends
+    for (const ex of [-1, 1]) RN.decal(B, 'metal', [rx + ex * L / 2, bz], [1, 0], 0.11, RN.byId.get(id).hw, { color: [0.36, 0.36, 0.36], lift: 0.006, road: false });
   }
   progress('Building the railway', 0.42); await tick();
 
@@ -317,6 +366,14 @@ export async function build(progress) {
   const kLot = { x: 134, z: 0, hw: 20, hd: 16 };
   reserve(kLot.x, kLot.z, kLot.hw, kLot.hd, 0);
   konbini(B, { x: kb.x, y: Y0, z: 7, r: Math.PI, w: 22, d: 13 }, rng, extras);
+  { // the konbini's pole sign at the corner of the lot
+    const px = 151.5, pz = -17.2;
+    B.frame(px, Y0 + 0.08, pz, 0); B.cyl('steel', 0, 0, 0, 0.16, 0.14, 6.2, 16, { color: [0.85, 0.86, 0.88] }); B.bbox('concrete', 0, -0.1, 0, 0.8, 0.3, 0.8, 0.03, { color: [0.72, 0.72, 0.7] });
+    B.bbox('plastic', 0, 6.1, 0, 2.3, 1.6, 0.5, 0.05, { color: [0.95, 0.95, 0.95] }); B.frame(0, 0, 0, 0); addCircle(px, pz, 0.25);
+    for (const e of [-1, 1]) { const m = signMesh(2.1, 1.4, (g, W2, H2) => { g.fillStyle = '#fff'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#0a8a4b'; g.fillRect(0, 0, W2, H2 * 0.2); g.fillStyle = '#1a5fb4'; g.fillRect(0, H2 * 0.8, W2, H2 * 0.2); g.fillStyle = '#f08a14'; g.fillRect(0, H2 * 0.2, W2, H2 * 0.08);
+      g.fillStyle = '#0a4f8f'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H2 * 0.24}px Arial`; g.fillText('SUNNY', W2 / 2, H2 * 0.42); g.fillText('MART', W2 / 2, H2 * 0.66); }, 1.4);
+      m.position.set(px, Y0 + 0.08 + 6.9, pz + e * 0.26); m.rotation.y = e > 0 ? 0 : Math.PI; scene.add(m); }
+  }
   B.frame(0, 0, 0, 0); B.box('asphalt', 134.4, Y0 - 0.1, -9.6, 38.8, 0.18, 18.8, { uv: 4, skip: 'ny' });
   for (let i = 0; i < 7; i++) {
     RN.decal(B, 'paint', [118.5 + i * 5, -2.3], [0, 1], 2.5, 0.06, { color: [0.92, 0.92, 0.9], y: () => Y0 + 0.08, lift: 0.004, road: false });
@@ -333,9 +390,12 @@ export async function build(progress) {
   hf.paint2(2, apt.x - 18, 118, apt.x + 18, 146, () => 1);
   for (let i = 0; i < 6; i++) carSpots.push({ p: [apt.x - 14 + i * 5.5, Y0, 127], r: 0 });
   // shrine
-  const shrineInfo = shrineCompound(B, { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' },
+  const shrineInfo = shrineCompound(B, SHRINE_M,
     SHRINE.x, hf.groundAt(SHRINE.x, SHRINE.z), SHRINE.z, 0, extras, mulberry32(808));
   for (const p of shrineInfo.lamps) lampPoints.push({ p, s: 0.35 });
+  // the shrine's sacred tree, girded with a shimenawa sized to its trunk
+  const shrineTree = makeTree('zelkova', shrineInfo.tree[0], shrineInfo.tree[1] - 0.2, shrineInfo.tree[2], mulberry32(31), { scale: 1.1 });
+  B.frame(0, shrineInfo.tree[1], 0, 0); sacredRope(B, SHRINE_M, shrineTree.x, shrineTree.z, shrineTree.tr * 1.02 + 0.06, 1.9);
   hf.paint2(0, SHRINE.x - 11, SHRINE.z - 38, SHRINE.x + 11, SHRINE.z + 5, (x2, z2) => Math.abs(x2 - SHRINE.x) < 10 && z2 < SHRINE.z + 4 ? 1 : 0);   // gravel precinct
   hf.paint2(2, SHRINE.x - 11, SHRINE.z - 38, SHRINE.x + 11, SHRINE.z + 5, (x2, z2) => Math.abs(x2 - SHRINE.x) < 9.5 && z2 < SHRINE.z + 4 && z2 > SHRINE.z - 37 ? 1 : 0);
   reserve(SHRINE.x, SHRINE.z - 15, 12.5, 24.5, 0);
@@ -356,20 +416,20 @@ export async function build(progress) {
   // district (old quarter, river neighbourhood, newer estates, the service yards along lane F)
   const district = (x2, z2) => Math.abs(x2 - riverX(z2)) < 80 ? 'river' : x2 < -250 || (z2 < -110 && x2 < 0) ? 'old' : z2 > 140 || x2 > 150 ? 'new' : 'mid';
   const lots = [];
-  for (const R of ROADS) {
+  for (const R of [...ROADS].sort((a, b) => (b.noMarks ? 1 : 0) - (a.noMarks ? 1 : 0))) { // alleys claim their small plots first
     if (R.kind === 'path') continue;
-    const ind = R.id === 'F';
+    const ind = R.id === 'F', alley = !!R.noMarks;
     for (const [a, b] of roadSegs(R)) {
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
       for (const side of [-1, 1]) {
         const nx = -dz * side, nz = dx * side;
         if (R.id === 'R' && Math.abs(a[0] + nx * 10 - riverX(a[1] + nz * 10)) < Math.abs(a[0] - riverX(a[1]))) continue; // not on the river side
-        let t = 4 + rng() * 2;
-        while (t < L - 4) {
+        let t = alley ? 3.2 : 4 + rng() * 2;
+        while (t < L - (alley ? 1 : 4)) {
           const dist = ind ? 'yard' : district(a[0] + dx * t, a[1] + dz * t);
-          const w = ind ? 18 + rng() * 6 : dist === 'old' ? 8.5 + rng() * 3 : dist === 'new' ? 11 + rng() * 4 : 10 + rng() * 3.5;
-          const d = ind ? 17 + rng() * 4 : dist === 'old' ? 14 + rng() * 4 : 13.5 + rng() * 3;
-          const set = (R.w / 2 + (R.walk || 0) + (dist === 'new' ? 1.2 : 0.7));
+          const w = ind ? 18 + rng() * 6 : alley ? 8 + rng() * 2 : dist === 'old' ? 8.5 + rng() * 3 : dist === 'new' ? 11 + rng() * 4 : 10 + rng() * 3.5;
+          const d = ind ? 17 + rng() * 4 : alley ? 11.5 + rng() * 2 : dist === 'old' ? 14 + rng() * 4 : 13.5 + rng() * 3;
+          const set = R.w / 2 + (R.walk || 0) + (dist === 'new' ? 1.3 : 1.05); // just clear of the road corridor's reservation
           const cx = a[0] + dx * (t + w / 2) + nx * (set + d / 2), cz = a[1] + dz * (t + w / 2) + nz * (set + d / 2);
           const r = Math.atan2(-nx, -nz);
           t += w + (dist === 'old' ? 0.15 : 0.3 + rng() * 0.6);
@@ -379,10 +439,10 @@ export async function build(progress) {
           if (rng() < 0.04) continue; // empty lot
           occRect(cx, cz, w / 2, d / 2, r, 1);
           const shop = R.id === 'A' && cx > -270 && cx < 200;
-          const roll = rng(), kind = ind ? 'yard' : shop ? 'shop' : roll < 0.06 ? 'carpark' : roll < 0.1 && dist !== 'new' ? 'garden' : 'house';
+          const roll = rng(), kind = ind ? 'yard' : shop ? 'shop' : roll < 0.035 ? 'carpark' : roll < 0.07 && dist !== 'new' ? 'garden' : 'house';
           lots.push({ x: cx, z: cz, r, w, d, shop, road: R, kind, district: dist });
           // flag lot behind (旗竿地) reached by a narrow driveway beside the front lot
-          if (!shop && !ind) for (let row = 1; row <= 2; row++) {
+          if (!shop && !ind && !alley) for (let row = 1; row <= 2; row++) {
             const off = (d + 0.6) * row, bw = 10 + rng() * 3, bd = 13 + rng() * 3;
             const bx = cx - nx * off, bz = cz - nz * off;
             if (Math.abs(bx) > 640 || Math.abs(bz) > 345 || inPaddyZone(bx, bz) || hf.groundAt(bx, bz) > Y0 + 1.2) break;
@@ -409,7 +469,9 @@ export async function build(progress) {
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 - 1 && Math.abs(dx * s2 + dz * c) < lot.d / 2 - 1 ? 1 : 0; });
       continue;
     }
-    if (lot.kind === 'yard') { warehouse(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng, extras); continue; }
+    if (lot.kind === 'yard') { warehouse(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng, extras);
+      hf.paint2(2, lot.x - 14, lot.z - 14, lot.x + 14, lot.z + 14, (x2, z2) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x2 - lot.x, dz = z2 - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 - 0.6 && Math.abs(dx * s2 + dz * c) < lot.d / 2 ? 1 : 0; });
+      hf.paint2(0, lot.x - 14, lot.z - 14, lot.x + 14, lot.z + 14, (x2, z2) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x2 - lot.x, dz = z2 - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 && Math.abs(dx * s2 + dz * c) < lot.d / 2 ? 1 : 0; }); continue; }
     if (lot.kind === 'carpark') { for (const sp of carPark(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng, extras)) if (rng() < 0.6) carSpots.push(sp);
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x2, z2) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x2 - lot.x, dz = z2 - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 && Math.abs(dx * s2 + dz * c) < lot.d / 2 ? 1 : 0; }); continue; }
     if (lot.kind === 'garden') { allotment(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng);
@@ -453,6 +515,35 @@ export async function build(progress) {
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
   RN.buildEdges(B, { tactile: n => n.R.id === 'A' });
+  { // direction arrows in the approach lanes of the main road at its junction with road B (left-hand traffic)
+    const I = inters.find(I2 => I2.roads.some(R => R.id === 'A') && I2.roads.some(R => R.id === 'B'));
+    if (I) for (const dir of [1, -1]) for (const back of [20, 34]) {
+      const t = [dir, 0], l = [0, dir], hw = 3.5, u = hw / 2, cx = I.p[0] - dir * back, cz = I.p[1] + l[1] * u;
+      const P2 = (a2, b2) => { const x2 = cx + t[0] * a2 + l[0] * b2, z2 = cz + t[1] * a2 + l[1] * b2; return [x2, surfaceY(x2, z2) + 0.012, z2]; };
+      RN.decal(B, 'paint', [cx + t[0] * -0.6, cz], t, 1.6, 0.075, { color: [0.94, 0.94, 0.92], cell: 0.8 });                     // shaft
+      B.poly('paint', [P2(1.0, -0.33), P2(1.0, 0.33), P2(2.1, 0)], [0, 1, 0], { color: [0.94, 0.94, 0.92] });                  // head
+      if (back === 20) { RN.decal(B, 'paint', [cx + l[0] * -0.45, cz + l[1] * -0.45], [0, -dir], 0.45, 0.075, { color: [0.94, 0.94, 0.92], cell: 0.5 }); // right branch
+        B.poly('paint', [P2(-0.2, -0.85), P2(0.35, -0.85), P2(0.08, -1.45)], [0, 1, 0], { color: [0.94, 0.94, 0.92] }); }
+    }
+  }
+  { // utility covers set into roads and footways (water valves, hydrant pits, telecom), and red fire hydrants
+    const urng = mulberry32(606);
+    for (const n of RN.net) {
+      if (n.R.kind === 'path') continue;
+      for (let s0 = 8 + urng() * 20; s0 < n.PL.len - 8; s0 += 26 + urng() * 40) {
+        const q = RN.sampleAt(n, s0), l = [-q.d[1], q.d[0]], x0 = q.x, z0 = q.z;
+        if (Math.abs(x0) > 700 || Math.abs(z0) > 360 || onRail(z0) || onBridge(x0, z0) || RN.clipDist(n, s0) < 3) continue;
+        const side = urng() < 0.5 ? 1 : -1, onWalk = n.walk > 0 && urng() < 0.6;
+        const u = onWalk ? side * (n.hw + 0.6 + urng() * (n.walk - 1.0)) : side * (n.hw * 0.35 + urng() * n.hw * 0.4);
+        const cx = x0 + l[0] * u, cz = z0 + l[1] * u, yf = onWalk ? topY : surfaceY;
+        const kind = urng(), sz = kind < 0.4 ? 0.2 : kind < 0.75 ? 0.3 : 0.45, col = kind < 0.4 ? [0.3, 0.32, 0.36] : kind < 0.75 ? [0.95, 0.78, 0.12] : [0.38, 0.36, 0.34];
+        B.detail(2, () => RN.decal(B, 'metal', [cx, cz], q.d, sz, sz, { color: col, lift: 0.006, y: yf, road: false, cell: 1 }));
+        if (onWalk && urng() < 0.25) { const hx = x0 + l[0] * side * (n.hw + n.walk - 0.35), hz = z0 + l[1] * side * (n.hw + n.walk - 0.35), hy = topY(hx, hz);
+          B.frame(hx, hy, hz, 0); B.cyl('plastic', 0, -0.02, 0, 0.1, 0.1, 0.6, 12, { color: [0.85, 0.12, 0.1] }); B.cyl('plastic', 0, 0.58, 0, 0.12, 0.05, 0.12, 12, { color: [0.85, 0.12, 0.1], cap: true });
+          for (const e of [-1, 1]) B.cyl('steel', e * 0.1, 0.35, 0, 0.035, 0.035, 0.08, 8, { color: [0.7, 0.7, 0.68], cap: true }); B.frame(0, 0, 0, 0); addCircle(hx, hz, 0.14); }
+      }
+    }
+  }
   // street trees in square planters along the main road's sidewalks, outside the shopping street
   const streetTrees = [];
   for (let x = -430; x < 430; x += 13) for (const sd of [-1, 1]) {
@@ -492,11 +583,11 @@ export async function build(progress) {
   for (const e of extras) if (e.t === 'poly') { const m = new THREE.Mesh(new THREE.PlaneGeometry(e.w, e.d).rotateX(-Math.PI / 2), MT.poly); m.position.set(...e.p); m.rotation.y = e.r; scene.add(m); }
   // vending machines: station plaza, konbini, scattered along lanes
   let vi = 0;
-  for (const [x, z, r] of [[RAIL.stationX + 18, -35.5, 0], [RAIL.stationX + 19.1, -35.5, 0], [RAIL.stationX + 20.2, -35.5, 0], [150, 4.5, Math.PI], [151.1, 4.5, Math.PI], [-120, -34, Math.PI]]) vendingMachine(x, Y0 + (z < -30 && z > -64 && x > -30 && x < 75 ? 0.14 : 0), z, r, vi++);
+  for (const [x, z, r] of [[RAIL.stationX + 18, -35.5, 0], [RAIL.stationX + 19.1, -35.5, 0], [RAIL.stationX + 20.2, -35.5, 0], [150, 4.5, Math.PI], [151.1, 4.5, Math.PI], [-120, -34, Math.PI]]) vendingMachine(x, z < -30 && z > -64 && x > -30 && x < 75 ? Y0 + 0.22 : topY(x, z), z, r, vi++, B);
   for (const v of vend) {
     const c = Math.cos(v.lot.r), s = Math.sin(v.lot.r), lx = v.off[0], lz = v.off[1];
     const x = v.lot.x + lx * c + lz * s, z = v.lot.z - lx * s + lz * c;
-    for (let k = 0; k < (rng() < 0.5 ? 2 : 1); k++) vendingMachine(x + c * k * 1.1, hf.groundAt(x, z), z - s * k * 1.1, v.lot.r, vi++);
+    for (let k = 0; k < (rng() < 0.5 ? 2 : 1); k++) vendingMachine(x + c * k * 1.1, topY(x, z), z - s * k * 1.1, v.lot.r, vi++, B);
   }
   // little street shrines on free corners where lanes meet
   { const shr = mulberry32(2718); let placed = 0;
@@ -684,7 +775,7 @@ export async function build(progress) {
   const greenTrees = [];
   for (const t of parkTrees) greenTrees.push(makeTree(drng() < 0.6 ? 'zelkova' : 'oak', t.x, hf.groundAt(t.x, t.z) - 0.2, t.z, drng, { scale: 0.75 }));
   for (const t of streetTrees) greenTrees.push(makeTree('zelkova', t.x, t.y, t.z, drng, { scale: 0.62, a: 0.5 }));
-  greenTrees.push(makeTree('zelkova', shrineInfo.tree[0], shrineInfo.tree[1] - 0.2, shrineInfo.tree[2], mulberry32(31), { scale: 1.25 })); // the shrine's sacred tree
+  greenTrees.push(shrineTree);
   buildTrees(greenTrees);
   bicycles(bikeList, drng);
   scatterModel(potted, [...pots, ...green.pots], true, () => Q.props * 0.35);
@@ -701,7 +792,7 @@ export async function build(progress) {
   const crng = mulberry32(7);
   const parked = carSpots.filter(() => crng() < 0.85).map(sp => ({ sp, spec: randomCar(crng, false) }));
   // taxis waiting at the station
-  for (let i = 0; i < 3; i++) parked.push({ sp: { p: [RAIL.stationX + 30 - i * 5.2, Y0 + 0.14, -41], r: -Math.PI / 2 }, spec: { type: 'taxi', color: [0.08, 0.1, 0.2] } });
+  for (let i = 0; i < 3; i++) parked.push({ sp: { p: [RAIL.stationX + 30 - i * 5.2, Y0 + 0.22, -41], r: -Math.PI / 2 }, spec: { type: 'taxi', color: [0.08, 0.1, 0.2] } });
   // routes (closed loops; driving on the left)
   const loops = [
     { pts: [[-400, -25], [110, -25], [110, -225], [-400, -225]], n: 5, v: 11 },
@@ -758,7 +849,7 @@ export async function build(progress) {
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3();
   const world = {
-    hf, grass, water, spawn, trains, traffic, crossings, sakura,
+    hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN,
     bounds: { minX: -990, maxX: 990, minZ: -990, maxZ: 990 },
     groundAt(x, z) {
       const w = RN.walkY(x, z); if (w !== null) return w;

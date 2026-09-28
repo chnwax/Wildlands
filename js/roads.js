@@ -119,6 +119,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
   const WHITE = [0.93, 0.93, 0.9], YELLOW = [0.96, 0.72, 0.12];
   const marks = n => {
     const hw = n.hw, k = n.R.kind;
+    if (n.R.noMarks) return [];
     if (k === 'main') return [[0, 0.15, YELLOW, false], [hw - 0.2, 0.15, WHITE, false], [-hw + 0.2, 0.15, WHITE, false]];
     if (k === 'road') return [[0, 0.15, WHITE, true], [hw - 0.25, 0.15, WHITE, false], [-hw + 0.25, 0.15, WHITE, false]];
     if (k === 'lane') return [[hw - 0.35, 0.15, WHITE, false], [-hw + 0.35, 0.15, WHITE, false]];

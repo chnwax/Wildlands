@@ -21,6 +21,15 @@ let src = pl;
 for (const [a, b] of rep) { if (!src.includes(a)) throw new Error('toon: three chunk changed: ' + a); src = src.replace(a, b); }
 THREE.ShaderChunk.lights_physical_pars_fragment = src;
 
+// specular anti-aliasing: where the shading normal (normal maps included) changes faster than a pixel can resolve,
+// widen the highlight instead of letting it sparkle (three only does this for the geometric normal)
+{
+  const c = THREE.ShaderChunk.lights_physical_fragment, a = 'material.roughness += geometryRoughness;';
+  if (!c.includes(a)) throw new Error('toon: three roughness chunk changed');
+  THREE.ShaderChunk.lights_physical_fragment = c.replace(a, a + `
+  { vec3 nd = max(abs(dFdx(normal)), abs(dFdy(normal))); material.roughness = max(material.roughness, min(1.0, 0.65 * max(max(nd.x, nd.y), nd.z))); }`);
+}
+
 THREE.ShaderChunk.color_fragment = /* glsl */`
 #if defined( USE_MAP ) && defined( TOON_FLAT )
 	{ vec3 mapAvg = textureLod( map, vMapUv, 5.5 ).rgb, toonAvg = diffuse * mapAvg; diffuseColor.rgb = mix( toonAvg, diffuseColor.rgb, 0.28 );

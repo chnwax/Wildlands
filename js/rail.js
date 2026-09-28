@@ -40,6 +40,11 @@ export function tunnelPortal(MT, { xFace, xBack, y, z, sx, archW = 10, archH = 9
   add(uvScale(new THREE.ExtrudeGeometry(cop, { depth: depth + 0.35, bevelEnabled: false })), MT.concrete, 0, 0, -depth + 0.3, [0.66, 0.66, 0.64]);
   add(new THREE.TorusGeometry(r + 0.35, 0.35, 6, 28, Math.PI), MT.concrete, 0, archH - r, 0.45, [0.7, 0.7, 0.68]); // arch ring
   for (const s2 of [-1, 1]) add(new THREE.BoxGeometry(0.9, archH - r + 0.5, 0.5), MT.concrete, s2 * (r + 0.35), (archH - r) / 2 - 0.25, 0.45, [0.7, 0.7, 0.68]);
+  // name plaque over the arch (tunnel name, and its length in metres)
+  const pl = signMesh(3.2, 0.62, (g, W, H) => { g.fillStyle = '#4a4640'; g.fillRect(0, 0, W, H); g.fillStyle = '#e6dfcf'; g.fillRect(5, 5, W - 10, H - 10);
+    g.fillStyle = '#2b2722'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H * 0.42}px ${JP_FONT}`; g.fillText(archW > 12 ? '桜川トンネル' : '桜峠トンネル', W / 2, H * 0.4);
+    g.font = `${H * 0.2}px ${JP_FONT}`; g.fillText(archW > 12 ? 'SAKURAGAWA TUNNEL  L=640m' : 'SAKURA-TOGE TUNNEL  L=820m', W / 2, H * 0.78); }, 0.05, 256);
+  pl.position.set(0, archH + 1.05, 0.33); grp.add(pl);
   const cap = new THREE.Mesh(new THREE.ShapeGeometry(archPath(new THREE.Shape()), 20), new THREE.MeshBasicMaterial({ color: 0x030304, fog: false }));
   cap.position.set(0, 0, -capAt); grp.add(cap);
   return grp;

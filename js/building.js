@@ -814,7 +814,7 @@ export function warehouse(B, s, rng, extras) {
     const dr = { x0: W / 2 - 2.2, x1: W / 2 - 1.3, y0: 0.05, y1: 2.1, d: 0.1 };
     const band = []; for (let k = 0; k < Math.floor(W / 3.2); k++) { const cx = -W / 2 + 1.6 + k * 3.2; if (cx > sh.x1 + 0.4 || cx < sh.x0 - 1.4) band.push({ x0: cx - 1.1, x1: cx + 1.1, y0: H - 1.7, y1: H - 0.9, d: 0.08 }); }
     const side = [-1, 1].map(k => ({ x0: k * D / 4 - 1.1, x1: k * D / 4 + 1.1, y0: H - 1.7, y1: H - 0.9, d: 0.08 }));
-    boxWalls(B, 0, W, D, 0, H, [['roofMetal', wc, 1.2]], fi => fi === 0 ? [sh, dr, ...band] : fi >= 2 ? side : [], mul(wc, 0.9));
+    boxWalls(B, 0, W, D, 0, H, [['metalWall', wc, 1.2]], fi => fi === 0 ? [sh, dr, ...band] : fi >= 2 ? side : [], mul(wc, 0.9));
     B.bbox('concrete', 0, 0, 0, W + 0.2, 0.35, D + 0.2, 0.01, { color: [0.7, 0.7, 0.68], skip: 'ny' });
     inFrame(B, [0, 0, D / 2], 0, () => {
       B.quad('shutter', [sh.x0, sh.y0, -0.06], [sh.x1, sh.y0, -0.06], [sh.x1, sh.y1, -0.06], [sh.x0, sh.y1, -0.06], { color: jitter(rng, [0.74, 0.75, 0.74], 0.06), uv: 1.2 });
@@ -831,7 +831,7 @@ export function warehouse(B, s, rng, extras) {
     });
     inFrame(B, [0, 0, -D / 2], Math.PI, () => { for (const e of [-1, 1]) acUnit(B, e * W / 4, 0, rng, { pipeTo: 2.6 }); });
     for (const e of [-1, 1]) inFrame(B, [e * W / 2, 0, 0], e * Math.PI / 2, () => { for (const h of side) windowUnit(B, h, { rng, type: 'grid', sill: false, glass: [0.9, 0.9, 0.9] }); });
-    gableRoof(B, { w: W, d: D, y: H, pitch: 0.16 + rng() * 0.08, over: 0.4, rake: 0.25, mat: 'roofMetal', color: roofC, wallMat: 'roofMetal', wallColor: wc, wallUv: 1.2, gutterColor: [0.7, 0.7, 0.7] });
+    gableRoof(B, { w: W, d: D, y: H, pitch: 0.16 + rng() * 0.08, over: 0.4, rake: 0.25, mat: 'roofMetal', color: roofC, wallMat: 'metalWall', wallColor: wc, wallUv: 1.2, gutterColor: [0.7, 0.7, 0.7] });
     extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: W / 2, hz: D / 2, r });
   });
 }

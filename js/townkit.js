@@ -135,6 +135,7 @@ export class GeoBuilder {
   // box between two local points (for beams, rails, wires-as-bars)
   beam(mat, a, b, w, h, opt = {}) {
     const dx = b[0] - a[0], dz = b[2] - a[2], L = Math.hypot(dx, dz), r = Math.atan2(dx, dz);
+    if (L < 1e-5) { this.box(mat, a[0], Math.min(a[1], b[1]), a[2], w, Math.abs(b[1] - a[1]), h, opt); return; } // vertical
     const saved = this.F, F = this.F, ca = Math.cos(r), sa = Math.sin(r);
     // compose rotation: world = frame(local); local beam frame rotated by r around its start
     const P0 = this.P(a);
@@ -187,7 +188,7 @@ export class GeoBuilder {
 
 // detail levels: fine parts (frames, sills, gutters, railings, AC units) and micro details (meters, vents, grates, bolts)
 // are batched into their own smaller chunks and drawn only within these distances (scaled by the quality preset)
-const LOD_DIST = [Infinity, 190, 70];
+const LOD_DIST = [Infinity, 220, 90];
 export const lodMeshes = [];
 const _lc = new THREE.Vector3();
 export function updateLod(cam) {
@@ -241,7 +242,7 @@ function tactileMat(dots) {
 }
 // one asphalt for every road: age, lane layout and wear come per vertex from the road builder (roads.js)
 function asphaltMat() {
-  const m = std({ map: tex('asphalt_pit_lane', 'diff', '2k'), normalMap: tex('asphalt_pit_lane', 'nor_gl', '2k', false), roughnessMap: tex('asphalt_pit_lane', 'rough', '1k', false) });
+  const m = std({ map: tex('asphalt_pit_lane', 'diff', '2k'), normalMap: tex('asphalt_pit_lane', 'nor_gl', '1k', false), roughnessMap: tex('asphalt_pit_lane', 'rough', '1k', false) });
   m.normalScale.set(0.8, 0.8);
   return asphaltAge(m, 'road');
 }
@@ -257,6 +258,8 @@ export function materials() {
     stone: pbrX('japanese_stone_wall', 0.03, { grime: 0.6, streaks: 0.4, moss: 0.9, ground: 0.5 }),
     roofTile: pbrX('grey_roof_tiles', 0.024, { grime: 0, streaks: 0.3, moss: 0.55 }, { metalness: 0.12, roughness: 0.75 }),
     roofMetal: weather(std({ normalMap: tex('box_profile_metal_sheet', 'nor_gl', '1k', false), roughnessMap: tex('box_profile_metal_sheet', 'rough', '1k', false), metalness: 0.55, roughness: 0.6 }), { grime: 0, streaks: 0.4, moss: 0.15 }, 'roofMetal'),
+    // painted box-profile cladding for sheds and workshops: the profile without the roof sheet's rust map
+    metalWall: weather(std({ normalMap: tex('box_profile_metal_sheet', 'nor_gl', '1k', false), metalness: 0.3, roughness: 0.48 }), { grime: 0.4, streaks: 0.55, moss: 0, vary: 0.4 }, 'metalWall'),
     wood: pbrX('japanese_cedar_planks', 0.006, { grime: 0.6, streaks: 0.5, moss: 0.4 }),
     asphalt: asphaltMat(),
     pavement: pbrX('concrete_pavement', 0.008, { grime: 0.3, streaks: 0, moss: 0.35 }),
@@ -373,53 +376,103 @@ function vendingTexture(i) {
 
 // ---------------------------------------------------------------- props
 const vmGeo = new THREE.BoxGeometry(1.0, 1.83, 0.75);
-export function vendingMachine(x, y, z, r, i) {
+export function vendingMachine(x, y, z, r, i, B = null) {
   const t = vendingTexture(i);
   const front = new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0, roughness: 0.35 });
   front.userData.glow = 0.55; glowMats.push(front);
   const side = new THREE.MeshStandardMaterial({ color: [0xc8102e, 0x0b4ea2, 0xf3f3ef, 0x1b1b1b, 0xe8e8e8][i % 5], roughness: 0.4, metalness: 0.3 });
   const m = new THREE.Mesh(vmGeo, [side, side, side, side, front, side]);
-  m.position.set(x, y + 0.915, z); m.rotation.y = r; m.castShadow = true; m.receiveShadow = true;
+  m.position.set(x, y + 0.915 + 0.06, z); m.rotation.y = r; m.castShadow = true; m.receiveShadow = true;
   scene.add(m); addBox(x, z, 0.5, 0.38, r);
+  if (B) { // plinth, bezel round the display, lit header, coin panel, retrieval bin, and a bottle recycling box beside it
+    const F = B.F; B.frame(x, y, z, r);
+    const bc = [[0.78, 0.06, 0.18], [0.04, 0.3, 0.64], [0.9, 0.9, 0.88], [0.1, 0.1, 0.1], [0.88, 0.88, 0.88]][i % 5];
+    B.bbox('dark', 0, 0, 0, 1.02, 0.07, 0.76, 0.01, { color: [0.12, 0.12, 0.12] });
+    B.detail(1, () => {
+      for (const sx of [-1, 1]) B.bbox('plastic', sx * 0.48, 0.07, 0.385, 0.05, 1.83, 0.03, 0.006, { color: bc });
+      B.bbox('plastic', 0, 1.86, 0.385, 1.0, 0.05, 0.03, 0.006, { color: bc });
+      B.bbox('plastic', 0, 0.12, 0.39, 0.86, 0.26, 0.05, 0.01, { color: [0.12, 0.12, 0.13] });           // retrieval bin
+      B.bbox('plastic', 0, 0.18, 0.42, 0.7, 0.16, 0.01, 0.004, { color: [0.2, 0.22, 0.24] });            // its flap
+      B.bbox('plastic', 0.27, 0.72, 0.4, 0.22, 0.34, 0.04, 0.008, { color: [0.2, 0.2, 0.22] });           // coin / card panel
+      B.box('steel', 0.27, 0.95, 0.425, 0.04, 0.05, 0.01, { color: [0.7, 0.7, 0.7] });
+    });
+    if (i % 3 === 0) { B.bbox('plastic', 0.78, 0, 0.1, 0.42, 0.9, 0.42, 0.04, { color: [0.2, 0.45, 0.8] }); B.detail(1, () => B.cyl('dark', 0.78, 0.9, 0.1, 0.06, 0.06, 0.005, 10, { cap: true, color: [0.05, 0.05, 0.05] })); addBox(...B.P([0.78, 0, 0.1]).filter((_, k) => k !== 1), 0.22, 0.22, r); }
+    B.F = F;
+  }
   return m;
 }
 
 // utility pole with crossarms, insulators, optional transformer and street light; returns wire attach points (world)
+const POLE_ADS = ['桜川歯科 →', 'やまだ内科', '学習塾 明星', '中村鉄工所', 'さくら整骨院', '桜川不動産'];
+const poleAdTex = {};
 export function utilityPole(B, x, y, z, r, rng, { transformer = false, light = false, side = 1 } = {}) {
   B.frame(x, y, z, r);
-  const MT = materials();
-  B.cyl('concrete', 0, 0, 0, 0.19, 0.13, 12.5, 8, { color: [0.78, 0.78, 0.76], uv: 3 });
-  // yellow/black guard sleeve at the base
-  for (let i = 0; i < 6; i++) B.cyl('plain', 0, 0.3 + i * 0.25, 0, 0.2, 0.2, 0.25, 8, { color: i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.75, 0.05] });
+  B.cyl('concrete', 0, -0.2, 0, 0.19, 0.13, 12.7, 16, { color: [0.78, 0.78, 0.76], uv: 3 });
+  B.cyl('concrete', 0, 12.5, 0, 0.13, 0.08, 0.06, 16, { color: [0.72, 0.72, 0.7], cap: true });
+  // yellow/black guard sleeve at the base, bolted
+  for (let i = 0; i < 6; i++) B.cyl('plastic', 0, 0.3 + i * 0.25, 0, 0.205, 0.203, 0.25, 16, { color: i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.75, 0.05] });
+  B.detail(2, () => { // climbing step bolts, alternating sides, from 2.6 m up
+    for (let k = 0; k < 16; k++) { const hh = 2.6 + k * 0.45, a = (k % 2 ? 1 : -1) * Math.PI / 2 + Math.PI / 2; B.beam('steel', [Math.cos(a) * 0.13, hh, Math.sin(a) * 0.13], [Math.cos(a) * 0.36, hh + 0.02, Math.sin(a) * 0.36], 0.022, 0.022, { color: [0.45, 0.45, 0.46] }); }
+  });
   const pts = [];
   for (const [h, wdt, n] of [[11.9, 1.8, 3], [10.9, 1.4, 2]]) {
-    B.box('metal', 0, h - 0.06, 0, wdt, 0.1, 0.08, { color: [0.35, 0.36, 0.37] });
+    B.detail(1, () => {
+      B.bbox('metal', 0, h - 0.08, 0, wdt, 0.1, 0.09, 0.01, { color: [0.36, 0.37, 0.38] });
+      for (const e of [-1, 1]) B.beam('metal', [e * wdt * 0.38, h - 0.05, 0.02], [0, h - 0.75, 0.14], 0.035, 0.035, { color: [0.36, 0.37, 0.38] }); // braces
+    });
     for (let k = 0; k < n; k++) {
       const ox = (k / (n - 1) - 0.5) * (wdt - 0.2);
-      B.cyl('plastic', ox, h + 0.04, 0, 0.05, 0.035, 0.16, 6, { color: [0.92, 0.92, 0.9] });
+      B.detail(1, () => { for (let j = 0; j < 3; j++) B.cyl('plastic', ox, h + 0.03 + j * 0.055, 0, 0.065 - j * 0.008, 0.05 - j * 0.008, 0.05, 10, { color: [0.93, 0.92, 0.9], cap: j === 2 }); });
       pts.push(B.P([ox, h + 0.18, 0]));
     }
   }
-  // telecom cable + low voltage
-  B.box('metal', 0.12 * side, 8.1, 0, 0.35, 0.08, 0.08, { color: [0.3, 0.3, 0.3] });
+  // telecom cable with a closure, low-voltage service box
+  B.detail(1, () => { B.bbox('metal', 0.12 * side, 8.05, 0, 0.36, 0.08, 0.08, 0.01, { color: [0.3, 0.3, 0.3] }); B.bbox('dark', 0.24 * side, 5.85, 0, 0.13, 0.36, 0.13, 0.02); B.cyl('plastic', 0.42 * side, 7.7, 0, 0.1, 0.1, 0.55, 10, { color: [0.16, 0.16, 0.17], cap: true }); });
   pts.push(B.P([0.28 * side, 8.1, 0])); pts.push(B.P([0.02, 6.2, 0]));
-  B.box('dark', 0.22 * side, 6.0, 0, 0.12, 0.35, 0.12);
-  if (transformer) {
-    B.cyl('metal', 0.55 * side, 8.6, 0, 0.3, 0.3, 1.0, 10, { color: [0.62, 0.64, 0.64], cap: true });
-    B.box('metal', 0.25 * side, 9.1, 0, 0.45, 0.08, 0.08, { color: [0.35, 0.36, 0.37] });
-  }
+  if (transformer) B.detail(1, () => {
+    const tx = 0.6 * side;
+    B.cyl('metal', tx, 8.5, 0, 0.31, 0.31, 1.05, 16, { color: [0.64, 0.66, 0.66], cap: true });
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; B.box('metal', tx + Math.cos(a) * 0.33, 8.55, Math.sin(a) * 0.33, 0.04, 0.9, 0.04, { color: [0.58, 0.6, 0.6] }); } // cooling fins
+    for (const bx of [-0.12, 0.12]) { B.cyl('plastic', tx + bx, 9.55, 0, 0.04, 0.03, 0.2, 8, { color: [0.4, 0.3, 0.25], cap: true }); B.beam('steel', [tx + bx, 9.75, 0], [bx * 2, 10.9, 0], 0.012, 0.012, { color: [0.15, 0.15, 0.15] }); }
+    for (const yy of [8.7, 9.3]) B.bbox('metal', tx * 0.55, yy, 0, 0.62, 0.06, 0.08, 0.01, { color: [0.36, 0.37, 0.38] });
+    B.box('plain', tx, 9.05, 0.32, 0.18, 0.12, 0.01, { color: [0.95, 0.95, 0.9] });
+  });
   if (light) {
-    B.beam('metal', [0, 7.2, 0], [1.4 * side, 7.6, 0], 0.06, 0.06, { color: [0.55, 0.57, 0.58] });
-    B.box('metal', 1.6 * side, 7.52, 0, 0.5, 0.08, 0.22, { color: [0.4, 0.42, 0.44] });
-    B.box('lamp', 1.6 * side, 7.48, 0, 0.42, 0.04, 0.18);
+    B.detail(1, () => B.sweep('metal', [[-0.03, -0.03], [0.03, -0.03], [0.03, 0.03], [-0.03, 0.03]], [[0, 7.1, 0], [0.7 * side, 7.5, 0], [1.4 * side, 7.62, 0]], { closed: true, caps: true, color: [0.55, 0.57, 0.58] }));
+    B.bbox('metal', 1.6 * side, 7.5, 0, 0.52, 0.09, 0.24, 0.02, { color: [0.4, 0.42, 0.44] });
+    B.box('lamp', 1.6 * side, 7.47, 0, 0.42, 0.035, 0.18);
   }
-  // number plate
-  B.box('plain', 0, 2.2, 0.2, 0.18, 0.5, 0.02, { color: [0.95, 0.95, 0.92] });
+  // number plate and, on some poles, a wrap-around advert sleeve
+  B.detail(2, () => B.bbox('plain', 0, 2.2, 0.2, 0.17, 0.48, 0.02, 0.004, { color: [0.95, 0.95, 0.92] }));
+  if (rng() < 0.35) {
+    const txt = POLE_ADS[Math.floor(rng() * POLE_ADS.length)];
+    const m = signMesh(0.36, 1.25, (g, W, H) => { g.fillStyle = txt.includes('歯科') || txt.includes('内科') ? '#1f6e4a' : txt.includes('塾') ? '#b8322a' : '#23448c'; g.fillRect(0, 0, W, H); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const chars = [...txt.replace(' →', '')]; g.font = `bold ${Math.min(W * 0.72, H / (chars.length + 1))}px ${JP_FONT}`; chars.forEach((c, i) => g.fillText(c, W / 2, H * (i + 0.8) / (chars.length + 0.6))); }, 0.1, 128);
+    m.position.set(...B.P([0, 2.95, 0.2])); m.rotation.y = r; scene.add(m);
+  }
   addCircle(x, z, 0.25);
   return { pts, lamp: light ? B.P([1.6 * side, 7.3, 0]) : null };
 }
 // sagging wires between consecutive poles (lines are the right visual weight for 1-2 cm cables)
-const wireMat = new THREE.LineBasicMaterial({ color: 0x1a1b1c });
+// 1 px lines at any distance would read far too heavy and crawl: coverage follows the cable's real ~16 mm diameter in
+// pixels (never below a faint 12 %), resolved through alpha-to-coverage, so distant spans thin out instead of flickering
+const wireMat = new THREE.ShaderMaterial({
+  alphaToCoverage: true, fog: true, uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uPx: { value: 800 } }]),
+  vertexShader: `uniform float uPx; varying float vCov;
+    #include <common>
+    #include <fog_pars_vertex>
+    void main(){ vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition; vCov = clamp(0.016 * uPx / max(-mvPosition.z, 0.1), 0.12, 1.0);
+    #include <fog_vertex>
+    }`,
+  fragmentShader: `varying float vCov;
+    #include <common>
+    #include <fog_pars_fragment>
+    void main(){ gl_FragColor = vec4(vec3(0.1, 0.105, 0.11), vCov);
+    #include <fog_fragment>
+    }`,
+});
+wireMat.onBeforeRender = (r, sc, cam) => { wireMat.uniforms.uPx.value = r.getDrawingBufferSize(_wv).y / (2 * Math.tan(cam.fov * Math.PI / 360)); };
+const _wv = new THREE.Vector2();
 export function wires(poles) {
   const P = [];
   for (let i = 0; i + 1 < poles.length; i++) {
@@ -476,12 +529,23 @@ function roadSignTex(kind) {
   });
   return signTex[kind];
 }
+const signMats = {};
 export function roadSign(B, x, y, z, r, kind) {
   B.frame(x, y, z, r);
-  B.cyl('alu', 0, 0, 0, 0.03, 0.03, kind === 'stop' ? 2.1 : 2.6, 6);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.75), new THREE.MeshStandardMaterial({ map: roadSignTex(kind), transparent: true, alphaTest: 0.5, roughness: 0.4, side: THREE.DoubleSide }));
-  const p = B.P([0, kind === 'stop' ? 1.85 : 2.3, 0.04]); m.position.set(p[0], p[1], p[2]); m.rotation.y = r; m.castShadow = true;
+  const ph = kind === 'stop' ? 2.1 : 2.6, sy = kind === 'stop' ? 1.85 : 2.3;
+  B.cyl('alu', 0, -0.15, 0, 0.032, 0.03, ph + 0.15, 12, { color: [0.82, 0.84, 0.86] });
+  B.cyl('plastic', 0, ph, 0, 0.036, 0.02, 0.04, 12, { color: [0.3, 0.3, 0.32], cap: true });
+  if (!signMats[kind]) signMats[kind] = new THREE.MeshStandardMaterial({ map: roadSignTex(kind), alphaTest: 0.5, roughness: 0.4 });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.75), signMats[kind]);
+  const p = B.P([0, sy, 0.045]); m.position.set(p[0], p[1], p[2]); m.rotation.y = r; m.castShadow = true;
   scene.add(m); addCircle(x, z, 0.06);
+  // the plate's grey back (in the sign's outline) and two clamp bands round the post
+  const outline = kind === 'stop' ? [[-0.36, 0.3], [0.36, 0.3], [0, -0.35]] : kind === 'crossing' ? [[0, 0.36], [0.36, 0], [0, -0.36], [-0.36, 0]]
+    : Array.from({ length: 20 }, (_, i) => [Math.cos(i / 20 * Math.PI * 2) * 0.35, Math.sin(i / 20 * Math.PI * 2) * 0.35]);
+  const c = outline.reduce((a, q) => [a[0] + q[0] / outline.length, a[1] + q[1] / outline.length], [0, 0]);
+  for (let i = 0; i < outline.length; i++) { const a = outline[i], b = outline[(i + 1) % outline.length];
+    B.poly('alu', [[c[0], sy + c[1], 0.042], [a[0], sy + a[1], 0.042], [b[0], sy + b[1], 0.042]], [0, 0, -1], { color: [0.62, 0.64, 0.66] }); }
+  B.detail(1, () => { for (const dy of [-0.18, 0.18]) B.bbox('steel', 0, sy + dy - 0.03, 0.02, 0.1, 0.06, 0.1, 0.008, { color: [0.6, 0.62, 0.64] }); });
 }
 
 // painted "止まれ" legend + stop line texture for road surfaces
