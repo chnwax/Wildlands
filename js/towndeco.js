@@ -4,7 +4,8 @@
 import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvasTex, signMesh, JP_FONT, lampPoints, materials } from './townkit.js';
-import { wallFill, reveals, windowUnit } from './building.js';
+import { wallFill, reveals, windowUnit, inFrame } from './building.js';
+import { torii, shimenawa, toro, offeringBox } from './shrine.js';
 
 // chain-link fence mesh: a diamond wire pattern, alpha-tested so it stays see-through (one texture repeat = 0.5 m)
 export function chainMaterial() {
@@ -29,6 +30,7 @@ export function chainMaterial() {
 }
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
+const mul = (c, k) => c.map(v => v * k);
 const WHITE = [0.97, 0.97, 0.95];
 
 // ---------------------------------------------------------------- street furniture
@@ -190,19 +192,67 @@ export function excavator(B, rng) {
   void rng;
 }
 // small roadside shrine: a hokora with a tiny torii and a stone Jizo (local +Z faces the street)
-export function streetShrine(B, x, y, z, r) {
+// roadside shrine (祠 hokora): a two-tier dressed-stone plinth on a gravel pad with a stone kerb, a small cedar hall
+// with latticed doors under a nagare-style roof (the front slope sweeps out over the doors, copper ridge with chigi
+// and katsuogi), a straw rope with paper streamers, a pair of small stone lanterns, a vermilion torii in front, an
+// offering box, sakaki vases and a sake cup — and, at some, a stone jizo in a red bib.
+const HOKORA_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
+export function streetShrine(B, x, y, z, r, rng = Math.random) {
   B.frame(x, y, z, r);
-  B.box('concrete', 0, 0, 0, 1.4, 0.35, 1.1, { color: [0.7, 0.7, 0.68] });
-  B.box('wood', 0, 0.35, -0.1, 0.8, 0.7, 0.6, { color: [0.72, 0.52, 0.36] });
-  B.box('dark', 0, 0.45, 0.21, 0.4, 0.45, 0.02);
-  B.quad('roofMetal', [-0.62, 1.05, 0.38], [0.62, 1.05, 0.38], [0.62, 1.32, -0.1], [-0.62, 1.32, -0.1], { color: [0.35, 0.33, 0.33] });
-  B.quad('roofMetal', [0.62, 1.05, -0.58], [-0.62, 1.05, -0.58], [-0.62, 1.32, -0.1], [0.62, 1.32, -0.1], { color: [0.35, 0.33, 0.33] });
-  const red = { color: [0.86, 0.22, 0.14] };
-  for (const sx of [-0.35, 0.35]) B.box('plain', sx, 0.35, 0.5, 0.06, 0.85, 0.06, red);
-  B.box('plain', 0, 1.12, 0.5, 0.95, 0.06, 0.08, red); B.box('plain', 0, 1.0, 0.5, 0.8, 0.05, 0.05, red);
-  B.cyl('plastic', 0.55, 0.35, 0.25, 0.1, 0.12, 0.34, 8, { color: [0.7, 0.7, 0.67] }); B.cyl('plastic', 0.55, 0.69, 0.25, 0.09, 0.09, 0.14, 8, { color: [0.72, 0.72, 0.69], cap: true });
-  B.box('plain', 0.55, 0.56, 0.33, 0.2, 0.1, 0.03, red);
-  const p = B.P([0, 0, 0]); addBox(p[0], p[2], 0.72, 0.58, r, y - 1, y + 1.3);
+  const M = HOKORA_M, GRAN = [0.66, 0.65, 0.62], CEDAR = [0.62, 0.44, 0.3], DARK = [0.34, 0.24, 0.17], COP = [0.36, 0.56, 0.5];
+  // gravel pad edged with stone kerbs
+  B.box('ballast', 0, -0.02, 0.35, 2.6, 0.06, 2.9, { color: [0.86, 0.82, 0.74], skip: 'ny', uv: 1 });
+  for (const [cx, cz, w, d] of [[0, -1.1, 2.7, 0.14], [-1.3, 0.35, 0.14, 2.9], [1.3, 0.35, 0.14, 2.9]]) B.bbox('concrete', cx, -0.05, cz, w, 0.16, d, 0.02, { color: GRAN });
+  // two-tier plinth
+  B.bbox('concrete', 0, -0.1, -0.3, 1.5, 0.42, 1.2, 0.03, { color: mul(GRAN, 0.95), uv: 1 });
+  B.bbox('concrete', 0, 0.32, -0.3, 1.14, 0.28, 0.9, 0.025, { color: GRAN, uv: 1 });
+  B.bbox('concrete', 0, 0.6, -0.3, 1.02, 0.05, 0.8, 0.01, { color: mul(GRAN, 1.05) });
+  const f0 = 0.65;
+  // hall: sill, corner posts, board walls, latticed double doors, a little veranda board in front
+  B.bbox('wood', 0, f0, -0.35, 0.78, 0.06, 0.6, 0.008, { color: DARK });
+  for (const sx of [-0.36, 0.36]) for (const sz of [-0.62, -0.08]) B.bbox('wood', sx, f0 + 0.06, sz, 0.06, 0.62, 0.06, 0.006, { color: DARK });
+  B.box('wood', 0, f0 + 0.06, -0.62, 0.66, 0.62, 0.02, { color: CEDAR, uv: 0.8 });
+  for (const sx of [-1, 1]) B.box('wood', sx * 0.36, f0 + 0.06, -0.35, 0.02, 0.62, 0.48, { color: CEDAR, uv: 0.8 });
+  B.box('dark', 0, f0 + 0.08, -0.1, 0.62, 0.56, 0.01, { color: [0.08, 0.07, 0.06] });
+  for (const sx of [-1, 1]) { // lattice doors
+    const dx = sx * 0.16;
+    B.bbox('wood', dx, f0 + 0.08, -0.07, 0.3, 0.02, 0.03, 0.004, { color: DARK }); B.bbox('wood', dx, f0 + 0.62, -0.07, 0.3, 0.03, 0.03, 0.004, { color: DARK });
+    for (const e of [-0.14, 0.14]) B.box('wood', dx + e, f0 + 0.08, -0.07, 0.025, 0.56, 0.03, { color: DARK });
+    B.detail(1, () => { for (let k = 1; k < 5; k++) B.box('wood', dx - 0.14 + k * 0.056, f0 + 0.1, -0.07, 0.012, 0.52, 0.02, { color: DARK });
+      for (let k = 1; k < 9; k++) B.box('wood', dx, f0 + 0.08 + k * 0.06, -0.07, 0.28, 0.01, 0.02, { color: DARK }); });
+  }
+  B.bbox('wood', 0, f0 - 0.02, 0.05, 0.86, 0.04, 0.24, 0.006, { color: CEDAR });
+  // nagare roof: the rear slope short, the front slope long and swept, with thickness, verge boards and a copper ridge
+  const ry = f0 + 0.95, eb = f0 + 0.68, zr = -0.42, zb = -0.78, zf = 0.22, xh = 0.52, t = 0.05;
+  const slope = (za, ya, zc, yc, s) => {
+    B.poly('roofMetal', [[-xh, ya, za], [xh, ya, za], [xh, yc, zc], [-xh, yc, zc]], [0, 1, s * 0.6], { color: COP, uv: 0.5 });
+    B.poly('plain', [[-xh, ya - t, za], [xh, ya - t, za], [xh, yc - t, zc], [-xh, yc - t, zc]], [0, -1, 0], { color: mul(CEDAR, 0.8) });
+    B.bbox('wood', 0, ya - t - 0.01, za, 2 * xh + 0.02, t + 0.02, 0.03, 0.004, { color: DARK });
+    for (const sx of [-1, 1]) B.beam('wood', [sx * xh, ya - t / 2, za], [sx * xh, yc - t / 2, zc], 0.03, t + 0.03, { color: DARK });
+  };
+  slope(zb, eb, zr, ry, -1);
+  const zm = 0.02, ym = eb + 0.02; // front slope in two pitches: steeper near the ridge, flatter at the eave (the sweep)
+  slope(zf, ym - 0.1, zm, ym + 0.06, 1); slope(zm, ym + 0.06, zr, ry, 1);
+  for (const sx of [-1, 1]) B.poly('wood', [[sx * 0.36, f0 + 0.68, -0.62], [sx * 0.36, f0 + 0.68, -0.08], [sx * 0.36, ry - 0.06, zr]], [sx, 0, 0], { color: CEDAR, uv: 0.8 }); // gable triangles
+  B.bbox('roofMetal', 0, ry - 0.01, zr, 2 * xh + 0.06, 0.07, 0.1, 0.01, { color: mul(COP, 0.85) });                    // ridge
+  for (const k of [-0.2, 0, 0.2]) B.cyl('wood', k, ry + 0.06, zr, 0.025, 0.025, 0.035, 8, { color: [0.92, 0.78, 0.3], cap: true }); // katsuogi ends
+  for (const sx of [-1, 1]) { B.beam('wood', [sx * (xh + 0.02), ry - 0.05, zr - 0.1], [sx * (xh - 0.06), ry + 0.22, zr + 0.06], 0.025, 0.03, { color: DARK }); } // chigi
+  // straw rope with streamers across the front, sake cup and sakaki vases, offering box
+  shimenawa(B, M, [-0.38, f0 + 0.64, -0.03], [0.38, f0 + 0.64, -0.03], 0.07, 0.022, 2);
+  for (const sx of [-0.3, 0.3]) { B.cyl('plastic', sx, f0, 0.1, 0.035, 0.03, 0.12, 8, { color: [0.95, 0.95, 0.93], cap: true });
+    B.detail(1, () => { for (let k = 0; k < 4; k++) B.bbox('plain', sx + (k % 2 - 0.5) * 0.05, f0 + 0.12 + Math.floor(k / 2) * 0.06, 0.1 + (k - 1.5) * 0.015, 0.07, 0.05, 0.03, 0.012, { color: [0.16, 0.42, 0.22] }); }); }
+  B.cyl('plastic', 0, f0, 0.12, 0.03, 0.022, 0.025, 8, { color: [0.95, 0.95, 0.93], cap: true });
+  offeringBox(B, M, 0, 0.62, 0.42);
+  // small stone lanterns either side, and the torii in front
+  for (const sx of [-0.95, 0.95]) toro(B, M, sx, 0.45, 0.42);
+  inFrame(B, [0, 0, 1.25], 0, () => torii(B, M, { span: 1.2, h: 1.65, rope: false }));
+  if (rng() < 0.45) inFrame(B, [0.95, 0, -0.35], 0, () => { // jizo on its own stone
+    B.bbox('concrete', 0, 0, 0, 0.36, 0.2, 0.32, 0.02, { color: GRAN });
+    B.cyl('concrete', 0, 0.2, 0, 0.11, 0.13, 0.36, 10, { color: [0.6, 0.6, 0.57] });
+    B.cyl('concrete', 0, 0.56, 0, 0.08, 0.1, 0.02, 10, { color: [0.6, 0.6, 0.57] });
+    B.sweep('concrete', [[0.0, -0.09], [0.07, -0.06], [0.09, 0], [0.07, 0.07], [0, 0.1], [-0.07, 0.07], [-0.09, 0], [-0.07, -0.06]], [[0, 0.58, 0], [0, 0.6, 0]], { closed: true, caps: true, color: [0.6, 0.6, 0.57] });
+    B.cyl('plastic', 0, 0.44, 0, 0.13, 0.15, 0.12, 10, { color: [0.86, 0.16, 0.12] }); });                            // red bib
+  const p = B.P([0, 0, 0.1]); addBox(p[0], p[2], 1.35, 1.5, r, y - 1, y + 1.6);
 }
 
 // zebra crossing across a road: (x,z) on the centreline, (dx,dz) the road direction, W the carriageway width

@@ -14,25 +14,26 @@ export const VERM = [0.88, 0.24, 0.11], BLACK = [0.13, 0.12, 0.13], STONE = [0.7
   WHITE = [0.97, 0.96, 0.92], STRAW = [0.88, 0.78, 0.52], COPPER = [0.4, 0.64, 0.56], GOLD = [0.98, 0.78, 0.32];
 
 export function torii(B, M, { span = 3.6, h = 4.5, col = VERM, top = BLACK, rope = false } = {}) {
-  const px = span / 2, r0 = 0.2 * span / 3.6;
+  // every member scales with the gate (k = 1 for the standard 3.6 m span), so small wayside torii keep the proportions
+  const k = span / 3.6, px = span / 2, r0 = 0.2 * k;
   for (const s of [-1, 1]) {
-    B.bbox(M.stone, s * px, -0.12, 0, r0 * 3.6, 0.18, r0 * 3.6, 0.02, { color: STONE });
-    B.cyl(M.dark, s * px, 0, 0, r0 * 1.34, r0 * 1.24, 0.42, 16, { color: top });
-    B.cyl(M.dark, s * px, 0.4, 0, r0 * 1.24, r0 * 1.02, 0.05, 16, { color: top });
-    B.cyl(M.lac, s * px, 0.42, 0, r0, r0 * 0.88, h - 0.42, 16, { color: col });
+    B.bbox(M.stone, s * px, -0.12 * k, 0, r0 * 3.6, 0.18 * k, r0 * 3.6, 0.02 * k, { color: STONE });
+    B.cyl(M.dark, s * px, 0, 0, r0 * 1.34, r0 * 1.24, 0.42 * k, 16, { color: top });
+    B.cyl(M.dark, s * px, 0.4 * k, 0, r0 * 1.24, r0 * 1.02, 0.05 * k, 16, { color: top });
+    B.cyl(M.lac, s * px, 0.42 * k, 0, r0, r0 * 0.88, h - 0.42 * k, 16, { color: col });
   }
-  const yN = h * 0.7, yS = h - 0.02;
-  B.bbox(M.lac, 0, yN, 0, span + 1.15, 0.24, 0.17, 0.015, { color: col });
-  for (const s of [-1, 1]) B.bbox(M.dark, s * (px + r0 + 0.1), yN - 0.03, 0, 0.12, 0.3, 0.21, 0.01, { color: top });
-  B.bbox(M.lac, 0, yN + 0.24, 0, 0.24, yS - yN - 0.24, 0.15, 0.01, { color: col });
-  B.bbox(M.dark, 0, yN + 0.3, 0.1, 0.52, 0.74, 0.06, 0.012, { color: top });
-  B.bbox(M.metal, 0, yN + 0.36, 0.13, 0.4, 0.62, 0.012, 0.004, { color: GOLD });
-  B.bbox(M.dark, 0, yN + 0.4, 0.137, 0.32, 0.54, 0.008, 0.003, { color: top });
-  B.bbox(M.lac, 0, yS, 0, span + 1.45, 0.26, 0.28, 0.015, { color: col });
-  const xe = span / 2 + 1.05, pts = [];
-  for (let i = 0; i <= 14; i++) { const x = -xe + 2 * xe * i / 14, t = Math.abs(x) / xe; pts.push([x, yS + 0.36 + 0.26 * t ** 3.2, 0]); }
-  B.sweep(M.dark, [[-0.25, -0.12], [0.25, -0.12], [0.25, 0.13], [-0.25, 0.13]], pts, { closed: true, caps: true, color: top, uv: 1 });
-  if (rope) shimenawa(B, M, [-px + 0.1, yN - 0.05, 0.12], [px - 0.1, yN - 0.05, 0.12], 0.35, 0.06, 3);
+  const yN = h * 0.7, yS = h - 0.02 * k;
+  B.bbox(M.lac, 0, yN, 0, span + 1.15 * k, 0.24 * k, 0.17 * k, 0.015 * k, { color: col });
+  for (const s of [-1, 1]) B.bbox(M.dark, s * (px + r0 + 0.1 * k), yN - 0.03 * k, 0, 0.12 * k, 0.3 * k, 0.21 * k, 0.01 * k, { color: top });
+  B.bbox(M.lac, 0, yN + 0.24 * k, 0, 0.24 * k, yS - yN - 0.24 * k, 0.15 * k, 0.01 * k, { color: col });
+  B.bbox(M.dark, 0, yN + 0.3 * k, 0.1 * k, 0.52 * k, 0.74 * k, 0.06 * k, 0.012 * k, { color: top });
+  B.bbox(M.metal, 0, yN + 0.36 * k, 0.13 * k, 0.4 * k, 0.62 * k, 0.012 * k, 0.004 * k, { color: GOLD });
+  B.bbox(M.dark, 0, yN + 0.4 * k, 0.137 * k, 0.32 * k, 0.54 * k, 0.008 * k, 0.003 * k, { color: top });
+  B.bbox(M.lac, 0, yS, 0, span + 1.45 * k, 0.26 * k, 0.28 * k, 0.015 * k, { color: col });
+  const xe = span / 2 + 1.05 * k, pts = [];
+  for (let i = 0; i <= 14; i++) { const x = -xe + 2 * xe * i / 14, t = Math.abs(x) / xe; pts.push([x, yS + 0.36 * k + 0.26 * k * t ** 3.2, 0]); }
+  B.sweep(M.dark, [[-0.25 * k, -0.12 * k], [0.25 * k, -0.12 * k], [0.25 * k, 0.13 * k], [-0.25 * k, 0.13 * k]], pts, { closed: true, caps: true, color: top, uv: 1 });
+  if (rope) shimenawa(B, M, [-px + 0.1 * k, yN - 0.05 * k, 0.12 * k], [px - 0.1 * k, yN - 0.05 * k, 0.12 * k], 0.35 * k, 0.06 * k, 3);
   return [[-px, 0], [px, 0]];
 }
 // straw rope sagging between two points, with zigzag paper streamers (shide)

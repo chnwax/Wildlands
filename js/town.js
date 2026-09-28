@@ -566,6 +566,24 @@ export async function build(progress) {
   hf.paint2(0, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4 && Math.abs(z - PK.z) < PK.d / 2 - 4 ? 1 : 0);
   hf.paint2(2, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4.5 && Math.abs(z - PK.z) < PK.d / 2 - 4.5 ? 1 : 0);
 
+  // little street shrines on free corners where lanes meet
+  const shrineSpots = [];
+  { const shr = mulberry32(2718); let placed = 0;
+    for (const I of inters) {
+      if (placed >= 5 || I.roads.some(R => R.kind !== 'lane') || shr() > 0.5) continue;
+      const [a, b] = I.roads;
+      for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        let done = false;
+        for (const off of [Math.max(a.w, b.w) / 2 + 2.9, Math.max(a.w, b.w) / 2 + 3.8]) {
+          const x = I.p[0] + sx * off, z = I.p[1] + sz * off, r = Math.atan2(-sx, -sz);
+          if (occRect(x, z, 1.45, 1.6, r, 0, true) || Math.abs(x - riverX(z)) < 30) continue;
+          streetShrine(B, x, hf.groundAt(x, z), z, r, shr); occRect(x, z, 1.45, 1.6, r, 1); placed++; done = true; shrineSpots.push([+x.toFixed(1), +z.toFixed(1), +r.toFixed(2)]);
+          hf.paint2(2, x - 2.5, z - 2.5, x + 2.5, z + 2.5, (x2, z2) => Math.hypot(x2 - x, z2 - z) < 2.2 ? 1 : 0); break;
+        }
+        if (done) break;
+      }
+    }
+    }
   // ---- parcels. Every road gets frontage lots on both sides, marched along it; alleys claim their small plots first,
   // then the through roads in order. A lot takes the depth its block leaves it (shallower lots where two frontages meet
   // back to back), and some lots are split into a front plot plus a flag lot (旗竿地) behind it, reached by its own
@@ -814,17 +832,6 @@ export async function build(progress) {
     const x = v.lot.x + lx * c + lz * s, z = v.lot.z - lx * s + lz * c;
     for (let k = 0; k < (rng() < 0.5 ? 2 : 1); k++) vendingMachine(x + c * k * 1.1, topY(x, z), z - s * k * 1.1, v.lot.r, vi++, B);
   }
-  // little street shrines on free corners where lanes meet
-  { const shr = mulberry32(2718); let placed = 0;
-    for (const I of inters) {
-      if (placed >= 5 || I.roads.some(R => R.kind !== 'lane') || shr() > 0.5) continue;
-      const [a, b] = I.roads, off = Math.max(a.w, b.w) / 2 + 1.6;
-      for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-        const x = I.p[0] + sx * off, z = I.p[1] + sz * off;
-        if (occRect(x, z, 0.9, 0.8, 0, 0, true) || Math.abs(x - riverX(z)) < 30) continue;
-        streetShrine(B, x, hf.groundAt(x, z), z, Math.atan2(-sx, -sz)); occRect(x, z, 0.9, 0.8, 0, 1); placed++; break;
-      }
-    } }
   progress('Stringing power lines', 0.64); await tick();
 
   // ---------------------------------------------------------------- retaining walls where the streets cut into the foothills
@@ -1136,7 +1143,7 @@ export async function build(progress) {
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3();
   const world = {
-    hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN, materials: MT, terrain: terrainGroup,
+    hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN, materials: MT, terrain: terrainGroup, shrineSpots,
     bounds: { minX: -990, maxX: 990, minZ: -990, maxZ: 990 },
     groundAt(x, z) {
       const f = forecourt.heightAt(x, z); if (f !== null) return f;
