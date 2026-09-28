@@ -11,7 +11,7 @@ import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.
 import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse } from './building.js';
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
-import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, curveMirror, roadSign,
+import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
 import { RAIL, buildRailway, railFences, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
@@ -512,7 +512,7 @@ export async function build(progress) {
   hf.paint2(2, 114, -20, 156, 16, () => 1);
   // apartment block
   const apt = { x: -95, z: 138, r: Math.PI, w: 34, d: 11 };
-  reserve(apt.x, apt.z, apt.w / 2 + 3.6, apt.d / 2 + 3.2, apt.r);
+  reserve(apt.x, apt.z, apt.w / 2 + 3.6, apt.d / 2 + 5.6, apt.r);
   apartment(B, { ...apt, y: hf.groundAt(apt.x, apt.z) }, rng, extras);
   B.frame(0, 0, 0, 0); B.box('asphaltLane2', apt.x, Y0 - 0.1, 126, 34, 0.15, 11, { uv: 4, skip: 'ny' });
   hf.paint2(2, apt.x - 18, 118, apt.x + 18, 146, () => 1);
@@ -644,7 +644,7 @@ export async function build(progress) {
     if (lot.kind === 'garden') { allotment(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng);
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x2, z2) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x2 - lot.x, dz = z2 - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 - 0.5 && Math.abs(dx * s2 + dz * c) < lot.d / 2 - 1 ? 1 : 0; }); continue; }
     if (lot.shop) {
-      shopBuilding(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: Math.min(lot.d, 12) }, rng, extras);
+      shopBuilding(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: Math.min(lot.d, 12), old: lot.district === 'old' || lot.era === 'old' }, rng, extras);
       hf.paint2(2, lot.x - 9, lot.z - 9, lot.x + 9, lot.z + 9, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z; return Math.abs(dx * c - dz * s) < lot.w / 2 && Math.abs(dx * s + dz * c) < lot.d / 2 ? 1 : 0; });
       if (rng() < 0.18) vend.push({ lot, off: [lot.w / 2 - 0.6, Math.min(lot.d, 12) / 2 + 0.6] });
       if (srng() < 0.45) { // flower planter by the shop door
@@ -784,6 +784,7 @@ export async function build(progress) {
   progress('Stringing power lines', 0.64); await tick();
 
   // ---------------------------------------------------------------- utility poles and wires
+  const allPoles = [];
   for (const R of ROADS) {
     if (R.kind === 'path' || R.id === 'A' && false) continue;
     for (const [a, b] of roadSegs(R)) {
@@ -797,10 +798,33 @@ export async function build(progress) {
         if (hf.groundAt(x, z) > Y0 + 3) continue;
         const pole = utilityPole(B, x, hf.groundAt(x, z), z, Math.atan2(dx, dz), rng, { transformer: rng() < 0.25, light: k++ % 2 === 0, side });
         if (pole.lamp) lampPoints.push({ p: pole.lamp, s: 1.0 });
-        poles.push(pole);
+        poles.push(pole); allPoles.push(pole);
       }
       if (poles.length > 1) wires(poles);
     }
+  }
+  // service drops: every house takes its supply from the nearest pole, a sagging cable to a bracket under the eaves
+  {
+    const pts = [], cell = new Map(), key = (x2, z2) => Math.floor(x2 / 30) + ',' + Math.floor(z2 / 30);
+    for (const p of allPoles) { const k = key(p.pts[0][0], p.pts[0][2]); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(p); }
+    for (const lot of lots) {
+      const I = lot.info; if (!I || !I.eave) continue;
+      const c = Math.cos(lot.r), s2 = Math.sin(lot.r), W2 = (lx, lz) => [lot.x + lx * c + lz * s2, lot.z - lx * s2 + lz * c];
+      const front = W2(I.hx, I.hz + I.D / 2);
+      let best = null, bd = 32;
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const p of cell.get((Math.floor(front[0] / 30) + i) + ',' + (Math.floor(front[1] / 30) + j)) || []) {
+        const q = p.pts.reduce((m, v) => v[1] < m[1] ? v : m, p.pts[0]), d = Math.hypot(q[0] - front[0], q[2] - front[1]);
+        if (d < bd) { bd = d; best = q; } }
+      if (!best) continue;
+      // the corner of the front wall nearer the pole
+      const cands = [W2(I.hx - I.W / 2 + 0.3, I.hz + I.D / 2 + 0.05), W2(I.hx + I.W / 2 - 0.3, I.hz + I.D / 2 + 0.05)];
+      const a2 = cands.reduce((m, v) => Math.hypot(v[0] - best[0], v[1] - best[2]) < Math.hypot(m[0] - best[0], m[1] - best[2]) ? v : m, cands[0]);
+      const y2 = hf.groundAt(lot.x, lot.z) + I.eave - 0.35, span = Math.hypot(a2[0] - best[0], a2[1] - best[2]), sag = 0.15 + span * 0.015;
+      for (let s = 0; s < 8; s++) for (const t of [s / 8, (s + 1) / 8]) pts.push(lerp(best[0], a2[0], t), lerp(best[1] - 0.4, y2, t) - sag * 4 * t * (1 - t), lerp(best[2], a2[1], t));
+      B.frame(a2[0], y2, a2[1], lot.r); B.detail(2, () => B.box('dark', 0, -0.06, -0.02, 0.06, 0.12, 0.06, { color: [0.2, 0.2, 0.2] })); B.frame(0, 0, 0, 0);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const l = new THREE.LineSegments(g, wireMat); l.frustumCulled = false; scene.add(l);
   }
   // curve mirrors at lane junctions
   for (const I of inters) {

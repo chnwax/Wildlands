@@ -152,6 +152,19 @@ function ridgeCap(B, mat, a, b, color, metal) {
   if (metal) { const L = Math.hypot(b[0] - a[0], b[2] - a[2]); void L; B.sweep(mat, [[-0.13, -0.04], [0, 0.035], [0.13, -0.04], [0, 0.0]], [a, b], { closed: true, color, uv: 1 }); }
   else B.sweep(mat, circle(0.11, 8), [a, b], { closed: true, color, uv: 0.6 });
 }
+// Japanese tile roofs: the rows of round-topped tiles running down the slope, as low triangular ribs, so tiled roofs
+// have a corrugated silhouette at eaves and verges instead of reading as a flat textured plane. rib(x) -> [eave, top]
+function tileRows(B, mat, color, xs, rib, s) {
+  B.detail(1, () => {
+    const c = mul(color, 0.95), cc = mul(color, 0.8);
+    for (const x of xs) {
+      const e = rib(x); if (!e) continue; const [a, b] = e;
+      B.poly(mat, [[x - 0.08, a[1], a[2]], [x - 0.08, b[1], b[2]], [x, b[1] + 0.055, b[2]], [x, a[1] + 0.055, a[2]]], [-1, 2, 0], { color: c, uv: 0.5 });
+      B.poly(mat, [[x, a[1] + 0.055, a[2]], [x, b[1] + 0.055, b[2]], [x + 0.08, b[1], b[2]], [x + 0.08, a[1], a[2]]], [1, 2, 0], { color: c, uv: 0.5 });
+      B.poly(mat, [[x - 0.08, a[1], a[2]], [x + 0.08, a[1], a[2]], [x, a[1] + 0.055, a[2]]], [0, 0, s], { color: cc });
+    }
+  });
+}
 // gable roof in a roof frame: ridge along X at z = 0, walls w (x) by d (z) with tops at y; the underside meets the
 // wall tops, eaves overhang by `over`, rakes by `rake`
 export function gableRoof(B, o) {
@@ -166,6 +179,7 @@ export function gableRoof(B, o) {
     for (const e of [-1, 1]) B.beam('plain', [e * (x1 + 0.016), ye - tv / 2 + 0.01, s * (z1 + 0.03)], [e * (x1 + 0.016), yR - tv / 2 + 0.01, 0], 0.032, tv + 0.13, { color: fasc }); // barge boards
     B.detail(1, () => { if (metal) for (let x = -x1 + 0.22; x < x1 - 0.1; x += 0.455) B.beam(mat, [x, ye + 0.012, s * z1], [x, yR - 0.01, 0], 0.022, 0.03, { color: mul(color, 0.92) }); // standing seams
       else B.sweep(mat, circle(0.05, 6), [[-x1, ye + 0.02, s * (z1 - 0.03)], [x1, ye + 0.02, s * (z1 - 0.03)]], { closed: true, color: mul(color, 0.9), uv: 0.6 }); }); // eave tile roll
+    if (!metal && mat === 'roofTile') { const xs = []; for (let x = -x1 + 0.2; x < x1 - 0.1; x += 0.3) xs.push(x); tileRows(B, mat, color, xs, x => [[x, ye + 0.004, s * (z1 - 0.02)], [x, yR - 0.03, s * 0.05]], s); }
     if (o.gutters !== false) {
       const gy = ye - tv - 0.05, gz = s * (z1 + 0.1);
       gutter(B, [-x1 + 0.05, gy, gz], [x1 - 0.05, gy, gz], o.gutterColor || [0.78, 0.78, 0.76]);
@@ -197,6 +211,8 @@ export function hipRoof(B, o) {
     if (metal) for (let x = -hw + 0.3; x < hw - 0.2; x += 0.455) {
       const zTop = Math.abs(x) <= r ? 0 : hd * (Math.abs(x) - r) / (hw - r || 1); if (hd - zTop < 0.3) continue;
       B.beam(mat, [x, ye + 0.012, s * hd], [x, ye + k * (hd - zTop) - 0.01, s * zTop], 0.022, 0.03, { color: mul(color, 0.92) }); }
+    else if (mat === 'roofTile') { const xs = []; for (let x = -hw + 0.35; x < hw - 0.3; x += 0.3) xs.push(x);
+      tileRows(B, mat, color, xs, x => { const zTop = Math.abs(x) <= r ? 0.05 : hd * (Math.abs(x) - r) / (hw - r || 1) + 0.12; return hd - zTop < 0.35 ? null : [[x, ye + 0.004, s * (hd - 0.02)], [x, ye + k * (hd - zTop) - 0.02, s * zTop]]; }, s); }
     if (o.gutters !== false) {
       const gy = ye - tv - 0.05, gc = o.gutterColor || [0.78, 0.78, 0.76];
       gutter(B, [-hw - 0.05, gy, s * (hd + 0.1)], [hw + 0.05, gy, s * (hd + 0.1)], gc);
@@ -527,6 +543,9 @@ export function house(B, lot, rng, extras) {
     if (balcony) inFrame(B, [bx, 0, D / 2], 0, () => {
       const by = g1 - 0.14, dep = 0.95;
       B.bbox('concrete', 0, by, dep / 2, bw, 0.16, dep, 0.012, { color: [0.78, 0.78, 0.76] });
+      B.detail(1, () => { for (const sx of [-bw / 2 + 0.25, bw / 2 - 0.25]) { // steel knee brackets under the slab
+        B.beam('steel', [sx, by - 0.55, 0.02], [sx, by - 0.02, dep - 0.12], 0.05, 0.05, { color: [0.62, 0.64, 0.66] });
+        B.box('steel', sx, by - 0.05, dep / 2 - 0.05, 0.05, 0.05, dep - 0.1, { color: [0.62, 0.64, 0.66] }); } });
       const railC = style === 'cube' ? FRAMES.black : [0.82, 0.83, 0.84];
       B.bbox('alu', 0, by + 1.08, dep - 0.03, bw, 0.05, 0.07, 0.01, { color: railC });
       for (const s of [-1, 1]) { B.bbox('alu', s * (bw / 2 - 0.03), by + 0.16, dep - 0.03, 0.05, 0.94, 0.05, 0.008, { color: railC }); B.bbox('alu', s * (bw / 2 - 0.03), by + 1.08, dep / 2, 0.05, 0.05, dep, 0.008, { color: railC }); }
@@ -543,6 +562,12 @@ export function house(B, lot, rng, extras) {
     faces.forEach(([fr, off, fw, isSide], fi) => inFrame(B, [Math.sin(fr) * off, 0, Math.cos(fr) * off], fr, () => {
       const busy = (xx, ww = 0.9) => (openings['L:' + fi] || []).some(o => Math.abs((o.h.x0 + o.h.x1) / 2 - xx) < (o.h.x1 - o.h.x0) / 2 + ww / 2 && o.h.y0 < 1.6);
       if (fi !== 0 && rng() < 0.7) { let ax = (rng() - 0.5) * (fw - 2); if (!busy(ax, 1.4)) { acUnit(B, ax, 0, rng, { pipeTo: base + fh * (floors > 1 && rng() < 0.5 ? 1.75 : 0.8) }); extras.push({ t: 'box', p: B.P([ax, 0, 0.22]), hx: 0.42, hz: 0.18, r: r + fr }); } }
+      if (isSide && fi === 3 && (lot.district === 'old' || farm || lot.district === 'river') && rng() < 0.7) B.detail(1, () => { // LPG cylinders chained to the wall
+        for (const px of [-fw / 2 + 1.0, -fw / 2 + 1.45]) { B.cyl('plain', px, 0, 0.22, 0.18, 0.18, 1.15, 12, { color: [0.62, 0.64, 0.66] }); B.cyl('plain', px, 1.15, 0.22, 0.18, 0.06, 0.1, 12, { color: [0.62, 0.64, 0.66], cap: true });
+          B.cyl('steel', px, 1.25, 0.22, 0.04, 0.04, 0.08, 6, { color: [0.3, 0.3, 0.3] }); }
+        B.box('dark', -fw / 2 + 1.22, 0.85, 0.03, 0.9, 0.02, 0.02, { color: [0.2, 0.2, 0.2] });
+        B.sweep('steel', circle(0.012, 5), [[-fw / 2 + 1.22, 1.3, 0.2], [-fw / 2 + 1.22, 1.5, 0.05], [-fw / 2 + 1.8, 1.5, 0.03]], { closed: true, color: [0.5, 0.5, 0.5] });
+        extras.push({ t: 'box', p: B.P([-fw / 2 + 1.22, 0, 0.22]), hx: 0.5, hz: 0.22, r: r + fr }); });
       if (isSide && fi === 2) { meterBox(B, fw / 2 - 1.2, 1.45, 'power'); meterBox(B, fw / 2 - 0.7, 0.55, 'gas'); B.sweep('dark', circle(0.012, 5), [[fw / 2 - 1.2, 1.8, 0.06], [fw / 2 - 1.2, H - 0.3, 0.06], [fw / 2 - 1.2, H - 0.25, 0.35]], { closed: true, color: [0.1, 0.1, 0.1] }); }
       if (fi >= 1) for (let k = 0; k < 2; k++) { const vx = (rng() - 0.5) * (fw - 1.5), vy = base + (rng() < 0.5 ? 2.2 : fh + 2.2); if (vy < H - 0.4 && !busy(vx, 0.5)) ventHood(B, vx, vy); }
       if (fi === 1 && rng() < 0.7) { const bdx = (rng() - 0.5) * (fw - 3); if (!busy(bdx, 1.4)) { const h = { x0: bdx - 0.4, x1: bdx + 0.4, y0: base, y1: base + 1.95, d: 0.1 }; doorUnit(B, h, { color: [0.62, 0.62, 0.6], mat: 'metal', frame: frameC, trim: trimC });
@@ -602,7 +627,7 @@ export function house(B, lot, rng, extras) {
     B.frame(x, y, z, r);
     inFrame(B, [sx * (LW / 2 - bw / 2 - 0.6), 0, hz], 0, () => barn(B, bw, bd, rng, extras));
   }
-  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D, H: roofTop, shedSide, hasWall, wallH, gate: doorGap(LW, gateW) };
+  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D, H: roofTop, eave: H, shedSide, hasWall, wallH, gate: doorGap(LW, gateW) };
 }
 function barn(B, w, d, rng, extras) {
   const h = 3.2 + rng() * 0.6, post = [0.42, 0.32, 0.24], clad = jitter(rng, pick(rng, [[0.55, 0.5, 0.44], [0.46, 0.5, 0.52], [0.6, 0.36, 0.28]]), 0.04);
@@ -630,23 +655,53 @@ function barn(B, w, d, rng, extras) {
 export function shopBuilding(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
-  const floors = 2 + (rng() < 0.4 ? 1 : 0), fh = 3.1, H = floors * fh, W = w - 0.1;
-  const mat = pick(rng, ['tiles', 'tiles', 'stucco', 'plaster', 'siding']), wc = jitter(rng, pick(rng, WALL_TINTS), 0.06), uv = mat === 'tiles' ? 2.5 : 3;
+  // three shopfront types: RC flat-roofed (2-3 floors), 看板建築 (a flat false front hiding a pitched roof) and the
+  // timber machiya (tiled roof parallel to the street, tiled pent roof over the shopfront, latticed upper windows)
+  const type = s.type || (rng() < (s.old ? 0.5 : 0.22) ? 'machiya' : rng() < 0.45 ? 'kanban' : 'flat');
+  const floors = type === 'flat' ? 2 + (rng() < 0.4 ? 1 : 0) : 2, fh = type === 'machiya' ? 2.9 : 3.1, H = floors * fh, W = w - 0.1;
+  let mat = pick(rng, ['tiles', 'tiles', 'stucco', 'plaster', 'siding']), wc = jitter(rng, pick(rng, WALL_TINTS), 0.06), uv = mat === 'tiles' ? 2.5 : 3;
+  if (type === 'machiya') { mat = 'plaster'; wc = jitter(rng, [0.96, 0.94, 0.88], 0.03); uv = 3; }
+  const para = type === 'flat' ? 0.6 : 0, winY = type === 'machiya' ? 1.45 : 0.9, winH = type === 'machiya' ? 1.0 : 1.3, signY = type === 'machiya' ? fh + 0.45 : 3.02;
   const tradeIdx = Math.floor(mulberry32(Math.floor(x * 131 + z * 71) | 0)() * SHOP_NAMES.length), interior = (SHOP_INTERIOR[tradeIdx] + 0.5) / 8;
   const closed = rng() < 0.3, frameC = pick(rng, [[0.78, 0.8, 0.82], [0.3, 0.3, 0.32], [0.55, 0.42, 0.3]]);
   const sf = { x0: -W / 2 + 0.35, x1: W / 2 - 0.35, y0: 0.12, y1: 2.75, d: 0.32 };
   const holes = [[sf], [], [], []], wins = [[], [], [], []];
   for (let f = 1; f < floors; f++) {
     const n = Math.max(1, Math.floor(W / 2.4));
-    for (let k = 0; k < n; k++) { const cx = ((k + 0.5) / n - 0.5) * (W - 1), h = { x0: cx - 0.7, x1: cx + 0.7, y0: f * fh + 0.9, y1: f * fh + 2.2, d: 0.16 }; holes[0].push(h); wins[0].push([h, { shutterBox: rng() < 0.3, shutter: rng() < 0.2 ? 0.6 : 0 }]); }
+    for (let k = 0; k < n; k++) { const cx = ((k + 0.5) / n - 0.5) * (W - 1), h = { x0: cx - 0.7, x1: cx + 0.7, y0: f * fh + winY, y1: f * fh + winY + winH, d: 0.16 }; holes[0].push(h);
+      wins[0].push([h, type === 'machiya' ? { lattice: true, type: 'slide' } : { shutterBox: rng() < 0.3, shutter: rng() < 0.2 ? 0.6 : 0 }]); }
     const nb = Math.max(1, Math.floor(W / 3));
     for (let k = 0; k < nb; k++) if (rng() < 0.85) { const cx = ((k + 0.5) / nb - 0.5) * (W - 1.6), h = { x0: cx - 0.45, x1: cx + 0.45, y0: f * fh + 0.9, y1: f * fh + 2.0, d: 0.14 }; holes[1].push(h); wins[1].push([h, {}]); }
     for (const fi of [2, 3]) for (const zc of [-d / 4, d / 4]) if (rng() < 0.4) { const big = rng() < 0.5, h = { x0: zc - (big ? 0.7 : 0.35), x1: zc + (big ? 0.7 : 0.35), y0: f * fh + (big ? 0.9 : 1.2), y1: f * fh + (big ? 2.1 : 1.9), d: 0.14 }; holes[fi].push(h); wins[fi].push([h, { frosted: !big && rng() < 0.5, shutterBox: big && rng() < 0.5 }]); }
   }
   const back = { x0: W / 2 - 1.75, x1: W / 2 - 0.85, y0: 0.15, y1: 2.15, d: 0.12 }; holes[1].push(back);
   const bw0 = { x0: -W / 4 - 0.4, x1: -W / 4 + 0.4, y0: 1.2, y1: 1.9, d: 0.12 }; holes[1].push(bw0); wins[1].push([bw0, { grille: true, frosted: true }]);
-  boxWalls(B, 0, W, d, 0, H + 0.6, [[mat, wc, uv]], fi => holes[fi], mul(wc, 0.94));
-  const roofY = flatRoof(B, { w: W, d, y: H, para: 0.6, color: wc, wallMat: mat });
+  boxWalls(B, 0, W, d, 0, H + para, type === 'machiya' ? [['wood', [0.4, 0.29, 0.21], 2, fh], [mat, wc, uv]] : [[mat, wc, uv]], fi => holes[fi], mul(wc, 0.94));
+  let roofY;
+  const roofC = type === 'machiya' ? jitter(rng, [0.34, 0.38, 0.46], 0.04) : jitter(rng, pick(rng, [[0.28, 0.32, 0.4], [0.5, 0.26, 0.2], [0.24, 0.4, 0.44], [0.4, 0.4, 0.42]]), 0.04);
+  if (type === 'flat') roofY = flatRoof(B, { w: W, d, y: H, para: 0.6, color: wc, wallMat: mat });
+  else if (type === 'kanban') {
+    const R2 = inFrame(B, [0, 0, 0], Math.PI / 2, () => gableRoof(B, { w: d, d: W, y: H, pitch: 0.36, over: 0.3, rake: 0, mat: 'roofMetal', color: roofC, wallMat: mat, wallColor: wc, wallUv: uv, gutterColor: [0.6, 0.6, 0.6] }));
+    roofY = R2.yR;
+    // the false front carried up past the gable: a slab with a stepped crest, moulded cornices and a band at the floor line
+    const top = R2.yR + 0.55;
+    B.bbox(mat, 0, H, d / 2 - 0.07, W + 0.02, top - 0.6 - H, 0.18, 0.01, { color: wc, uv });
+    B.bbox(mat, 0, top - 0.6, d / 2 - 0.07, W - 2.4, 0.6, 0.18, 0.01, { color: wc, uv });
+    B.bbox('plain', 0, top - 0.64, d / 2 + 0.02, W + 0.14, 0.14, 0.12, 0.02, { color: mul(wc, 0.84) });
+    B.bbox('plain', 0, top - 0.04, d / 2 + 0.02, W - 2.26, 0.14, 0.12, 0.02, { color: mul(wc, 0.84) });
+    B.bbox('plain', 0, H - 0.08, d / 2 + 0.01, W + 0.1, 0.12, 0.1, 0.02, { color: mul(wc, 0.88) });
+  } else {
+    const R2 = gableRoof(B, { w: W, d, y: H, pitch: 0.46, over: 0.7, rake: 0.35, mat: 'roofTile', color: roofC, wallMat: mat, wallColor: wc, wallUv: uv, gutterColor: [0.35, 0.3, 0.26] });
+    roofY = R2.yR;
+    inFrame(B, [0, 0, d / 2], 0, () => { // tiled pent roof (庇) over the shopfront on timber brackets
+      const y1 = fh + 0.32, y0 = fh - 0.05, out = 0.95, hl = W / 2 + 0.15, nb = Math.max(1, Math.round((2 * hl - 0.7) / 1.8));
+      B.poly('roofTile', [[-hl, y0, out], [hl, y0, out], [hl, y1, 0], [-hl, y1, 0]], [0, 1, 1], { color: roofC, uv: 2 });
+      B.poly('plain', [[-hl, y0 - 0.08, out], [hl, y0 - 0.08, out], [hl, y1 - 0.1, 0], [-hl, y1 - 0.1, 0]], [0, -1, 0], { color: SOFFIT });
+      B.bbox('wood', 0, y0 - 0.1, out, 2 * hl, 0.1, 0.05, 0.01, { color: [0.3, 0.22, 0.16] });
+      B.sweep('roofTile', circle(0.045, 6), [[-hl, y0 + 0.02, out - 0.03], [hl, y0 + 0.02, out - 0.03]], { closed: true, color: mul(roofC, 0.9), uv: 0.6 });
+      for (let i = 0; i <= nb; i++) { const bx2 = -hl + 0.35 + i * (2 * hl - 0.7) / nb; B.beam('wood', [bx2, y1 - 0.45, 0.02], [bx2, y0 - 0.12, out - 0.08], 0.07, 0.09, { color: [0.36, 0.26, 0.19] }); }
+    });
+  }
   const fz = d / 2;
   inFrame(B, [0, 0, fz], 0, () => {
     for (const [h, o] of wins[0]) windowUnit(B, h, { rng, frame: frameC, frameMat: 'alu', ...o });
@@ -677,10 +732,10 @@ export function shopBuilding(B, s, rng, extras) {
     // shutter box over the storefront, sign board on a backing frame with lamps
     B.bbox('alu', 0, sf.y1 + 0.02, 0.12, sf.x1 - sf.x0 + 0.2, 0.3, 0.24, 0.012, { color: [0.72, 0.72, 0.7] });
     const signW = W - 1.2;
-    B.bbox('plain', 0, 3.02, 0.06, signW + 0.14, 0.92, 0.12, 0.012, { color: [0.3, 0.3, 0.32] });
-    const sign = shopSign(rng, signW, tradeIdx); sign.position.set(...B.P([0, 3.47, 0.125])); sign.rotation.y = r; scene.add(sign);
-    for (let i = 0; i < 3; i++) { const lx = (i - 1) * signW / 3; B.sweep('steel', circle(0.012, 5), [[lx, 4.05, 0.02], [lx, 4.15, 0.25], [lx, 4.05, 0.42]], { closed: true, color: [0.25, 0.25, 0.27] }); B.bbox('lamp', lx, 3.97, 0.42, 0.12, 0.08, 0.1, 0.02, { color: [1, 0.95, 0.85] }); }
-    if (rng() < 0.55) { // fabric awning on steel arms
+    B.bbox(type === 'machiya' ? 'wood' : 'plain', 0, signY, 0.06, signW + 0.14, 0.92, 0.12, 0.012, { color: type === 'machiya' ? [0.3, 0.22, 0.16] : [0.3, 0.3, 0.32] });
+    const sign = shopSign(rng, signW, tradeIdx); sign.position.set(...B.P([0, signY + 0.45, 0.125])); sign.rotation.y = r; scene.add(sign);
+    if (type !== 'machiya') for (let i = 0; i < 3; i++) { const lx = (i - 1) * signW / 3; B.sweep('steel', circle(0.012, 5), [[lx, 4.05, 0.02], [lx, 4.15, 0.25], [lx, 4.05, 0.42]], { closed: true, color: [0.25, 0.25, 0.27] }); B.bbox('lamp', lx, 3.97, 0.42, 0.12, 0.08, 0.1, 0.02, { color: [1, 0.95, 0.85] }); }
+    if (type !== 'machiya' && rng() < 0.55) { // fabric awning on steel arms
       const ac = pick(rng, [[0.85, 0.2, 0.18], [0.2, 0.55, 0.35], [0.22, 0.38, 0.75], [0.98, 0.7, 0.2], [0.9, 0.45, 0.6], [0.3, 0.65, 0.7]]);
       const ax = W / 2 - 0.3, y0 = 2.92, y1 = 2.6, dz = 1.1;
       B.poly('plain', [[-ax, y0, 0.02], [ax, y0, 0.02], [ax, y1, dz], [-ax, y1, dz]], [0, 1, 0.3], { color: ac });
@@ -690,7 +745,7 @@ export function shopBuilding(B, s, rng, extras) {
       B.quad('plain', [ax, y1 - 0.25, dz - 0.01], [-ax, y1 - 0.25, dz - 0.01], [-ax, y1, dz - 0.01], [ax, y1, dz - 0.01], { color: mul(ac, 0.6) });
       for (const e of [-1, 0, 1]) B.beam('steel', [e * (ax - 0.1), y0 - 0.45, 0.03], [e * (ax - 0.1), y1 - 0.04, dz - 0.05], 0.025, 0.025, { color: [0.3, 0.3, 0.32] });
     }
-    if (rng() < 0.5) { const vs = verticalSign(rng, tradeIdx), vp = B.P([W / 2 - 0.5, 5.2, 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
+    if (type !== 'machiya' && rng() < 0.5) { const vs = verticalSign(rng, tradeIdx), vp = B.P([W / 2 - 0.5, 5.2, 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
       for (const yy of [4.3, 6.0]) B.bbox('steel', W / 2 - 0.5, yy, 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] }); }
     // living quarters: a wall-bracket AC unit beside some upper windows
     for (let f = 1; f < floors; f++) if (rng() < 0.5) acUnit(B, -W / 2 + 0.75, f * fh + 0.45, rng, { onWall: true, pipeTo: f * fh + 2.2, z: 0.25 });
@@ -712,7 +767,8 @@ export function shopBuilding(B, s, rng, extras) {
       B.bbox('metal', sx + 0.2 + n * 0.25 + 0.5, top - 0.05, 0.55, 1.0, 0.06, 1.1, 0.008, { color: [0.45, 0.48, 0.5] });
     }
   });
-  // roof: water tank on a stand, condensers, vent stack
+  // roof: water tank on a stand, condensers, vent stack (flat roofs); pitched roofs get an aerial
+  if (type !== 'flat') { if (rng() < 0.4) antenna(B, 0, roofY - 0.1, 0); extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r }); return; }
   if (deco() < 0.45) {
     const tc = pick(deco, [[0.92, 0.92, 0.9], [0.4, 0.6, 0.82], [0.85, 0.86, 0.88]]), tx = (deco() - 0.5) * (W - 3), tz = -d / 4;
     for (const [sx, sz] of [[-0.55, -0.55], [0.55, -0.55], [-0.55, 0.55], [0.55, 0.55]]) B.bbox('alu', tx + sx, H + 0.03, tz + sz, 0.08, 0.7, 0.08, 0.006, { color: [0.5, 0.5, 0.52] });
@@ -823,12 +879,33 @@ export function apartment(B, s, rng, extras) {
       B.bbox('concrete', 0, fy, 1.55, w + 0.4, 1.1, 0.12, 0.012, { color: [0.86, 0.85, 0.82] });
       B.bbox('concrete', 0, fy + 1.1, 1.55, w + 0.46, 0.05, 0.18, 0.008, { color: [0.7, 0.7, 0.68] });
       lampPoints.push({ p: B.P([0, fy + 2.2, 1.2]), s: 0.4 }); }
-    // stair tower at one end
-    B.bbox('tiles', w / 2 + 1.6, 0, 1.2, 3.2, H + 1.2, 3.6, 0.02, { color: mul(wc, 0.95), uv: 2.5 });
-    for (let f = 0; f < floors; f++) B.quad('window', [w / 2 + 0.6, 0.3 + f * fh + 1.2, 3.01], [w / 2 + 2.6, 0.3 + f * fh + 1.2, 3.01], [w / 2 + 2.6, 0.3 + f * fh + 1.8, 3.01], [w / 2 + 0.6, 0.3 + f * fh + 1.8, 3.01], { color: [1, 0.95, 0.85], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+    // open switch-back stair at one end: floor landings flush with the access corridors, half landings at the far end,
+    // two flights per storey with stepped treads over a raking slab, concrete parapets and corner columns
+    {
+      const x0 = w / 2 + 0.2, x1 = w / 2 + 3.0, xm = (x0 + x1) / 2, zL = 1.6, zM = 3.8, zE = 5.0, cc = [0.84, 0.83, 0.8], pc = mul(wc, 0.97);
+      for (const [cx2, cz2] of [[x0 + 0.15, zE - 0.15], [x1 - 0.15, zE - 0.15], [x1 - 0.15, 0.15]]) B.bbox('concrete', cx2, 0, cz2, 0.3, H + 0.9, 0.3, 0.02, { color: cc });
+      for (let f = 0; f < floors; f++) {
+        const fy = 0.3 + f * fh, my = fy + fh / 2;
+        if (f > 0) B.bbox('concrete', xm, fy - 0.17, zL / 2, x1 - x0, 0.17, zL, 0.01, { color: cc });                  // floor landing
+        B.bbox('concrete', xm, my - 0.17, (zM + zE) / 2, x1 - x0, 0.17, zE - zM, 0.01, { color: cc });                  // half landing
+        B.bbox('tiles', xm, my, zE - 0.06, x1 - x0, 1.1, 0.12, 0.01, { color: pc, uv: 2.5 });                          // its parapet
+        if (f === floors - 1) { B.bbox('tiles', x1 - 0.06, fy + fh, zL / 2, 0.12, 1.1, zL, 0.01, { color: pc, uv: 2.5 }); }
+        const flight = (xa, xb, ya, yb, za, zb) => {
+          const n = 8, xc = (xa + xb) / 2;
+          for (let i = 0; i < n; i++) { const zz = za + (zb - za) * (i + 0.5) / n, yy = ya + (yb - ya) * (i + 1) / n; B.bbox('concrete', xc, yy - 0.18, zz, xb - xa, 0.18, Math.abs(zb - za) / n + 0.01, 0.006, { color: cc }); }
+          B.beam('concrete', [xc, ya - 0.2, za], [xc, yb - 0.2, zb], xb - xa, 0.14, { color: mul(cc, 0.92) });   // raking slab
+          const ex = xa < xm ? xa + 0.05 : xb - 0.05;
+          B.beam('tiles', [ex, ya + 0.55, za], [ex, yb + 0.55, zb], 0.1, 1.1, { color: pc, uv: 2.5 });          // side parapet
+          B.beam('steel', [xa < xm ? xb - 0.05 : xa + 0.05, ya + 0.85, za], [xa < xm ? xb - 0.05 : xa + 0.05, yb + 0.85, zb], 0.04, 0.04, { color: [0.62, 0.64, 0.66] }); // handrail
+        };
+        flight(x0, xm - 0.08, fy, my, zL, zM);        // up and away from the corridor
+        flight(xm + 0.08, x1, my, fy + fh, zM, zL);   // and back to the next floor
+      }
+      B.bbox('concrete', xm, H + 0.75, zE / 2, x1 - x0 + 0.3, 0.15, zE + 0.2, 0.01, { color: cc });                    // canopy slab over the top
+    }
     for (const e of [-1, 1]) downpipe(B, [e * (w / 2 - 0.4), H + 0.3, 0.02], [e * (w / 2 - 0.4), 0, 0.08], 0, [0.7, 0.7, 0.68]);
   });
-  extras.push({ t: 'box', p: B.P([-w / 2 - 1.6, 0, -d / 2 - 1.2]), hx: 1.6, hz: 1.8, r });
+  extras.push({ t: 'box', p: B.P([-w / 2 - 1.6, 0, -d / 2 - 2.5]), hx: 1.4, hz: 2.5, r });
   B.bbox('metal', w / 2 - 3, roofY, 0, 2.2, 1.8, 2.2, 0.03, { color: [0.85, 0.85, 0.82] }); // water tank
   B.bbox('concrete', -w / 2 + 2.5, roofY, 0, 2.6, 2.2, 2.6, 0.02, { color: mul(wc, 0.92) }); // machine room
   for (let i = 0; i < 3; i++) inFrame(B, [-w / 6 + i * 2.2, 0, -d / 4], 0, () => acUnit(B, 0, roofY, rng, { pipeTo: roofY + 0.4 }));
