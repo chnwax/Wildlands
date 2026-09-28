@@ -10,14 +10,28 @@ import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 import { GTAOShader, GTAODepthShader } from 'three/addons/shaders/GTAOShader.js';
 import { PoissonDenoiseShader } from 'three/addons/shaders/PoissonDenoiseShader.js';
 
-// GTAO and its denoiser rebuild view positions from standard depth: read reversed depth as 1 - d
+// GTAO and its denoiser rebuild view positions from depth. With reversed-Z the stored value is d = n (f - z) / (z (f - n))
+// (far = 0); converting it to standard depth as 1 - d would throw the float precision away (1 - 2e-4 keeps ~4 digits), so
+// the distance is decoded straight from d and the view ray comes from the (jittered) inverse projection. Sky = 0, not 1.
 {
-  const flip = (sh, pairs) => { for (const [a, b] of pairs) { if (!sh.fragmentShader.includes(a)) { console.warn('post: shader changed', a); continue; } sh.fragmentShader = sh.fragmentShader.split(a).join(b); } };
-  const rev = e => `(1.0 - ${e})`;
-  flip(GTAOShader, [['return textureLod(tDepth, uv.xy, 0.0).DEPTH_SWIZZLING;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('textureLod(tDepth, uv.xy, 0.0).DEPTH_SWIZZLING') + ';\n#else\n return textureLod(tDepth, uv.xy, 0.0).DEPTH_SWIZZLING;\n#endif'],
-    ['return texelFetch(tDepth, uv.xy, 0).DEPTH_SWIZZLING;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('texelFetch(tDepth, uv.xy, 0).DEPTH_SWIZZLING') + ';\n#else\n return texelFetch(tDepth, uv.xy, 0).DEPTH_SWIZZLING;\n#endif']]);
-  flip(PoissonDenoiseShader, [['return textureLod(tDepth, uv.xy, 0.0).r;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('textureLod(tDepth, uv.xy, 0.0).r') + ';\n#else\n return textureLod(tDepth, uv.xy, 0.0).r;\n#endif'],
-    ['return texelFetch(tDepth, uv.xy, 0).r;', '#ifdef USE_REVERSEDEPTHBUF\n return ' + rev('texelFetch(tDepth, uv.xy, 0).r') + ';\n#else\n return texelFetch(tDepth, uv.xy, 0).r;\n#endif']]);
+  const patchDepth = (sh, sky) => {
+    const rep = (a, b) => { if (!sh.fragmentShader.includes(a)) { console.warn('post: shader changed', a); return; } sh.fragmentShader = sh.fragmentShader.split(a).join(b); };
+    sh.uniforms.uRevNF = { value: new THREE.Vector2(camera.near, camera.far) };
+    rep('vec3 getViewPosition(const in vec2 screenPosition, const in float depth) {', `uniform vec2 uRevNF;
+		vec3 getViewPosition(const in vec2 screenPosition, const in float depth) {
+		#ifdef USE_REVERSEDEPTHBUF
+			vec4 nearP = cameraProjectionMatrixInverse * vec4(screenPosition * 2.0 - 1.0, -1.0, 1.0);
+			float dist = uRevNF.x * uRevNF.y / (max(depth, 1e-12) * (uRevNF.y - uRevNF.x) + uRevNF.x);
+			return nearP.xyz / nearP.w * (dist / uRevNF.x);
+		#endif`);
+    for (const [a, b] of sky) rep(a, `#ifdef USE_REVERSEDEPTHBUF
+ ${b}
+#else
+ ${a}
+#endif`);
+  };
+  patchDepth(GTAOShader, [['if (depth >= 1.0) {', 'if (depth <= 0.0) {']]);
+  patchDepth(PoissonDenoiseShader, [['if (depth == 1. || dot(viewNormal, viewNormal) == 0.) {', 'if (depth == 0. || dot(viewNormal, viewNormal) == 0.) {']]);
   void GTAODepthShader;
 }
 
@@ -40,7 +54,7 @@ class ScenePass extends Pass {
   }
   setSize(w, h) { this.rt.setSize(w, h); }
   render(r, writeBuffer, readBuffer) {
-    if (post.taa) post.taa.begin();
+    if (post.taa && post.taa.enabled) post.taa.begin();
     r.setRenderTarget(this.rt); r.clear(); r.render(scene, camera);
     this.quad.material.uniforms.tDiffuse.value = this.rt.texture;
     r.setRenderTarget(readBuffer); this.quad.render(r);
@@ -85,10 +99,14 @@ const TAAShader = {
       vec3 cur = texture2D(tCur, vUv).rgb;
       if (uReset > 0.5) { gl_FragColor = vec4(cur, 1.0); return; }
       // neighbourhood moments (YCoCg) and the nearest depth in the 3x3 (edges reproject with their foreground)
-      vec3 m1 = vec3(0.0), m2 = vec3(0.0); float dN = texture2D(tDepth, vUv).r; vec2 dUv = vUv;
+      // the current colour is reconstructed from the 3x3 samples with a Blackman-Harris-like kernel centred on the
+      // unjittered pixel centre (each sample sits at its offset + the jitter), so the input no longer jumps with the jitter
+      vec3 m1 = vec3(0.0), m2 = vec3(0.0), cf = vec3(0.0); float wf = 0.0; float dN = texture2D(tDepth, vUv).r; vec2 dUv = vUv;
+      vec2 jp = uJit * uRes;
       for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
         vec2 o = vec2(float(i), float(j)) * px;
         vec3 c = toY(texture2D(tCur, vUv + o).rgb); m1 += c; m2 += c * c;
+        vec2 dp = vec2(float(i), float(j)) + jp; float wk = exp(-2.29 * dot(dp, dp)); cf += c * wk / (1.0 + c.x); wf += wk / (1.0 + c.x);
         float d = texture2D(tDepth, vUv + o).r;
         #ifdef USE_REVERSEDEPTHBUF
           if (d > dN) { dN = d; dUv = vUv + o; }
@@ -98,16 +116,18 @@ const TAAShader = {
       }
       m1 /= 9.0; vec3 sig = sqrt(max(m2 / 9.0 - m1 * m1, 0.0));
       vec4 wp = uInvVP * vec4((dUv + uJit) * 2.0 - 1.0, ndcZ(dN), 1.0); wp /= wp.w;
-      vec4 pp = uPrevVP * wp; vec2 prevUv = pp.xy / pp.w * 0.5 + 0.5 + (vUv - dUv);
+      // this pixel's sample sits at the unjittered position vUv + uJit; the history is kept on the unjittered grid, so the
+      // reprojected position is taken back by the same jitter (a static camera then reads history at exactly vUv)
+      vec4 pp = uPrevVP * wp; vec2 prevUv = pp.xy / pp.w * 0.5 + 0.5 - uJit + (vUv - dUv);
       if (any(lessThan(prevUv, vec2(0.0))) || any(greaterThan(prevUv, vec2(1.0))) || pp.w <= 0.0) { gl_FragColor = vec4(cur, 1.0); return; }
       vec3 hist = toY(histCR(prevUv));
       // clip the history toward the neighbourhood mean, into mean +- 1.1 sigma
       vec3 lo = m1 - sig * 1.1, hi = m1 + sig * 1.1, ctr = 0.5 * (hi + lo), ext = 0.5 * (hi - lo) + 1e-4;
       vec3 v = hist - ctr, a = abs(v / ext); float ma = max(a.x, max(a.y, a.z));
       if (ma > 1.0) hist = ctr + v / ma;
-      vec3 c = toY(cur);
+      vec3 c = cf / wf;
       // faster response while the view moves quickly (less smear), luminance-weighted blend (no fireflies)
-      float vel = length((prevUv - vUv) * uRes), alpha = mix(0.11, 0.3, clamp(vel / 24.0, 0.0, 1.0));
+      float vel = length((prevUv - vUv) * uRes), alpha = mix(0.085, 0.3, clamp(vel / 24.0, 0.0, 1.0));
       float wc = alpha / (1.0 + c.x), wh = (1.0 - alpha) / (1.0 + hist.x);
       gl_FragColor = vec4(max(fromY((c * wc + hist * wh) / (wc + wh)), vec3(0.0)), 1.0);
     }`,

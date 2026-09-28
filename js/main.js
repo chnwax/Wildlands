@@ -73,14 +73,14 @@ function setQuality(name) {
 }
 
 function step(dt, t) {
-  S.uTime.value = t;
+  if (dbgState.still) t = dbgState.still; else S.uTime.value = t;
   if (time.running && started) time.hour = (time.hour + dt * time.speed) % 24;
   updateSky(false);
   post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
   const wind = 0.55 + 0.3 * Math.sin(t * 0.07) + 0.2 * Math.sin(t * 0.23 + 1.3) * Math.sin(t * 0.11);
-  S.uWind.value = wind;
+  S.uWind.value = dbgState.still ? 0 : wind;
   if (locked && started) updatePlayer(world, dt);
-  if (!started) player.yaw += dt * 0.02;
+  if (!started && !dbgState.pause) player.yaw += dt * 0.02;
   updateCamera(world);
   camera.updateMatrixWorld();
   S.uCam.value.copy(camera.position);
@@ -89,7 +89,7 @@ function step(dt, t) {
   for (const s of scatters) s.update(camera.position.x, camera.position.z);
   followCamera((x, z) => world.groundAt(x, z), player.yaw);
   if (world.water) world.water.position.set(Math.round(camera.position.x), world.water.position.y, Math.round(camera.position.z));
-  world.update(dt, t, camera);
+  world.update(dbgState.still ? 0 : dt, t, camera);
   life.update(t, time.hour);
   const wl = world.waterAt(camera.position.x, camera.position.z);
   const under = camera.position.y < wl - 0.05 && world.groundAt(camera.position.x, camera.position.z) < wl;
@@ -112,7 +112,8 @@ function step(dt, t) {
     if (!locked) $('tSlider').value = time.hour;
   }
 }
-function frame() { requestAnimationFrame(frame); step(Math.min(clock.getDelta(), 0.05), clock.elapsedTime); }
+const dbgState = { pause: false, still: 0 };
+function frame() { requestAnimationFrame(frame); const dt = Math.min(clock.getDelta(), 0.05); if (!dbgState.pause) step(dt, clock.elapsedTime); }
 
 // ---------------------------------------------------------------- input
 $('play').addEventListener('click', () => { audio.init(); renderer.domElement.requestPointerLock(); });
@@ -172,6 +173,32 @@ async function main() {
   $('menu').classList.remove('hidden');
   let manualT = 0;
   window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY,
-    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } } }; // console debugging hook
+    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, dbg: debugToggles() }; // console debugging hook
+}
+// A/B switches for render diagnosis (flicker isolation): __wl.dbg.set({ taa: false, ao: false, shadows: false, ... })
+function debugToggles() {
+  const M = world.materials || {}, cur = { taa: true, ao: true, shadows: true, bloom: true, roadNormal: true, roadDetail: true, marks: true, terrain: 'on', wind: true };
+  const saved = { nm: M.asphalt && M.asphalt.normalMap };
+  let tint = null;
+  const apply = () => {
+    if (post.taa) { if (post.taa.enabled !== cur.taa) post.taa.reset = true; post.taa.enabled = cur.taa; } if (!cur.taa) camera.clearViewOffset();
+    if (post.ao) post.ao.enabled = cur.ao;
+    if (post.bloom) post.bloom.enabled = cur.bloom && Q.bloom;
+    scene.traverse(o => { if (o.isMesh || o.isInstancedMesh) { if (o.userData.rs0 === undefined) o.userData.rs0 = o.receiveShadow; o.receiveShadow = cur.shadows && o.userData.rs0; } });
+    if (M.asphalt) {
+      const nm = cur.roadNormal ? saved.nm : null;
+      if (M.asphalt.normalMap !== nm) { M.asphalt.normalMap = nm; M.asphalt.needsUpdate = true; }
+      const plain = !cur.roadDetail, has = !!(M.asphalt.defines && 'ASP_PLAIN' in M.asphalt.defines);
+      if (plain !== has) { M.asphalt.defines = Object.assign({}, M.asphalt.defines); if (plain) M.asphalt.defines.ASP_PLAIN = ''; else delete M.asphalt.defines.ASP_PLAIN; M.asphalt.needsUpdate = true; }
+    }
+    for (const k of ['paint', 'stopLegend', 'tactileL', 'tactileD']) if (M[k]) M[k].visible = cur.marks;
+    if (world.terrain) {
+      world.terrain.visible = cur.terrain !== 'off';
+      if (!tint) tint = new THREE.MeshBasicMaterial({ color: 0xff00ff, fog: false });
+      world.terrain.traverse(o => { if (!o.isMesh) return; if (!o.userData.mat0) o.userData.mat0 = o.material; o.material = cur.terrain === 'tint' ? tint : o.userData.mat0; });
+    }
+    dbgState.still = cur.wind ? 0 : (S.uTime.value || 1);
+  };
+  return { set(o) { Object.assign(cur, o); if ('pause' in o) dbgState.pause = o.pause; apply(); return { ...cur, pause: dbgState.pause }; }, state: () => ({ ...cur, pause: dbgState.pause }) };
 }
 main().catch(e => { console.error(e); document.body.insertAdjacentHTML('beforeend', `<div id="err">${e.stack || e}</div>`); });

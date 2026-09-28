@@ -93,7 +93,8 @@ export const Q = { name: 'high' };
 // Reversed-Z: with a float depth buffer, depth precision stays nearly constant relative to distance, so layered
 // geometry (road, markings, kerbs, terrain under them) stays stable from the street to 20 km out. Needs
 // EXT_clip_control (desktop Chrome/Edge/Firefox have it); without it three silently keeps standard depth.
-export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, reverseDepthBuffer: true });
+// ?revz=0 keeps standard depth (A/B testing of the depth path)
+export const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, reverseDepthBuffer: !/[?&]revz=0/.test(location.search) });
 export const depthReversed = renderer.state.buffers.depth.getReversed();
 function applyReversedDepth() {
   const clip = renderer.extensions.get('EXT_clip_control'), db = renderer.state.buffers.depth;

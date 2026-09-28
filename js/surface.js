@@ -145,6 +145,7 @@ export function asphaltAge(mat, key) {
       .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; varying vec2 vRoad; varying float vRoadS; float aspRough = 0.0;' + HASH + ROADFN)
       .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
         {
+          #ifndef ASP_PLAIN
           vec2 p = vSWPos.xz;
           float fp = length(fwidth(p));                          // metres per pixel
           float hw = max(floor(vRoad.y) * 0.1, 0.0), age = fract(vRoad.y), u = vRoad.x;
@@ -202,6 +203,7 @@ export function asphaltAge(mat, key) {
           // oil and water stains
           diffuseColor.rgb *= 1.0 - smoothstep(0.62, 0.88, c.r) * 0.12 * (0.5 + age);
           aspRough = rough + cr * 0.25;
+          #endif
         }`)
       .replace('#include <metalnessmap_fragment>', 'roughnessFactor = clamp(roughnessFactor + aspRough, 0.62, 1.0);\n#include <metalnessmap_fragment>'); // dry asphalt: never glossy
   });

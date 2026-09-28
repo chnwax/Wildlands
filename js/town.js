@@ -730,7 +730,7 @@ export async function build(progress) {
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.76); await tick();
   const firstNatural = scene.children.length;
-  await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 900, conifer: 0.72 }));
+  const terrainGroup = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 900, conifer: 0.72 }));
   // the hill woods and the riverside trees are mirrored in the river; garden and street trees, saplings and the
   // forest floor are not (keeps the reflection pass cheap)
   const allTrees = [...trees, ...sakura.map(t => ({ ...t, kind: 'sakura', v: t.v ?? Math.floor(srng() * 4) }))];
@@ -857,7 +857,7 @@ export async function build(progress) {
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3();
   const world = {
-    hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN,
+    hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN, materials: MT, terrain: terrainGroup,
     bounds: { minX: -990, maxX: 990, minZ: -990, maxZ: 990 },
     groundAt(x, z) {
       const f = forecourt.heightAt(x, z); if (f !== null) return f;
