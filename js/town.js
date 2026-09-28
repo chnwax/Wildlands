@@ -131,6 +131,34 @@ const ROADS = [
   { id: 'R', kind: 'lane', w: 4.5, pts: Array.from({ length: 34 }, (_, i) => { const z = -335 + i * 20; return [riverX(z) - 21, z]; }), mat: 'asphalt', age: 0.6 },
   { id: 'F', kind: 'lane', w: 4.0, pts: [[110, 200], [640, 200]], mat: 'asphalt', age: 0.95 },
   { id: 'P', kind: 'path', w: 3.0, pts: [[SHRINE.x, -225], [SHRINE.x, SHRINE.z + 4]], mat: 'gravelPath' },
+  // the blocks are subdivided the way the town actually grew: mid-block lanes that wander with the old plot lines, dead-end
+  // roji off the through roads, short cross lanes that stop the grid from lining up, a rear lane along the railway, and
+  // the old highway (旧街道) cutting diagonally through the old quarter
+  ...[
+    ['M0a', 3.4, true, 0.9, [[-275, 12], [-236, 10], [-196, 13], [-150, 11]]],
+    ['M0b', 3.6, true, 0.8, [[-150, 12], [-108, 10], [-66, 13], [-30, 11]]],
+    ['M0c', 3.8, false, 0.55, [[-30, 15], [20, 13], [60, 16], [110, 14]]],
+    ['M1', 3.6, true, 0.88, [[-400, 84], [-362, 82], [-318, 86], [-275, 84]]],
+    ['M2', 3.2, true, 0.93, [[-246, 118], [-248, 103], [-245, 91]]],
+    ['M3', 3.8, false, 0.7, [[-150, 87], [-112, 85], [-70, 88], [-30, 86]]],
+    ['M4', 3.4, true, 0.8, [[110, 84], [78, 85], [50, 83]]],
+    ['M4b', 3.2, true, 0.9, [[-30, 79], [-2, 80], [14, 78]]],
+    ['M5', 3.6, true, 0.85, [[-338, 118], [-336, 152], [-339, 188]]],
+    ['M6', 3.8, false, 0.6, [[-275, 155], [-236, 153], [-196, 156], [-150, 154]]],
+    ['M7', 3.2, true, 0.75, [[-30, 161], [-62, 162], [-86, 160]]],
+    ['M8', 3.6, true, 0.55, [[40, 118], [42, 152], [39, 188]]],
+    ['M9', 3.6, true, 0.82, [[-400, 222], [-356, 224], [-316, 221], [-275, 223]]],
+    ['M10', 3.2, true, 0.7, [[-212, 258], [-210, 238], [-213, 219]]],
+    ['M11', 3.8, false, 0.45, [[-30, 221], [16, 224], [62, 220], [110, 222]]],
+    ['Q1', 3.4, true, 0.9, [[-400, -104], [-356, -101], [-316, -105], [-275, -102]]],
+    ['Q2', 3.4, true, 0.9, [[-275, -103], [-232, -106], [-190, -102], [-150, -104]]],
+    ['Q3', 3.4, true, 0.85, [[-150, -104], [-110, -101], [-66, -105], [-30, -102]]],
+    ['Q4', 3.4, true, 0.8, [[-30, -103], [14, -106], [60, -102], [110, -104]]],
+    ['M12', 3.6, true, 0.92, [[-400, -186], [-356, -189], [-316, -185], [-275, -188]]],
+    ['M13', 3.8, false, 0.8, [[-150, -188], [-104, -185], [-62, -189], [-30, -187]]],
+    ['M14', 3.6, true, 0.75, [[62, -150], [64, -188], [60, -225]]],
+    ['O1', 4.2, false, 0.92, [[-250, -25], [-290, 1], [-318, 24], [-346, 48]]],
+  ].map(([id, w, alley, age, pts]) => ({ id, kind: 'lane', w, noMarks: alley, mat: 'asphalt', age, pts })),
 ];
 const RANK = { main: 3, road: 2, lane: 1, path: 0 };
 
@@ -288,7 +316,7 @@ export async function build(progress) {
       for (let t = 0; t <= L; t += 1) {
         const x = a[0] + dx * t, z = a[1] + dz * t;
         if (Math.abs(x) > 800 || Math.abs(z) > 800) continue;
-        occRect(x, z, hw + (R.walk ? R.walk + 0.05 : 1), 1, Math.atan2(dx, dz), 1); // footways have a hard edge; lanes keep a margin
+        occRect(x, z, hw + (R.walk ? R.walk + 0.05 : 0.45), 1, Math.atan2(dx, dz), 1); // footways have a hard edge; lanes keep their L-gutter
       }
       const ext = hw + (R.walk || 0) + (R.kind === 'lane' ? 0.5 : 0) + 0.6;
       hf.paint2(2, Math.min(a[0], b[0]) - ext, Math.min(a[1], b[1]) - ext, Math.max(a[0], b[0]) + ext, Math.max(a[1], b[1]) + ext, (x, z) => { const q = nearestOnRoad({ pts: [a, b] }, x, z); return q.d < ext ? 1 : 0; });
@@ -512,48 +540,86 @@ export async function build(progress) {
   hf.paint2(0, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4 && Math.abs(z - PK.z) < PK.d / 2 - 4 ? 1 : 0);
   hf.paint2(2, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4.5 && Math.abs(z - PK.z) < PK.d / 2 - 4.5 ? 1 : 0);
 
-  // parcels along every road: frontage lots facing the road, flag lots (旗竿地) behind them; lot sizes and uses follow the
-  // district (old quarter, river neighbourhood, newer estates, the service yards along lane F)
-  const district = (x2, z2) => Math.abs(x2 - riverX(z2)) < 80 ? 'river' : x2 < -250 || (z2 < -110 && x2 < 0) ? 'old' : z2 > 140 || x2 > 150 ? 'new' : 'mid';
-  const lots = [];
-  for (const R of [...ROADS].sort((a, b) => (b.noMarks ? 1 : 0) - (a.noMarks ? 1 : 0))) { // alleys claim their small plots first
+  // ---- parcels. Every road gets frontage lots on both sides, marched along it; alleys claim their small plots first,
+  // then the through roads in order. A lot takes the depth its block leaves it (shallower lots where two frontages meet
+  // back to back), and some lots are split into a front plot plus a flag lot (旗竿地) behind it, reached by its own
+  // 2.6 m "pole" driveway beside the front plot. The district sets lot size, setback, front yard, boundary and use.
+  const district = (x2, z2) => {
+    if (x2 > 262 || x2 < -415) return 'farm';
+    if (Math.abs(x2 - riverX(z2)) < 80) return 'river';
+    if (x2 > -130 && x2 < 160 && z2 > -75 && z2 < 32) return 'station';
+    if (x2 < -250 || (z2 < -110 && x2 < 0)) return 'old';
+    if (z2 > 140 || x2 > 150) return 'new';
+    return 'mid';
+  };
+  // per district: lot width, depth, setback beyond the corridor, front yard, gap between lots, flag-lot odds, boundaries
+  const DIST = {
+    old:     { w: [8, 11], d: [13, 17], set: [0.5, 0.8], front: [1.0, 2.6], gap: [0.1, 0.3], flag: 0.3, fence: { block: 0.45, wood: 0.4, open: 0.15 } },
+    mid:     { w: [10, 13.5], d: [13.5, 16.5], set: [0.9, 1.3], front: [3.0, 6.0], gap: [0.3, 0.8], flag: 0.22, fence: { block: 0.65, low: 0.2, open: 0.15 } },
+    new:     { w: [11.5, 14.5], d: [14.5, 17], set: [1.2, 1.5], front: [5.6, 6.4], gap: [0.4, 0.6], flag: 0.08, fence: { low: 0.55, open: 0.35, block: 0.1 } },
+    river:   { w: [10, 13], d: [13.5, 16], set: [0.9, 1.3], front: [2.5, 5.8], gap: [0.3, 0.8], flag: 0.2, fence: { block: 0.55, wood: 0.15, low: 0.15, open: 0.15 } },
+    station: { w: [8.5, 11], d: [12, 15], set: [0.5, 1.0], front: [1.5, 5.6], gap: [0.1, 0.4], flag: 0.25, fence: { block: 0.5, low: 0.2, open: 0.3 } },
+    farm:    { w: [16, 22], d: [20, 25], set: [1.5, 3.0], front: [6.0, 9.0], gap: [4, 14], flag: 0, fence: { hedge: 0.5, open: 0.3, block: 0.2 } },
+  };
+  const rr = (a2, b2) => a2 + rng() * (b2 - a2);
+  const pickW = obj => { let v = rng(); for (const k in obj) { if ((v -= obj[k]) <= 0) return k; } return Object.keys(obj)[0]; };
+  const lots = [], poles = [];
+  const lotFree = (cx, cz, hw, hd, r) => !occRect(cx, cz, hw, hd, r, 0, true) && Math.abs(cx) < 640 && Math.abs(cz) < 345 && !inPaddyZone(cx, cz)
+    && hf.groundAt(cx, cz) < Y0 + 1.2 && hf.groundAt(cx, cz) > Y0 - 0.6;
+  for (const R of [...ROADS].sort((a2, b2) => (b2.noMarks ? 1 : 0) - (a2.noMarks ? 1 : 0))) {
     if (R.kind === 'path') continue;
     const ind = R.id === 'F', alley = !!R.noMarks;
     for (const [a, b] of roadSegs(R)) {
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
       for (const side of [-1, 1]) {
-        const nx = -dz * side, nz = dx * side;
+        const nx = -dz * side, nz = dx * side, r = Math.atan2(-nx, -nz);
         if (R.id === 'R' && Math.abs(a[0] + nx * 10 - riverX(a[1] + nz * 10)) < Math.abs(a[0] - riverX(a[1]))) continue; // not on the river side
+        // the lot's gate side (local +x) runs toward lower t on side 1 and higher t on side -1
+        const gateHigh = side < 0;
         let t = alley ? 3.2 : 4 + rng() * 2;
         while (t < L - (alley ? 1 : 4)) {
-          const dist = ind ? 'yard' : district(a[0] + dx * t, a[1] + dz * t), shopZone = R.id === 'A' && a[0] + dx * t > -272 && a[0] + dx * t < 200;
-          const w = ind ? 18 + rng() * 6 : alley ? 8 + rng() * 2 : dist === 'old' ? 8.5 + rng() * 3 : dist === 'new' ? 11 + rng() * 4 : 10 + rng() * 3.5;
-          const d = ind ? 17 + rng() * 4 : shopZone ? 12 : alley ? 11.5 + rng() * 2 : dist === 'old' ? 14 + rng() * 4 : 13.5 + rng() * 3;
-          // shops front straight onto the footway; houses sit behind a front yard, just clear of the corridor reservation
-          const set = R.w / 2 + (R.walk || 0) + (shopZone ? 0.12 : dist === 'new' ? 1.3 : 1.05);
-          const cx = a[0] + dx * (t + w / 2) + nx * (set + d / 2), cz = a[1] + dz * (t + w / 2) + nz * (set + d / 2);
-          const r = Math.atan2(-nx, -nz);
-          t += w + (dist === 'old' ? 0.15 : 0.3 + rng() * 0.6);
-          if (Math.abs(cx) > 640 || Math.abs(cz) > 345 || inPaddyZone(cx, cz)) continue;
-          if (hf.groundAt(cx, cz) > Y0 + 1.2 || hf.groundAt(cx, cz) < Y0 - 0.6) continue;
-          if (occRect(cx, cz, w / 2, d / 2, r, 0, true)) continue;
-          if (rng() < 0.04) continue; // empty lot
-          occRect(cx, cz, w / 2, d / 2, r, 1);
-          const shop = shopZone;
-          const roll = rng(), kind = ind ? 'yard' : shop ? 'shop' : roll < 0.035 ? 'carpark' : roll < 0.07 && dist !== 'new' ? 'garden' : 'house';
-          lots.push({ x: cx, z: cz, r, w, d, shop, road: R, kind, district: dist });
-          // flag lot behind (旗竿地) reached by a narrow driveway beside the front lot
-          if (!ind && !alley) for (let row = 1; row <= (shop ? 3 : 2); row++) {
-            const off = (d + 0.6) * row, bw = 10 + rng() * 3, bd = 13 + rng() * 3;
-            const bx = cx - nx * off, bz = cz - nz * off;
-            if (Math.abs(bx) > 640 || Math.abs(bz) > 345 || inPaddyZone(bx, bz) || hf.groundAt(bx, bz) > Y0 + 1.2) break;
-            if (occRect(bx, bz, bw / 2, bd / 2, r, 0, true)) break;
-            occRect(bx, bz, bw / 2, bd / 2, r, 1);
-            lots.push({ x: bx, z: bz, r, w: bw, d: bd, shop: false, road: R, back: true, kind: rng() < 0.08 ? 'garden' : 'house', district: dist });
-          }
+          const mx = a[0] + dx * t, mz = a[1] + dz * t;
+          const dist = ind ? 'yard' : district(mx, mz), D = DIST[dist] || DIST.mid, shopZone = R.id === 'A' && mx > -272 && mx < 200;
+          const w = ind ? 18 + rng() * 6 : alley ? 8 + rng() * 2 : rr(...D.w);
+          const d0 = ind ? 17 + rng() * 4 : shopZone ? 12 : alley ? 11.5 + rng() * 2 : rr(...D.d);
+          const set = R.w / 2 + (R.walk || 0) + (shopZone ? 0.12 : ind ? 1.05 : rr(...D.set));
+          const gap = dist === 'farm' ? rr(...D.gap) : ind ? 0.6 : rr(...D.gap);
+          const flag = !ind && !alley && !shopZone && rng() < D.flag, poleW = 2.6;
+          const span = w + (flag ? gap + poleW : 0);
+          const t0 = t, at = (u, off) => [a[0] + dx * (t0 + u) + nx * off, a[1] + dz * (t0 + u) + nz * off];
+          // front plot and pole positions along the span (pole on the gate side)
+          const uLot = flag && !gateHigh ? poleW + gap + w / 2 : w / 2, uPole = gateHigh ? w + gap + poleW / 2 : poleW / 2;
+          t += span + gap;
+          if (rng() < 0.035) continue; // empty lot
+          // the deepest plot the block allows (down to 10 m where frontages meet back to back)
+          let d = 0, c = null;
+          for (const dt of [d0, d0 * 0.86, d0 * 0.74, 10]) { if (dt < 9.5) break; const cc = at(uLot, set + dt / 2); if (lotFree(cc[0], cc[1], w / 2, dt / 2, r)) { d = dt; c = cc; break; } }
+          if (!c) continue;
+          occRect(c[0], c[1], w / 2, d / 2, r, 1);
+          const kind = ind ? 'yard' : shopZone ? 'shop' : dist === 'station' && !alley && rng() < 0.3 ? 'shop' : rng() < 0.035 ? 'carpark' : rng() < 0.07 && dist !== 'new' ? 'garden' : 'house';
+          const lot = { x: c[0], z: c[1], r, w, d, shop: kind === 'shop', road: R, kind, district: dist, era: dist === 'old' || dist === 'farm' ? 'old' : dist === 'new' ? 'new' : rng() < 0.5 ? 'old' : 'new',
+            front: dist === 'farm' ? rr(...D.front) : clamp(rr(...D.front), 0.9, d - 7.8), fence: pickW(D.fence) };
+          lots.push(lot);
+          if (!flag) continue;
+          // flag lot: pole strip from the road beside the front plot, the plot itself behind both
+          const bd = 11.5 + rng() * 3, bw = w + gap + poleW, depthPole = d + 0.5;
+          const pc = at(uPole, set + depthPole / 2), bc = at(span / 2, set + depthPole + bd / 2);
+          if (!lotFree(pc[0], pc[1], poleW / 2, depthPole / 2, r) || !lotFree(bc[0], bc[1], bw / 2, bd / 2, r)) continue;
+          occRect(pc[0], pc[1], poleW / 2, depthPole / 2, r, 1); occRect(bc[0], bc[1], bw / 2, bd / 2, r, 1);
+          poles.push({ x: pc[0], z: pc[1], r, len: depthPole, road: R, s: sOf(R.id, pc[0], pc[1]), side });
+          lots.push({ x: bc[0], z: bc[1], r, w: bw, d: bd, shop: false, road: R, back: true, kind: rng() < 0.06 ? 'garden' : 'house', district: dist, era: lot.era,
+            front: clamp(5.6 + rng() * 0.6, 0.9, bd - 7.8), fence: dist === 'new' ? 'low' : 'block' });
         }
       }
     }
+  }
+  // pole driveways: a concrete strip with tyre-track joints, running from the road edge to the flag lot
+  for (const P of poles) {
+    B.frame(P.x, hf.groundAt(P.x, P.z), P.z, P.r);
+    B.bbox('concrete', 0, -0.05, 0, 2.4, 0.09, P.len, 0.01, { color: [0.73, 0.73, 0.71], skip: 'ny', uv: 2 });
+    for (let k = -P.len / 2 + 2.5; k < P.len / 2 - 0.5; k += 2.5) B.box('dark', 0, 0.035, k, 2.3, 0.004, 0.02, { color: [0.45, 0.45, 0.44] });
+    hf.paint2(2, P.x - 12, P.z - 12, P.x + 12, P.z + 12, (x2, z2) => { const cc = Math.cos(P.r), ss = Math.sin(P.r), ddx = x2 - P.x, ddz = z2 - P.z; return Math.abs(ddx * cc - ddz * ss) < 1.4 && Math.abs(ddx * ss + ddz * cc) < P.len / 2 ? 1 : 0; });
+    if (P.road.walk) RN.cuts.push({ id: P.road.id, side: P.side, s0: P.s - 1.6, s1: P.s + 1.6 });
   }
   progress('Building houses', 0.5); await tick();
   const vend = [];
@@ -594,7 +660,7 @@ export async function build(progress) {
       if (drng() < 0.35) { const [bx, bz] = lotW(lot, lot.w * 0.08, sfz + 0.7); standBoard(B, bx, y, bz, lot.r + (drng() - 0.5) * 0.4, [[0.92, 0.9, 0.86], [0.55, 0.36, 0.24], [0.2, 0.3, 0.45]][Math.floor(drng() * 3)]); addCircle(bx, bz, 0.3); }
       if (drng() < 0.4) for (let k = 0, n = 1 + Math.floor(drng() * 3); k < n; k++) { const [bx, bz] = lotW(lot, lot.w * 0.22 + k * 0.62, sfz + 1.05); bikeList.push({ x: bx, y, z: bz, r: lot.r + Math.PI / 2 + (drng() - 0.5) * 0.15 }); }
     } else {
-      const info = house(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d, district: lot.district }, rng, extras);
+      const info = house(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d, district: lot.district, front: lot.front, fence: lot.fence, era: lot.era, back: lot.back }, rng, extras);
       lot.info = info; // gardens, hedges and garden trees are planted from this layout (towngreen.js)
       if (info.carSpot) carSpots.push(info.carSpot);
       if (info.carSpot && lot.road.walk && !lot.back) { // lowered kerb in front of the parking space

@@ -354,14 +354,17 @@ function boxWalls(B, cx, w, d, y0, y1, bands, holesOf, revealC) {
 export function house(B, lot, rng, extras) {
   const { x, y, z, r, w: LW, d: LD } = lot;
   B.frame(x, y, z, r);
-  const W = clamp(LW - 2.2 - rng() * 1.2, 6.5, 10), D = clamp(LD - 6 - rng() * 1.5, 7, 10.5);
+  const farm = lot.district === 'farm';
+  const W = clamp(LW - 2.2 - rng() * 1.2, 6.5, farm ? 13 : 10), D = clamp(LD - (lot.front ?? 4.8) - 1.2 - rng() * 1.5, 7, farm ? 12 : 10.5);
   // the district biases the style: old quarters keep timber-and-plaster houses, the newer estates are modern
-  const WTS = { old: [0.28, 0.12, 0.04, 0.5, 0.06], river: [0.32, 0.18, 0.08, 0.36, 0.06], new: [0.22, 0.26, 0.3, 0.03, 0.19], mid: [0.3, 0.23, 0.18, 0.16, 0.13] }[lot.district || 'mid'];
+  const WTS = { old: [0.28, 0.12, 0.04, 0.5, 0.06], river: [0.32, 0.18, 0.08, 0.36, 0.06], new: [0.22, 0.26, 0.3, 0.03, 0.19], mid: [0.3, 0.23, 0.18, 0.16, 0.13],
+    station: [0.3, 0.26, 0.2, 0.08, 0.16], farm: [0.22, 0.04, 0, 0.74, 0] }[lot.district || 'mid'];
   let sr = rng(), si = 0; while (si < 4 && sr > WTS[si]) { sr -= WTS[si]; si++; }
   const style = ['classic', 'twoTone', 'modern', 'traditional', 'cube'][si];
   const floors = style === 'cube' ? 2 : style === 'traditional' ? (rng() < 0.35 ? 1 : 2) : rng() < 0.12 ? 1 : 2;
   const fh = 2.85, base = style === 'traditional' ? 0.55 : 0.45, H = base + floors * fh, g1 = base + fh;
-  const hz = -LD / 2 + 1.2 + D / 2, hx = (rng() - 0.5) * (LW - W - 1.6);
+  // the lot sets the front yard: old-quarter houses stand close behind their walls, estate houses keep a car-deep yard
+  const frontY = clamp(lot.front ?? LD - 1.2 - D, 0.9, LD - D - 0.8), hz = LD / 2 - frontY - D / 2, hx = (rng() - 0.5) * (LW - W - 1.6);
   let wallMat = rng() < 0.55 ? 'siding' : rng() < 0.6 ? 'stucco' : 'plaster', wc = jitter(rng, pick(rng, HOUSE_WALLS), 0.05);
   let lowMat = wallMat, lc = wc, frameC = FRAMES.alu, frameMat = 'alu', roofC = pick(rng, HOUSE_ROOFS), roofMat = rng() < 0.5 ? 'roofTile' : 'roofMetal';
   if (style === 'twoTone') { lowMat = rng() < 0.6 ? 'tiles' : 'wood'; lc = jitter(rng, lowMat === 'wood' ? [0.86, 0.62, 0.42] : pick(rng, LOWER_TONES), 0.05); wallMat = 'siding'; frameC = rng() < 0.5 ? FRAMES.white : FRAMES.brown; frameMat = 'plain'; }
@@ -557,9 +560,19 @@ export function house(B, lot, rng, extras) {
   });
   // ---- boundary: block wall with coping, gate pillars, mailbox slot
   B.frame(x, y, z, r);
-  const wallH = 0.8 + rng() * 0.6, gateW = 3.2, wc2 = jitter(rng, [0.75, 0.74, 0.72], 0.05), hasWall = rng() < 0.8;
+  // boundary: block wall (with coping), low block wall, dark cedar board fence (板塀, old quarter), or an open front
+  const fence = lot.fence || (rng() < 0.8 ? 'block' : 'open');
+  const wood = fence === 'wood', wallH = wood ? 1.7 + rng() * 0.2 : fence === 'low' ? 0.45 + rng() * 0.15 : 0.8 + rng() * 0.6, gateW = 3.2;
+  const wc2 = wood ? jitter(rng, [0.17, 0.13, 0.11], 0.03) : jitter(rng, [0.75, 0.74, 0.72], 0.05), hasWall = fence === 'block' || fence === 'low' || wood;
+  if (fence === 'open' || fence === 'hedge') { // kerb stones mark the front edge
+    B.beam('concrete', [-LW / 2, 0.05, LD / 2 - 0.08], [doorGap(LW, gateW)[0], 0.05, LD / 2 - 0.08], 0.12, 0.1, { color: [0.7, 0.7, 0.68] });
+  }
   if (hasWall) {
-    const seg = (ax, az, bx2, bz) => { B.beam('block', [ax, wallH / 2, az], [bx2, wallH / 2, bz], 0.15, wallH, { color: wc2, uv: 1.6 }); B.beam('concrete', [ax, wallH + 0.03, az], [bx2, wallH + 0.03, bz], 0.2, 0.06, { color: [0.66, 0.66, 0.64] }); };
+    const seg = wood
+      ? (ax, az, bx2, bz) => { B.beam('concrete', [ax, 0.15, az], [bx2, 0.15, bz], 0.2, 0.3, { color: [0.62, 0.62, 0.6] });
+        B.beam('wood', [ax, 0.3 + (wallH - 0.3) / 2, az], [bx2, 0.3 + (wallH - 0.3) / 2, bz], 0.06, wallH - 0.3, { color: wc2, uv: 1.2 });
+        B.beam('roofTile', [ax, wallH + 0.04, az], [bx2, wallH + 0.04, bz], 0.34, 0.08, { color: [0.3, 0.32, 0.36] }); }
+      : (ax, az, bx2, bz) => { B.beam('block', [ax, wallH / 2, az], [bx2, wallH / 2, bz], 0.15, wallH, { color: wc2, uv: 1.6 }); B.beam('concrete', [ax, wallH + 0.03, az], [bx2, wallH + 0.03, bz], 0.2, 0.06, { color: [0.66, 0.66, 0.64] }); };
     seg(-LW / 2, -LD / 2, LW / 2, -LD / 2);
     seg(-LW / 2, -LD / 2, -LW / 2, LD / 2 - 0.1); seg(LW / 2, -LD / 2, LW / 2, LD / 2 - 0.1);
     const gx = doorGap(LW, gateW);
@@ -570,7 +583,8 @@ export function house(B, lot, rng, extras) {
       extras.push({ t: 'box', p: P, hx: Math.abs(bx2 - ax) > 0.1 ? L / 2 : 0.1, hz: Math.abs(bx2 - ax) > 0.1 ? 0.1 : L / 2, r, h: wallH });
     }
   }
-  const carSpot = rng() < 0.75 ? { p: B.P([doorGap(LW, gateW)[0] + gateW / 2 + 0.2, 0, LD / 2 - 3.0]), r: r + (rng() < 0.5 ? 0 : Math.PI) } : null;
+  const carOdds = lot.district === 'new' ? 0.95 : lot.district === 'old' ? 0.5 : 0.78;
+  const carSpot = frontY >= 5.4 && rng() < carOdds ? { p: B.P([doorGap(LW, gateW)[0] + gateW / 2 + 0.2, 0, LD / 2 - 3.0]), r: r + (rng() < 0.5 ? 0 : Math.PI) } : null;
   if (carSpot) { // concrete parking pad with tyre strips, sometimes an aluminium carport
     B.frame(...carSpot.p, r);
     B.bbox('concrete', 0, -0.04, 0.4, 2.7, 0.07, 5.4, 0.01, { color: [0.74, 0.74, 0.72], skip: 'ny', uv: 2 });
@@ -582,7 +596,30 @@ export function house(B, lot, rng, extras) {
       extras.push({ t: 'poly', p: B.P([-0.1, 2.36, 0]), r, w: 2.8, d: 5.1 });
     }
   }
+  // farmhouses keep a machinery barn (納屋) beside the house: timber posts, corrugated walls on three sides, open front
+  if (farm && LW - W - 2.5 > 4) {
+    const bw = Math.min(8, LW - W - 2.5), bd = Math.min(7, D), sx = hx > 0 ? -1 : 1;
+    B.frame(x, y, z, r);
+    inFrame(B, [sx * (LW / 2 - bw / 2 - 0.6), 0, hz], 0, () => barn(B, bw, bd, rng, extras));
+  }
   return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D, H: roofTop, shedSide, hasWall, wallH, gate: doorGap(LW, gateW) };
+}
+function barn(B, w, d, rng, extras) {
+  const h = 3.2 + rng() * 0.6, post = [0.42, 0.32, 0.24], clad = jitter(rng, pick(rng, [[0.55, 0.5, 0.44], [0.46, 0.5, 0.52], [0.6, 0.36, 0.28]]), 0.04);
+  B.bbox('concrete', 0, -0.05, 0, w + 0.3, 0.15, d + 0.3, 0.01, { color: [0.66, 0.66, 0.64], skip: 'ny' });
+  for (const px of [-w / 2, 0, w / 2]) for (const pz of [-d / 2, d / 2]) B.bbox('wood', px, 0.1, pz, 0.14, h - 0.1, 0.14, 0.01, { color: post });
+  const rise = Math.tan(0.18) * d;
+  B.box('metalWall', 0, 0.1, -d / 2 - 0.02, w, h - 0.1 + rise, 0.03, { color: clad, uv: 1.2 });
+  for (const s of [-1, 1]) { B.box('metalWall', s * (w / 2 + 0.02), 0.1, 0, 0.03, h - 0.1, d, { color: clad, uv: 1.2 });
+    B.poly('metalWall', [[s * (w / 2 + 0.02), h, d / 2], [s * (w / 2 + 0.02), h, -d / 2], [s * (w / 2 + 0.02), h + rise, -d / 2]], [s, 0, 0], { color: clad, uv: 1.2 }); }
+  B.beam('wood', [-w / 2, h - 0.12, d / 2], [w / 2, h - 0.12, d / 2], 0.14, 0.2, { color: post });
+  shedRoof(B, { w, d, y: h, pitch: 0.18, over: 0.5, mat: 'roofMetal', color: jitter(rng, [0.42, 0.44, 0.46], 0.05), gutterColor: [0.5, 0.5, 0.5] });
+  B.detail(1, () => { // stored gear: rice bags on a pallet, crates, a hand cart
+    B.box('wood', -w / 4, 0.1, -d / 4, 1.1, 0.12, 1.1, { color: [0.6, 0.48, 0.34] });
+    for (let k = 0; k < 6; k++) B.bbox('plain', -w / 4 + (k % 2 - 0.5) * 0.5, 0.22 + Math.floor(k / 2) * 0.22, -d / 4 + (k % 3 - 1) * 0.3, 0.45, 0.2, 0.28, 0.05, { color: [0.86, 0.82, 0.7] });
+    for (let k = 0; k < 3; k++) B.bbox('plastic', w / 4, 0.1 + k * 0.3, -d / 3, 0.5, 0.3, 0.35, 0.02, { color: [0.2, 0.5, 0.3] });
+  });
+  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r: B.F.r });
 }
 
 // ---------------------------------------------------------------- shop building (shotengai)
