@@ -1,5 +1,5 @@
 // Town construction kit: batched geometry builder, PBR materials, canvas-drawn signage, buildings and street props.
-import { THREE, scene, S, Q, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform } from './core.js';
+import { THREE, scene, S, Q, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform, maxAniso } from './core.js';
 import { env } from './sky.js';
 import { relief, weather, asphaltAge, wornPaint, windowMaterial, paving } from './surface.js';
 
@@ -236,7 +236,7 @@ function tactileMat(dots) {
   const at = (x, y) => H[((y + N) % N) * N + (x + N) % N];
   const col = canvasTex(N, N, (g) => { const im = g.createImageData(N, N); for (let i = 0; i < N * N; i++) { const h = H[i], ao = 0.82 + 0.18 * clamp(h + 0.3, 0, 1), k = h < -0.2 ? 0.55 : ao; im.data[i * 4] = 238 * k; im.data[i * 4 + 1] = 186 * k; im.data[i * 4 + 2] = 40 * k; im.data[i * 4 + 3] = 255; } g.putImageData(im, 0, 0); });
   const nor = canvasTex(N, N, (g) => { const im = g.createImageData(N, N); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const i = y * N + x, dx = (at(x + 1, y) - at(x - 1, y)) * 2.2, dy = (at(x, y + 1) - at(x, y - 1)) * 2.2, l = Math.hypot(dx, dy, 1); im.data[i * 4] = (-dx / l * 0.5 + 0.5) * 255; im.data[i * 4 + 1] = (dy / l * 0.5 + 0.5) * 255; im.data[i * 4 + 2] = (1 / l * 0.5 + 0.5) * 255; im.data[i * 4 + 3] = 255; } g.putImageData(im, 0, 0); }, false);
-  for (const t of [col, nor]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
+  for (const t of [col, nor]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = maxAniso; }
   const m = std({ map: col, normalMap: nor, roughness: 0.62 });
   m.userData.toonNorm = 0.7;
   return m;
@@ -320,7 +320,7 @@ export const JP_FONT = '"Yu Gothic UI", "Yu Gothic", "Meiryo", "MS Gothic", "Hir
 export function canvasTex(w, h, draw, srgb = true) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = maxAniso;
   return t;
 }
 function fitText(g, text, x, y, maxW, size, font = JP_FONT, weight = 'bold') {
