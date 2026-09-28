@@ -124,47 +124,53 @@ const ROADS = [
   { id: 'W0', kind: 'lane', w: 4.0, mat: 'asphalt', age: 0.92, pts: [[-275, -100], [-278, -130], [-274, -170], [-275, -225]] },
   { id: 'W1', kind: 'lane', w: 4.0, mat: 'asphalt', age: 0.66, pts: [[-30, -100], [-33, -125], [-29, -175], [-30, -225]] },
   // narrow unmarked dead-end alleys (roji) into the blocks
-  { id: 'Y0', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.95, pts: [[-340, 48], [-338, 30], [-341, 12]] },
   { id: 'Y1', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.97, pts: [[-210, -150], [-212, -170], [-209, -190]] },
-  { id: 'Y2', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.9, pts: [[-90, 188], [-88, 170], [-91, 158]] },
   { id: 'Y3', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.93, pts: [[40, -225], [42, -245], [39, -262]] },
+  { id: 'F', kind: 'lane', w: 4.0, pts: [[110, 200], [640, 200]], mat: 'asphalt', age: 0.95 }, // service road out to the yards
   { id: 'R', kind: 'lane', w: 4.5, pts: Array.from({ length: 34 }, (_, i) => { const z = -335 + i * 20; return [riverX(z) - 21, z]; }), mat: 'asphalt', age: 0.6 },
-  { id: 'F', kind: 'lane', w: 4.0, pts: [[110, 200], [640, 200]], mat: 'asphalt', age: 0.95 },
   { id: 'P', kind: 'path', w: 3.0, pts: [[SHRINE.x, -225], [SHRINE.x, SHRINE.z + 4]], mat: 'gravelPath' },
   // the blocks are subdivided the way the town actually grew: mid-block lanes that wander with the old plot lines, dead-end
   // roji off the through roads, short cross lanes that stop the grid from lining up, a rear lane along the railway, and
   // the old highway (旧街道) cutting diagonally through the old quarter
   ...[
     // service lanes behind the shopping street, between the shops' backs and the railway fence
-    ['Q0a', 3.4, true, 0.85, [[-150, -55], [-110, -54], [-72, -56], [-40, -55]]],
+    // lanes that cross a through road are one continuous road (a four-way junction, never two T-junctions a metre apart)
+    ['Q0a', 3.4, true, 0.85, [[-262, -54], [-240, -53], [-200, -55], [-150, -55], [-110, -54], [-72, -56], [-40, -55]]],
     ['Q0b', 3.4, true, 0.8, [[110, -56], [80, -55], [50, -56]]],
-    ['Q0c', 3.4, true, 0.9, [[-150, -54], [-200, -55], [-240, -53], [-262, -54]]],
-    ['M0a', 3.4, true, 0.9, [[-275, 12], [-236, 10], [-196, 13], [-150, 11]]],
-    ['M0b', 3.6, true, 0.8, [[-150, 12], [-108, 10], [-66, 13], [-30, 11]]],
-    ['M0c', 3.8, false, 0.55, [[-30, 15], [20, 13], [60, 16], [110, 14]]],
+    ['M0', 3.6, true, 0.8, [[-277, 22], [-236, 18], [-196, 14], [-150, 12], [-108, 10], [-66, 13], [-30, 13], [20, 13], [60, 16], [110, 14]]],
     ['M1', 3.6, true, 0.88, [[-400, 84], [-362, 82], [-318, 86], [-275, 84]]],
     ['M2', 3.2, true, 0.93, [[-246, 118], [-248, 103], [-245, 91]]],
-    ['M3', 3.8, false, 0.7, [[-150, 87], [-112, 85], [-70, 88], [-30, 86]]],
+    ['M3', 3.8, false, 0.7, [[-150, 87], [-112, 85], [-70, 88], [-30, 86], [-4, 82], [14, 80]]],
     ['M4', 3.4, true, 0.8, [[110, 84], [78, 85], [50, 83]]],
-    ['M4b', 3.2, true, 0.9, [[-30, 79], [-2, 80], [14, 78]]],
     ['M5', 3.6, true, 0.85, [[-338, 118], [-336, 152], [-339, 188]]],
     ['M6', 3.8, false, 0.6, [[-275, 155], [-236, 153], [-196, 156], [-150, 154]]],
-    ['M7', 3.2, true, 0.75, [[-30, 161], [-62, 162], [-86, 160]]],
+    ['M7', 3.2, true, 0.75, [[-30, 161], [-62, 162], [-88, 160], [-89, 172], [-90, 188]]], // from lane V1 round the apartment to S2
     ['M8', 3.6, true, 0.55, [[40, 118], [42, 152], [39, 188]]],
     ['M9', 3.6, true, 0.82, [[-400, 222], [-356, 224], [-316, 221], [-275, 223]]],
     ['M10', 3.2, true, 0.7, [[-212, 258], [-210, 238], [-213, 219]]],
     ['M11', 3.8, false, 0.45, [[-30, 221], [16, 224], [62, 220], [110, 222]]],
-    ['Q1', 3.4, true, 0.9, [[-400, -104], [-356, -101], [-316, -105], [-275, -102]]],
-    ['Q2', 3.4, true, 0.9, [[-275, -103], [-232, -106], [-190, -102], [-150, -104]]],
-    ['Q3', 3.4, true, 0.85, [[-150, -104], [-110, -101], [-66, -105], [-30, -102]]],
-    ['Q4', 3.4, true, 0.8, [[-30, -103], [14, -106], [60, -102], [110, -104]]],
+    ['Q1', 3.4, true, 0.88, [[-400, -104], [-356, -101], [-316, -105], [-275, -103], [-232, -106], [-190, -102], [-150, -104], [-110, -101], [-66, -105], [-30, -103], [14, -106], [60, -102], [110, -104]]],
     ['M12', 3.6, true, 0.92, [[-400, -186], [-356, -189], [-316, -185], [-275, -188]]],
     ['M13', 3.8, false, 0.8, [[-150, -188], [-104, -185], [-62, -189], [-30, -187]]],
     ['M14', 3.6, true, 0.75, [[62, -150], [64, -188], [60, -225]]],
-    ['O1', 4.2, false, 0.92, [[-250, -25], [-290, 1], [-318, 24], [-346, 48]]],
+    ['O1', 4.2, false, 0.92, [[-250, -25], [-252, -10], [-268, 2], [-290, 12], [-318, 28], [-336, 38], [-342, 48]]], // leaves the main road square
   ].map(([id, w, alley, age, pts]) => ({ id, kind: 'lane', w, noMarks: alley, mat: 'asphalt', age, pts })),
 ];
 const RANK = { main: 3, road: 2, lane: 1, path: 0 };
+// a lane that ends at another road is snapped onto that road's centreline, so the junction is found and built as a
+// clean T (an end that stops a metre short or runs a metre past leaves overlapping asphalt and broken kerbs)
+for (const R of ROADS) {
+  if (R.kind === 'main' || R.kind === 'path') continue;
+  for (const end of [0, R.pts.length - 1]) {
+    const p = R.pts[end]; let best = null;
+    for (const O of ROADS) { if (O === R || O.kind === 'path') continue;
+      for (let i = 0; i + 1 < O.pts.length; i++) { const a = O.pts[i], b = O.pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+        const t = clamp((p[0] - a[0]) * dx + (p[1] - a[1]) * dz, 0, L), q = [a[0] + dx * t, a[1] + dz * t], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+        const atEnd = (i === 0 && t < 0.5) || (i + 2 === O.pts.length && t > L - 0.5); // end to end: not a junction
+        if (d < 6 && !atEnd && (!best || d < best.d)) best = { d, q }; } }
+    if (best && best.d > 1e-3) R.pts[end] = best.q;
+  }
+}
 
 function segInter(a, b, c, d) {
   const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0];
@@ -297,10 +303,10 @@ export async function build(progress) {
     const band = 4;
     for (const arm of I.arms) {
       const R = arm.n.R, other = arm.n.R === r1 ? r2 : r1;
-      const hasX = (R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340;
+      const hasX = (R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340 && !other.noMarks; // no zebras across alley mouths
       const d = other.w / 2 + I.rF + 0.4 + band / 2;
       const cq = RN.sampleAt(arm.n, clamp(arm.s + arm.dir * d, 0, arm.n.PL.len));
-      if (hasX && !onBridge(cq.x, cq.z)) zebras.push({ id: R.id, s: arm.s + arm.dir * d, band }); else if (hasX) continue;
+      if (hasX && !onBridge(cq.x, cq.z)) zebras.push({ id: R.id, s: arm.s + arm.dir * d, band, I }); else if (hasX) continue;
       if (isSignal(I)) { // every approach stops at its line on red
         const ss = arm.s + arm.dir * (d + band / 2 + 1.2); if (ss < 1 || ss > arm.n.PL.len - 1) continue;
         stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, sign: false, legend: false, signal: R.id });
@@ -310,6 +316,17 @@ export async function build(progress) {
         stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, sign: true });
       }
     }
+  }
+  { // one crossing per approach: drop zebras that fall inside another junction's mouth or crowd one already kept
+    const kept = [], rank = zb => (isSignal(zb.I) ? 10 : 0) + Math.max(...zb.I.roads.map(R => RN.RANK[R.kind]));
+    zebras.sort((a, b) => rank(b) - rank(a)); // the signalised junction's crossings first, then the busier junctions
+    for (const zb of zebras) {
+      const n = RN.byId.get(zb.id);
+      const inOther = inters.some(I => I !== zb.I && I.nets.includes(n) && (() => { const k = I.nets.indexOf(n); const cl = n.clips[k] ; void cl; const sj = I.s[k], o = I.nets[1 - k]; return Math.abs(zb.s - sj) < o.hw + o.walk + I.rF + zb.band / 2 + 0.5; })());
+      if (inOther || kept.some(q => q.id === zb.id && Math.abs(q.s - zb.s) < 28)) continue; // crossings at least ~30 m apart
+      kept.push(zb);
+    }
+    zebras.length = 0; zebras.push(...kept);
   }
   RN.build(B, { crossings: zebras });
   // occupancy + masks along every road (lots keep off the carriageway and sidewalks; no grass pokes through)
@@ -457,7 +474,7 @@ export async function build(progress) {
       B.bbox('concrete', px, -8, 0, 1.3, 6.1, bw - 1.3, 0.02, { color: [0.68, 0.68, 0.66], uv: 3 });
       for (const sd of [-1, 1]) B.cyl('concrete', px, -8, sd * (bw / 2 - 0.65), 0.65, 0.65, 6.1, 16, { color: [0.68, 0.68, 0.66], uv: 3 });
     }
-    for (const ax of [-L / 2, L / 2]) B.bbox('concrete', ax, -3.2, 0, 0.9, 3.5, bw + 1.6, 0.03, { color: [0.7, 0.7, 0.68], uv: 3 });  // abutments
+    for (const ax of [-L / 2, L / 2]) B.bbox('concrete', ax, -3.2, 0, 0.9, 3.15, bw + 1.6, 0.03, { color: [0.7, 0.7, 0.68], uv: 3 });  // abutments (top under the approach road)
     for (const sd of [-1, 1]) {
       const zp = sd * (bw / 2 + 0.16);
       B.bbox('concrete', 0, 0.3, zp, L, 0.5, 0.3, 0.025, { color: [0.8, 0.8, 0.78], uv: 3 });
@@ -612,8 +629,9 @@ export async function build(progress) {
     && hf.groundAt(cx, cz) < Y0 + 1.2 && hf.groundAt(cx, cz) > Y0 - 0.6;
   for (const R of [...ROADS].sort((a2, b2) => (b2.noMarks ? 1 : 0) - (a2.noMarks ? 1 : 0))) {
     if (R.kind === 'path') continue;
-    const ind = R.id === 'F', alley = !!R.noMarks;
+    const alley = !!R.noMarks;
     for (const [a, b] of roadSegs(R)) {
+      const ind = R.id === 'F';
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
       for (const side of [-1, 1]) {
         const nx = -dz * side, nz = dx * side, r = Math.atan2(-nx, -nz);
@@ -1132,7 +1150,6 @@ export async function build(progress) {
   // people on the streets: sidewalks of the main road, lane shoulders, the riverside walkways and the shrine approach
   const walkPaths = [];
   for (const R of ROADS) {
-    if (R.id === 'F') continue;
     const pts = R.pts.map(([x, z]) => [clamp(x, -440, 440), clamp(z, -335, 335)]);
     walkPaths.push({ pts, off: R.kind === 'path' ? 1.0 : R.w / 2 + (R.walk ? R.walk / 2 : 0.55), lift: null, w: R.id === 'A' ? 3 : 1 });
   }

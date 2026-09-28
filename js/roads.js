@@ -235,12 +235,20 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         const cr = I.corners.find(k => k.a === a);
         if (cr) for (const q of cr.arc) pts.push(V(q[0], baseY(q[0], q[1]), q[1]));
       }
-      const cy = baseY(c[0], c[1]), top = arms.reduce((best, a) => !best || RANK[a.n.R.kind] > RANK[best.n.R.kind] ? a : best, null).n;
+      const top = arms.reduce((best, a) => !best || RANK[a.n.R.kind] > RANK[best.n.R.kind] ? a : best, null).n;
       const ag = Math.min(...I.nets.map(age));
+      // the pad is laid in rings from the centre out to its outline, every vertex on the ground's grade, so it follows
+      // slopes and bridge ramps instead of spanning them with one flat fan (which let decks and terrain show through)
+      const NR = 4, ring = t => pts.map(p => { if (t >= 1) return p; const x = c[0] + (p[0] - c[0]) * t, z = c[1] + (p[2] - c[1]) * t; return V(x, baseY(x, z), z); });
+      const cv = V(c[0], baseY(c[0], c[1]), c[1]), rings = [];
+      for (let k = 1; k <= NR; k++) rings.push(ring(k / NR));
+      const uvOf = p => [p[0] / 4, p[2] / 4], at3 = { aRoad: [[0, ag], [0, ag], [0, ag]] }, at4 = { aRoad: [[0, ag], [0, ag], [0, ag], [0, ag]] };
       for (let i = 0; i < pts.length; i++) {
-        const p = pts[i], q = pts[(i + 1) % pts.length];
-        if (Math.hypot(p[0] - q[0], p[2] - q[2]) < 1e-4) continue;
-        B.poly(top.R.mat, [V(c[0], cy, c[1]), p, q], [0, 1, 0], { uvs: [[c[0] / 4, c[1] / 4], [p[0] / 4, p[2] / 4], [q[0] / 4, q[2] / 4]], attr: { aRoad: [[0, ag], [0, ag], [0, ag]] } });
+        const j = (i + 1) % pts.length;
+        if (Math.hypot(pts[i][0] - pts[j][0], pts[i][2] - pts[j][2]) < 1e-4) continue;
+        B.poly(top.R.mat, [cv, rings[0][i], rings[0][j]], [0, 1, 0], { uvs: [uvOf(cv), uvOf(rings[0][i]), uvOf(rings[0][j])], attr: at3 });
+        for (let k = 1; k < NR; k++) { const a0 = rings[k - 1][i], b0 = rings[k - 1][j], a1 = rings[k][i], b1 = rings[k][j];
+          B.poly(top.R.mat, [a0, a1, b1, b0], [0, 1, 0], { uvs: [uvOf(a0), uvOf(a1), uvOf(b1), uvOf(b0)], attr: at4 }); }
       }
     }
     // zebra crossings: 45 cm bars across the whole carriageway

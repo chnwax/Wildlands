@@ -56,7 +56,7 @@ function showProgress() {
   $('loadBar').style.width = (p * 100).toFixed(1) + '%';
   $('loadText').textContent = loadState.label + (loadState.assets < 1 ? ` · loading assets ${Math.round(loadState.assets * 100)}%` : '');
 }
-const progress = (label, p) => { loadState.label = label; loadState.gen = p; showProgress(); };
+const progress = (label, p) => { if (label !== loadState.label) console.debug('stage: ' + label); loadState.label = label; loadState.gen = p; showProgress(); };
 manager.onProgress = (url, a, b) => { loadState.assets = a / b; showProgress(); };
 
 function setQuality(name) {
