@@ -6,7 +6,7 @@ import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWate
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js';
 import { plantTown } from './towngreen.js';
-import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial } from './towndeco.js';
+import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
 import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, inFrame, shedRoof } from './building.js';
 import { shrineCompound, sacredRope } from './shrine.js';
@@ -553,6 +553,14 @@ export async function build(progress) {
   hf.paint2(2, SCH.x - SCH.w / 2, SCH.z - SCH.d / 2, SCH.x + SCH.w / 2, SCH.z + SCH.d / 2, (x, z) => Math.abs(x - SCH.x) < SCH.w / 2 - 4.5 && Math.abs(z - SCH.z) < SCH.d / 2 - 4.5 || Math.abs(x - SCH.x) < 4.5 && z < SCH.z ? 1 : 0);
   hf.paint2(0, SCH.x - 6, SCH.z - SCH.d / 2 - 2, SCH.x + 6, SCH.z, (x, z) => Math.abs(x - SCH.x) < 4.2 ? 1 : 0); // paved way in from the gate
   reserve(PK.x, PK.z, PK.w / 2 + 1, PK.d / 2 + 1, 0);
+  { // municipal tennis courts east of road B, reached by a gravel path from the footway
+    const TC = { x: 152, z: 292, r: -Math.PI / 2 };
+    reserve(TC.x, TC.z, 22, 21.5, 0); reserve((TC.x - 22 + 116) / 2, TC.z, (TC.x - 22 - 116) / 2 + 0.5, 2, 0);
+    tennisCourts(B, TC.x, hf.groundAt(TC.x, TC.z), TC.z, TC.r, drng, extras, lampPoints);
+    hf.paint2(2, TC.x - 23, TC.z - 22, TC.x + 23, TC.z + 22, () => 1);
+    hf.paint2(0, 114, TC.z - 2.2, TC.x - 18, TC.z + 2.2, () => 1); hf.paint2(2, 114, TC.z - 1.6, TC.x - 18, TC.z + 1.6, () => 1);
+    RN.cuts.push({ id: 'B', side: -1, s0: sOf('B', 110, TC.z) - 1.5, s1: sOf('B', 110, TC.z) + 1.5 });
+  }
   playground(B, PK.x, hf.groundAt(PK.x, PK.z), PK.z, Math.PI, PK.w, PK.d, drng, parkTrees, extras);
   hf.paint2(0, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4 && Math.abs(z - PK.z) < PK.d / 2 - 4 ? 1 : 0);
   hf.paint2(2, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4.5 && Math.abs(z - PK.z) < PK.d / 2 - 4.5 ? 1 : 0);
