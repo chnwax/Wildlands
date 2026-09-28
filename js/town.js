@@ -646,6 +646,24 @@ export async function build(progress) {
     hf.paint2(2, P.x - 12, P.z - 12, P.x + 12, P.z + 12, (x2, z2) => { const cc = Math.cos(P.r), ss = Math.sin(P.r), ddx = x2 - P.x, ddz = z2 - P.z; return Math.abs(ddx * cc - ddz * ss) < 1.4 && Math.abs(ddx * ss + ddz * cc) < P.len / 2 ? 1 : 0; });
     if (P.road.walk) RN.cuts.push({ id: P.road.id, side: P.side, s0: P.s - 1.6, s1: P.s + 1.6 });
   }
+  // corners of the main junctions that no lot could take (the curb returns eat into them) become small coin car parks,
+  // the way Japanese street corners usually end up
+  for (const I of inters) {
+    if (!I.roads.some(R => R.id === 'A' || R.id === 'B') || onBridge(I.p[0], I.p[1])) continue;
+    for (const cr of I.corners) {
+      const bx = cr.O[0] - I.p[0], bz = cr.O[1] - I.p[1], bl = Math.hypot(bx, bz); if (bl < 1) continue;
+      const r = Math.atan2(cr.a.d[0], cr.a.d[1]);
+      // the corner behind the curb return is paved gravel, never a patch of meadow
+      hf.paint2(2, cr.O[0] - 9, cr.O[1] - 9, cr.O[0] + 9, cr.O[1] + 9, (x2, z2) => Math.hypot(x2 - cr.O[0], z2 - cr.O[1]) < 8.5 ? 1 : 0);
+      hf.paint2(0, cr.O[0] - 9, cr.O[1] - 9, cr.O[0] + 9, cr.O[1] + 9, (x2, z2) => Math.hypot(x2 - cr.O[0], z2 - cr.O[1]) < 8.5 ? 1 : 0);
+      let cx = 0, cz = 0, ok = false;
+      for (const off of [5.5, 7, 8.5, 10]) { cx = cr.O[0] + bx / bl * off; cz = cr.O[1] + bz / bl * off;
+        if (!(Math.abs(cx) > 640 || Math.abs(cz) > 345 || inPaddyZone(cx, cz) || occRect(cx, cz, 6.2, 6.2, r, 0, true))) { ok = true; break; } }
+      if (!ok) continue;
+      occRect(cx, cz, 6, 6, r, 1);
+      lots.push({ x: cx, z: cz, r, w: 11.5, d: 11.5, shop: false, road: cr.a.n.R, kind: 'carpark', district: district(cx, cz), corner: true });
+    }
+  }
   progress('Building houses', 0.5); await tick();
   const vend = [];
   const srng = mulberry32(3131), sakura = [], hydras = [], bushes = [];
