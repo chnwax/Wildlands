@@ -4,7 +4,7 @@
 //  into upturned ends; komainu on pedestals; kasuga stone lanterns; chozuya (basin, ladles, pavilion); haiden with an
 //  irimoya roof (hip below, gable above), deck, railing, lattice doors, bell rope, offering box and shimenawa with shide;
 //  honden with chigi and katsuogi inside a tamagaki fence; ema and omikuji racks; a stone-paved sando.
-import { mulberry32 } from './core.js';
+import { mulberry32, addPlatform } from './core.js';
 import { gableRoof, inFrame, wallFill, reveals, windowUnit, doorUnit } from './building.js';
 
 const TAU = Math.PI * 2;
@@ -256,8 +256,27 @@ export function shrineCompound(B, M, x, y, z, r, extras, rng) {
   for (const s of [-1, 1]) { komainu(B, M, s * 2.7, -5.2, -s * 0.28, s < 0); box(s * 2.7, -5.2, 0.5, 0.5, 2.2); }
   for (const zz of [-2.2, -10.5, -16.5]) for (const s of [-1, 1]) { lamps.push(toro(B, M, s * 2.8, zz, zz === -2.2 ? 1.15 : 1)); circ(s * 2.8, zz, 0.45); }
   chozuya(B, M, 5.6, -8.5, -Math.PI / 2); box(5.6, -8.5, 1.2, 1.4, 3);
+  // the inner precinct stands on a terrace of fitted stone (石垣) reached by a flight of stone steps (石段), with a
+  // grey stone torii at their foot; the halls are built on the terrace
+  const rise = 1.35, tz0 = -21.6, tz1 = -38.8, tw = 7.6, nSt = 9, run = 0.32, sz0 = tz0 + nSt * run, sw = 3.0;
+  const wallSeg = (x0, x1, z0, z1) => { const L = Math.hypot(x1 - x0, z1 - z0); if (L < 0.05) return;
+    B.beam(M.stone, [x0, rise / 2 - 0.1, z0], [x1, rise / 2 - 0.1, z1], 0.5, rise + 0.2, { color: [0.62, 0.6, 0.56], uv: 1.4 });
+    B.beam(M.stone, [x0, rise + 0.04, z0], [x1, rise + 0.04, z1], 0.62, 0.1, { color: [0.7, 0.68, 0.64] }); };
+  wallSeg(-tw, -sw / 2 - 0.25, tz0, tz0); wallSeg(sw / 2 + 0.25, tw, tz0, tz0);
+  wallSeg(-tw, -tw, tz0, tz1); wallSeg(tw, tw, tz0, tz1); wallSeg(-tw, tw, tz1, tz1);
+  B.bbox(M.stone, 0, rise - 0.12, (tz0 + tz1) / 2, 2 * tw - 0.4, 0.14, tz0 - tz1 - 0.4, 0.02, { color: [0.78, 0.74, 0.66], uv: 2 }); // gravel-grey top
+  for (let i = 0; i < nSt; i++) { const zz = sz0 - (i + 0.5) * run, yy = (i + 1) * rise / nSt;
+    B.bbox(M.stone, 0, 0, zz, sw, yy, run + 0.02, 0.02, { color: [0.68 - 0.01 * (i % 2), 0.66, 0.62], uv: 1 }); addPlatform(...[B.P([0, 0, zz])[0], B.P([0, 0, zz])[2]], sw / 2, run / 2, r, B.F.y + yy); }
+  for (const s of [-1, 1]) B.beam(M.stone, [s * (sw / 2 + 0.12), 0.35, sz0], [s * (sw / 2 + 0.12), rise + 0.35, tz0], 0.24, 0.7, { color: [0.6, 0.58, 0.54] }); // cheek walls
+  { const c = B.P([0, 0, (tz0 + tz1) / 2]); addPlatform(c[0], c[2], tw - 0.3, (tz0 - tz1) / 2 - 0.3, r, B.F.y + rise); }
+  box(-tw, (tz0 + tz1) / 2, 0.3, (tz0 - tz1) / 2, rise); box(tw, (tz0 + tz1) / 2, 0.3, (tz0 - tz1) / 2, rise); box(0, tz1, tw, 0.3, rise);
+  box(-(sw / 2 + tw) / 2 - 0.12, tz0, (tw - sw / 2) / 2, 0.3, rise); box((sw / 2 + tw) / 2 + 0.12, tz0, (tw - sw / 2) / 2, 0.3, rise);
+  inFrame(B, [0, 0, sz0 + 0.9], 0, () => { for (const [px, pz] of torii(B, M, { span: 3.2, h: 3.9, col: [0.66, 0.64, 0.6], top: [0.5, 0.49, 0.46] })) circ(px, sz0 + 0.9 + pz, 0.25); });
+  const F0 = B.F; B.frame(F0.x, F0.y + rise, F0.z, F0.r);
   const H = haiden(B, M, 0, -26, 0, { w: 8, d: 6 }); box(0, -26, 5, 4, 8);
   honden(B, M, 0, -33.4, 0, { w: 3.6, d: 3.2 }); tamagaki(B, M, 0, -33.4, 7.2, 6.4); box(0, -33.4, 3.6, 3.2, 8);
+  for (const s of [-1, 1]) { lamps.push(toro(B, M, s * 5.6, -23.4, 0.9)); }
+  B.frame(F0.x, F0.y, F0.z, F0.r);
   emaRack(B, M, -5.2, -17.5, Math.PI / 2, rng); box(-5.2, -17.5, 0.3, 1.1, 2.5);
   omikuji(B, M, -5.2, -13.2, Math.PI / 2, rng); box(-5.2, -13.2, 0.2, 1.2, 2);
   // shrine office (shamusho): white walls on a timber base, a counter window onto the approach
