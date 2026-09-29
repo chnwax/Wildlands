@@ -140,7 +140,7 @@ function flowers(world) {
         float pick = fract(z2.g * 5.3 + z3.b * 0.6 + step(0.92, aRnd.y) * 0.37);
         vec3 fc = pick < 0.26 ? vec3(1.0, 0.95, 0.86) : pick < 0.5 ? vec3(1.0, 0.72, 0.06) : pick < 0.7 ? vec3(1.0, 0.36, 0.55)
                 : pick < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
-        vCol = fc * (uAmb * 0.55 + uSunCol * 0.33 + 0.03);
+        vCol = fc * (uAmb * 0.55 + uSunCol * 0.33 + 0.03 * min(1.0, dot(uSunCol, vec3(0.3, 0.59, 0.11)))); // no glow floor at night
         vAng = aRnd.y * 6.2831;
         vec4 mvPosition = viewMatrix * vec4(w, 1.0);
         gl_Position = projectionMatrix * mvPosition;
@@ -201,7 +201,7 @@ function petals(trees) {
         p.y += sin(sw * 1.3) * 0.12;
         float fade = smoothstep(0.0, 0.06, ph) * (1.0 - smoothstep(0.9, 1.0, ph));
         float d = length(p - uCam);
-        vCol = vec3(1.0, 0.76, 0.84) * (uAmb * 0.6 + uSunCol * 0.34 + 0.05);
+        vCol = vec3(1.0, 0.76, 0.84) * (uAmb * 0.6 + uSunCol * 0.34 + 0.05 * min(1.0, dot(uSunCol, vec3(0.3, 0.59, 0.11))));
         vAng = uTime * (1.5 + aRnd.w * 2.0) + aRnd.z * 6.2831;
         vec4 mvPosition = viewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mvPosition;
@@ -267,7 +267,7 @@ function butterflies(world) {
         vec3 w = vec3(wp.x, y, wp.y) + vec3(rt.x, 0.0, rt.y) * lp.x + vec3(f.x, 0.0, f.y) * lp.z + vec3(0.0, lp.y, 0.0);
         vUv = vec2(abs(position.x), position.y);
         vKind = floor(aRnd.x * 5.0);
-        vLight = uAmb * 0.6 + uSunCol * 0.36 + 0.06;
+        vLight = uAmb * 0.6 + uSunCol * 0.36 + 0.06 * min(1.0, dot(uSunCol, vec3(0.3, 0.59, 0.11)));
         vec4 mvPosition = viewMatrix * vec4(w, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>

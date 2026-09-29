@@ -12,6 +12,17 @@ const len = a => Math.hypot(a[0], a[1], a[2]);
 const norm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 const WHITE = [1, 1, 1];
 
+// Growable typed buffer with Array-like push/length. The whole town is accumulated before it is flushed, and plain JS
+// arrays of doubles (8 bytes a number, plus growth slack) pushed the build past the renderer's 4 GB heap; float32 /
+// uint32 storage is 4 bytes a number and converts to a vertex attribute without a copy.
+function releaseArray() { this.array = null; }
+class GrowBuf {
+  constructor(T = Float32Array, cap = 256) { this.T = T; this.a = new T(cap); this.length = 0; }
+  grow(n) { if (this.length + n <= this.a.length) return; let c = this.a.length * 2; while (c < this.length + n) c *= 2; const b = new this.T(c); b.set(this.a.subarray(0, this.length)); this.a = b; }
+  push(...v) { this.grow(v.length); for (let i = 0; i < v.length; i++) this.a[this.length++] = v[i]; return this.length; }
+  zeros(n) { this.grow(n); this.a.fill(0, this.length, this.length + n); this.length += n; }
+  view() { return this.a.slice(0, this.length); }
+}
 export class GeoBuilder {
   constructor(chunk = 96) { this.chunk = chunk; this.parts = new Map(); this.lod = 0; this.frame(0, 0, 0, 0); }
   // emit fn's geometry as detail of level n (1: fine parts, 2: micro details); those meshes are drawn only near the camera
@@ -21,16 +32,16 @@ export class GeoBuilder {
   N(n) { const F = this.F; return [n[0] * F.c + n[2] * F.s, n[1], -n[0] * F.s + n[2] * F.c]; }
   bucket(mat, x, z) {
     const c = this.lod ? this.chunk / 2 : this.chunk, k = mat + '|' + this.lod + '|' + Math.floor(x / c) + ',' + Math.floor(z / c);
-    let b = this.parts.get(k); if (!b) { b = { mat, lod: this.lod, pos: [], nor: [], uv: [], col: [], idx: [], extra: {} }; this.parts.set(k, b); }
+    let b = this.parts.get(k); if (!b) { b = { mat, lod: this.lod, pos: new GrowBuf(), nor: new GrowBuf(), uv: new GrowBuf(), col: new GrowBuf(), idx: new GrowBuf(Uint32Array), extra: {} }; this.parts.set(k, b); }
     return b;
   }
   // optional extra per-vertex attributes (opt.attr = { name: [v0, v1, v2(, v3)] }, each a 2-vector); other vertices get 0
   _extra(B, n, attr) {
     if (this.defAttr) { attr = Object.assign({}, attr); for (const k in this.defAttr) if (!(k in attr)) attr[k] = Array(n).fill(this.defAttr[k]); }
     const count = B.pos.length / 3 - n;           // vertices already in the bucket before this primitive
-    for (const name in B.extra) if (!attr || !(name in attr)) for (let i = 0; i < n; i++) B.extra[name].push(0, 0);
+    for (const name in B.extra) if (!attr || !(name in attr)) B.extra[name].zeros(n * 2);
     if (attr) for (const name in attr) {
-      if (!B.extra[name]) B.extra[name] = new Array(count * 2).fill(0);
+      if (!B.extra[name]) { B.extra[name] = new GrowBuf(); B.extra[name].zeros(count * 2); }
       for (const v of attr[name]) B.extra[name].push(v[0], v[1]);
     }
   }
@@ -77,6 +88,9 @@ export class GeoBuilder {
   }
   // box with chamfered edges (bevel b): edges and corners catch the light, so things stop reading as raw primitives
   bbox(mat, cx, y0, cz, w, h, d, b = 0.02, opt = {}) {
+    // a chamfer narrower than ~6 mm or on a member under 6 cm thick is below a pixel at any sensible distance: a plain
+    // box (24 vertices instead of ~100) — window bars, rails and trim made most of the town's vertex budget
+    if (b < 0.006 || Math.min(w, h, d) < 0.06) return this.box(mat, cx, y0, cz, w, h, d, opt);
     b = Math.max(1e-4, Math.min(b, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4));
     const x0 = cx - w / 2, x1 = cx + w / 2, y1 = y0 + h, z0 = cz - d / 2, z1 = cz + d / 2, sk = opt.skip || '', o = { color: opt.color, uv: opt.uv };
     const X = [x0, x0 + b, x1 - b, x1], Y = [y0, y0 + b, y1 - b, y1], Z = [z0, z0 + b, z1 - b, z1];
@@ -169,17 +183,23 @@ export class GeoBuilder {
     for (const b of this.parts.values()) {
       if (!b.idx.length) continue;
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
-      g.setAttribute('normal', new THREE.Float32BufferAttribute(b.nor, 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
-      for (const name in b.extra) g.setAttribute(name, new THREE.Float32BufferAttribute(b.extra[name], 2));
-      g.setIndex(b.idx.length > 65535 ? new THREE.Uint32BufferAttribute(b.idx, 1) : new THREE.Uint16BufferAttribute(b.idx, 1));
+      g.setAttribute('position', new THREE.BufferAttribute(b.pos.view(), 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(b.nor.view(), 3));
+      g.setAttribute('uv', new THREE.BufferAttribute(b.uv.view(), 2));
+      g.setAttribute('color', new THREE.BufferAttribute(b.col.view(), 3));
+      for (const name in b.extra) g.setAttribute(name, new THREE.BufferAttribute(b.extra[name].view(), 2));
+      const iv = b.idx.view(), nv = b.pos.length / 3;
+      b.pos = b.nor = b.uv = b.col = b.idx = null; b.extra = {};              // let the growable buffers go as soon as copied
+      g.setIndex(nv > 65535 ? new THREE.BufferAttribute(iv, 1) : new THREE.BufferAttribute(Uint16Array.from(iv), 1));
       g.computeBoundingSphere();
       const m = new THREE.Mesh(g, materials[b.mat]);
       if (!materials[b.mat]) console.warn('missing material', b.mat);
       m.castShadow = shadow[b.mat] !== false; m.receiveShadow = true; m.matrixAutoUpdate = false;
       if (b.lod) { m.userData.lodDist = LOD_DIST[b.lod]; lodMeshes.push(m); m.layers.set(3); }
+      // static and already bounded: once uploaded the CPU copy of every attribute is dropped (it would otherwise hold the
+      // whole town twice, in the JS heap and on the GPU)
+      for (const k in g.attributes) g.attributes[k].onUpload(releaseArray);
+      if (g.index) g.index.onUpload(releaseArray);
       scene.add(m); meshes.push(m);
     }
     this.parts.clear();
@@ -302,6 +322,7 @@ export function materials() {
     window: windowMaterial({ night }),
     shopWindow: windowMaterial({ night, shop: true, base: 6.0, roomW: 5.5, roomH: 3.0, depth: 6.5 }),
     lamp: nightGlow(std({ color: 0xf4f4f0, roughness: 0.4, emissive: 0xfff2dc, emissiveIntensity: 1 }), 6.0, 'lampGlow'),
+    soil: (() => { const m = std({ map: tex('brown_mud', 'diff', '1k'), normalMap: tex('brown_mud', 'nor_gl', '1k', false), roughness: 0.96 }); m.normalScale.set(0.9, 0.9); return m; })(),
     poly: new THREE.MeshStandardMaterial({ color: 0xcfe0e6, roughness: 0.2, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
   };
   M.asphaltMain = M.asphaltRoad = M.asphaltLane = M.asphaltLane2 = M.asphalt;
@@ -309,7 +330,7 @@ export function materials() {
   M.stopLegend = stopMat;
   M.tactileL = tactileMat(false); M.tactileD = tactileMat(true); M.manhole = manholeMat();
   // painted brightness per surface (toon.js): light pastel walls, pale concrete and gravel, warm wood
-  for (const [k, v] of Object.entries({ siding: 0.58, stucco: 0.6, plaster: 0.6, tiles: 0.56, concrete: 0.64, block: 0.6, pavement: 0.66, ballast: 0.5, wood: 0.46, stone: 0.56, roofTile: 0.62, gravelPath: 0.66 }))
+  for (const [k, v] of Object.entries({ siding: 0.58, stucco: 0.6, plaster: 0.6, tiles: 0.56, concrete: 0.64, block: 0.6, pavement: 0.66, ballast: 0.5, wood: 0.46, stone: 0.56, roofTile: 0.62, gravelPath: 0.66, soil: 0.52 }))
     M[k].userData.toonNorm = v;
   for (const m of Object.values(M)) for (const t of [m.map, m.normalMap, m.roughnessMap, m.aoMap]) if (t) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return M;

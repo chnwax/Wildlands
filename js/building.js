@@ -46,6 +46,7 @@ export function reveals(B, mat, h, color, uv = 1.5) {
 // wooden lattice, hood, frosted glass, part-drawn shutter
 export function windowUnit(B, h, o) {
   const rng = o.rng, w = h.x1 - h.x0, H = h.y1 - h.y0, cx = (h.x0 + h.x1) / 2, d = h.d, fc = o.frame || [0.8, 0.82, 0.84], fm = o.frameMat || 'alu';
+  if (!(w > 0.05 && w < 40 && H > 0.05 && H < 40)) return; // degenerate opening (a sliver left between two others)
   const zg = -d + 0.035, lit = o.lit ?? rng() < 0.45;
   if (o.frosted) B.quad('plastic', [h.x0, h.y0, zg], [h.x1, h.y0, zg], [h.x1, h.y1, zg], [h.x0, h.y1, zg], { color: [0.78, 0.83, 0.86] });
   else B.quad(o.glassMat || 'window', [h.x0, h.y0, zg], [h.x1, h.y0, zg], [h.x1, h.y1, zg], [h.x0, h.y1, zg],
@@ -976,41 +977,243 @@ export function carPark(B, s, rng, extras) {
   return spots;
 }
 // allotment (家庭菜園): raised soil ridges with crops, a cucumber frame, a tool box
-// plastic tunnel greenhouse (ビニールハウス): galvanised hoops every 1.5 m, milky film, rolled-up side vents, end doors
-export function greenhouse(B, s, rng) {
-  const { x, y, z, r, w = 5.4, d = 24 } = s, h = 3.0, R2 = w / 2, n = 10;
+// plastic tunnel greenhouse (ビニールハウス): galvanised hoops every 1.5 m on ground pipes, purlins along the ridge and
+// shoulders, milky film with the side vents rolled up, end walls framed in pipe with a film-covered sliding door (one
+// end propped open), raised beds inside with crops, a water tank and hose outside. w: span, d: length.
+export function greenhouse(B, s, rng, gy) {
+  const { x, y, z, r, w = 5.4, d = 24, film = 'new' } = s, h = s.h || 3.0, R2 = w / 2, n = 12, PIPE = [0.72, 0.74, 0.76];
+  // fresh film is clear, a season-old one milky and yellowed; a bare frame is a house whose film came off for winter
+  const FILM = film === 'old' ? [0.9, 0.9, 0.78] : [0.93, 0.96, 0.97], bare = film === 'bare';
   B.frame(x, y, z, r);
-  const arc = i => { const a = Math.PI * i / n; return [-Math.cos(a) * R2, 0.9 + Math.sin(a) * (h - 0.9)]; };
-  for (let zz = -d / 2; zz <= d / 2 + 1e-3; zz += 1.5) for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); B.beam('steel', [p[0], p[1], zz], [q[0], q[1], zz], 0.03, 0.03, { color: [0.7, 0.72, 0.74] }); }
-  for (const s2 of [-1, 1]) for (let zz = -d / 2; zz <= d / 2 + 1e-3; zz += 1.5) B.box('steel', s2 * R2, 0, zz, 0.03, 0.9, 0.03, { color: [0.7, 0.72, 0.74] });
-  const film = [0.92, 0.95, 0.96];
-  for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); if (i === 0 || i === n - 1) continue; B.quad('poly', [p[0], p[1], -d / 2], [p[0], p[1], d / 2], [q[0], q[1], d / 2], [q[0], q[1], -d / 2], { color: film }); }
-  for (const s2 of [-1, 1]) { B.quad('poly', [s2 * R2, 0.1, -d / 2], [s2 * R2, 0.1, d / 2], [s2 * R2, 0.45, d / 2], [s2 * R2, 0.45, -d / 2], { color: film });
-    B.sweep('plain', [[0.05, 0], [0, 0.05], [-0.05, 0], [0, -0.05]], [[s2 * R2, 0.95, -d / 2], [s2 * R2, 0.95, d / 2]], { closed: true, color: [0.85, 0.87, 0.86] }); } // rolled vent
-  for (const e of [-1, 1]) { const zz = e * d / 2; for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); B.poly('poly', [[0, 0.9, zz], [p[0], p[1], zz], [q[0], q[1], zz]], [0, 0, e], { color: film }); }
-    B.quad('poly', [-R2, 0.1, zz], [R2, 0.1, zz], [R2, 0.9, zz], [-R2, 0.9, zz], { color: film });
-    B.box('alu', 0, 0, zz + e * 0.02, 1.2, 2.0, 0.04, { color: [0.72, 0.74, 0.76] }); }
-  B.detail(1, () => { for (let k = -1; k <= 1; k++) B.bbox('plain', k * 1.5, -0.02, 0, 0.8, 0.22, d - 1.2, 0.06, { color: [0.4, 0.3, 0.22] });
-    for (let k = -1; k <= 1; k++) for (let zz = -d / 2 + 1; zz < d / 2 - 0.6; zz += 0.6) B.bbox('plain', k * 1.5, 0.2, zz, 0.3, 0.25 + rng() * 0.2, 0.3, 0.08, { color: jitter(rng, [0.3, 0.6, 0.3], 0.1) }); });
+  if (gy) soilPatch(B, frameGround(B, y, gy), -R2 - 0.3, -d / 2 - 0.3, R2 + 0.3, d / 2 + 0.3, jitter(rng, [0.44, 0.34, 0.27], 0.04));
+  const arc = i => { const a = Math.PI * i / n; return [-Math.cos(a) * R2, 1.1 + Math.sin(a) * (h - 1.1)]; };
+  const pipe = (a, b, rad = 0.022) => B.sweep('steel', [[rad, 0], [0, rad], [-rad, 0], [0, -rad]], [a, b], { closed: true, color: PIPE });
+  const hoops = []; for (let zz = -d / 2; zz <= d / 2 + 1e-3; zz += 1.5) hoops.push(zz);
+  for (const zz of hoops) { for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); pipe([p[0], p[1], zz], [q[0], q[1], zz]); }
+    for (const s2 of [-1, 1]) pipe([s2 * R2, -0.3, zz], [s2 * R2, 1.1, zz]); }
+  for (const i of [0, 3, 6, 9, 12]) { const p = arc(i); pipe([p[0], p[1], -d / 2], [p[0], p[1], d / 2], 0.018); }                         // purlins
+  for (const s2 of [-1, 1]) pipe([s2 * R2, 0.05, -d / 2], [s2 * R2, 0.05, d / 2], 0.018);                                                // ground pipes
+  // film: the arch between the rolled-up side vents, low skirts below them
+  if (!bare) for (let i = 1; i < n - 1; i++) { const p = arc(i), q = arc(i + 1); B.quad('poly', [p[0], p[1], -d / 2], [p[0], p[1], d / 2], [q[0], q[1], d / 2], [q[0], q[1], -d / 2], { color: FILM }); }
+  if (!bare) { const p = arc(0), q = arc(1); for (const [a, b] of [[p, q], [arc(n), arc(n - 1)]]) B.quad('poly', [a[0], a[1] + 0.35, -d / 2], [a[0], a[1] + 0.35, d / 2], [b[0], b[1], d / 2], [b[0], b[1], -d / 2], { color: FILM }); }
+  if (!bare) for (const s2 of [-1, 1]) { B.quad('poly', [s2 * R2, 0.0, -d / 2], [s2 * R2, 0.0, d / 2], [s2 * R2, 0.45, d / 2], [s2 * R2, 0.45, -d / 2], { color: FILM });
+    B.sweep('plain', [[0.055, 0], [0, 0.055], [-0.055, 0], [0, -0.055]], [[s2 * R2, 1.05, -d / 2], [s2 * R2, 1.05, d / 2]], { closed: true, color: [0.86, 0.88, 0.88] }); } // rolled vent
+  // end walls: film on a pipe frame, a sliding door with its own frame; the south door stands open
+  if (!bare) for (const e of [-1, 1]) {
+    const zz = e * d / 2, open = e > 0;
+    for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); B.poly('poly', [[0, 1.1, zz], [p[0], p[1], zz], [q[0], q[1], zz]], [0, 0, e], { color: FILM }); }
+    for (const s2 of [-1, 1]) B.quad('poly', [s2 * 0.6, 0, zz], [s2 * R2, 0, zz], [s2 * R2, 1.1, zz], [s2 * 0.6, 1.1, zz], { color: FILM });
+    for (const px of [-0.6, 0.6]) pipe([px, 0, zz], [px, 2.25, zz], 0.025);
+    pipe([-0.6, 2.25, zz], [0.6, 2.25, zz], 0.025); pipe([-0.62, 2.28, zz + e * 0.05], [1.9, 2.28, zz + e * 0.05], 0.015);                // door head + rail
+    const dx = open ? 1.2 : 0;                                                                                                            // door leaf (pipe frame + film)
+    for (const px of [-0.58 + dx, 0.58 + dx]) pipe([px, 0.02, zz + e * 0.07], [px, 2.2, zz + e * 0.07], 0.018);
+    for (const py of [0.02, 1.1, 2.2]) pipe([-0.58 + dx, py, zz + e * 0.07], [0.58 + dx, py, zz + e * 0.07], 0.018);
+    B.quad('poly', [-0.56 + dx, 0.04, zz + e * 0.07], [0.56 + dx, 0.04, zz + e * 0.07], [0.56 + dx, 2.18, zz + e * 0.07], [-0.56 + dx, 2.18, zz + e * 0.07], { color: FILM });
+    if (!open) B.quad('poly', [-0.58, 1.1, zz], [0.58, 1.1, zz], [0.58, 2.25, zz], [-0.58, 2.25, zz], { color: FILM });
+  }
+  // inside: three raised beds with a crop per house, drip line, a walkway of boards
+  const crop = rng() < 0.5 ? 'tomato' : rng() < 0.5 ? 'cucumber' : 'greens';
+  B.detail(1, () => {
+    for (let k = -1; k <= 1; k++) { const bx = k * 1.6;
+      B.bbox('plain', bx, -0.04, 0, 0.9, 0.26, d - 1.4, 0.08, { color: [0.36, 0.27, 0.2] });
+      B.box('dark', bx, 0.22, 0, 0.9, 0.005, d - 1.5, { color: [0.12, 0.12, 0.13] });                                                     // black mulch film
+      for (let zz = -d / 2 + 1.1; zz < d / 2 - 0.8; zz += 0.5) {
+        if (crop === 'greens') B.bbox('plain', bx + (rng() - 0.5) * 0.3, 0.22, zz, 0.3, 0.16 + rng() * 0.06, 0.3, 0.1, { color: jitter(rng, [0.42, 0.66, 0.34], 0.1) });
+        else { B.cyl('wood', bx, 0.22, zz, 0.012, 0.012, 1.7, 5, { color: [0.6, 0.5, 0.36] });
+          for (let j = 0; j < 3; j++) B.bbox('plain', bx + (rng() - 0.5) * 0.2, 0.5 + j * 0.42, zz, 0.28, 0.3, 0.26, 0.1, { color: jitter(rng, [0.3, 0.55, 0.28], 0.1) });
+          if (rng() < 0.6) B.bbox('plain', bx + 0.08, 0.7 + rng() * 0.6, zz + 0.08, 0.08, 0.08, 0.08, 0.035, { color: crop === 'tomato' ? [0.9, 0.2, 0.12] : [0.3, 0.52, 0.22] }); } }
+      if (crop !== 'greens') B.box('steel', bx, 1.95, 0, 0.02, 0.02, d - 1.4, { color: [0.7, 0.72, 0.74] });                              // support wire
+    }
+    for (const k of [-0.8, 0.8]) for (let zz = -d / 2 + 0.6; zz < d / 2 - 0.4; zz += 1.2) B.bbox('wood', k, 0, zz, 0.5, 0.04, 1.1, 0.01, { color: [0.62, 0.5, 0.36] });
+  });
+  // outside the open end: a blue water tank on blocks, a coiled hose, crates
+  B.bbox('concrete', R2 + 0.9, 0, d / 2 - 1.5, 0.9, 0.2, 0.9, 0.02, { color: [0.62, 0.62, 0.6] });
+  B.cyl('plastic', R2 + 0.9, 0.2, d / 2 - 1.5, 0.42, 0.42, 1.0, 16, { color: [0.2, 0.42, 0.72], cap: true });
+  B.detail(1, () => { B.sweep('plastic', circle(0.02, 6), Array.from({ length: 13 }, (_, i) => [R2 + 0.6 + Math.cos(i * 0.9) * 0.28, 0.03 + i * 0.012, d / 2 - 0.4 + Math.sin(i * 0.9) * 0.28]), { color: [0.1, 0.5, 0.3] });
+    for (let k = 0; k < 3; k++) B.bbox('plastic', R2 + 0.5, k * 0.28, d / 2 + 0.6, 0.52, 0.27, 0.36, 0.02, { color: [0.24, 0.52, 0.3] }); });
 }
-export function allotment(B, s, rng) {
+// kitchen garden plot (家庭菜園): a low block edge with a wire fence and gate on the street side, ridged beds (畝) of
+// different crops — cabbages, leeks, tomatoes on cane frames, eggplants, potatoes, some under black or silver mulch
+// film — a cucumber net, bird netting over the brassicas, paths of trodden earth, a tool box, water tank and hose,
+// compost bin and a wheelbarrow. Local frame: the street side is +z.
+export function allotment(B, s, rng, gy) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
-  const rows = Math.floor((w - 1.5) / 1.1);
-  for (let i = 0; i < rows; i++) {
-    const cx = -w / 2 + 1 + i * 1.1, L = d - 3;
-    B.bbox('plain', cx, -0.02, 0, 0.7, 0.2, L, 0.06, { color: [0.42, 0.3, 0.22] });
-    const crop = rng();
-    B.detail(1, () => { for (let k = 0; k < Math.floor(L / 0.45); k++) { const pz = -L / 2 + 0.25 + k * 0.45;
-      if (crop < 0.35) B.bbox('plain', cx, 0.17, pz, 0.34, 0.22, 0.34, 0.08, { color: jitter(rng, [0.34, 0.62, 0.3], 0.1) });
-      else if (crop < 0.7) { B.bbox('plain', cx, 0.17, pz, 0.12, 0.35, 0.12, 0.02, { color: [0.3, 0.55, 0.26] }); B.bbox('plain', cx, 0.45, pz, 0.26, 0.16, 0.26, 0.06, { color: jitter(rng, [0.4, 0.68, 0.34], 0.1) }); }
-      else B.bbox('plain', cx, 0.17, pz, 0.22, 0.1, 0.3, 0.04, { color: [0.52, 0.7, 0.36] }); } });
+  const SOIL = [0.5, 0.39, 0.3], LEAF = [0.34, 0.6, 0.3];
+  if (gy) soilPatch(B, frameGround(B, y, gy), -w / 2 + 0.06, -d / 2 + 0.06, w / 2 - 0.06, d / 2 - 0.06, jitter(rng, [0.48, 0.37, 0.28], 0.04)); // paths of trodden earth
+  // edge + fence
+  for (const [ax, az, bx, bz] of [[-w / 2, -d / 2, w / 2, -d / 2], [-w / 2, -d / 2, -w / 2, d / 2], [w / 2, -d / 2, w / 2, d / 2], [-w / 2, d / 2, w / 2 - 1.6, d / 2]]) {
+    B.beam('concrete', [ax, 0.06, az], [bx, 0.06, bz], 0.12, 0.2, { color: [0.7, 0.7, 0.68] });
+    const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 2));
+    B.detail(1, () => { for (let k = 0; k <= n; k++) B.cyl('steel', ax + (bx - ax) * k / n, 0.1, az + (bz - az) * k / n, 0.02, 0.02, 1.0, 6, { color: [0.35, 0.5, 0.36] });
+      B.quad('chain', [ax, 0.2, az], [bx, 0.2, bz], [bx, 1.05, bz], [ax, 1.05, az], { uv: 0.12, color: [0.3, 0.45, 0.32] }); });
   }
-  B.detail(1, () => { // cucumber frame with net
-    const fx = w / 2 - 1.2;
-    for (const pz of [-d / 2 + 2, 0, d / 2 - 2]) for (const sx of [-0.35, 0.35]) B.beam('plain', [fx + sx, 0, pz], [fx, 1.9, pz], 0.025, 0.025, { color: [0.3, 0.55, 0.35] });
-    B.beam('plain', [fx, 1.9, -d / 2 + 2], [fx, 1.9, d / 2 - 2], 0.025, 0.025, { color: [0.3, 0.55, 0.35] });
-    for (let k = 0; k < 10; k++) B.bbox('plain', fx + (rng() - 0.5) * 0.4, 0.3 + rng() * 1.4, -d / 2 + 2 + rng() * (d - 4), 0.3, 0.25, 0.25, 0.08, { color: [0.28, 0.58, 0.28] });
+  B.bbox('steel', w / 2 - 0.8, 0.1, d / 2, 1.5, 0.9, 0.04, 0.01, { color: [0.35, 0.5, 0.36] });                                          // gate
+  // beds run across the plot; the back 2.4 m is the working corner
+  const bedsZ0 = -d / 2 + 2.6, bedsZ1 = d / 2 - 1.4, bw = 0.8, pitch = 1.35, nb = Math.max(2, Math.floor((w - 1.6) / pitch));
+  const kinds = ['cabbage', 'leek', 'tomato', 'eggplant', 'potato', 'greens', 'cucumber', 'mulch'];
+  const offset = Math.floor(rng() * kinds.length);
+  for (let i = 0; i < nb; i++) {
+    const bx = -w / 2 + 0.9 + (i + 0.5) * (w - 1.8) / nb, L = bedsZ1 - bedsZ0, zc = (bedsZ0 + bedsZ1) / 2, kind = kinds[(i + offset) % kinds.length];
+    B.poly('soil', [[bx - bw / 2 - 0.12, 0.02, bedsZ0], [bx - bw / 2 - 0.12, 0.02, bedsZ1], [bx - bw / 2 + 0.08, 0.22, bedsZ1], [bx - bw / 2 + 0.08, 0.22, bedsZ0]], [-1, 1, 0], { color: SOIL, uv: 1 });
+    B.poly('soil', [[bx + bw / 2 + 0.12, 0.02, bedsZ0], [bx + bw / 2 + 0.12, 0.02, bedsZ1], [bx + bw / 2 - 0.08, 0.22, bedsZ1], [bx + bw / 2 - 0.08, 0.22, bedsZ0]], [1, 1, 0], { color: SOIL, uv: 1 });
+    B.box('soil', bx, 0.02, zc, bw - 0.16, 0.2, L, { color: mul(SOIL, 1.08), skip: 'ny', uv: 2.5 });
+    for (const e of [bedsZ0, bedsZ1]) B.poly('soil', [[bx - bw / 2 - 0.12, 0.02, e], [bx + bw / 2 + 0.12, 0.02, e], [bx + bw / 2 - 0.08, 0.22, e], [bx - bw / 2 + 0.08, 0.22, e]], [0, 0, e > 0 ? 1 : -1], { color: SOIL });
+    if (kind === 'mulch' || kind === 'eggplant' || kind === 'tomato') B.box('dark', bx, 0.222, zc, bw - 0.1, 0.004, L - 0.1, { color: kind === 'mulch' ? [0.72, 0.74, 0.76] : [0.1, 0.1, 0.11] });
+    B.detail(1, () => {
+      for (let zz = bedsZ0 + 0.35; zz < bedsZ1 - 0.2; zz += kind === 'leek' ? 0.18 : 0.45) {
+        const j = () => (rng() - 0.5) * 0.08;
+        if (kind === 'cabbage') { B.bbox('plain', bx + j(), 0.22, zz, 0.36, 0.26, 0.36, 0.13, { color: jitter(rng, [0.55, 0.72, 0.42], 0.08) }); B.bbox('plain', bx + j(), 0.26, zz, 0.46, 0.08, 0.46, 0.04, { color: jitter(rng, [0.36, 0.56, 0.36], 0.08) }); }
+        else if (kind === 'leek') for (const lx of [-0.2, 0.2]) B.bbox('plain', bx + lx + j(), 0.22, zz, 0.05, 0.42 + rng() * 0.12, 0.05, 0.02, { color: jitter(rng, [0.42, 0.62, 0.36], 0.08) });
+        else if (kind === 'potato' || kind === 'greens') B.bbox('plain', bx + j(), 0.22, zz, 0.42, kind === 'potato' ? 0.3 : 0.18, 0.4, 0.14, { color: jitter(rng, kind === 'potato' ? [0.34, 0.54, 0.28] : [0.48, 0.7, 0.36], 0.1) });
+        else if (kind === 'eggplant') { B.bbox('plain', bx + j(), 0.22, zz, 0.36, 0.5, 0.36, 0.14, { color: jitter(rng, LEAF, 0.08) }); if (rng() < 0.7) B.bbox('plain', bx + 0.12, 0.35, zz + 0.1, 0.07, 0.16, 0.07, 0.03, { color: [0.28, 0.12, 0.32] }); }
+        else if (kind === 'tomato') for (const lx of [-0.2, 0.2]) { B.cyl('wood', bx + lx, 0.22, zz, 0.012, 0.012, 1.6, 5, { color: [0.62, 0.52, 0.36] });
+          for (let k = 0; k < 3; k++) B.bbox('plain', bx + lx + j(), 0.45 + k * 0.4, zz, 0.24, 0.3, 0.22, 0.1, { color: jitter(rng, LEAF, 0.08) });
+          if (rng() < 0.6) B.bbox('plain', bx + lx + 0.1, 0.6 + rng() * 0.6, zz + 0.06, 0.07, 0.07, 0.07, 0.03, { color: [0.92, 0.22, 0.14] }); }
+      }
+      if (kind === 'tomato') for (const lx of [-0.2, 0.2]) B.box('wood', bx + lx, 1.72, (bedsZ0 + bedsZ1) / 2, 0.02, 0.02, L - 0.3, { color: [0.62, 0.52, 0.36] });
+      if (kind === 'cucumber') { // net on an A-frame
+        for (let zz = bedsZ0 + 0.3; zz < bedsZ1; zz += 1.2) for (const sd of [-1, 1]) B.beam('plain', [bx + sd * 0.35, 0.2, zz], [bx, 1.85, zz], 0.025, 0.025, { color: [0.3, 0.55, 0.35] });
+        for (const sd of [-1, 1]) B.quad('chain', [bx + sd * 0.35, 0.25, bedsZ0 + 0.3], [bx + sd * 0.35, 0.25, bedsZ1 - 0.2], [bx, 1.85, bedsZ1 - 0.2], [bx, 1.85, bedsZ0 + 0.3], { uv: 0.2, color: [0.2, 0.55, 0.3] });
+        for (let k = 0; k < Math.floor(L * 3); k++) { const t = rng(), sd = rng() < 0.5 ? -1 : 1; B.bbox('plain', bx + sd * 0.35 * (1 - t), 0.3 + t * 1.5, bedsZ0 + 0.4 + rng() * (L - 0.8), 0.24, 0.2, 0.2, 0.08, { color: jitter(rng, LEAF, 0.1) }); }
+      }
+      if (kind === 'cabbage') { for (let zz = bedsZ0 + 0.2; zz <= bedsZ1 + 0.01; zz += (L - 0.4) / Math.max(1, Math.round(L / 1.5))) { const hoop = []; for (let k = 0; k <= 8; k++) { const a = Math.PI * k / 8; hoop.push([bx - Math.cos(a) * 0.5, 0.2 + Math.sin(a) * 0.55, zz]); } B.sweep('plastic', circle(0.008, 5), hoop, { color: [0.3, 0.6, 0.7] }); }
+        B.quad('poly', [bx - 0.5, 0.2, bedsZ0 + 0.2], [bx - 0.5, 0.2, bedsZ1], [bx, 0.75, bedsZ1], [bx, 0.75, bedsZ0 + 0.2], { color: [0.9, 0.95, 0.95] });
+        B.quad('poly', [bx, 0.75, bedsZ0 + 0.2], [bx, 0.75, bedsZ1], [bx + 0.5, 0.2, bedsZ1], [bx + 0.5, 0.2, bedsZ0 + 0.2], { color: [0.9, 0.95, 0.95] }); }
+    });
+  }
+  // working corner: tool box, blue water barrel with a watering can, compost bin, wheelbarrow, fertiliser bags
+  { const sc = pick(rng, [[0.86, 0.82, 0.7], [0.62, 0.72, 0.6], [0.78, 0.74, 0.62], [0.55, 0.62, 0.72]]), tx = -w / 2 + 1.2, tz = -d / 2 + 1.0; // steel tool locker on blocks
+    for (const ox of [-0.5, 0.5]) B.box('concrete', tx + ox, 0, tz, 0.2, 0.1, 0.6, { color: [0.62, 0.62, 0.6] });
+    B.bbox('metal', tx, 0.1, tz, 1.3, 1.25, 0.66, 0.012, { color: sc }); B.bbox('metal', tx, 1.35, tz, 1.42, 0.05, 0.8, 0.01, { color: mul(sc, 0.8) });
+    B.detail(1, () => { for (const dx of [-0.32, 0, 0.32]) B.box('dark', tx + dx, 0.16, tz + 0.331, 0.012, 1.12, 0.01, { color: [0.3, 0.3, 0.3] });
+      B.box('steel', tx + 0.08, 0.72, tz + 0.34, 0.025, 0.14, 0.02, { color: [0.4, 0.4, 0.4] }); }); }
+  B.cyl('plastic', -w / 2 + 2.6, 0, -d / 2 + 1.1, 0.3, 0.3, 0.9, 14, { color: [0.2, 0.4, 0.75], cap: true });
+  B.detail(1, () => {
+    B.cyl('plastic', -w / 2 + 3.2, 0, -d / 2 + 1.0, 0.12, 0.1, 0.26, 10, { color: [0.2, 0.62, 0.32], cap: true }); B.beam('plastic', [-w / 2 + 3.2, 0.2, -d / 2 + 1.1], [-w / 2 + 3.2, 0.32, -d / 2 + 1.45], 0.02, 0.02, { color: [0.2, 0.62, 0.32] });
+    B.cyl('plain', w / 2 - 1.2, 0, -d / 2 + 1.0, 0.42, 0.32, 0.78, 14, { color: [0.15, 0.15, 0.16], cap: true }); B.cyl('plain', w / 2 - 1.2, 0.78, -d / 2 + 1.0, 0.36, 0.3, 0.07, 14, { color: [0.2, 0.2, 0.21], cap: true }); // compost bin
+    B.bbox('metal', w / 2 - 2.6, 0.35, -d / 2 + 1.2, 0.6, 0.28, 0.9, 0.04, { color: [0.2, 0.5, 0.35] }); B.cyl('plastic', w / 2 - 2.6, 0.18, -d / 2 + 1.8, 0.18, 0.18, 0.08, 10, { color: [0.12, 0.12, 0.12] }); // wheelbarrow
+    for (const sd of [-1, 1]) B.beam('steel', [w / 2 - 2.6 + sd * 0.25, 0.4, -d / 2 + 0.7], [w / 2 - 2.6 + sd * 0.25, 0.1, -d / 2 + 0.6], 0.02, 0.02, { color: [0.3, 0.3, 0.3] });
+    for (let k = 0; k < 3; k++) B.bbox('plain', -w / 2 + 4.0 + k * 0.1, 0, -d / 2 + 1.0 + k * 0.05, 0.5, 0.18, 0.35, 0.08, { color: k % 2 ? [0.86, 0.82, 0.68] : [0.85, 0.72, 0.55] });
   });
-  B.bbox('plastic', -w / 2 + 0.8, 0, d / 2 - 0.7, 1.0, 0.7, 0.55, 0.03, { color: [0.35, 0.5, 0.72] });
+}
+
+// tilled soil draped over the ground in 2 m cells (gy: world ground height), in the current frame; lift raises it
+function soilPatch(B, at, x0, z0, x1, z1, col, US = 2.5) {
+  const nx = Math.max(1, Math.round((x1 - x0) / 2)), nz = Math.max(1, Math.round((z1 - z0) / 2));
+  for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
+    const a = x0 + (x1 - x0) * i / nx, b = x0 + (x1 - x0) * (i + 1) / nx, c = z0 + (z1 - z0) * j / nz, e = z0 + (z1 - z0) * (j + 1) / nz;
+    B.quad('soil', [a, at(a, e), e], [b, at(b, e), e], [b, at(b, c), c], [a, at(a, c), c], { color: col, uvs: [[a / US, e / US], [b / US, e / US], [b / US, c / US], [a / US, c / US]] });
+  }
+}
+// ground height in the current frame, from a world height function (2 cm clear of the terrain)
+const frameGround = (B, y, gy) => (lx, lz) => { const p = B.P([lx, 0, lz]); return gy(p[0], p[2]) - y + 0.02; };
+// open vegetable field (露地畑) at the edge of town: tilled soil draped over the ground and ridged rows (畝) along local
+// z that follow it, in blocks of different crops — cabbage, napa cabbage, daikon, leeks earthed up high, potatoes,
+// taro with big leaves, white row-cover tunnels, black or silver mulch with seedlings, a fallow strip. A bare headland
+// runs round the edge; an irrigation standpipe with a hose stands at one corner; the far end often has a corrugated tool
+// shed, a water drum, crates and a heap under a blue tarp, and now and then a scarecrow stands in a furrow.
+export function field(B, s, rng, gy) {
+  const { x, y, z, r, w, d, shed = false } = s;
+  B.frame(x, y, z, r);
+  const at = frameGround(B, y, gy), US = 2.5;
+  const SOIL = jitter(rng, [0.46, 0.35, 0.27], 0.05), DRY = mul(SOIL, 1.1);
+  const planar = pts => pts.map(p => [p[0] / US, p[2] / US]);
+  const q4 = (mat, a, b, c, e, col) => B.quad(mat, a, b, c, e, { color: col, uvs: planar([a, b, c, e]) });
+  soilPatch(B, at, -w / 2, -d / 2, w / 2, d / 2, SOIL, US);
+  const HL = 0.9, zA = -d / 2 + HL, zB = d / 2 - HL - (shed ? 3.6 : 0), pitch = 1.15 + rng() * 0.3, n = Math.max(2, Math.floor((w - 2 * HL) / pitch));
+  const nz = Math.max(2, Math.ceil((zB - zA) / 2)), xr0 = -n * pitch / 2;
+  const LEAF = { cabbage: [0.36, 0.56, 0.36], napa: [0.44, 0.62, 0.36], daikon: [0.26, 0.48, 0.28], potato: [0.32, 0.5, 0.26], taro: [0.3, 0.52, 0.32], leek: [0.36, 0.56, 0.42] };
+  const ridge = (xc, kind) => {
+    const bw = pitch * 0.42, tw = pitch * (kind === 'leek' ? 0.15 : 0.27), hh = kind === 'leek' ? 0.32 : kind === 'fallow' ? 0.1 : 0.19 + rng() * 0.05;
+    const film = kind === 'mulchB' ? [0.06, 0.06, 0.07] : kind === 'mulchS' ? [0.7, 0.72, 0.74] : null;
+    const mat = film ? 'plastic' : 'soil', topC = film || DRY, sideC = film || SOIL;
+    const st = [];
+    for (let k = 0; k <= nz; k++) { const zz = zA + (zB - zA) * k / nz, g = at(xc, zz);
+      st.push({ zz, g, L0: [xc - bw, at(xc - bw, zz), zz], L1: [xc - tw, g + hh, zz], R1: [xc + tw, g + hh, zz], R0: [xc + bw, at(xc + bw, zz), zz] }); }
+    for (let k = 0; k < nz; k++) { const p = st[k], q = st[k + 1];
+      q4(mat, p.L0, q.L0, q.L1, p.L1, sideC); q4(mat, p.L1, q.L1, q.R1, p.R1, topC); q4(mat, p.R1, q.R1, q.R0, p.R0, sideC); }
+    for (const [e, sg] of [[st[0], -1], [st[nz], 1]]) B.poly(mat, [e.L0, e.L1, e.R1, e.R0], [0, 0, sg], { color: sideC, uv: US });
+    const topAt = zz => { const k = Math.min(nz - 1, Math.floor((zz - zA) / (zB - zA) * nz)), t = ((zz - zA) / (zB - zA) * nz) - k; return lerp(st[k].g, st[k + 1].g, t) + hh; };
+    // the crop mass as one low strip per 2 m (it keeps the rows green where the single plants are no longer drawn)
+    if (LEAF[kind]) for (let k = 0; k < nz; k++) { const p = st[k], q = st[k + 1], zm = (p.zz + q.zz) / 2, len = q.zz - p.zz - 0.12, yb = Math.min(p.g, q.g) + hh - 0.02;
+      if (kind === 'leek') { // white shanks earthed up, then the blue-green blades fanning out both ways: two jagged ribbons
+        B.box('plain', xc, yb, zm, 0.1, 0.1, len, { color: [0.86, 0.86, 0.78] });
+        for (const sd of [-1, 1]) for (let zz = p.zz + 0.06; zz < q.zz - 0.1; zz += 0.15) { const y0 = yb + 0.08, tip = [xc + sd * (0.1 + rng() * 0.08), y0 + 0.36 + rng() * 0.16, zz + 0.075], col = jitter(rng, LEAF.leek, 0.06);
+          for (const hint of [[1, 0, 0], [-1, 0, 0]]) B.poly('plain', [[xc, y0, zz], [xc, y0, zz + 0.15], tip], hint, { color: col }); } }
+      else B.box('plain', xc, yb, zm, tw * 1.7, kind === 'daikon' ? 0.09 : kind === 'cabbage' ? 0.13 : 0.2, len, { color: mul(LEAF[kind], 0.82) }); }
+    if (kind === 'tunnel') { // white non-woven row cover on hoops (トンネル)
+      const R = bw * 0.95, H = 0.5, arcP = (k, zz, g) => { const a = Math.PI * k / 6; return [xc - Math.cos(a) * R, g + Math.sin(a) * H, zz]; };
+      for (let k = 0; k < nz; k++) { const p = st[k], q = st[k + 1];
+        for (let i = 0; i < 6; i++) q4('plain', arcP(i, p.zz, p.g), arcP(i, q.zz, q.g), arcP(i + 1, q.zz, q.g), arcP(i + 1, p.zz, p.g), [0.8, 0.82, 0.8]); }
+      for (const [e, sg] of [[st[0], -1], [st[nz], 1]]) for (let i = 0; i < 6; i++) B.poly('plain', [[xc, e.g, e.zz], arcP(i, e.zz, e.g), arcP(i + 1, e.zz, e.g)], [0, 0, sg], { color: [0.76, 0.78, 0.76] });
+      B.detail(1, () => { for (let zz = zA + 0.6; zz < zB; zz += 1.5) { const g = topAt(zz) - hh, hoop = []; for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8; hoop.push([xc - Math.cos(a) * (R + 0.02), g + Math.sin(a) * (H + 0.02), zz]); } B.sweep('plastic', circle(0.008, 5), hoop, { color: [0.3, 0.55, 0.75] }); } });
+      return;
+    }
+    B.detail(1, () => {
+      const j = () => (rng() - 0.5) * 0.06;
+      if (kind === 'cabbage') for (let zz = zA + 0.3; zz < zB - 0.2; zz += 0.42) { const t = topAt(zz);
+        B.bbox('plain', xc + j(), t - 0.02, zz, 0.3, 0.24, 0.3, 0.1, { color: jitter(rng, [0.62, 0.78, 0.46], 0.08) }); B.bbox('plain', xc + j(), t + 0.02, zz, 0.5, 0.07, 0.48, 0.03, { color: jitter(rng, LEAF.cabbage, 0.06) }); }
+      else if (kind === 'napa') for (let zz = zA + 0.3; zz < zB - 0.2; zz += 0.45) { const t = topAt(zz);
+        B.bbox('plain', xc + j(), t - 0.02, zz, 0.28, 0.42, 0.28, 0.1, { color: jitter(rng, [0.8, 0.86, 0.56], 0.06) }); B.bbox('plain', xc + j(), t, zz, 0.42, 0.14, 0.42, 0.05, { color: jitter(rng, LEAF.napa, 0.06) }); }
+      else if (kind === 'daikon') for (let zz = zA + 0.25; zz < zB - 0.2; zz += 0.3) { const t = topAt(zz);
+        B.box('plain', xc + j(), t, zz, 0.46, 0.14, 0.1, { color: jitter(rng, LEAF.daikon, 0.06) }); B.box('plain', xc + j(), t, zz, 0.1, 0.18, 0.4, { color: jitter(rng, LEAF.daikon, 0.06) });
+        B.cyl('plain', xc, t - 0.05, zz, 0.045, 0.045, 0.1, 8, { color: [0.92, 0.92, 0.86], cap: true }); }
+      else if (kind === 'potato') for (let zz = zA + 0.3; zz < zB - 0.2; zz += 0.4) { const t = topAt(zz);
+        B.bbox('plain', xc + j(), t - 0.02, zz, 0.5, 0.32 + rng() * 0.08, 0.46, 0.14, { color: jitter(rng, LEAF.potato, 0.08) }); }
+      else if (kind === 'taro') for (let zz = zA + 0.4; zz < zB - 0.3; zz += 0.7) { const t = topAt(zz);
+        for (let k = 0; k < 3; k++) { const a = rng() * TAU, L = 0.55 + rng() * 0.25, lx = xc + Math.cos(a) * 0.18, lz = zz + Math.sin(a) * 0.18, hy = t + L;
+          B.beam('plain', [xc, t, zz], [lx, hy, lz], 0.02, 0.02, { color: [0.42, 0.56, 0.34] });
+          const ca = Math.cos(a) * 0.26, sa = Math.sin(a) * 0.26, pa = [lx - sa, hy + 0.05, lz + ca], pb = [lx + Math.cos(a) * 0.36, hy - 0.12, lz + Math.sin(a) * 0.36], pc = [lx + sa, hy + 0.05, lz - ca], pd = [lx - Math.cos(a) * 0.1, hy + 0.08, lz - Math.sin(a) * 0.1];
+          const col = jitter(rng, LEAF.taro, 0.06); B.poly('plain', [pd, pa, pb, pc], [0, 1, 0], { color: col }); B.poly('plain', [pd, pa, pb, pc], [0, -1, 0], { color: mul(col, 0.8) }); } }
+      else if (kind === 'mulchB' || kind === 'mulchS') for (let zz = zA + 0.25; zz < zB - 0.15; zz += 0.3) { const t = topAt(zz) + 0.005;
+        for (const lx of [-tw * 0.5, tw * 0.5]) B.box('plain', xc + lx, t, zz, 0.14, 0.08 + rng() * 0.05, 0.14, { color: jitter(rng, [0.4, 0.66, 0.34], 0.08) }); }
+      else if (kind === 'fallow') for (let k = 0; k < (zB - zA) * 0.8; k++) B.box('plain', xc + (rng() - 0.5) * pitch, topAt(zA + rng() * (zB - zA)) - hh + 0.02, zA + rng() * (zB - zA), 0.12, 0.08, 0.12, { color: jitter(rng, [0.44, 0.58, 0.3], 0.1) });
+    });
+  };
+  const KINDS = ['cabbage', 'napa', 'daikon', 'leek', 'potato', 'taro', 'tunnel', 'mulchB', 'mulchS', 'fallow'];
+  const rows = [];
+  for (let i = 0; i < n;) { const kind = pick(rng, KINDS), m = Math.min(n - i, 3 + Math.floor(rng() * 6)); for (let k = 0; k < m; k++, i++) rows.push(kind); }
+  rows.forEach((kind, i) => ridge(xr0 + (i + 0.5) * pitch, kind));
+  // irrigation standpipe (給水栓) at the headland: grey pipe, blue valve wheel, spout, a hose looped on the ground
+  { const sx = -w / 2 + 0.45, sz = -d / 2 + 0.45, g = at(sx, sz);
+    B.cyl('plastic', sx, g - 0.2, sz, 0.05, 0.05, 1.0, 10, { color: [0.62, 0.64, 0.64], cap: true });
+    B.cyl('plastic', sx, g + 0.8, sz, 0.1, 0.1, 0.03, 12, { color: [0.2, 0.36, 0.78], cap: true });
+    B.detail(1, () => { B.beam('plastic', [sx, g + 0.62, sz], [sx + 0.16, g + 0.58, sz + 0.02], 0.035, 0.035, { color: [0.62, 0.64, 0.64] });
+      B.sweep('plastic', circle(0.015, 6), Array.from({ length: 17 }, (_, i) => [sx + 0.55 + Math.cos(i * 0.8) * 0.3, g + 0.01 + i * 0.008, sz + 0.5 + Math.sin(i * 0.8) * 0.3]), { color: [0.2, 0.48, 0.3] }); }); }
+  // the working end: tool shed, drum, crates, a heap under a blue tarp held down by tyres
+  if (shed) {
+    const cx = w / 2 - 1.9, cz = d / 2 - 1.35, SW = 2.6, SD = 1.9;
+    const g0 = Math.min(at(cx - SW / 2, cz - SD / 2), at(cx + SW / 2, cz - SD / 2), at(cx - SW / 2, cz + SD / 2), at(cx + SW / 2, cz + SD / 2));
+    const SH = pick(rng, [[0.55, 0.6, 0.62], [0.52, 0.4, 0.33], [0.6, 0.66, 0.56], [0.74, 0.72, 0.66]]);
+    B.bbox('concrete', cx, g0 - 0.2, cz, SW + 0.2, 0.28, SD + 0.2, 0.02, { color: [0.62, 0.62, 0.6] });
+    inFrame(B, [cx, g0 + 0.08, cz], 0, () => {
+      const H = 2.05;
+      B.box('metalWall', 0, 0, SD / 2 - 0.03, SW, H + 0.25, 0.06, { color: SH });
+      for (const sx of [-1, 1]) { B.box('metalWall', sx * (SW / 2 - 0.03), 0, 0, 0.06, H, SD, { color: SH });
+        B.poly('metalWall', [[sx * SW / 2, H, -SD / 2], [sx * SW / 2, H, SD / 2], [sx * SW / 2, H + 0.25, SD / 2]], [sx, 0, 0], { color: SH }); }
+      B.box('metalWall', -SW / 4 - 0.02, 0, -SD / 2 + 0.03, SW / 2, H, 0.06, { color: mul(SH, 0.92) });                               // fixed leaf
+      B.box('metalWall', SW / 4 + 0.02, 0, -SD / 2 - 0.03, SW / 2, H - 0.05, 0.05, { color: mul(SH, 1.05) });                          // sliding leaf
+      B.box('steel', 0, H - 0.02, -SD / 2 - 0.07, SW, 0.05, 0.04, { color: [0.5, 0.5, 0.5] });                                           // door rail
+      shedRoof(B, { w: SW, d: SD, y: H + 0.27, pitch: Math.atan2(-0.25, SD), over: 0.2, mat: 'roofMetal', color: mul(SH, 0.85), t: 0.05 });
+      B.detail(1, () => { B.box('steel', SW / 4 - 0.35, 1.0, -SD / 2 - 0.07, 0.04, 0.2, 0.03, { color: [0.3, 0.3, 0.3] }); B.box('plain', 0, 0.05, -SD / 2 - 0.02, SW, 0.08, 0.04, { color: [0.35, 0.3, 0.26] }); });
+    });
+    const dx = cx - SW / 2 - 0.7, dz = cz + 0.3, gd = at(dx, dz);
+    B.cyl('plastic', dx, gd - 0.02, dz, 0.3, 0.3, 0.9, 14, { color: pick(rng, [[0.2, 0.4, 0.75], [0.25, 0.28, 0.3], [0.6, 0.26, 0.2]]), cap: true });
+    if (rng() < 0.7) { const hx = -w / 2 + 1.8, hz = d / 2 - 1.5, gh = at(hx, hz);
+      B.bbox('plastic', hx, gh - 0.05, hz, 1.9, 0.65, 1.4, 0.28, { color: [0.2, 0.4, 0.78] });
+      B.detail(1, () => { for (const [ox, oz] of [[-0.5, -0.3], [0.45, 0.35]]) B.cyl('dark', hx + ox, gh + 0.55, hz + oz, 0.28, 0.28, 0.16, 12, { color: [0.12, 0.12, 0.12], cap: true }); }); }
+    B.detail(1, () => { for (let k = 0; k < 4; k++) { const bx = dx - 0.9 + (k % 2) * 0.54, bz = cz - 0.4, by = at(bx, bz) - 0.02 + Math.floor(k / 2) * 0.3;
+      B.bbox('plastic', bx, by, bz, 0.52, 0.29, 0.36, 0.02, { color: k % 3 ? [0.9, 0.72, 0.18] : [0.24, 0.52, 0.34] }); } });
+  }
+  // scarecrow (案山子) in a furrow: a pole and crossbar, an old shirt, a sack head and a straw hat
+  if (rng() < 0.22 && n > 3) {
+    const kx = xr0 + pitch * Math.floor(n / 2), kz = lerp(zA, zB, 0.3 + rng() * 0.4), g = at(kx, kz);
+    B.cyl('wood', kx, g - 0.3, kz, 0.03, 0.03, 1.95, 6, { color: [0.5, 0.4, 0.3] });
+    B.beam('wood', [kx - 0.6, g + 1.25, kz], [kx + 0.6, g + 1.25, kz], 0.035, 0.035, { color: [0.5, 0.4, 0.3] });
+    B.bbox('plain', kx, g + 0.75, kz, 0.46, 0.58, 0.2, 0.06, { color: pick(rng, [[0.3, 0.38, 0.6], [0.66, 0.3, 0.26], [0.7, 0.66, 0.5]]) });
+    B.bbox('plain', kx, g + 1.12, kz, 1.1, 0.22, 0.16, 0.05, { color: [0.7, 0.66, 0.52] });
+    B.bbox('plain', kx, g + 1.38, kz, 0.26, 0.28, 0.24, 0.1, { color: [0.86, 0.8, 0.66] });
+    B.cyl('plain', kx, g + 1.6, kz, 0.34, 0.34, 0.03, 14, { color: [0.82, 0.72, 0.46], cap: true }); B.cyl('plain', kx, g + 1.62, kz, 0.14, 0.12, 0.12, 10, { color: [0.82, 0.72, 0.46], cap: true });
+  }
 }

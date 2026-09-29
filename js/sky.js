@@ -13,7 +13,7 @@ const up = new THREE.Vector3(0, 1, 0);
 // sun: sunlight colour & intensity, cLit/cShade: cloud colours, glowAmt: strength of the sun glow, exp: exposure,
 // fogD / haze: base fog and distance haze (aerial perspective) multipliers — hazy dawn and golden hour, crisp midday
 const KEYS = [
-  [0.0, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#0b1022', fog: '#18264f', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.25, fogD: 1.0, haze: 0.8 }],
+  [0.0, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#05070f', fog: '#0b1231', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.12, fogD: 1.0, haze: 0.8 }],
   [4.7, { zen: '#0f1c4a', hor: '#5a5596', glow: '#c4739e', gnd: '#171a36', fog: '#3d3f78', sun: '#ff9f66', sunI: 0, cLit: '#9a86c0', cShade: '#2e3066', glowAmt: 0.6, exp: 1.2, fogD: 1.25, haze: 1.1 }],
   [5.9, { zen: '#3056a0', hor: '#ffb690', glow: '#ff7f62', gnd: '#4a3a55', fog: '#e0a3a0', sun: '#ff9f66', sunI: 1.5, cLit: '#ffc9a8', cShade: '#8272b0', glowAmt: 1.0, exp: 1.05, fogD: 1.55, haze: 1.35 }],
   [7.2, { zen: '#3a8ae6', hor: '#d2ecff', glow: '#fff0c8', gnd: '#5d6b4a', fog: '#bfdcf6', sun: '#ffe6bd', sunI: 2.6, cLit: '#ffffff', cShade: '#a4b6de', glowAmt: 0.45, exp: 1.0, fogD: 1.3, haze: 1.15 }],
@@ -23,7 +23,7 @@ const KEYS = [
   [17.2, { zen: '#3b72cc', hor: '#ffe0a8', glow: '#ffb462', gnd: '#6e5c42', fog: '#f3cfa4', sun: '#ffc47a', sunI: 2.6, cLit: '#fff1d8', cShade: '#b4a4cc', glowAmt: 0.9, exp: 1.0, fogD: 1.15, haze: 1.2 }],
   [17.95, { zen: '#354a9e', hor: '#ffa070', glow: '#ff6258', gnd: '#4e3a4c', fog: '#e6918a', sun: '#ff7e48', sunI: 1.8, cLit: '#ffb894', cShade: '#8f6eac', glowAmt: 1.2, exp: 1.05, fogD: 1.25, haze: 1.3 }],
   [18.55, { zen: '#1b2663', hor: '#8e5d9e', glow: '#dc6a86', gnd: '#1d1b36', fog: '#4f3f78', sun: '#ff7e48', sunI: 0, cLit: '#c982a6', cShade: '#3c326e', glowAmt: 0.8, exp: 1.15, fogD: 1.05, haze: 1.05 }],
-  [19.4, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#0b1022', fog: '#18264f', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.25, fogD: 0.9, haze: 0.8 }],
+  [19.4, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#05070f', fog: '#0b1231', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.12, fogD: 0.9, haze: 0.8 }],
 ];
 const COLS = ['zen', 'hor', 'glow', 'gnd', 'fog', 'sun', 'cLit', 'cShade'], NUMS = ['sunI', 'glowAmt', 'exp', 'fogD', 'haze'];
 const PAL = KEYS.map(([h, k]) => { const o = { h }; for (const c of COLS) o[c] = new THREE.Color(k[c]); for (const n of NUMS) o[n] = k[n]; return o; });
@@ -57,7 +57,11 @@ const skyU = {
   uZen: { value: pal.zen }, uHor: { value: pal.hor }, uGlow: { value: pal.glow }, uGnd: { value: pal.gnd }, uGlowAmt: { value: 0 },
   uSunDisk: { value: new THREE.Vector3() }, uMoonDir: { value: new THREE.Vector3() }, uMoonGlow: { value: new THREE.Vector3() },
   uNightSky: { value: 0 }, uCel: { value: celestial.inv },
+  uTown: { value: new THREE.Vector4() }, uTownCol: { value: new THREE.Vector3(1.0, 0.6, 0.34) },
 };
+// light pollution over the town: centre (x, z), radius and strength, set by the map; followCamera makes it camera-relative
+const townGlow = { x: 0, z: 0, r: 0, s: 0 };
+export function setTownGlow(x, z, r, s) { Object.assign(townGlow, { x, z, r, s }); }
 const skyMat = new THREE.ShaderMaterial({
   uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
   vertexShader: /* glsl */`
@@ -70,7 +74,7 @@ const skyMat = new THREE.ShaderMaterial({
       #endif
     }`,
   fragmentShader: /* glsl */`
-    uniform sampler2D tNoise; uniform float uTime, uNightSky, uGlowAmt; uniform vec3 uSunDir, uSunDisk, uMoonDir, uMoonGlow, uZen, uHor, uGlow, uGnd; uniform mat3 uCel;
+    uniform sampler2D tNoise; uniform float uTime, uNightSky, uGlowAmt; uniform vec3 uSunDir, uSunDisk, uMoonDir, uMoonGlow, uZen, uHor, uGlow, uGnd, uTownCol; uniform mat3 uCel; uniform vec4 uTown;
     varying vec3 vW;
     const float PI = 3.14159265359;
     void main(){
@@ -106,6 +110,17 @@ const skyMat = new THREE.ShaderMaterial({
         col += mw * smoothstep(-0.02, 0.35, d.y) * uNightSky;
         float mm = max(dot(d, uMoonDir), 0.0);
         col += uMoonGlow * (pow(mm, 300.0) * 1.2 + pow(mm, 30.0) * 0.25 + pow(mm, 5.0) * 0.06) * uNightSky;
+      }
+      // light pollution: a faint warm dome low over the lit town — in its direction from outside, all round from within,
+      // weaker the farther away the town is
+      if (uTown.w > 0.0) {
+        float dist = length(uTown.xy), inside = 1.0 - smoothstep(uTown.z * 0.5, uTown.z * 1.1, dist);
+        vec2 hd = normalize(d.xz + vec2(1e-5));
+        float ca = dot(hd, uTown.xy / max(dist, 1e-3)), wid = min(atan(uTown.z, max(dist, 1.0)) * 1.3 + 0.15, 3.0);
+        float az = mix(smoothstep(cos(wid), 1.0, ca), 1.0, inside);
+        float alt = exp(-max(d.y, 0.0) * mix(10.0, 5.0, inside)) * smoothstep(-0.12, 0.0, d.y);
+        float fall = uTown.z * uTown.z / (uTown.z * uTown.z + dist * dist * 0.6);
+        col += uTownCol * uTown.w * az * alt * fall;
       }
       gl_FragColor = vec4(max(col, vec3(0.0)), 1.0);
     }`,
@@ -257,11 +272,11 @@ export function updateSky(force) {
   const night = smoothstep(0.02, -0.16, el);
   env.night = night; env.day = smoothstep(-0.05, 0.12, el);
   const p = samplePalette(time.hour);
-  // sunlight by day, a cool bright moon by night (anime nights stay readable)
+  // sunlight by day; at night a faint cool moon — the landscape falls into darkness and the lamps light the town
   const useSun = el > -0.02;
   env.lightDir.copy(useSun ? sunDir : env.moonDir);
   if (useSun) { sun.color.copy(p.sun); sun.intensity = p.sunI * smoothstep(-0.02, 0.05, el); }
-  else { sun.color.copy(MOON); sun.intensity = 0.65 * smoothstep(-0.02, -0.12, el); }
+  else { sun.color.copy(MOON); sun.intensity = 0.1 * smoothstep(-0.02, -0.12, el); }
   S.uSunCol.value.set(sun.color.r, sun.color.g, sun.color.b).multiplyScalar(sun.intensity);
   skyU.uGlowAmt.value = p.glowAmt;
   skyU.uSunDisk.value.set(p.sun.r + 1, p.sun.g + 1, p.sun.b + 1).multiplyScalar(0.5 * smoothstep(-0.04, 0.02, el) * 3.0); // halfway to white
@@ -279,10 +294,12 @@ export function updateSky(force) {
   if (force || Math.abs(time.hour - lastEnvHour) > 0.05 || envTimer <= 0) {
     lastEnvHour = time.hour; envTimer = 180;
     if (envRT) envRT.dispose();
+    const tw = skyU.uTown.value.w; skyU.uTown.value.w = 0; // the glow is local: keep it out of the global ambient
     envRT = withStandardDepth(() => pmrem.fromScene(skyScene, 0.04));
+    skyU.uTown.value.w = tw;
     scene.environment = envRT.texture;
   }
-  scene.environmentIntensity = 1.0 + 1.8 * night; // anime nights stay readable: a brighter blue fill in the shadows
+  scene.environmentIntensity = lerp(1.0, 0.2, night); // the night sky's fill: dim blue, so unlit ground reads dark
   scene.fog.color.copy(p.fog);
   scene.fog.density = 0.00022 * p.fogD; env.haze = p.haze;
   S.uFogCol.value.set(p.fog.r, p.fog.g, p.fog.b);
@@ -298,6 +315,7 @@ const lsInv = new THREE.Matrix4(), lsMat = new THREE.Matrix4(), snapV = new THRE
 let csmFrame = 0;
 export function followCamera(groundAt, yaw) {
   const c = camera.position;
+  skyU.uTown.value.set(townGlow.x - c.x, townGlow.z - c.z, townGlow.r, townGlow.s * env.night);
   clouds.position.copy(c);
   const cs = cloudShadow; cs.p.x = S.uTime.value; cs.p.y = cloudU.uCover.value; cs.p.z = (cloudU.uBottom.value + cloudU.uTop.value) / 2;
   cs.sun.x = env.lightDir.x; cs.sun.y = env.lightDir.y; cs.sun.z = env.lightDir.z;

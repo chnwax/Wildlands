@@ -8,9 +8,11 @@ import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js'
 import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
-import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, inFrame, shedRoof } from './building.js';
+import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, field, inFrame, shedRoof } from './building.js';
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
+import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
+import { setTownGlow } from './sky.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
 import { RAIL, buildRailway, railFences, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
@@ -741,7 +743,7 @@ export async function build(progress) {
       hf.paint2(0, lot.x - 14, lot.z - 14, lot.x + 14, lot.z + 14, (x2, z2) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x2 - lot.x, dz = z2 - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 && Math.abs(dx * s2 + dz * c) < lot.d / 2 ? 1 : 0; }); continue; }
     if (lot.kind === 'carpark') { for (const sp of carPark(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng, extras)) if (rng() < 0.6) carSpots.push(sp);
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x2, z2) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x2 - lot.x, dz = z2 - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 && Math.abs(dx * s2 + dz * c) < lot.d / 2 ? 1 : 0; }); continue; }
-    if (lot.kind === 'garden') { allotment(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, rng);
+    if (lot.kind === 'garden') { allotment(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d }, mulberry32((Math.floor(lot.x * 131 + lot.z * 977) >>> 0) + 17), (x, z) => hf.groundAt(x, z));
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x2, z2) => { const c = Math.cos(lot.r), s2 = Math.sin(lot.r), dx = x2 - lot.x, dz = z2 - lot.z; return Math.abs(dx * c - dz * s2) < lot.w / 2 - 0.5 && Math.abs(dx * s2 + dz * c) < lot.d / 2 - 1 ? 1 : 0; }); continue; }
     if (lot.shop) {
       shopBuilding(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: Math.min(lot.d, 12), old: lot.district === 'old' || lot.era === 'old' }, rng, extras);
@@ -780,18 +782,56 @@ export async function build(progress) {
     }
     if (++li % 40 === 0) { progress('Building houses', 0.5 + 0.12 * li / lots.length); await tick(); }
   }
-  // agricultural edge: vegetable fields and tunnel greenhouses on the flat land past the last streets, along farm tracks
+  // agricultural edge (畑): open vegetable fields, tunnel greenhouses and the odd fenced kitchen garden on the flat land
+  // past the last streets. Size, row direction and spacing vary, grass headlands (畦) stay between the plots, and each
+  // is reached by an earth track from the nearest road or farm track
   {
-    const frng = mulberry32(4711);
-    for (let fx = -392; fx < 104; fx += 23 + frng() * 6) for (let fz = 274; fz < 330; fz += 27 + frng() * 5) {
-      const w = 16 + frng() * 5, d = 20 + frng() * 5, y = hf.groundAt(fx, fz);
-      if (occRect(fx, fz, w / 2 + 1, d / 2 + 1, 0, 0, true) || inPaddyZone(fx, fz) || Math.abs(y - Y0) > 0.8 || Math.abs(hf.groundAt(fx + w / 2, fz + d / 2) - y) > 0.6) continue;
-      const roll = frng(); if (roll < 0.25) continue;
-      occRect(fx, fz, w / 2, d / 2, 0, 1);
-      if (roll < 0.55) { greenhouse(B, { x: fx - 3.1, y, z: fz, r: 0, w: 5.4, d: d - 2 }, frng); greenhouse(B, { x: fx + 3.1, y, z: fz, r: 0, w: 5.4, d: d - 2 }, frng); addBox(fx, fz, 5.8, d / 2 - 1, 0); }
-      else allotment(B, { x: fx, y, z: fz, r: frng() < 0.5 ? 0 : Math.PI / 2 * 0, w, d }, frng);
-      hf.paint2(2, fx - w / 2, fz - d / 2, fx + w / 2, fz + d / 2, () => 1);
-      hf.paint2(0, fx - w / 2, fz - d / 2, fx + w / 2, fz + d / 2, () => 0.35);
+    const frng = mulberry32(4711), gy = (x, z) => hf.groundAt(x, z), ways = ROADS.filter(R => R.kind !== 'main');
+    const nearWay = (x, z) => { let best = null;
+      for (const R of ways) for (let i = 0; i + 1 < R.pts.length; i++) { const a = R.pts[i], b = R.pts[i + 1], ex = b[0] - a[0], ez = b[1] - a[1];
+        const t = clamp(((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez), 0, 1), px = a[0] + ex * t, pz = a[1] + ez * t, dd = Math.hypot(x - px, z - pz);
+        if (!best || dd < best.d) best = { d: dd, x: px, z: pz, R }; }
+      return best; };
+    const fields = [];
+    for (let t = 0; t < 1400 && fields.length < 44; t++) {
+      const fx = -398 + frng() * 506, fz = 268 + frng() * 80, gh = frng() < 0.24, n = 1 + Math.floor(frng() * 3.4);
+      const w = gh ? n * 6.6 : 9 + frng() * 16, d = gh ? 16 + frng() * 14 : 12 + frng() * 18;
+      const r = (gh || frng() < 0.55 ? 0 : Math.PI / 2) + (frng() - 0.5) * 0.05, c = Math.cos(r), s = Math.sin(r);
+      const W = (lx, lz) => [fx + lx * c + lz * s, fz - lx * s + lz * c];
+      const hs = [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]].map(([a, b]) => { const p = W(a * w / 2, b * d / 2); return hf.groundAt(p[0], p[1]); });
+      if (Math.max(...hs) - Math.min(...hs) > (gh ? 0.35 : 0.9) || Math.abs(hs[0] - Y0) > 1.2 || inPaddyZone(fx, fz)) continue;
+      if (occRect(fx, fz, w / 2 + 2.2, d / 2 + 2.2, r, 0, true)) continue;
+      occRect(fx, fz, w / 2 + 0.5, d / 2 + 0.5, r, 1);
+      const y = hs[0], prng = mulberry32(90001 + t * 7919); // each plot's contents draw from their own stream: the layout stays put
+      if (gh) { // a row of tunnel houses side by side; walls collide, the open south door lets you walk in
+        const film = frng() < 0.15 ? 'bare' : frng() < 0.4 ? 'old' : 'new', hgt = 2.9 + frng() * 0.5;
+        for (let k = 0; k < n; k++) { const lx = -w / 2 + 3.3 + k * 6.6, [gx, gz] = W(lx, 0);
+          greenhouse(B, { x: gx, y: hf.groundAt(gx, gz), z: gz, r, w: 5.4, d, film, h: hgt }, prng, gy);
+          if (film === 'bare') continue;
+          for (const sd of [-1, 1]) { const [bx, bz] = W(lx + sd * 2.7, 0); addBox(bx, bz, 0.08, d / 2, r); }
+          for (const e of [-1, 1]) for (const sd of [-1, 1]) { const [bx, bz] = W(lx + sd * 1.65, e * d / 2); addBox(bx, bz, 1.05, 0.08, r); }
+          { const [bx, bz] = W(lx, -d / 2); addBox(bx, bz, 0.6, 0.08, r); } }
+      } else if (fz < 300 && frng() < 0.2) allotment(B, { x: fx, y, z: fz, r, w, d }, prng, gy);
+      else field(B, { x: fx, y, z: fz, r, w, d, shed: frng() < 0.4 }, prng, gy);
+      fields.push({ x: fx, z: fz, w, d, r, kind: gh ? 'greenhouse' : 'field' });
+      // no grass on the plot (just inside its edge: the soil mesh covers the rest, blades stand along the border)
+      hf.paint2(2, fx - w, fz - d, fx + w, fz + d, (px, pz) => { const dx = px - fx, dz = pz - fz, lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < w / 2 - 0.4 && Math.abs(lz) < d / 2 - 0.4 ? 1 : 0; });
+      // access: an earth track from the plot's edge to the nearest road or farm track, if it runs clear of everything
+      const q = nearWay(fx, fz); if (!q) continue;
+      const dx = q.x - fx, dz = q.z - fz, lx = dx * c - dz * s, lz = dx * s + dz * c;
+      const alongX = Math.abs(lx) / (w / 2) > Math.abs(lz) / (d / 2), e = alongX ? [Math.sign(lx) * w / 2, clamp(lz, -d / 2 + 1.5, d / 2 - 1.5)] : [clamp(lx, -w / 2 + 1.5, w / 2 - 1.5), Math.sign(lz) * d / 2];
+      const p0 = W(e[0], e[1]), L = Math.hypot(q.x - p0[0], q.z - p0[1]) - (q.R.w || 3) / 2;
+      if (L < 0.8 || L > 36) continue;
+      const ux = (q.x - p0[0]) / (L + (q.R.w || 3) / 2), uz = (q.z - p0[1]) / (L + (q.R.w || 3) / 2);
+      let clear = true; for (let k = 1.5; k < L - 0.5 && clear; k += 1) if (occRect(p0[0] + ux * k, p0[1] + uz * k, 1.2, 0.5, Math.atan2(ux, uz), 0, true)) clear = false;
+      if (!clear) continue;
+      const nx = -uz * 1.15, nz = ux * 1.15, N = Math.max(1, Math.ceil((L + 0.6) / 2));
+      B.frame(0, 0, 0, 0);
+      for (let k = 0; k < N; k++) { const t0 = (L + 0.6) * k / N - 0.3, t1 = (L + 0.6) * (k + 1) / N - 0.3, a = [p0[0] + ux * t0, p0[1] + uz * t0], b = [p0[0] + ux * t1, p0[1] + uz * t1];
+        const P = (pp, sg) => [pp[0] + nx * sg, gy(pp[0] + nx * sg, pp[1] + nz * sg) + 0.035, pp[1] + nz * sg];
+        B.quad('soil', P(a, 1), P(b, 1), P(b, -1), P(a, -1), { color: [0.56, 0.47, 0.37], uvs: [P(a, 1), P(b, 1), P(b, -1), P(a, -1)].map(v => [v[0] / 2.5, v[2] / 2.5]) }); }
+      occRect(p0[0] + ux * L / 2, p0[1] + uz * L / 2, 1.2, L / 2, Math.atan2(ux, uz), 1);
+      hf.paint2(2, Math.min(p0[0], q.x) - 2, Math.min(p0[1], q.z) - 2, Math.max(p0[0], q.x) + 2, Math.max(p0[1], q.z) + 2, (px, pz) => { const vx = px - p0[0], vz = pz - p0[1], t = vx * ux + vz * uz; return t > 0 && t < L && Math.abs(vx * uz - vz * ux) < 0.8 ? 1 : 0; });
     }
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
@@ -1164,10 +1204,9 @@ export async function build(progress) {
   // town geometry, props, vehicles are not reflected by the river (keeps the reflection pass cheap)
   for (const o of scene.children) if (!reflected.has(o)) o.traverse(c => c.layers.set(1));
 
-  // ---------------------------------------------------------------- night lighting: a few real point lights follow the nearest fixtures
-  const plights = [];
-  for (let i = 0; i < 6; i++) { const l = new THREE.PointLight(0xffd9a8, 0, 22, 2); scene.add(l); plights.push(l); }
-  let lightTimer = 0;
+  // ---------------------------------------------------------------- night lighting: every fixture lights its surroundings (citylights.js)
+  const cityLights = buildCityLights(lampPoints);
+  setTownGlow(-140, -5, 330, 0.035);
 
   // people on the streets: sidewalks of the main road, lane shoulders, the riverside walkways and the shrine approach
   const walkPaths = [];
@@ -1218,14 +1257,7 @@ export async function build(progress) {
       updateCrossings(dt, t); signals.update(dt);
       traffic.update(dt, pl, night.value > 0.35);
       fleet.commit();
-      lightTimer -= dt;
-      if (lightTimer < 0) {
-        lightTimer = 0.5;
-        const on = night.value > 0.25;
-        const near = on ? lampPoints.map(l => ({ l, d: Math.hypot(l.p[0] - cam.position.x, l.p[2] - cam.position.z) })).sort((a, b) => a.d - b.d).slice(0, plights.length) : [];
-        plights.forEach((L, i) => { const n = near[i]; if (n && n.d < 90) { L.position.set(n.l.p[0], n.l.p[1] - 0.2, n.l.p[2]); L.userData.target = 18 * n.l.s * night.value; } else L.userData.target = 0; });
-      }
-      for (const L of plights) L.intensity = lerp(L.intensity, L.userData.target || 0, 1 - Math.exp(-dt * 4));
+      cityLightU.uCLI.value = smoothstep(0.2, 0.5, night.value); // lamps come on together at dusk
     },
   };
   // signage LOD: canvas-textured signs, plates and machine fronts are separate meshes (one texture each); they cast no
@@ -1239,5 +1271,6 @@ export async function build(progress) {
     if (signTick++ % 6 === 0) { const R = 190 * (Q.lodScale || 1), R2 = R * R, p = cam.position;
       for (const o of smallSigns) { const dx = o.position.x - p.x, dz = o.position.z - p.z; o.visible = dx * dx + dz * dz < R2; } } };
   people.update(0);
+  world.cityLights = Object.assign(cityLights, { materials: enableCityLights(scene) });
   return world;
 }

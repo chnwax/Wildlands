@@ -10,7 +10,10 @@ export const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1
 export function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 // yield to the browser between build steps. A message-channel task, not setTimeout: timers in a background tab are
 // throttled to once a minute, which would stall a load the player switched away from
-export const tick = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => { c.port1.close(); r(); }; c.port2.postMessage(0); });
+// (one long-lived channel: a throwaway channel's ports can be garbage-collected before the message arrives)
+const tickCh = new MessageChannel(), tickQ = [];
+tickCh.port1.onmessage = () => { const r = tickQ.shift(); if (r) r(); };
+export const tick = () => new Promise(r => { let done = false; const go = () => { if (!done) { done = true; r(); } }; tickQ.push(go); tickCh.port2.postMessage(0); setTimeout(go, 50); });
 
 let SEED = 20260926;
 export function setSeed(s) { SEED = s | 0; }
