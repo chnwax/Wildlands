@@ -1,0 +1,3 @@
+quaternius_man.glb    "Man" by Quaternius — https://poly.pizza/m/HMnuH5geEG — Public Domain (CC0)
+quaternius_woman.glb  "Animated Woman" by Quaternius — https://poly.pizza/m/9kF7eTDbhO — Public Domain (CC0)
+Walk and idle clips are baked to vertex-animation textures at load (js/crowd.js).

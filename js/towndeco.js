@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvasTex, signMesh, JP_FONT, lampPoints, materials } from './townkit.js';
 import { wallFill, reveals, windowUnit, inFrame } from './building.js';
 import { cropSet } from './crops.js';
+import { crowdMeshes } from './crowd.js';
 import { torii, shimenawa, toro, offeringBox } from './shrine.js';
 
 const plantAt = (B, type, lx, ly, lz, rng, s = 1) => { const p = B.P([lx, ly, lz]); cropSet.add(type, p[0], p[1], p[2], B.F.r + rng() * Math.PI * 2, s * (0.85 + rng() * 0.3)); };
@@ -750,7 +751,7 @@ const HAIR = [[0.08, 0.07, 0.07], [0.08, 0.07, 0.07], [0.22, 0.14, 0.1], [0.36, 
 const BAGS = [[0.2, 0.14, 0.1], [0.12, 0.14, 0.22], [0.75, 0.18, 0.16], [0.9, 0.62, 0.3]];
 
 // paths: [{ pts: [[x,z],...], off, lift(x,z) }]; people walk along a path at `off` metres to one side, turning at the ends
-export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null } = {}) {
+export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null, crowd = null } = {}) {
   const rng = mulberry32(seed), geo = personGeometry();
   const walkers = [];
   const lens = paths.map(P => { let L = 0; const seg = []; for (let i = 0; i + 1 < P.pts.length; i++) { const l = Math.hypot(P.pts[i + 1][0] - P.pts[i][0], P.pts[i + 1][1] - P.pts[i][1]); seg.push(l); L += l; } P.seg = seg; P.L = L; return L; });
@@ -763,8 +764,10 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null 
     cols.set([...shirt, ...pants, ...hair, ...bag], i * 12);
     const speed = (kid ? 1.05 : 1.2) + rng() * 0.35, scale = kid ? 0.78 + rng() * 0.08 : 0.95 + rng() * 0.12;
     ps[i * 2] = rng() * 6.28; ps[i * 2 + 1] = speed * 2.9 / scale;
-    walkers.push({ P, s: u, dir: rng() < 0.5 ? 1 : -1, side: rng() < 0.5 ? 1 : -1, speed, scale, pause: 0, x: 0, z: 0 });
+    walkers.push({ P, s: u, dir: rng() < 0.5 ? 1 : -1, side: rng() < 0.5 ? 1 : -1, speed, scale, pause: 0, x: 0, z: 0, model: rng() < 0.5 ? 0 : 1, colour: { shirt, pants, hair }, phase: rng() });
   }
+  // rigged characters with baked animation (crowd.js) when they loaded; the box figures otherwise
+  const C = crowd ? crowdMeshes(crowd, walkers, walkers.map(w => w.colour)) : null;
   // shirt, trousers, hair and bag colours: 12 floats per person, read as three vec4 views
   const buf = new THREE.InstancedInterleavedBuffer(cols, 12, 1);
   geo.setAttribute('iColA', new THREE.InterleavedBufferAttribute(buf, 4, 0));
@@ -796,7 +799,7 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null 
   mat.customProgramCacheKey = () => 'people';
   const im = new THREE.InstancedMesh(geo, mat, count);
   im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
-  scene.add(im);
+  if (!C) scene.add(im);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3();
   const at = (P, s) => { // point + direction along a polyline
     s = clamp(s, 0, P.L);
@@ -823,12 +826,12 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null 
       const y = groundAt(w.x, w.z) + (w.P.lift ? w.P.lift(w.x, w.z) : 0);
       q.setFromAxisAngle(up, Math.atan2(dx * w.dir, dz * w.dir));
       m4.compose(v.set(w.x, y, w.z), q, sc.setScalar(w.scale));
-      im.setMatrixAt(i, m4);
+      if (C) C.set(i, m4, w.phase, w.speed / (1.4 * w.scale), w.waiting ? 1 : 0); // one gait cycle (two steps) ≈ 1.4 m
+      else im.setMatrixAt(i, m4);
     }
-    im.instanceMatrix.needsUpdate = true;
-    if (animChanged) walkAttr.needsUpdate = true;
+    if (C) C.commit(); else { im.instanceMatrix.needsUpdate = true; if (animChanged) walkAttr.needsUpdate = true; }
   };
-  return { mesh: im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz); if (d < 0.6 && d > 1e-4) { p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
+  return { mesh: C ? C.meshes[0] : im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz); if (d < 0.6 && d > 1e-4) { p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
 }
 
 // municipal tennis courts (市民テニスコート): two sand-filled artificial-grass courts inside a 4 m chain-link cage, nets on
