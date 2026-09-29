@@ -594,9 +594,14 @@ export async function build(progress) {
     hf.paint2(0, 114, TC.z - 2.2, TC.x - 18, TC.z + 2.2, () => 1); hf.paint2(2, 114, TC.z - 1.6, TC.x - 18, TC.z + 1.6, () => 1);
     RN.cuts.push({ id: 'B', side: -1, s0: sOf('B', 110, TC.z) - 1.5, s1: sOf('B', 110, TC.z) + 1.5 });
   }
-  playground(B, PK.x, hf.groundAt(PK.x, PK.z), PK.z, Math.PI, PK.w, PK.d, drng, parkTrees, extras);
-  hf.paint2(0, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4 && Math.abs(z - PK.z) < PK.d / 2 - 4 ? 1 : 0);
-  hf.paint2(2, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 4.5 && Math.abs(z - PK.z) < PK.d / 2 - 4.5 ? 1 : 0);
+  const park = playground(B, PK.x, hf.groundAt(PK.x, PK.z), PK.z, Math.PI, PK.w, PK.d, drng, parkTrees, extras, lampPoints, bikeList);
+  { // packed-earth play areas, a mown lawn in the middle (the park is turned 180 degrees: local = -(world - centre))
+    const [l0, m0, l1, m1] = park.lawn, inLawn = (x, z) => { const lx = -(x - PK.x), lz = -(z - PK.z); return lx > l0 && lx < l1 && lz > m0 && lz < m1; };
+    hf.paint2(0, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 1 && Math.abs(z - PK.z) < PK.d / 2 - 1 && !inLawn(x, z) ? 1 : 0);
+    hf.paint2(2, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => Math.abs(x - PK.x) < PK.w / 2 - 1.5 && Math.abs(z - PK.z) < PK.d / 2 - 1.5 && !inLawn(x, z) ? 1 : 0);
+    hf.paint2(3, PK.x - PK.w / 2, PK.z - PK.d / 2, PK.x + PK.w / 2, PK.z + PK.d / 2, (x, z) => inLawn(x, z) ? 1 : 0);
+    hf.paint2(2, PK.x - 2, PK.z - PK.d / 2 - 4, PK.x + 2, PK.z - PK.d / 2 + 1, () => 1);   // the entrance path out to the street
+  }
 
   // little street shrines on free corners where lanes meet
   const shrineSpots = [];

@@ -8,7 +8,9 @@ export const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 export function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-export const tick = () => new Promise(r => setTimeout(r, 0));
+// yield to the browser between build steps. A message-channel task, not setTimeout: timers in a background tab are
+// throttled to once a minute, which would stall a load the player switched away from
+export const tick = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => { c.port1.close(); r(); }; c.port2.postMessage(0); });
 
 let SEED = 20260926;
 export function setSeed(s) { SEED = s | 0; }
