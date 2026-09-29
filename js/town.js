@@ -15,7 +15,7 @@ import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { setTownGlow } from './sky.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
-import { RAIL, buildRailway, railFences, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
+import { RAIL, buildRailway, railFences, trackside, buildCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads } from './roads.js';
 
@@ -25,7 +25,8 @@ const riverX = z => 215 + 22 * Math.sin(z * 0.0075) + 8 * Math.sin(z * 0.021 + 1
 const PADDIES = [[-650, -330, -430, -110], [-650, -40, -430, 330], [262, 0, 650, 330], [262, -330, 650, -100]];
 const inPaddyZone = (x, z) => PADDIES.some(([a, b, c, d]) => x > a && x < c && z > b && z < d);
 const SHRINE = { x: -60, z: -300 };
-const XINGS = [[110, 5.2], [-150, 2.7], [-400, 2.7]]; // level crossings: road centre x, half width incl. footways
+// level crossings: road centre x, half width incl. footways (the riverside lane R crosses the line beside the rail bridge)
+const XINGS = [[110, 5.2], [-150, 2.7], [-400, 2.7], [riverX(-80) - 21, 2.55]];
 const LEVEL = [[-147, 190, -32.5, 256]]; // school block
 const RIVER_STAIRS = [[-170, 1], [-150, -1], [95, -1], [130, 1], [270, -1]]; // [z where the stair starts, bank side]
 const SHRINE_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
@@ -129,7 +130,7 @@ const ROADS = [
   { id: 'Y1', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.97, pts: [[-210, -150], [-212, -170], [-209, -190]] },
   { id: 'Y3', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.93, pts: [[40, -225], [42, -245], [39, -262]] },
   { id: 'F', kind: 'lane', w: 4.0, pts: [[110, 200], [640, 200]], mat: 'asphalt', age: 0.95 }, // service road out to the yards
-  { id: 'R', kind: 'lane', w: 4.5, pts: Array.from({ length: 34 }, (_, i) => { const z = -335 + i * 20; return [riverX(z) - 21, z]; }), mat: 'asphalt', age: 0.6 },
+  { id: 'R', kind: 'lane', w: 4.5, pts: Array.from({ length: 34 }, (_, i) => { const z = -335 + i * 20; return [riverX(Math.abs(z + 80) < 26 ? -80 : z) - 21, z]; }), mat: 'asphalt', age: 0.6 }, // square across the railway
   { id: 'P', kind: 'path', w: 3.0, pts: [[SHRINE.x, -225], [SHRINE.x, SHRINE.z + 4]], mat: 'gravelPath' },
   // the blocks are subdivided the way the town actually grew: mid-block lanes that wander with the old plot lines, dead-end
   // roji off the through roads, short cross lanes that stop the grid from lining up, a rear lane along the railway, and
@@ -411,12 +412,13 @@ export async function build(progress) {
       }
     };
   }
-  // level crossings on B, C, D
-  const crossingRoads = ROADS.filter(R => ['B', 'C', 'D'].includes(R.id));
+  // level crossings on B, C, D and the riverside lane R (every road that meets the line at grade gets gates)
+  const crossingRoads = ROADS.filter(R => ['B', 'C', 'D', 'R'].includes(R.id));
+  const xAtRail = R => { for (let i = 0; i + 1 < R.pts.length; i++) { const [ax, az] = R.pts[i], [bx, bz] = R.pts[i + 1]; if ((az + 80) * (bz + 80) <= 0 && az !== bz) return ax + (bx - ax) * (-80 - az) / (bz - az); } return R.pts[0][0]; };
   const Bx = new GeoBuilder(192);
   const railInfo = buildRailway({ y0: Y0, riverX, B: Bx });
   for (const R of crossingRoads) {
-    const x = R.pts[0][0];
+    const x = xAtRail(R);
     buildCrossing(Bx, x, Y0, R.w + 2 * (R.walk || 0) + 0.4, { hw: R.w / 2, walk: R.walk || 0 });
     if (R.walk) for (const side of [-1, 1]) for (const [za, zb] of [[-73.4, -70.6], [-89.4, -86.6]]) { const sa = sOf(R.id, x, za), sb = sOf(R.id, x, zb); RN.cuts.push({ id: R.id, side, s0: Math.min(sa, sb), s1: Math.max(sa, sb) }); } // footways step down to the crossing
     for (const dir of [-1, 1]) addStop(R.id, sOf(R.id, x, -80 - dir * 8.6), dir, false);
@@ -425,12 +427,16 @@ export async function build(progress) {
   }
   chainMaterial();
   railFences(Bx, (x, z) => hf.groundAt(x, z), Y0, [
-    ...crossingRoads.map(R => [R.pts[0][0] - R.w / 2 - (R.walk || 0) - 3, R.pts[0][0] + R.w / 2 + (R.walk || 0) + 3]),
-    [riverX(-80) - 24, riverX(-80) + 24], [RAIL.stationX + 6 - 9.6, RAIL.stationX + 6 + 9.6, 1], [RAIL.stationX - RAIL.platformLen / 2 + 2.5, RAIL.stationX - RAIL.platformLen / 2 + 9.5, 1]]);
+    ...crossingRoads.map(R => [xAtRail(R) - R.w / 2 - (R.walk || 0) - 3, xAtRail(R) + R.w / 2 + (R.walk || 0) + 3]),
+    [riverX(-80) - 24, riverX(-80) + 24], [RAIL.stationX + 6 - 9.6, RAIL.stationX + 6 + 9.6, 1], [RAIL.stationX - RAIL.platformLen / 2 + 2.5, RAIL.stationX - RAIL.platformLen / 2 + 9.5, 1]], RAIL.stationX);
+  trackside(Bx, (x, z) => hf.groundAt(x, z), Y0, { x0: -PORTALS.railW + 30, x1: PORTALS.railE - 30, stationX: RAIL.stationX, platformLen: RAIL.platformLen,
+    crossX: crossingRoads.map(xAtRail), gaps: [...crossingRoads.map(R => [xAtRail(R) - R.w / 2 - (R.walk || 0) - 4, xAtRail(R) + R.w / 2 + (R.walk || 0) + 4]),
+      [RAIL.stationX - RAIL.platformLen / 2 - 14, RAIL.stationX + RAIL.platformLen / 2 + 4], [riverX(-80) - 25, riverX(-80) + 25]] });
   // occupancy/masks for railway corridor, river corridor, station
   occRect(0, -80, 1000, 13, 0, 1);
   for (let z = -800; z < 800; z += 1) { const rx = riverX(z); occRect(rx, z, 24, 0.6, 0, 1); }
-  hf.paint2(2, -PORTALS.railW, -92, PORTALS.railE, -68, (x, z) => Math.abs(z + 80) < 11 ? 1 : 0);
+  // the maintained track bed and paths stay bare; past them a mown grass verge runs to the fence (wider bare patches here and there)
+  hf.paint2(2, -PORTALS.railW, -92, PORTALS.railE, -68, (x, z) => Math.abs(z + 80) < 8.4 + (Math.sin(x * 0.043) > 0.7 ? 1.6 : 0) + Math.max(0, Math.sin(x * 0.11 + z)) * 0.5 ? 1 : 0);
   // station forecourt: paved square, bus / taxi loop round a raised island (station.js)
   occRect(RAIL.stationX + 6, -47.5, 34, 17, 0, 1);
   hf.paint2(2, -60, -66, 40, -30, (x, z) => x < -34.5 || x > 32 ? 0 : 1); hf.paint2(0, -60, -66, 40, -30, (x, z) => x < -34.5 || x > 32 ? 0 : 1);
@@ -467,16 +473,42 @@ export async function build(progress) {
   }
   // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
   // an aluminium railing, name pillars (親柱) at the four corners, lamps, and steel expansion joints across the road
-  // river access: concrete stairs let into the revetment, running down along the bank to the gravel margin, with a rail
+  // river access (階段護岸): a flight of concrete steps down the revetment from a gap in the bank-top railing to the
+  // gravel margin. The revetment is steep (5.7 m over 2.4 m), so the flight stands in front of it on a solid base: each
+  // tread projects 1.25 m toward the river from the sloped wall, which rises behind the flight as its back wall, and the
+  // flight moves out with the slope as it descends. Anti-slip nosings, a handrail on the open river side, a landing pad
+  // on the margin at the bottom; every tread and the landing are walkable and the open side is railed off.
   for (const [z0, sd] of RIVER_STAIRS) {
-    const rise = 0.19, run = 0.34, n = Math.ceil((Y0 + 0.12 - 0.45) / rise), slopeRd = y2 => 12.2 + (y2 - 0.45) / (Y0 - 0.3) * 2.4;
+    const top = Y0 + 0.12, n = Math.ceil((top - 0.45) / 0.19), R = (top - 0.45) / n, run = 0.34, W = 1.25, RC = { color: [0.3, 0.52, 0.47] };
+    const slopeRd = y2 => 12.2 + (y2 - 0.45) / (Y0 - 0.3) * 2.4, rail = [], wall = [];
+    B.frame(0, 0, 0, 0);
     for (let k = 0; k < n; k++) {
-      const yt = Y0 + 0.12 - (k + 1) * rise, zz = z0 + k * run, rd = slopeRd(yt), rx = riverX(zz);
-      B.frame(rx + sd * (rd + 0.55), yt - 1.2, zz, 0); B.bbox('concrete', 0, 0, 0, 1.1, 1.2, run + 0.01, 0.01, { color: [0.76, 0.76, 0.74], skip: 'ny' });
-      if (k % 4 === 0) { B.frame(rx + sd * (rd + 1.12), yt, zz, 0); B.cyl('steel', 0, 0, 0, 0.025, 0.025, 0.9, 8, { color: [0.3, 0.52, 0.47], cap: true }); }
+      const yt = top - (k + 1) * R, zc = z0 + k * run + run / 2, rx = riverX(zc), rOut = slopeRd(yt) + 0.3, rIn = slopeRd(yt) - W, xc = rx + sd * (rIn + rOut) / 2;
+      B.box('concrete', rx + sd * (rIn - 0.14 + rOut) / 2, 0.1, zc, rOut - rIn + 0.14, yt - 0.1, run + 0.004, { color: [0.76, 0.76, 0.74], skip: 'ny', uv: 1.5 });
+      B.box('dark', rx + sd * (rIn + (W + 0.3) / 2), yt, zc + run / 2 - 0.03, W + 0.3 - 0.1, 0.006, 0.05, { color: [0.26, 0.27, 0.28] }); // nosing
+      addPlatform(xc, zc, (rOut - rIn) / 2, run / 2 + 0.01, 0, yt);
+      wall.push([rx + sd * (rIn - 0.2), zc, yt]);
     }
-    const top = [riverX(z0) + sd * (slopeRd(Y0 + 0.12 - rise) + 1.12), Y0 + 0.12 - rise + 0.9, z0], bot = [riverX(z0 + (n - 1) * run) + sd * (slopeRd(Y0 + 0.12 - n * rise) + 1.12), Y0 + 0.12 - n * rise + 0.9, z0 + (n - 1) * run];
-    B.frame(0, 0, 0, 0); B.sweep('steel', [[-0.022, -0.022], [0.022, -0.022], [0.022, 0.022], [-0.022, 0.022]], [top, bot], { closed: true, caps: true, color: [0.3, 0.52, 0.47] });
+    // stringer wall (袖壁) along the open side: one straight face from the head to the foot of the flight, its coping
+    // following the nosings, the handrail posts standing on it
+    { const zA = z0, zB = z0 + n * run, xA = wall[0][0] - (wall[1][0] - wall[0][0]) / 2, xB = wall[n - 1][0] + (wall[n - 1][0] - wall[n - 2][0]) / 2;
+      const yA = top + 0.18, yB = 0.45 + 0.18, T = 0.2, o = sd * T / 2, WC = { color: [0.74, 0.74, 0.72], uv: 1.5 };
+      B.poly('concrete', [[xA - o, 0.1, zA], [xB - o, 0.1, zB], [xB - o, yB, zB], [xA - o, yA, zA]], [-sd, 0, 0], WC);                        // river face
+      B.poly('concrete', [[xB + o, 0.1, zB], [xA + o, 0.1, zA], [xA + o, yA, zA], [xB + o, yB, zB]], [sd, 0, 0], WC);                        // stair face
+      B.poly('concrete', [[xA - o, yA, zA], [xB - o, yB, zB], [xB + o, yB, zB], [xA + o, yA, zA]], [0, 1, 0], { color: [0.8, 0.8, 0.78] });   // coping
+      B.poly('concrete', [[xA + o, 0.1, zA], [xA - o, 0.1, zA], [xA - o, yA, zA], [xA + o, yA, zA]], [0, 0, -1], WC);                        // head end
+      B.poly('concrete', [[xB - o, 0.1, zB], [xB + o, 0.1, zB], [xB + o, yB, zB], [xB - o, yB, zB]], [0, 0, 1], WC);                        // foot end
+      const np = Math.max(2, Math.round((zB - zA) / 1.6));
+      for (let i = 0; i <= np; i++) { const t = i / np, px = lerp(xA, xB, t), pz = lerp(zA + 0.1, zB - 0.1, t), py = lerp(yA, yB, t);
+        B.cyl('steel', px, py, pz, 0.025, 0.025, 0.85, 8, { color: RC.color, cap: true }); rail.push([px, py + 0.85, pz]); } }
+    // landing pad on the margin
+    { const zb = z0 + n * run, rx = riverX(zb + 0.7), rIn = slopeRd(0.45) - W - 0.3, rOut = slopeRd(0.45) + 0.3;
+      B.bbox('concrete', rx + sd * (rIn + rOut) / 2, -0.3, zb + 0.7, rOut - rIn, 0.75, 1.4, 0.02, { color: [0.72, 0.72, 0.7], skip: 'ny' });
+      addPlatform(rx + sd * (rIn + rOut) / 2, zb + 0.7, (rOut - rIn) / 2, 0.7, 0, 0.45); }
+    B.sweep('steel', [[-0.024, -0.024], [0.024, -0.024], [0.024, 0.024], [-0.024, 0.024]], rail, { closed: true, caps: true, color: RC.color });
+    for (let i = 0; i + 1 < rail.length; i++) { const [ax, ay, az] = rail[i], [bx, by, bz] = rail[i + 1];
+      B.beam('steel', [ax, ay - 0.45, az], [bx, by - 0.45, bz], 0.02, 0.02, RC);                                            // mid rail
+      addBox((ax + bx) / 2, (az + bz) / 2, 0.06, Math.hypot(bx - ax, bz - az) / 2 + 0.05, Math.atan2(bx - ax, bz - az), 0, Math.max(ay, by) + 0.2); }
   }
   for (const [bz, bw, id, names] of [[-25, 12, 'A', ['桜川橋', 'さくらがわばし']], [200, 5, 'F', ['舟橋', 'ふなばし']]]) {
     const rx = riverX(bz), L = 34, gc = [0.76, 0.76, 0.74];

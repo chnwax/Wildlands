@@ -60,13 +60,22 @@ export function buildRailway(ctx) {
   const { y0, riverX, B } = ctx, MT = materials();
   const rt = railTop(y0), X0 = -RAIL.portalW - 60, X1 = RAIL.portalE + 60;
   const rx = riverX(-80);
-  // ballast bed (trapezoid) along the whole line
-  for (let x = X0; x < X1; x += 25) {
-    B.frame(0, 0, 0, 0);
-    const xa = x, xb = Math.min(X1, x + 25), zc = -80, hw = 5.6, tw = 4.6, yb = y0 - 0.25, yt = y0 + 0.2;
-    B.quad('ballast', [xa, yt, zc + tw], [xb, yt, zc + tw], [xb, yt, zc - tw], [xa, yt, zc - tw], { uv: 2 });
-    B.quad('ballast', [xa, yb, zc + hw], [xb, yb, zc + hw], [xb, yt, zc + tw], [xa, yt, zc + tw], { uv: 2 });
-    B.quad('ballast', [xb, yb, zc - hw], [xa, yb, zc - hw], [xa, yt, zc - tw], [xb, yt, zc - tw], { uv: 2 });
+  // ballast bed (trapezoid) along the whole line, laid in lengths of different age: renewed stone is paler, older beds
+  // greyer and dirtier, and the four-foot of each track is stained rust-brown by brake dust. On the river bridge the bed
+  // sits in the deck's ballast trough between the parapets (the deck top stays below the stone, never level with it)
+  const brg = [rx - 19, rx + 19], vr = mulberry32(3131);
+  const cuts = [X0]; for (let x = X0 + 25; x < X1; x += 25) cuts.push(x); cuts.push(brg[0], brg[1], X1); cuts.sort((a, b) => a - b);
+  B.frame(0, 0, 0, 0);
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const xa = cuts[i], xb = cuts[i + 1]; if (xb - xa < 0.05) continue;
+    const onB = xa >= brg[0] - 1e-3 && xb <= brg[1] + 1e-3, zc = -80, hw = onB ? 5.3 : 5.6, tw = 4.6, yb = onB ? y0 - 0.05 : y0 - 0.25, yt = y0 + 0.2;
+    const age = vr(), base = age < 0.18 ? [1.06, 1.05, 1.02] : [0.97 - age * 0.12, 0.95 - age * 0.12, 0.9 - age * 0.1], rust = [base[0] * 0.86, base[1] * 0.7, base[2] * 0.56];
+    const zs = [-tw, RAIL.z[0] + 80 - 0.72, RAIL.z[0] + 80 + 0.72, RAIL.z[1] + 80 - 0.72, RAIL.z[1] + 80 + 0.72, tw];
+    for (let k = 0; k + 1 < zs.length; k++) { const za = zc + zs[k], zb = zc + zs[k + 1], col = k % 2 ? rust : base;
+      B.quad('ballast', [xa, yt, zb], [xb, yt, zb], [xb, yt, za], [xa, yt, za], { uvs: [[xa / 2, zb / 2], [xb / 2, zb / 2], [xb / 2, za / 2], [xa / 2, za / 2]], color: col }); }
+    const sh = base.map(v => v * 0.93);
+    B.quad('ballast', [xa, yb, zc + hw], [xb, yb, zc + hw], [xb, yt, zc + tw], [xa, yt, zc + tw], { uv: 2, color: sh });
+    B.quad('ballast', [xb, yb, zc - hw], [xa, yb, zc - hw], [xa, yt, zc - tw], [xb, yt, zc - tw], { uv: 2, color: sh });
   }
   // rails (steel, slightly rusty sides)
   for (const tz of RAIL.z) for (const side of [-1, 1]) {
@@ -108,10 +117,10 @@ export function buildRailway(ctx) {
 
   // river bridge: concrete deck, steel plate girders, piers
   B.frame(rx, y0, -80, 0);
-  B.box('concrete', 0, -1.0, 0, 38, 1.2, 11.5, { color: [0.72, 0.72, 0.7], uv: 3 });
+  B.box('concrete', 0, -1.25, 0, 38, 1.2, 11.5, { color: [0.72, 0.72, 0.7], uv: 3 });  // deck: ballast trough floor 5 cm below formation
   for (const z of [-4.2, 4.2]) B.box('metal', 0, -2.4, z, 38, 1.4, 0.35, { color: [0.36, 0.42, 0.5] });
   for (const px of [-8, 8]) B.box('concrete', px, -8, 0, 2.2, 6.6, 9, { color: [0.68, 0.68, 0.66], uv: 3 });
-  for (const z of [-5.8, 5.8]) { B.box('metal', 0, 0.2, z, 38, 1.0, 0.08, { color: [0.4, 0.45, 0.5] }); }
+  for (const z of [-5.8, 5.8]) { B.box('metal', 0, -0.05, z, 38, 1.25, 0.08, { color: [0.4, 0.45, 0.5] }); }
   addPlatform(rx, -80, 19, 5.75, 0, y0 + 0.2);
 
   // ---------------------------------------------------------------- station
@@ -261,25 +270,129 @@ function signal(B, x, y0, z, r, aspect) {
 // lineside fences: green chain-link on steel posts along both edges of the railway corridor through the valley floor,
 // following the ground, with openings at the road crossings, the river, the station building and the platform stairs.
 // gaps: [x0, x1, side?] (side 1 = the town / station side at z = -67.6, -1 the far side; omitted = both)
-export function railFences(B, groundAt, Y0, gaps) {
-  const G = [0.26, 0.42, 0.34], h = 1.5, step = 2.5;
+// Line-side fences, by district: grey welded-mesh panels round the station, green chain link through the town, and
+// concrete posts with strands of barbed wire out past the houses. Maintenance gates (with a no-entry board) break the
+// runs every ~170 m where the ground allows.
+export function railFences(B, groundAt, Y0, gaps, stationX = 0) {
+  const zone = x => Math.abs(x - stationX) < 115 ? 'panel' : Math.abs(x) > 320 ? 'wire' : 'chain';
+  const STY = { panel: { h: 1.8, step: 2.0, c: [0.62, 0.64, 0.66] }, chain: { h: 1.5, step: 2.5, c: [0.26, 0.42, 0.34] }, wire: { h: 1.2, step: 3.0, c: [0.7, 0.69, 0.66] } };
+  const gates = []; for (let gx = -410; gx < 430; gx += 150 + ((gx * 7919) % 41 + 41) % 41) gates.push(gx);
+  const gateAt = (x, side) => gates.find(g => Math.abs(x - (g + side * 20)) < 1.6);
   for (const [z, side] of [[-67.6, 1], [-92.4, -1]]) {
     const open = x => Math.abs(groundAt(x, z) - Y0) > 0.8 || gaps.some(([a, b, s]) => (s === undefined || s === side) && x > a && x < b);
     let x = -440;
     while (x < 440) {
-      if (open(x)) { x += 0.5; continue; }
-      let xe = x; while (xe + step < 440 && !open(xe + step) && xe - x < 30) xe += step;
+      if (open(x) || gateAt(x, side) !== undefined) { x += 0.5; continue; }
+      const zn = zone(x), S = STY[zn], step = S.step, h = S.h, G = S.c;
+      let xe = x; while (xe + step < 440 && !open(xe + step) && gateAt(xe + step, side) === undefined && zone(xe + step) === zn && xe - x < 30) xe += step;
       if (xe - x < step) { x += step; continue; }
       B.frame(0, 0, 0, 0);
       for (let px = x; px < xe - 1e-3; px += step) {
         const qx = px + step, ya = groundAt(px, z), yb = groundAt(qx, z);
-        B.quad('chain', [px, ya + 0.05, z], [qx, yb + 0.05, z], [qx, yb + h, z], [px, ya + h, z], { uv: 0.15, color: G });
+        if (zn === 'wire') { for (const hy of [0.35, 0.72, 1.1]) B.beam('steel', [px, ya + hy, z], [qx, yb + hy, z], 0.008, 0.008, { color: [0.45, 0.44, 0.42] }); continue; }
+        B.quad('chain', [px, ya + 0.05, z], [qx, yb + 0.05, z], [qx, yb + h, z], [px, ya + h, z], { uv: zn === 'panel' ? 0.1 : 0.15, color: G });
         B.beam('steel', [px, ya + h, z], [qx, yb + h, z], 0.034, 0.034, { color: G });
+        if (zn === 'panel') { B.beam('steel', [px, ya + 0.08, z], [qx, yb + 0.08, z], 0.03, 0.03, { color: G }); B.beam('steel', [px, ya + h * 0.5, z], [qx, yb + h * 0.5, z], 0.02, 0.02, { color: G }); }
       }
-      for (let px = x; px <= xe + 1e-3; px += step) { const yy = groundAt(px, z); B.cyl('steel', px, yy - 0.15, z, 0.03, 0.03, h + 0.18, 8, { color: G, cap: true }); }
+      for (let px = x; px <= xe + 1e-3; px += step) { const yy = groundAt(px, z);
+        if (zn === 'wire') B.bbox('concrete', px, yy - 0.2, z, 0.1, h + 0.2, 0.1, 0.01, { color: [0.74, 0.73, 0.7] });
+        else if (zn === 'panel') B.box('steel', px, yy - 0.15, z, 0.06, h + 0.2, 0.06, { color: G });
+        else B.cyl('steel', px, yy - 0.15, z, 0.03, 0.03, h + 0.18, 8, { color: G, cap: true }); }
       addBox((x + xe) / 2, z, (xe - x) / 2, 0.06, 0, Y0 - 3, Y0 + 2);
       x = xe + 0.01;
     }
+    // maintenance gates: two posts, a mesh leaf shut with a chain, a no-entry board
+    for (const g of gates) { const gx = g + side * 20; if (open(gx - 1.6) || open(gx + 1.6) || open(gx)) continue;
+      const yy = groundAt(gx, z), C = [0.55, 0.58, 0.56];
+      B.frame(0, 0, 0, 0);
+      for (const px of [gx - 1.5, gx + 1.5]) B.box('steel', px, yy - 0.2, z, 0.1, 1.95, 0.1, { color: C });
+      for (const hy of [0.12, 1.6]) B.beam('steel', [gx - 1.45, yy + hy, z], [gx + 1.45, yy + hy, z], 0.04, 0.04, { color: C });
+      B.beam('steel', [gx - 1.45, yy + 0.12, z], [gx + 1.45, yy + 1.6, z], 0.03, 0.03, { color: C });
+      B.quad('chain', [gx - 1.45, yy + 0.12, z], [gx + 1.45, yy + 0.12, z], [gx + 1.45, yy + 1.6, z], [gx - 1.45, yy + 1.6, z], { uv: 0.15, color: C });
+      addBox(gx, z, 1.55, 0.06, 0, Y0 - 3, Y0 + 2);
+      const sgn = signMesh(0.6, 0.42, (c, w, hh) => { c.fillStyle = '#fff'; c.fillRect(0, 0, w, hh); c.fillStyle = '#c81e1e'; c.font = `bold ${hh * 0.26}px ${JP_FONT}`; c.textAlign = 'center'; c.fillText('立入禁止', w / 2, hh * 0.36);
+        c.fillStyle = '#222'; c.font = `${hh * 0.13}px ${JP_FONT}`; c.fillText('関係者以外の立入りを', w / 2, hh * 0.62); c.fillText('禁止します  鉄道会社', w / 2, hh * 0.82); }, 0.2);
+      sgn.position.set(gx, yy + 1.1, z + side * 0.05); sgn.rotation.y = side > 0 ? 0 : Math.PI; scene.add(sgn); }
+  }
+}
+
+// Trackside: the things that make the line read as a maintained railway rather than one repeated strip. Covered
+// concrete drains (with grated catch-pits) at the foot of the ballast, a cable trough (トラフ) with lids along the
+// maintenance path, signal / relay cabinets on plinths, a signal equipment hut by the station, kilometre posts every
+// 100 m, speed boards, ATS beacons between the rails ahead of the signals, and at each level crossing its control
+// cabinet. gaps: x ranges kept clear (crossings, platforms, bridge).
+export function trackside(B, groundAt, y0, { gaps = [], crossX = [], x0 = -600, x1 = 600, stationX = 0, platformLen = 100 }) {
+  const free = (x, pad = 0) => !gaps.some(([a, b]) => x > a - pad && x < b + pad) && Math.abs(groundAt(x, -80) - y0) < 0.7;
+  const rng = mulberry32(2718);
+  B.frame(0, 0, 0, 0);
+  // covered U-drains (蓋付き側溝) both sides, lids in 1 m modules, a grated lid every 8 m
+  for (const dz of [-6.1, 6.1]) {
+    const z = -80 + dz;
+    for (let x = x0; x < x1; x += 1) {
+      if (!free(x + 0.5) || !free(x) || !free(x + 1)) continue;
+      const g = groundAt(x + 0.5, z), grate = Math.round(x) % 8 === 0;
+      B.box(grate ? 'dark' : 'concrete', x + 0.5, g - 0.1, z, 0.97, 0.16, 0.5, { color: grate ? [0.22, 0.22, 0.23] : [0.74, 0.74, 0.71], skip: 'ny' });
+      if (grate) B.quad('chain', [x + 0.03, g + 0.065, z + 0.23], [x + 0.97, g + 0.065, z + 0.23], [x + 0.97, g + 0.065, z - 0.23], [x + 0.03, g + 0.065, z - 0.23], { uv: 0.05, color: [0.45, 0.45, 0.46] });
+    }
+  }
+  // cable trough along the maintenance path (south side through the whole section, north side in town)
+  for (const dz of [7.0, -7.0]) {
+    const z = -80 + dz;
+    for (let x = x0; x < x1; x += 1) {
+      if (dz < 0 && Math.abs(x) > 260) continue;
+      if (!free(x + 0.5, 1) || !free(x, 1) || !free(x + 1, 1)) continue;
+      const g = groundAt(x + 0.5, z);
+      B.box('concrete', x + 0.5, g - 0.18, z, 0.985, 0.3, 0.4, { color: rng() < 0.12 ? [0.66, 0.66, 0.63] : [0.78, 0.78, 0.76], skip: 'ny' });
+    }
+  }
+  const cabinet = (x, z, face, big) => { // grey steel cabinet on a concrete plinth, doors, louvres, conduit into the ground
+    const g = groundAt(x, z), W = big ? 1.2 : 0.8, H = big ? 1.7 : 1.3, D = 0.55, C = [0.72, 0.74, 0.74];
+    B.frame(x, g, z, face);
+    B.bbox('concrete', 0, -0.2, 0, W + 0.2, 0.35, D + 0.2, 0.02, { color: [0.7, 0.7, 0.68] });
+    B.bbox('metal', 0, 0.15, 0, W, H, D, 0.02, { color: C }); B.bbox('metal', 0, 0.15 + H, 0, W + 0.1, 0.05, D + 0.12, 0.01, { color: [0.62, 0.64, 0.64] });
+    B.detail(1, () => { B.box('dark', 0, 0.2, D / 2 + 0.002, 0.012, H - 0.1, 0.01, { color: [0.3, 0.3, 0.3] });
+      for (let k = 0; k < 4; k++) B.box('dark', W / 4, H - 0.2 - k * 0.06, D / 2 + 0.003, W / 3, 0.02, 0.01, { color: [0.35, 0.36, 0.36] });
+      B.box('steel', -0.08, 0.15 + H * 0.5, D / 2 + 0.02, 0.03, 0.12, 0.03, { color: [0.3, 0.3, 0.3] });
+      B.cyl('dark', -W / 2 + 0.15, -0.1, -D / 2 - 0.08, 0.05, 0.05, 0.35, 8, { color: [0.2, 0.2, 0.2] }); });
+    addBox(x, z, W / 2 + 0.1, D / 2 + 0.1, face);
+    B.frame(0, 0, 0, 0);
+  };
+  // relay cabinets every 120–200 m, alternating sides, and one beside each crossing
+  for (let x = x0 + 60; x < x1 - 60; x += 120 + rng() * 80) { const sd = rng() < 0.5 ? 1 : -1; if (free(x, 6)) cabinet(x, -80 + sd * 8.1, sd > 0 ? Math.PI : 0, rng() < 0.4); }
+  for (const cx of crossX) cabinet(cx + 9.5, -80 - 8.1, 0, true);
+  // signal equipment hut (信号機器室) by the east end of the station
+  { const hx = stationX + platformLen / 2 + 24, hz = -90.0, g = groundAt(hx, hz);
+    if (free(hx, 4)) { B.frame(hx, g, hz, 0);
+      B.bbox('concrete', 0, -0.3, 0, 3.4, 0.4, 2.6, 0.02, { color: [0.68, 0.68, 0.66] });
+      B.bbox('concrete', 0, 0.1, 0, 3.2, 2.5, 2.4, 0.03, { color: [0.84, 0.84, 0.8], uv: 2 });
+      B.bbox('concrete', 0, 2.6, 0, 3.5, 0.12, 2.7, 0.02, { color: [0.62, 0.64, 0.64] });
+      B.box('metal', 0.6, 0.12, 1.21, 0.9, 2.0, 0.04, { color: [0.5, 0.58, 0.62] });
+      for (let k = 0; k < 5; k++) B.box('dark', -0.9, 1.4 + k * 0.1, 1.21, 0.7, 0.04, 0.03, { color: [0.3, 0.32, 0.32] });
+      B.box('metal', -1.3, 2.2, 1.25, 0.4, 0.25, 0.1, { color: [0.7, 0.7, 0.66] });
+      addBox(hx, hz, 1.7, 1.3, 0); B.frame(0, 0, 0, 0); } }
+  // kilometre posts every 100 m (white post, black figures), facing the track
+  for (let x = Math.ceil(x0 / 100) * 100; x < x1; x += 100) {
+    const z = -80 + 7.7; if (!free(x, 2)) continue;
+    const g = groundAt(x, z), km = (42.0 + (x + 600) / 1000).toFixed(1);
+    B.frame(0, 0, 0, 0); B.bbox('concrete', x, g - 0.3, z, 0.16, 1.15, 0.16, 0.02, { color: [0.95, 0.95, 0.92] });
+    const pl = signMesh(0.14, 0.3, (c, w, hh) => { c.fillStyle = '#fafaf6'; c.fillRect(0, 0, w, hh); c.fillStyle = '#111'; c.textAlign = 'center'; c.font = `bold ${w * 0.62}px Arial`;
+      const [a, b] = km.split('.'); c.fillText(a, w / 2, hh * 0.44); c.fillText(b, w / 2, hh * 0.86); }, 0.1, 128);
+    pl.position.set(x, g + 0.55, z - 0.085); pl.rotation.y = Math.PI; scene.add(pl);
+  }
+  // speed boards before the station, facing each direction of travel
+  for (const [x, face, z] of [[stationX - platformLen / 2 - 55, -Math.PI / 2, -80 + 7.8], [stationX + platformLen / 2 + 55, Math.PI / 2, -80 - 7.8]]) {
+    if (!free(x, 2)) continue;
+    const g = groundAt(x, z);
+    B.frame(0, 0, 0, 0); B.cyl('steel', x, g - 0.2, z, 0.04, 0.04, 2.4, 8, { color: [0.8, 0.8, 0.78] });
+    const sb = signMesh(0.5, 0.36, (c, w, hh) => { c.fillStyle = '#f7d21a'; c.fillRect(0, 0, w, hh); c.fillStyle = '#111'; c.font = `bold ${hh * 0.7}px Arial`; c.textAlign = 'center'; c.fillText('45', w / 2, hh * 0.78); }, 0.2);
+    sb.position.set(x, g + 2.0, z); sb.rotation.y = face; scene.add(sb);
+    const sb2 = sb.clone(); sb2.rotation.y = face + Math.PI; sb2.position.x += face > 0 ? -0.01 : 0.01; scene.add(sb2);
+  }
+  // ATS beacons (地上子): yellow boxes on the sleepers between the rails, ahead of the station signals
+  for (const [x, tz] of [[stationX - platformLen / 2 - 30, RAIL.z[1]], [stationX - platformLen / 2 - 90, RAIL.z[1]], [stationX + platformLen / 2 + 30, RAIL.z[0]], [stationX + platformLen / 2 + 90, RAIL.z[0]]]) {
+    if (!free(x, 1)) continue;
+    B.frame(x, y0 + 0.3, tz, 0); B.bbox('plastic', 0, 0, 0, 0.5, 0.1, 0.36, 0.02, { color: [0.95, 0.78, 0.1] }); B.box('dark', 0, 0.1, 0, 0.3, 0.005, 0.2, { color: [0.15, 0.15, 0.15] });
+    B.frame(0, 0, 0, 0);
   }
 }
 
