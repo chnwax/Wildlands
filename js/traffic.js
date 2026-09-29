@@ -110,7 +110,9 @@ const trimMat = new THREE.MeshStandardMaterial({ color: 0x151617, roughness: 0.6
 const chromeMat = new THREE.MeshStandardMaterial({ color: 0xd8dde2, metalness: 1, roughness: 0.12 });
 const cabinMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
 const clothMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
-const CLOTH = [[0.2, 0.3, 0.5], [0.85, 0.85, 0.82], [0.3, 0.3, 0.32], [0.55, 0.2, 0.18], [0.25, 0.42, 0.3], [0.7, 0.62, 0.48], [0.12, 0.12, 0.14]];
+const CLOTH = [[0.2, 0.3, 0.5], [0.88, 0.88, 0.85], [0.3, 0.3, 0.32], [0.62, 0.22, 0.2], [0.25, 0.42, 0.3], [0.72, 0.64, 0.5], [0.12, 0.12, 0.14], [0.55, 0.62, 0.78], [0.86, 0.72, 0.74], [0.9, 0.84, 0.6]];
+const HAIRS = [[0.06, 0.05, 0.05], [0.1, 0.07, 0.05], [0.22, 0.15, 0.1], [0.08, 0.06, 0.05], [0.55, 0.55, 0.56], [0.32, 0.22, 0.14], [0.05, 0.05, 0.06]];
+const hairMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 });
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
 const plateTex = canvasTex(256, 128, (g, W, H) => {
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.strokeStyle = '#1f4d2c'; g.lineWidth = 6; g.strokeRect(4, 4, W - 8, H - 8);
@@ -247,21 +249,48 @@ function buildType(T) {
     cabin.push(tint(new THREE.BoxGeometry(0.12, 0.6, T.W - 2 * skin - 0.1).translate(0, 0.3, 0).rotateZ(0.22).translate(rx - 0.27, floorY + 0.26, 0), SEAT));
   }
   parts.cabin = mergeC(cabin);
-  // ---- driver: a simple seated figure, face and hands in skin, hair, and clothes (tinted per car)
-  const SKIN = [0.96, 0.8, 0.68], HAIR = [0.12, 0.1, 0.09], hx = sx - 0.08, hy0 = floorY + 0.29;
-  const skinG = [tint(new THREE.SphereGeometry(0.1, 14, 10).scale(0.92, 1.08, 0.9).translate(hx - 0.2, hy0 + 0.83, dz), SKIN),
-    tint(new THREE.SphereGeometry(0.105, 14, 8, 0, Math.PI * 2, 0, 1.7).scale(0.95, 1.05, 0.95).rotateZ(0.35).translate(hx - 0.21, hy0 + 0.85, dz), HAIR),
-    tint(boxG(0.07, 0.08, 0.07, hx - 0.16, hy0 + 0.7, dz), SKIN)];
-  for (const sd of [-1, 1]) skinG.push(tint(new THREE.SphereGeometry(0.04, 8, 6).translate(dx0 - 0.3, B0 + 0.02 + sd * 0.1, dz + sd * 0.12), SKIN)); // hands on the wheel
-  const cloth = [new THREE.BoxGeometry(0.22, 0.52, 0.38).translate(0, 0.26, 0).rotateZ(0.14).translate(hx - 0.14, hy0 + 0.1, dz),        // torso
-    boxG(0.44, 0.14, 0.34, hx + 0.1, hy0 + 0.06, dz)];                                                                                  // thighs
-  for (const sd of [-1, 1]) {
-    const sh = [hx - 0.19, hy0 + 0.58, dz + sd * 0.16], el = [hx + 0.08, hy0 + 0.3, dz + sd * 0.21], wr = [dx0 - 0.3, B0 + 0.02 + sd * 0.1, dz + sd * 0.12];
-    for (const [a, b] of [[sh, el], [el, wr]]) { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length();
-      const g = new THREE.CylinderGeometry(0.045, 0.05, L, 8); g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); cloth.push(g); }
-    cloth.push(boxG(0.13, 0.4, 0.13, hx + 0.34, hy0 - 0.12, dz + sd * 0.1));                                                             // shins
-  }
-  parts.driverSkin = mergeC(skinG); parts.driverCloth = merge(cloth.map(g => g.index ? g.toNonIndexed() : g));
+  // ---- occupants: a seated figure built from rounded parts — head with jaw, nose, ears and eyes, neck, a torso with
+  // shoulders and collar, jointed arms (hands on the wheel for the driver, in the lap for the passenger), thighs and
+  // shins, a seat belt across the chest. Three meshes each: skin/trousers/shoes/belt (fixed colours), shirt (tinted per
+  // car) and hair (tinted per car). The driver sits on the right (right-hand drive), a front passenger on the left.
+  const SKIN = [0.96, 0.8, 0.68], PANTS = [0.2, 0.22, 0.28], SHOE = [0.12, 0.1, 0.09], BELT = [0.16, 0.16, 0.17], EYE = [0.1, 0.08, 0.08];
+  const cap = (r, a, b) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length(), g = new THREE.CapsuleGeometry(r, Math.max(0.001, L), 4, 10);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); return g; };
+  const person = (pz, drive) => {
+    const hx = sx - 0.08, hy0 = floorY + 0.29, skin = [], hair = [], shirt = [], head = [hx - 0.19, hy0 + 0.86, pz];
+    skin.push(tint(new THREE.SphereGeometry(0.098, 16, 12).scale(0.95, 1.1, 0.86).translate(...head), SKIN));                          // skull
+    skin.push(tint(new THREE.SphereGeometry(0.07, 12, 8).scale(1, 0.8, 1.05).translate(head[0] + 0.03, head[1] - 0.06, pz), SKIN));  // jaw
+    skin.push(tint(new THREE.SphereGeometry(0.018, 6, 5).scale(1.2, 1.3, 0.9).translate(head[0] + 0.093, head[1] - 0.01, pz), SKIN)); // nose
+    for (const e of [-1, 1]) { skin.push(tint(new THREE.SphereGeometry(0.022, 6, 5).scale(0.5, 1, 1).translate(head[0] - 0.005, head[1] - 0.005, pz + e * 0.087), SKIN)); // ears
+      skin.push(tint(new THREE.SphereGeometry(0.011, 6, 5).translate(head[0] + 0.082, head[1] + 0.018, pz + e * 0.034), EYE)); }        // eyes
+    skin.push(tint(new THREE.CylinderGeometry(0.036, 0.042, 0.1, 10).translate(head[0] + 0.01, head[1] - 0.13, pz), SKIN));          // neck
+    // hair: a cap over the crown and back of the head, a fringe over the brow
+    hair.push(new THREE.SphereGeometry(0.106, 16, 10, 0, Math.PI * 2, 0, 1.75).scale(0.97, 1.02, 0.9).rotateZ(0.42).translate(head[0] - 0.012, head[1] + 0.012, pz));
+    hair.push(new THREE.SphereGeometry(0.06, 10, 6).scale(0.6, 0.45, 1.35).translate(head[0] + 0.06, head[1] + 0.07, pz));
+    // torso: a rounded chest and shoulders leaning back with the seat, collar round the neck
+    const sh = [hx - 0.17, hy0 + 0.6], hip = [hx - 0.1, hy0 + 0.1];
+    shirt.push(cap(0.13, [hip[0], hip[1] + 0.1, pz], [sh[0], sh[1] - 0.08, pz]).scale(1, 1, 1).translate(0, 0, 0));
+    shirt.push(new THREE.CapsuleGeometry(0.075, 0.28, 4, 10).rotateX(Math.PI / 2).translate(sh[0], sh[1], pz));                        // shoulders
+    shirt.push(new THREE.TorusGeometry(0.045, 0.014, 6, 12).rotateX(Math.PI / 2).translate(head[0] + 0.01, head[1] - 0.17, pz));     // collar
+    // seat belt from the outboard shoulder across to the inboard hip
+    { const out = drive ? 1 : -1; skin.push(tint(cap(0.012, [sh[0] + 0.07, sh[1] + 0.02, pz + out * 0.15], [hip[0] + 0.15, hip[1] + 0.1, pz - out * 0.15]), BELT)); }
+    // arms: upper arm, forearm, hand
+    for (const e of [-1, 1]) {
+      const S = [sh[0], sh[1] - 0.02, pz + e * 0.17];
+      const H = drive ? [dx0 - 0.3, B0 + 0.03 + e * 0.1, dz + e * 0.13] : [hx + 0.26, hy0 + 0.16, pz + e * 0.09];
+      const E = drive ? [hx + 0.07, hy0 + 0.33, pz + e * 0.22] : [hx + 0.02, hy0 + 0.28, pz + e * 0.21];
+      shirt.push(cap(0.047, S, E)); shirt.push(cap(0.04, E, [lerp(E[0], H[0], 0.85), lerp(E[1], H[1], 0.85), lerp(E[2], H[2], 0.85)]));
+      skin.push(tint(new THREE.SphereGeometry(0.036, 8, 6).scale(1.2, 0.8, 1).translate(...H), SKIN));
+      // legs: thigh along the cushion, shin down to the pedals, a shoe
+      const K = [hx + 0.36, hy0 + 0.07, pz + e * 0.1], A = [hx + 0.46, floorY + 0.08, pz + e * 0.1];
+      skin.push(tint(cap(0.068, [hip[0] + 0.02, hip[1] - 0.01, pz + e * 0.09], K), PANTS), tint(cap(0.052, K, A), PANTS));
+      skin.push(tint(new THREE.BoxGeometry(0.22, 0.07, 0.09).translate(A[0] + 0.06, floorY + 0.035, A[2]), SHOE));
+    }
+    return { skin: mergeC(skin), hair: merge(hair.map(g => g.index ? g.toNonIndexed() : g)), shirt: merge(shirt.map(g => g.index ? g.toNonIndexed() : g)) };
+  };
+  { const d = person(dz, true), q = person(-dz, false);
+    parts.driverSkin = d.skin; parts.driverHair = d.hair; parts.driverCloth = d.shirt;
+    parts.paxSkin = q.skin; parts.paxHair = q.hair; parts.paxCloth = q.shirt; }
   parts.plate = merge([boxG(0.02, 0.165, 0.33, hl + 0.09, 0.5, 0), boxG(0.02, 0.165, 0.33, -hl - 0.09, 0.6, 0)]);
   const hy = bodyPts[2][1] - 0.1;
   parts.head = merge([boxG(0.05, 0.12, 0.3, hl - 0.01, hy, T.W / 2 - 0.22), boxG(0.05, 0.12, 0.3, hl - 0.01, hy, -T.W / 2 + 0.22)]);
@@ -312,7 +341,8 @@ export class Fleet {
       const M = { paint: mk(G.parts.paint, paintMat, n), glass: mk(G.parts.glass, glassMat, n), trim: mk(G.parts.trim, trimMat, n, false), plate: mk(G.parts.plate, plateMat, n, false),
         head: mk(G.parts.head, headMat, n, false), tail: mk(G.parts.tail, tailMat, n, false), chrome: mk(G.parts.chrome, chromeMat, n, false), shadow: mk(G.parts.shadow, shadowMat, n, false),
         tire: mk(G.tire, tireMat, n * 4), rim: mk(G.rim, rimMat, n * 4, false),
-        cabin: mk(G.parts.cabin, cabinMat, n, false), driverSkin: mk(G.parts.driverSkin, cabinMat, n, false), driverCloth: mk(G.parts.driverCloth, clothMat, n, false) };
+        cabin: mk(G.parts.cabin, cabinMat, n, false), driverSkin: mk(G.parts.driverSkin, cabinMat, n, false), driverCloth: mk(G.parts.driverCloth, clothMat, n, false),
+        driverHair: mk(G.parts.driverHair, hairMat, n, false), paxSkin: mk(G.parts.paxSkin, cabinMat, n, false), paxCloth: mk(G.parts.paxCloth, clothMat, n, false), paxHair: mk(G.parts.paxHair, hairMat, n, false) };
       M.glass.renderOrder = 3; M.shadow.receiveShadow = false;
       this.types[type] = { G, M };
       idxs.forEach((si, k) => {
@@ -321,7 +351,8 @@ export class Fleet {
         M.paint.setColorAt(k, _c.setRGB(...(sp.color || PAINTS[0])));
         M.plate.setColorAt(k, T.kei ? _c.setRGB(0.95, 0.82, 0.1) : _c.setRGB(0.95, 0.95, 0.93));
         M.head.setColorAt(k, _c.setRGB(0.1, 0, 0)); M.tail.setColorAt(k, _c.setRGB(0.1, 0, 0));
-        M.driverCloth.setColorAt(k, _c.setRGB(...CLOTH[(si * 7 + 3) % CLOTH.length]));
+        M.driverCloth.setColorAt(k, _c.setRGB(...CLOTH[(si * 7 + 3) % CLOTH.length])); M.paxCloth.setColorAt(k, _c.setRGB(...CLOTH[(si * 5 + 1) % CLOTH.length]));
+        M.driverHair.setColorAt(k, _c.setRGB(...HAIRS[(si * 3 + 1) % HAIRS.length])); M.paxHair.setColorAt(k, _c.setRGB(...HAIRS[(si * 11 + 2) % HAIRS.length]));
         this.cars[si] = car;
       });
     }
@@ -332,7 +363,8 @@ export class Fleet {
     _e.set(0, r, 0); _q.setFromEuler(_e); _p.set(x, y, z);
     _m.compose(_p, _q, _s);
     for (const key of ['paint', 'glass', 'trim', 'plate', 'head', 'tail', 'chrome', 'shadow', 'cabin']) M[key].setMatrixAt(k, _m);
-    M.driverSkin.setMatrixAt(k, car.driver ? _m : _zero); M.driverCloth.setMatrixAt(k, car.driver ? _m : _zero);
+    for (const key of ['driverSkin', 'driverCloth', 'driverHair']) M[key].setMatrixAt(k, car.driver ? _m : _zero);
+    for (const key of ['paxSkin', 'paxCloth', 'paxHair']) M[key].setMatrixAt(k, car.driver && car.pax ? _m : _zero);
     car.spin -= dist / T.r;
     const [fx, rx] = wheelX(T);
     let i = 0;
@@ -401,7 +433,7 @@ export class Route {
 const tmpA = {}, tmpB = {};
 export class Traffic {
   constructor(fleet, groundAt) { this.fleet = fleet; this.groundAt = groundAt; this.movers = []; this.emitters = [0, 1, 2, 3].map(() => new Emitter('engine')); }
-  add(car, route, s) { car.driver = true; this.movers.push({ car, route, s, v: route.vmax * 0.5, wait: 0, stopIdx: this.nextStop(route, s), brake: 0 }); }
+  add(car, route, s) { car.driver = true; car.pax = ((car.k * 7919 + car.type.length * 31) % 100) < 35; this.movers.push({ car, route, s, v: route.vmax * 0.5, wait: 0, stopIdx: this.nextStop(route, s), brake: 0 }); }
   nextStop(route, s) { let best = -1, bd = 1e9; route.stops.forEach((st, i) => { const d = ((st.s - s) % route.len + route.len) % route.len; if (d < bd) { bd = d; best = i; } }); return best; }
   update(dt, player, headlights) {
     const M = this.movers;

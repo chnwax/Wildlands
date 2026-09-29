@@ -6,6 +6,7 @@
 // All of it goes through GeoBuilder frames; in a wall frame X runs along the wall, Y up, +Z out of the face (z = 0).
 import { scene, clamp, lerp, mulberry32 } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS } from './townkit.js';
+import { cropSet } from './crops.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
 const jitter = (rng, c, a = 0.04) => c.map(v => clamp(v + (rng() - 0.5) * a, 0, 1));
@@ -1017,11 +1018,8 @@ export function greenhouse(B, s, rng, gy) {
     for (let k = -1; k <= 1; k++) { const bx = k * 1.6;
       B.bbox('plain', bx, -0.04, 0, 0.9, 0.26, d - 1.4, 0.08, { color: [0.36, 0.27, 0.2] });
       B.box('dark', bx, 0.22, 0, 0.9, 0.005, d - 1.5, { color: [0.12, 0.12, 0.13] });                                                     // black mulch film
-      for (let zz = -d / 2 + 1.1; zz < d / 2 - 0.8; zz += 0.5) {
-        if (crop === 'greens') B.bbox('plain', bx + (rng() - 0.5) * 0.3, 0.22, zz, 0.3, 0.16 + rng() * 0.06, 0.3, 0.1, { color: jitter(rng, [0.42, 0.66, 0.34], 0.1) });
-        else { B.cyl('wood', bx, 0.22, zz, 0.012, 0.012, 1.7, 5, { color: [0.6, 0.5, 0.36] });
-          for (let j = 0; j < 3; j++) B.bbox('plain', bx + (rng() - 0.5) * 0.2, 0.5 + j * 0.42, zz, 0.28, 0.3, 0.26, 0.1, { color: jitter(rng, [0.3, 0.55, 0.28], 0.1) });
-          if (rng() < 0.6) B.bbox('plain', bx + 0.08, 0.7 + rng() * 0.6, zz + 0.08, 0.08, 0.08, 0.08, 0.035, { color: crop === 'tomato' ? [0.9, 0.2, 0.12] : [0.3, 0.52, 0.22] }); } }
+      for (let zz = -d / 2 + 1.1; zz < d / 2 - 0.8; zz += crop === 'greens' ? 0.3 : 0.5)
+        if (crop === 'greens') for (const lx of [-0.2, 0.2]) plant(B, 'greens', bx + lx, 0.22, zz, rng); else plant(B, crop === 'tomato' ? 'tomato' : 'vine', bx, 0.22, zz, rng, crop === 'tomato' ? 1 : 1.3);
       if (crop !== 'greens') B.box('steel', bx, 1.95, 0, 0.02, 0.02, d - 1.4, { color: [0.7, 0.72, 0.74] });                              // support wire
     }
     for (const k of [-0.8, 0.8]) for (let zz = -d / 2 + 0.6; zz < d / 2 - 0.4; zz += 1.2) B.bbox('wood', k, 0, zz, 0.5, 0.04, 1.1, 0.01, { color: [0.62, 0.5, 0.36] });
@@ -1032,6 +1030,8 @@ export function greenhouse(B, s, rng, gy) {
   B.detail(1, () => { B.sweep('plastic', circle(0.02, 6), Array.from({ length: 13 }, (_, i) => [R2 + 0.6 + Math.cos(i * 0.9) * 0.28, 0.03 + i * 0.012, d / 2 - 0.4 + Math.sin(i * 0.9) * 0.28]), { color: [0.1, 0.5, 0.3] });
     for (let k = 0; k < 3; k++) B.bbox('plastic', R2 + 0.5, k * 0.28, d / 2 + 0.6, 0.52, 0.27, 0.36, 0.02, { color: [0.24, 0.52, 0.3] }); });
 }
+// plant a crop (crops.js) at a point of the current frame, turned by yaw (plus a little random turn)
+function plant(B, type, lx, ly, lz, rng, s = 1, t = null) { const p = B.P([lx, ly, lz]); cropSet.add(type, p[0], p[1], p[2], B.F.r + rng() * Math.PI * 2, s * (0.85 + rng() * 0.3), t); }
 // kitchen garden plot (家庭菜園): a low block edge with a wire fence and gate on the street side, ridged beds (畝) of
 // different crops — cabbages, leeks, tomatoes on cane frames, eggplants, potatoes, some under black or silver mulch
 // film — a cucumber net, bird netting over the brassicas, paths of trodden earth, a tool box, water tank and hose,
@@ -1061,21 +1061,16 @@ export function allotment(B, s, rng, gy) {
     for (const e of [bedsZ0, bedsZ1]) B.poly('soil', [[bx - bw / 2 - 0.12, 0.02, e], [bx + bw / 2 + 0.12, 0.02, e], [bx + bw / 2 - 0.08, 0.22, e], [bx - bw / 2 + 0.08, 0.22, e]], [0, 0, e > 0 ? 1 : -1], { color: SOIL });
     if (kind === 'mulch' || kind === 'eggplant' || kind === 'tomato') B.box('dark', bx, 0.222, zc, bw - 0.1, 0.004, L - 0.1, { color: kind === 'mulch' ? [0.72, 0.74, 0.76] : [0.1, 0.1, 0.11] });
     B.detail(1, () => {
-      for (let zz = bedsZ0 + 0.35; zz < bedsZ1 - 0.2; zz += kind === 'leek' ? 0.18 : 0.45) {
-        const j = () => (rng() - 0.5) * 0.08;
-        if (kind === 'cabbage') { B.bbox('plain', bx + j(), 0.22, zz, 0.36, 0.26, 0.36, 0.13, { color: jitter(rng, [0.55, 0.72, 0.42], 0.08) }); B.bbox('plain', bx + j(), 0.26, zz, 0.46, 0.08, 0.46, 0.04, { color: jitter(rng, [0.36, 0.56, 0.36], 0.08) }); }
-        else if (kind === 'leek') for (const lx of [-0.2, 0.2]) B.bbox('plain', bx + lx + j(), 0.22, zz, 0.05, 0.42 + rng() * 0.12, 0.05, 0.02, { color: jitter(rng, [0.42, 0.62, 0.36], 0.08) });
-        else if (kind === 'potato' || kind === 'greens') B.bbox('plain', bx + j(), 0.22, zz, 0.42, kind === 'potato' ? 0.3 : 0.18, 0.4, 0.14, { color: jitter(rng, kind === 'potato' ? [0.34, 0.54, 0.28] : [0.48, 0.7, 0.36], 0.1) });
-        else if (kind === 'eggplant') { B.bbox('plain', bx + j(), 0.22, zz, 0.36, 0.5, 0.36, 0.14, { color: jitter(rng, LEAF, 0.08) }); if (rng() < 0.7) B.bbox('plain', bx + 0.12, 0.35, zz + 0.1, 0.07, 0.16, 0.07, 0.03, { color: [0.28, 0.12, 0.32] }); }
-        else if (kind === 'tomato') for (const lx of [-0.2, 0.2]) { B.cyl('wood', bx + lx, 0.22, zz, 0.012, 0.012, 1.6, 5, { color: [0.62, 0.52, 0.36] });
-          for (let k = 0; k < 3; k++) B.bbox('plain', bx + lx + j(), 0.45 + k * 0.4, zz, 0.24, 0.3, 0.22, 0.1, { color: jitter(rng, LEAF, 0.08) });
-          if (rng() < 0.6) B.bbox('plain', bx + lx + 0.1, 0.6 + rng() * 0.6, zz + 0.06, 0.07, 0.07, 0.07, 0.03, { color: [0.92, 0.22, 0.14] }); }
+      for (let zz = bedsZ0 + 0.35; zz < bedsZ1 - 0.2; zz += kind === 'leek' ? 0.2 : kind === 'greens' ? 0.3 : 0.45) {
+        const T = { cabbage: 'cabbage', leek: 'leek', potato: 'potato', greens: 'greens', eggplant: 'eggplant' }[kind];
+        if (T) for (const lx of kind === 'leek' || kind === 'greens' ? [-0.18, 0.18] : [0]) plant(B, T, bx + lx, 0.22, zz, rng);
+        else if (kind === 'tomato') for (const lx of [-0.2, 0.2]) plant(B, 'tomato', bx + lx, 0.22, zz, rng, 0.95);
       }
       if (kind === 'tomato') for (const lx of [-0.2, 0.2]) B.box('wood', bx + lx, 1.72, (bedsZ0 + bedsZ1) / 2, 0.02, 0.02, L - 0.3, { color: [0.62, 0.52, 0.36] });
       if (kind === 'cucumber') { // net on an A-frame
         for (let zz = bedsZ0 + 0.3; zz < bedsZ1; zz += 1.2) for (const sd of [-1, 1]) B.beam('plain', [bx + sd * 0.35, 0.2, zz], [bx, 1.85, zz], 0.025, 0.025, { color: [0.3, 0.55, 0.35] });
         for (const sd of [-1, 1]) B.quad('chain', [bx + sd * 0.35, 0.25, bedsZ0 + 0.3], [bx + sd * 0.35, 0.25, bedsZ1 - 0.2], [bx, 1.85, bedsZ1 - 0.2], [bx, 1.85, bedsZ0 + 0.3], { uv: 0.2, color: [0.2, 0.55, 0.3] });
-        for (let k = 0; k < Math.floor(L * 3); k++) { const t = rng(), sd = rng() < 0.5 ? -1 : 1; B.bbox('plain', bx + sd * 0.35 * (1 - t), 0.3 + t * 1.5, bedsZ0 + 0.4 + rng() * (L - 0.8), 0.24, 0.2, 0.2, 0.08, { color: jitter(rng, LEAF, 0.1) }); }
+        for (let k = 0; k < Math.floor(L * 2.5); k++) { const t = rng(), sd = rng() < 0.5 ? -1 : 1; plant(B, 'vine', bx + sd * 0.35 * (1 - t), 0.25 + t * 1.4, bedsZ0 + 0.4 + rng() * (L - 0.8), rng); }
       }
       if (kind === 'cabbage') { for (let zz = bedsZ0 + 0.2; zz <= bedsZ1 + 0.01; zz += (L - 0.4) / Math.max(1, Math.round(L / 1.5))) { const hoop = []; for (let k = 0; k <= 8; k++) { const a = Math.PI * k / 8; hoop.push([bx - Math.cos(a) * 0.5, 0.2 + Math.sin(a) * 0.55, zz]); } B.sweep('plastic', circle(0.008, 5), hoop, { color: [0.3, 0.6, 0.7] }); }
         B.quad('poly', [bx - 0.5, 0.2, bedsZ0 + 0.2], [bx - 0.5, 0.2, bedsZ1], [bx, 0.75, bedsZ1], [bx, 0.75, bedsZ0 + 0.2], { color: [0.9, 0.95, 0.95] });
@@ -1135,13 +1130,6 @@ export function field(B, s, rng, gy) {
       q4(mat, p.L0, q.L0, q.L1, p.L1, sideC); q4(mat, p.L1, q.L1, q.R1, p.R1, topC); q4(mat, p.R1, q.R1, q.R0, p.R0, sideC); }
     for (const [e, sg] of [[st[0], -1], [st[nz], 1]]) B.poly(mat, [e.L0, e.L1, e.R1, e.R0], [0, 0, sg], { color: sideC, uv: US });
     const topAt = zz => { const k = Math.min(nz - 1, Math.floor((zz - zA) / (zB - zA) * nz)), t = ((zz - zA) / (zB - zA) * nz) - k; return lerp(st[k].g, st[k + 1].g, t) + hh; };
-    // the crop mass as one low strip per 2 m (it keeps the rows green where the single plants are no longer drawn)
-    if (LEAF[kind]) for (let k = 0; k < nz; k++) { const p = st[k], q = st[k + 1], zm = (p.zz + q.zz) / 2, len = q.zz - p.zz - 0.12, yb = Math.min(p.g, q.g) + hh - 0.02;
-      if (kind === 'leek') { // white shanks earthed up, then the blue-green blades fanning out both ways: two jagged ribbons
-        B.box('plain', xc, yb, zm, 0.1, 0.1, len, { color: [0.86, 0.86, 0.78] });
-        for (const sd of [-1, 1]) for (let zz = p.zz + 0.06; zz < q.zz - 0.1; zz += 0.15) { const y0 = yb + 0.08, tip = [xc + sd * (0.1 + rng() * 0.08), y0 + 0.36 + rng() * 0.16, zz + 0.075], col = jitter(rng, LEAF.leek, 0.06);
-          for (const hint of [[1, 0, 0], [-1, 0, 0]]) B.poly('plain', [[xc, y0, zz], [xc, y0, zz + 0.15], tip], hint, { color: col }); } }
-      else B.box('plain', xc, yb, zm, tw * 1.7, kind === 'daikon' ? 0.09 : kind === 'cabbage' ? 0.13 : 0.2, len, { color: mul(LEAF[kind], 0.82) }); }
     if (kind === 'tunnel') { // white non-woven row cover on hoops (トンネル)
       const R = bw * 0.95, H = 0.5, arcP = (k, zz, g) => { const a = Math.PI * k / 6; return [xc - Math.cos(a) * R, g + Math.sin(a) * H, zz]; };
       for (let k = 0; k < nz; k++) { const p = st[k], q = st[k + 1];
@@ -1150,26 +1138,11 @@ export function field(B, s, rng, gy) {
       B.detail(1, () => { for (let zz = zA + 0.6; zz < zB; zz += 1.5) { const g = topAt(zz) - hh, hoop = []; for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8; hoop.push([xc - Math.cos(a) * (R + 0.02), g + Math.sin(a) * (H + 0.02), zz]); } B.sweep('plastic', circle(0.008, 5), hoop, { color: [0.3, 0.55, 0.75] }); } });
       return;
     }
-    B.detail(1, () => {
-      const j = () => (rng() - 0.5) * 0.06;
-      if (kind === 'cabbage') for (let zz = zA + 0.3; zz < zB - 0.2; zz += 0.42) { const t = topAt(zz);
-        B.bbox('plain', xc + j(), t - 0.02, zz, 0.3, 0.24, 0.3, 0.1, { color: jitter(rng, [0.62, 0.78, 0.46], 0.08) }); B.bbox('plain', xc + j(), t + 0.02, zz, 0.5, 0.07, 0.48, 0.03, { color: jitter(rng, LEAF.cabbage, 0.06) }); }
-      else if (kind === 'napa') for (let zz = zA + 0.3; zz < zB - 0.2; zz += 0.45) { const t = topAt(zz);
-        B.bbox('plain', xc + j(), t - 0.02, zz, 0.28, 0.42, 0.28, 0.1, { color: jitter(rng, [0.8, 0.86, 0.56], 0.06) }); B.bbox('plain', xc + j(), t, zz, 0.42, 0.14, 0.42, 0.05, { color: jitter(rng, LEAF.napa, 0.06) }); }
-      else if (kind === 'daikon') for (let zz = zA + 0.25; zz < zB - 0.2; zz += 0.3) { const t = topAt(zz);
-        B.box('plain', xc + j(), t, zz, 0.46, 0.14, 0.1, { color: jitter(rng, LEAF.daikon, 0.06) }); B.box('plain', xc + j(), t, zz, 0.1, 0.18, 0.4, { color: jitter(rng, LEAF.daikon, 0.06) });
-        B.cyl('plain', xc, t - 0.05, zz, 0.045, 0.045, 0.1, 8, { color: [0.92, 0.92, 0.86], cap: true }); }
-      else if (kind === 'potato') for (let zz = zA + 0.3; zz < zB - 0.2; zz += 0.4) { const t = topAt(zz);
-        B.bbox('plain', xc + j(), t - 0.02, zz, 0.5, 0.32 + rng() * 0.08, 0.46, 0.14, { color: jitter(rng, LEAF.potato, 0.08) }); }
-      else if (kind === 'taro') for (let zz = zA + 0.4; zz < zB - 0.3; zz += 0.7) { const t = topAt(zz);
-        for (let k = 0; k < 3; k++) { const a = rng() * TAU, L = 0.55 + rng() * 0.25, lx = xc + Math.cos(a) * 0.18, lz = zz + Math.sin(a) * 0.18, hy = t + L;
-          B.beam('plain', [xc, t, zz], [lx, hy, lz], 0.02, 0.02, { color: [0.42, 0.56, 0.34] });
-          const ca = Math.cos(a) * 0.26, sa = Math.sin(a) * 0.26, pa = [lx - sa, hy + 0.05, lz + ca], pb = [lx + Math.cos(a) * 0.36, hy - 0.12, lz + Math.sin(a) * 0.36], pc = [lx + sa, hy + 0.05, lz - ca], pd = [lx - Math.cos(a) * 0.1, hy + 0.08, lz - Math.sin(a) * 0.1];
-          const col = jitter(rng, LEAF.taro, 0.06); B.poly('plain', [pd, pa, pb, pc], [0, 1, 0], { color: col }); B.poly('plain', [pd, pa, pb, pc], [0, -1, 0], { color: mul(col, 0.8) }); } }
-      else if (kind === 'mulchB' || kind === 'mulchS') for (let zz = zA + 0.25; zz < zB - 0.15; zz += 0.3) { const t = topAt(zz) + 0.005;
-        for (const lx of [-tw * 0.5, tw * 0.5]) B.box('plain', xc + lx, t, zz, 0.14, 0.08 + rng() * 0.05, 0.14, { color: jitter(rng, [0.4, 0.66, 0.34], 0.08) }); }
-      else if (kind === 'fallow') for (let k = 0; k < (zB - zA) * 0.8; k++) B.box('plain', xc + (rng() - 0.5) * pitch, topAt(zA + rng() * (zB - zA)) - hh + 0.02, zA + rng() * (zB - zA), 0.12, 0.08, 0.12, { color: jitter(rng, [0.44, 0.58, 0.3], 0.1) });
-    });
+    // the plants themselves (crops.js): spacing and rows per crop, a plant every few tens of centimetres along the ridge
+    const SP = { cabbage: [0.42, [0]], napa: [0.45, [0]], daikon: [0.28, [0]], leek: [0.16, [0]], potato: [0.38, [0]], taro: [0.7, [0]], mulchB: [0.3, [-0.5, 0.5]], mulchS: [0.3, [-0.5, 0.5]] }[kind];
+    const T = { cabbage: 'cabbage', napa: 'napa', daikon: 'daikon', leek: 'leek', potato: 'potato', taro: 'taro', mulchB: 'seedling', mulchS: 'seedling' }[kind];
+    if (SP) for (let zz = zA + 0.3; zz < zB - 0.2; zz += SP[0]) for (const f of SP[1]) plant(B, T, xc + f * tw + (rng() - 0.5) * 0.05, topAt(zz) - 0.01, zz, rng);
+    if (kind === 'fallow') for (let k = 0; k < (zB - zA) * 0.8; k++) { const zz = zA + rng() * (zB - zA); plant(B, 'greens', xc + (rng() - 0.5) * pitch, topAt(zz) - hh + 0.02, zz, rng, 0.6, [0.8, 0.85, 0.6]); }
   };
   const KINDS = ['cabbage', 'napa', 'daikon', 'leek', 'potato', 'taro', 'tunnel', 'mulchB', 'mulchS', 'fallow'];
   const rows = [];

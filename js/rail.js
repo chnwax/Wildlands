@@ -77,20 +77,33 @@ export function buildRailway(ctx) {
     B.quad('ballast', [xa, yb, zc + hw], [xb, yb, zc + hw], [xb, yt, zc + tw], [xa, yt, zc + tw], { uv: 2, color: sh });
     B.quad('ballast', [xb, yb, zc - hw], [xa, yb, zc - hw], [xa, yt, zc - tw], [xb, yt, zc - tw], { uv: 2, color: sh });
   }
-  // rails (steel, slightly rusty sides)
+  // rails: a real flat-bottom section (foot, web, head with rounded gauge corners) swept along the line in rust-brown
+  // steel, with the bright polished running band that the wheels keep clean along the top of the head
+  MT.railSide = MT.railSide || new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.35, envMapIntensity: 0.4 });
+  MT.railTop = MT.railTop || new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.65, envMapIntensity: 0.35 });
+  const RP = [[-0.064, 0], [0.064, 0], [0.064, 0.011], [0.02, 0.024], [0.0085, 0.034], [0.0085, 0.095], [0.02, 0.103], [0.033, 0.108], [0.034, 0.132], [0.03, 0.14], [0.018, 0.1445],
+    [-0.018, 0.1445], [-0.03, 0.14], [-0.034, 0.132], [-0.033, 0.108], [-0.02, 0.103], [-0.0085, 0.095], [-0.0085, 0.034], [-0.02, 0.024], [-0.064, 0.011]];
+  const ryb = y0 + 0.31;
+  B.frame(0, 0, 0, 0);
   for (const tz of RAIL.z) for (const side of [-1, 1]) {
     const z = tz + side * RAIL.gauge / 2;
-    for (let x = X0; x < X1; x += 50) {
-      B.frame(0, 0, 0, 0);
-      B.box('metal', Math.min(x + 25, X1 - 25), y0 + 0.28, z, 50, 0.13, 0.07, { color: [0.36, 0.26, 0.2] });
-      B.box('steel', Math.min(x + 25, X1 - 25), y0 + 0.41, z, 50, 0.04, 0.065, { color: [1, 1, 1] });
-    }
+    for (let x = X0; x < X1; x += 50) { const xe = Math.min(X1, x + 50);
+      B.sweep('railSide', RP, [[x, ryb, z], [xe, ryb, z]], { closed: true, color: [0.5, 0.36, 0.27], uv: 1 });
+      B.quad('railTop', [x, ryb + 0.1449, z + 0.019], [xe, ryb + 0.1449, z + 0.019], [xe, ryb + 0.1449, z - 0.019], [x, ryb + 0.1449, z - 0.019], { color: [0.8, 0.79, 0.76] }); }
   }
-  // concrete sleepers (instanced)
+  // prestressed concrete sleepers (PC枕木): deeper under the rail seats than in the middle, a rubber pad and a pair of
+  // spring clips at each seat; instanced, each a slightly different shade
+  const slGeo = (() => { const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+    const C = [0.54, 0.53, 0.5], P = [0.1, 0.1, 0.11], K = [0.22, 0.23, 0.24], parts = [tint(new THREE.BoxGeometry(0.2, 0.12, 0.86).translate(0, -0.02, 0), C)];
+    for (const s of [-1, 1]) { const rz = s * RAIL.gauge / 2;
+      parts.push(tint(new THREE.BoxGeometry(0.25, 0.16, 0.58).translate(0, 0, s * 0.71), C));
+      parts.push(tint(new THREE.BoxGeometry(0.19, 0.01, 0.17).translate(0, 0.085, rz), P));
+      for (const e of [-1, 1]) { parts.push(tint(new THREE.BoxGeometry(0.08, 0.03, 0.045).translate(0, 0.1, rz + e * 0.088), K)); parts.push(tint(new THREE.BoxGeometry(0.03, 0.05, 0.03).translate(0, 0.095, rz + e * 0.11), K)); } }
+    return mergeGeometries(parts); })();
   const sl = []; for (const tz of RAIL.z) for (let x = X0; x < X1; x += 0.62) sl.push([x, tz]);
-  const sleeper = new THREE.InstancedMesh(new THREE.BoxGeometry(0.24, 0.16, 2.0), new THREE.MeshStandardMaterial({ color: 0x8a8884, roughness: 0.95 }), sl.length);
-  const m4 = new THREE.Matrix4();
-  sl.forEach(([x, z], i) => sleeper.setMatrixAt(i, m4.makeTranslation(x, y0 + 0.22, z)));
+  const sleeper = new THREE.InstancedMesh(slGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }), sl.length);
+  const m4 = new THREE.Matrix4(), sc = new THREE.Color(), srng = mulberry32(606);
+  sl.forEach(([x, z], i) => { sleeper.setMatrixAt(i, m4.makeTranslation(x, y0 + 0.22, z)); const v = 0.86 + srng() * 0.2; sleeper.setColorAt(i, sc.setRGB(v, v * (0.98 + srng() * 0.03), v * 0.97)); });
   sleeper.receiveShadow = true; sleeper.castShadow = false; sleeper.frustumCulled = false; scene.add(sleeper);
 
   // catenary: portal-frame masts every 50 m with contact + messenger wires
@@ -316,35 +329,14 @@ export function railFences(B, groundAt, Y0, gaps, stationX = 0) {
   }
 }
 
-// Trackside: the things that make the line read as a maintained railway rather than one repeated strip. Covered
-// concrete drains (with grated catch-pits) at the foot of the ballast, a cable trough (トラフ) with lids along the
-// maintenance path, signal / relay cabinets on plinths, a signal equipment hut by the station, kilometre posts every
-// 100 m, speed boards, ATS beacons between the rails ahead of the signals, and at each level crossing its control
-// cabinet. gaps: x ranges kept clear (crossings, platforms, bridge).
+// Trackside: the things that make the line read as a maintained railway rather than one repeated strip: signal /
+// relay cabinets on plinths, a signal equipment hut by the station, kilometre posts every 100 m, speed boards, ATS
+// beacons between the rails ahead of the signals, and at each level crossing its control cabinet. gaps: x ranges
+// kept clear (crossings, platforms, bridge).
 export function trackside(B, groundAt, y0, { gaps = [], crossX = [], x0 = -600, x1 = 600, stationX = 0, platformLen = 100 }) {
   const free = (x, pad = 0) => !gaps.some(([a, b]) => x > a - pad && x < b + pad) && Math.abs(groundAt(x, -80) - y0) < 0.7;
   const rng = mulberry32(2718);
   B.frame(0, 0, 0, 0);
-  // covered U-drains (蓋付き側溝) both sides, lids in 1 m modules, a grated lid every 8 m
-  for (const dz of [-6.1, 6.1]) {
-    const z = -80 + dz;
-    for (let x = x0; x < x1; x += 1) {
-      if (!free(x + 0.5) || !free(x) || !free(x + 1)) continue;
-      const g = groundAt(x + 0.5, z), grate = Math.round(x) % 8 === 0;
-      B.box(grate ? 'dark' : 'concrete', x + 0.5, g - 0.1, z, 0.97, 0.16, 0.5, { color: grate ? [0.22, 0.22, 0.23] : [0.74, 0.74, 0.71], skip: 'ny' });
-      if (grate) B.quad('chain', [x + 0.03, g + 0.065, z + 0.23], [x + 0.97, g + 0.065, z + 0.23], [x + 0.97, g + 0.065, z - 0.23], [x + 0.03, g + 0.065, z - 0.23], { uv: 0.05, color: [0.45, 0.45, 0.46] });
-    }
-  }
-  // cable trough along the maintenance path (south side through the whole section, north side in town)
-  for (const dz of [7.0, -7.0]) {
-    const z = -80 + dz;
-    for (let x = x0; x < x1; x += 1) {
-      if (dz < 0 && Math.abs(x) > 260) continue;
-      if (!free(x + 0.5, 1) || !free(x, 1) || !free(x + 1, 1)) continue;
-      const g = groundAt(x + 0.5, z);
-      B.box('concrete', x + 0.5, g - 0.18, z, 0.985, 0.3, 0.4, { color: rng() < 0.12 ? [0.66, 0.66, 0.63] : [0.78, 0.78, 0.76], skip: 'ny' });
-    }
-  }
   const cabinet = (x, z, face, big) => { // grey steel cabinet on a concrete plinth, doors, louvres, conduit into the ground
     const g = groundAt(x, z), W = big ? 1.2 : 0.8, H = big ? 1.7 : 1.3, D = 0.55, C = [0.72, 0.74, 0.74];
     B.frame(x, g, z, face);
@@ -359,7 +351,7 @@ export function trackside(B, groundAt, y0, { gaps = [], crossX = [], x0 = -600, 
   };
   // relay cabinets every 120–200 m, alternating sides, and one beside each crossing
   for (let x = x0 + 60; x < x1 - 60; x += 120 + rng() * 80) { const sd = rng() < 0.5 ? 1 : -1; if (free(x, 6)) cabinet(x, -80 + sd * 8.1, sd > 0 ? Math.PI : 0, rng() < 0.4); }
-  for (const cx of crossX) cabinet(cx + 9.5, -80 - 8.1, 0, true);
+  for (const cx of crossX) cabinet(cx + (cx > 150 ? -9.5 : 9.5), -80 - 8.1, 0, true); // (landward of the riverside crossing)
   // signal equipment hut (信号機器室) by the east end of the station
   { const hx = stationX + platformLen / 2 + 24, hz = -90.0, g = groundAt(hx, hz);
     if (free(hx, 4)) { B.frame(hx, g, hz, 0);
@@ -414,7 +406,12 @@ export const crossings = [];
 const lampOn = new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff1a0a, emissiveIntensity: 9 });
 const lampOff = new THREE.MeshStandardMaterial({ color: 0x220505, roughness: 0.3 });
 const hoodMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.6, side: THREE.DoubleSide });
-const armMat = new THREE.MeshStandardMaterial({ map: stripeTex, roughness: 0.5 });
+const armMat = new THREE.MeshStandardMaterial({ map: stripeTex, roughness: 0.45 });
+const gateMetal = new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.45, metalness: 0.6 });
+const tipMat = new THREE.MeshStandardMaterial({ color: 0xc81010, roughness: 0.3, emissive: 0x400000 });
+// cover panels of the barrier machine: diagonal yellow and black
+const coverTex = canvasTex(128, 256, (g, W, H) => { g.fillStyle = '#111'; g.fillRect(0, 0, W, H); g.fillStyle = '#f2c200'; for (let i = -8; i < 16; i++) { g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32 + 16, 0); g.lineTo(i * 32 + 16 + H * 0.5, H); g.lineTo(i * 32 + H * 0.5, H); g.fill(); } });
+const coverMat = new THREE.MeshStandardMaterial({ map: coverTex, roughness: 0.5 });
 const crossbuckTex = canvasTex(256, 256, (g, W, H) => {
   g.clearRect(0, 0, W, H); g.translate(W / 2, H / 2);
   for (const a of [Math.PI / 4, -Math.PI / 4]) { g.save(); g.rotate(a); g.fillStyle = '#111'; g.fillRect(-120, -22, 240, 44); for (let i = -120; i < 120; i += 40) { g.fillStyle = '#f2c200'; g.fillRect(i, -18, 20, 36); } g.restore(); }
@@ -426,7 +423,7 @@ const crossbuckMat = new THREE.MeshStandardMaterial({ map: crossbuckTex, transpa
 // and the road's edge lines painted on. The approach roads ramp up to it (town.js). Each approach has its warning
 // machine on the driver's left (keep-left): striped mast, crossbuck, twin red lamps with hoods for both directions, a
 // bell speaker and a direction indicator; and a barrier machine whose striped boom swings down across the road.
-export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0 } = {}) {
+export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0, machineSide = 0 } = {}) {
   const rt = railTop(y0), zN = -86.9, zS = -73.1, zA = -86.6, zB = -73.4, W = roadW - 0.4, g = RAIL.gauge;
   const top = rt - 0.003, base = y0 + 0.2;
   B.frame(x, 0, -80, 0);
@@ -455,8 +452,9 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0 
   }
   // flangeway floors (dark, below the rail head) so the gaps read as slots, not holes into the ballast
   for (const [h0, h1] of holes) B.box('dark', 0, rt - 0.09, (h0 + h1) / 2 + 80, W, 0.02, h1 - h0, { color: [0.12, 0.12, 0.12] });
-  // concrete edge beams where the crossing meets the ballast
-  for (const s2 of [-1, 1]) B.bbox('concrete', s2 * (W / 2 + 0.12), y0 - 0.1, 0, 0.24, top - y0 + 0.12, zB - zA, 0.02, { color: [0.66, 0.66, 0.64], uv: 1.5 });
+  // concrete edge beams where the deck meets the ballast: flush with the deck and broken at every rail, so nothing
+  // stands proud across the line (the old full-length beams rose 2 cm above the deck and ran over the rails)
+  for (const [za, zb] of spans) for (const s2 of [-1, 1]) B.box('concrete', s2 * (W / 2 + 0.1), y0 - 0.1, (za + zb) / 2, 0.2, top - y0 + 0.1 - 0.004, zb - za, { color: [0.66, 0.66, 0.64], uv: 1.5 });
   if (walk > 0) for (const zz of [zA + 80 + 0.45, zB + 80 - 0.45]) for (const s2 of [-1, 1]) // warning tiles where the footway meets the tracks
     B.poly('tactileD', [[s2 * hw + s2 * 0.25, top + 0.004, zz - 0.3], [s2 * hw + s2 * 0.25, top + 0.004, zz + 0.3], [s2 * (W / 2 - 0.25), top + 0.004, zz + 0.3], [s2 * (W / 2 - 0.25), top + 0.004, zz - 0.3]], [0, 1, 0], { uvs: [[0, 0], [0, 2], [(W / 2 - hw - 0.5) / 0.3, 2], [(W / 2 - hw - 0.5) / 0.3, 0]] });
   B.frame(0, 0, 0, 0);
@@ -465,7 +463,7 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0 
   const STRIPE = i => i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.75, 0.05];
   for (const [z, side] of [[zN, -1], [zS, 1]]) {
     // keep-left: traffic entering from the south (heading -z) has -x on its left, from the north +x
-    const m = -side, mx = x + m * (roadW / 2 + 0.75), mz = z + side * 0.35, gy = y0 + 0.45;
+    const m = machineSide || -side, mx = x + m * (roadW / 2 + 0.75), mz = z + side * 0.35, gy = y0 + 0.45;
     B.frame(mx, gy, mz, 0);
     B.bbox('concrete', 0, -0.35, 0, 0.7, 0.45, 0.7, 0.02, { color: [0.7, 0.7, 0.68] });                       // footing
     for (let i = 0; i < 13; i++) B.cyl('plain', 0, 0.1 + i * 0.26, 0, 0.075, 0.075, 0.26, 12, { color: STRIPE(i) }); // striped mast
@@ -475,13 +473,22 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0 
     B.bbox('plastic', 0, 3.58, 0, 0.3, 0.24, 0.24, 0.03, { color: [0.18, 0.18, 0.2] });                      // bell speaker
     B.bbox('dark', 0, 1.72, 0, 0.62, 0.22, 0.12, 0.02, { color: [0.1, 0.1, 0.1] });                           // direction indicator
     const cb = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), crossbuckMat); cb.position.set(mx, gy + 3.05, mz); cb.castShadow = true; scene.add(cb);
-    // barrier machine: striped housing with a pivot hub, boom with a counterweight
+    // barrier machine (電動遮断機): a tall cabinet on a concrete base, diagonal yellow-and-black cover panels front and
+    // back, a domed cap, a service door and louvres on the side, and the drive shaft coming out of the face toward
+    // the road approach, where the boom hub turns
     B.frame(mx, gy, mz + side * 0.55, 0);
-    B.bbox('dark', 0, 0, 0, 0.46, 1.05, 0.4, 0.04, { color: [0.12, 0.12, 0.12] });
-    for (let i = 0; i < 4; i++) B.box('plain', 0, 0.12 + i * 0.24, side * 0.201, 0.46, 0.1, 0.004, { color: [0.95, 0.75, 0.05] });
-    B.cyl('steel', 0, 0.86, side * 0.22, 0.09, 0.09, 0.12, 12, { color: [0.55, 0.56, 0.58], cap: true });
-    addCircle(mx, mz, 0.3); addBox(mx, mz + side * 0.55, 0.25, 0.22, 0);
+    B.bbox('concrete', 0, -0.3, 0, 0.66, 0.36, 0.58, 0.02, { color: [0.7, 0.7, 0.68] });
+    B.bbox('dark', 0, 0.06, 0, 0.5, 1.16, 0.42, 0.03, { color: [0.13, 0.13, 0.14] });
+    B.bbox('dark', 0, 1.22, 0, 0.56, 0.05, 0.48, 0.015, { color: [0.18, 0.18, 0.19] });
+    B.cyl('dark', 0, 1.27, 0, 0.2, 0.12, 0.09, 16, { color: [0.18, 0.18, 0.19], cap: true });
+    B.detail(1, () => { for (const sx of [-1, 1]) { B.box('dark', sx * 0.251, 0.2, 0, 0.004, 0.9, 0.34, { color: [0.2, 0.2, 0.21] });
+      for (let k = 0; k < 5; k++) B.box('dark', sx * 0.254, 0.85 + k * 0.05, 0, 0.004, 0.02, 0.24, { color: [0.08, 0.08, 0.08] }); } });
+    B.cyl('steel', 0, 0.9, side * 0.21, 0.055, 0.055, 0.001, 12, { color: [0.5, 0.52, 0.54] });
+    B.beam('steel', [0, 0.95, side * 0.21], [0, 0.95, side * 0.33], 0.07, 0.07, { color: [0.45, 0.47, 0.5] });    // drive shaft
+    addCircle(mx, mz, 0.3); addBox(mx, mz + side * 0.55, 0.3, 0.26, 0);
     B.frame(0, 0, 0, 0);
+    for (const sgn of [-1, 1]) { const pn = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 1.08), coverMat);
+      pn.position.set(mx, gy + 0.64, mz + side * 0.55 + sgn * 0.212); pn.rotation.y = sgn > 0 ? 0 : Math.PI; scene.add(pn); }
     for (const face of [0, Math.PI]) for (const lx of [-0.6, 0.6]) {
       const l = new THREE.Mesh(new THREE.CircleGeometry(0.15, 20), lampOff);
       const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 20, 1, true, -Math.PI / 2, Math.PI), hoodMat);
@@ -489,14 +496,21 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0 
       l.position.set(lx, 0, 0.075); hood.rotation.x = Math.PI / 2; hood.position.set(lx, 0.0, 0.18); grp.add(l, hood); scene.add(grp);
       c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 });
     }
-    const pivot = new THREE.Group(); pivot.position.set(mx, gy + 0.86, mz + side * 0.9);
+    // boom: hub on the shaft, a square steel holder clamping the root, a tapered striped fibreglass bar with a red
+    // reflector tip, and a counterweight arm with stacked plates on the far side of the pivot
+    const pivot = new THREE.Group(); pivot.position.set(mx, gy + 0.95, mz + side * 0.9);
     const armL = roadW + 0.2;
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, armL, 12).rotateZ(Math.PI / 2), armMat);
-    arm.geometry.translate(-m * armL / 2, 0, 0); arm.castShadow = true;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(m > 0 ? 0.034 : 0.05, m > 0 ? 0.05 : 0.034, armL - 0.4, 14).rotateZ(Math.PI / 2), armMat);
+    arm.geometry.translate(-m * (armL / 2 + 0.2), 0, 0); arm.castShadow = true;
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.1, 20).rotateX(Math.PI / 2), gateMetal);
+    const holder = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.13, 0.12).translate(-m * 0.28, 0, 0), gateMetal);
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.1, 12).rotateZ(Math.PI / 2).translate(-m * (armL - 0.02), 0, 0), tipMat);
+    const cwArm = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.07, 0.06).translate(m * 0.3, 0, 0), gateMetal);
+    const cw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.3, 0.16).translate(m * 0.55, -0.02, 0), hoodMat);
+    for (const o of [arm, hub, holder, cw, cwArm]) o.castShadow = true;
     // stripes run along the boom: texture u follows its length (1.6 m per repeat), v goes round it
     const at = arm.geometry.attributes.uv; for (let i = 0; i < at.count; i++) { const u = at.getX(i), v = at.getY(i); at.setXY(i, v * armL / 1.6, u); }
-    const cw = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.14), hoodMat); cw.geometry.translate(m * 0.35, 0, 0);
-    pivot.add(arm, cw); scene.add(pivot);
+    pivot.add(arm, hub, holder, tip, cwArm, cw); scene.add(pivot);
     c.arms.push({ pivot, side: m, len: armL, x0: mx, z: mz + side * 0.9 });
   }
   crossings.push(c);

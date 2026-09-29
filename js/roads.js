@@ -145,6 +145,11 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     for (let s = 0; s < n.PL.len; s += step) cuts.add(s);
     for (const g of n.PL.segs) cuts.add(g.s0);
     for (const [a, b] of n.clips) for (let k = 0; k <= FADE; k++) { if (a - k > 0 && a - k < n.PL.len) cuts.add(a - k); if (b + k > 0 && b + k < n.PL.len) cuts.add(b + k); }
+    // the carriageway ends exactly where something else takes over (a level-crossing deck): find each edge of the
+    // skipped stretch to a centimetre, so the asphalt meets the deck instead of stopping short on a step grid
+    { const sk = s => { const q = sampleAt(n.PL, s); return skip(q.x, q.z, n.R); };
+      let prev = sk(0);
+      for (let s = 0.25; s <= n.PL.len; s += 0.25) { const cur = sk(s); if (cur !== prev) { let a = s - 0.25, b = s; for (let k = 0; k < 12; k++) { const m = (a + b) / 2; if (sk(m) === prev) a = m; else b = m; } cuts.add((a + b) / 2); } prev = cur; } }
     const ss = [...cuts].sort((a, b) => a - b);
     n.pieces = [];
     for (let i = 0; i + 1 < ss.length; i++) {

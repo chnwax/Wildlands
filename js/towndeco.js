@@ -5,8 +5,11 @@ import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle, addPlatfor
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvasTex, signMesh, JP_FONT, lampPoints, materials } from './townkit.js';
 import { wallFill, reveals, windowUnit, inFrame } from './building.js';
+import { cropSet } from './crops.js';
 import { torii, shimenawa, toro, offeringBox } from './shrine.js';
 
+const plantAt = (B, type, lx, ly, lz, rng, s = 1) => { const p = B.P([lx, ly, lz]); cropSet.add(type, p[0], p[1], p[2], B.F.r + rng() * Math.PI * 2, s * (0.85 + rng() * 0.3)); };
+const addPlatformAt = (p, hx, hz, r, top) => addPlatform(p[0], p[2], hx, hz, r, top);
 // chain-link fence mesh: a diamond wire pattern, alpha-tested so it stays see-through (one texture repeat = 0.5 m)
 export function chainMaterial() {
   const MT = materials();
@@ -17,6 +20,8 @@ export function chainMaterial() {
   });
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   MT.chain = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true, roughness: 0.5, metalness: 0.4 });
+  // woven windbreak screen for sports fences: dense dark green, a little see-through
+  MT.screen = new THREE.MeshStandardMaterial({ color: 0x1d4630, roughness: 0.9, transparent: true, opacity: 0.86, side: THREE.DoubleSide, depthWrite: false });
   // mesh wire keeps its coverage down the mip chain (alpha scaled by mip level), so fences and nets neither fade out nor
   // shimmer into moire at distance; alpha-to-coverage (MSAA) then resolves the thin wires smoothly
   MT.chain.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', `
@@ -474,13 +479,50 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   B.box('stucco', 0, H - 0.3, bd / 2 - 0.15, 2.6, 2.4, 0.35, { color: [0.95, 0.94, 0.9], uv: 3 });
   const cp = B.P([0, H + 0.9, bd / 2 + 0.05]);
   schoolClock(cp[0], cp[1], cp[2], r);
-  // entrance canopy over a raised landing, the school's name on its fascia
-  B.box('concrete', 0, 2.9, bd / 2 + 1.6, 6.4, 0.2, 3.2, { color: [0.88, 0.88, 0.86] });
-  for (const sx of [-2.9, 2.9]) B.box('concrete', sx, 0, bd / 2 + 3, 0.3, 2.9, 0.3, { color: [0.88, 0.88, 0.86] });
-  B.bbox('concrete', 0, -0.1, bd / 2 + 1.3, 6.6, 0.25, 2.6, 0.02, { color: [0.8, 0.8, 0.78] });
-  B.box('dark', 0, 0.15, bd / 2 + 0.9, 2.4, 0.012, 1.2, { color: [0.2, 0.24, 0.2] });                                        // doormat
-  { const nm = signMesh(3.4, 0.26, (g, W, Hh) => { g.fillStyle = '#f4f2ec'; g.fillRect(0, 0, W, Hh); g.fillStyle = '#20314f'; g.font = `bold ${Hh * 0.7}px ${JP_FONT}`; g.textAlign = 'center'; g.fillText('桜川町立 桜川小学校', W / 2, Hh * 0.78); }, 0.25, 128);
-    const np = B.P([0, 3.0, bd / 2 + 3.21]); nm.position.set(...np); nm.rotation.y = r; scene.add(nm); }
+  // main entrance (昇降口): a raised porch under a deep flat roof on round columns, the school's name in cast letters
+  // on the fascia with the cherry-blossom crest beside it, a glazed wind-lobby (風除室) with sliding doors in front of
+  // the entrance, steps across the front and a ramp at one side, brick planters of flowers either side of the steps
+  {
+    const PD = 4.6, PW = 11, zf = bd / 2 + PD, SY = 0.32, STONE = [0.8, 0.79, 0.76], COL = [0.94, 0.93, 0.9];
+    B.bbox('concrete', 0, -0.12, bd / 2 + PD / 2, PW, SY + 0.12, PD, 0.02, { color: STONE, uv: 1.5 });                          // porch floor
+    for (let k = 1; k <= 2; k++) B.bbox('concrete', -1, -0.12, zf + k * 0.34 - 0.17, 7, SY + 0.12 - k * SY / 3, 0.34, 0.015, { color: mul(STONE, 1 - k * 0.03) }); // steps
+    { const rx0 = 3.5, rl = 4.2; B.poly('concrete', [[rx0, SY, zf], [rx0 + 1.5, SY, zf], [rx0 + 1.5, 0.06, zf + rl], [rx0, 0.06, zf + rl]], [0, 1, 0], { color: STONE }); // ramp
+      for (const xx of [rx0, rx0 + 1.5]) B.poly('concrete', [[xx, -0.1, zf], [xx, SY, zf], [xx, 0.06, zf + rl], [xx, -0.1, zf + rl]], [xx > rx0 ? 1 : -1, 0, 0], { color: STONE });
+      for (const xx of [rx0 + 0.05, rx0 + 1.45]) { B.beam('steel', [xx, SY + 0.85, zf], [xx, 0.06 + 0.85, zf + rl], 0.04, 0.04, { color: [0.72, 0.74, 0.76] });
+        for (const t of [0, 0.5, 1]) B.cyl('steel', xx, lerp(SY, 0.06, t), zf + rl * t, 0.022, 0.022, 0.85, 8, { color: [0.72, 0.74, 0.76] }); } }
+    // roof slab on four columns, a soffit with downlights
+    const RY = 3.7, RD = PD + 1.4;
+    B.bbox('concrete', 0, RY, bd / 2 + RD / 2 - 0.2, PW + 1.2, 0.4, RD, 0.03, { color: COL, uv: 2 });
+    for (const cx of [-PW / 2 + 0.6, -1.6, 1.6, PW / 2 - 0.6]) { B.cyl('concrete', cx, SY, zf - 0.2, 0.2, 0.2, RY - SY, 20, { color: COL }); extras.push({ t: 'circle', p: B.P([cx, 0, zf - 0.2]), r: 0.22 }); }
+    for (const cx of [-3.5, 0, 3.5]) { B.box('lamp', cx, RY - 0.012, bd / 2 + 2.6, 0.5, 0.012, 0.5); lampPoints.push({ p: B.P([cx, RY - 0.2, bd / 2 + 2.6]), s: 0.45 }); }
+    // wind lobby: aluminium-framed glass box round the entrance doors, automatic sliding doors in its front
+    const LW = 5.6, LD = 2.2, LH = 2.8, AL = { color: [0.8, 0.82, 0.84] }, lz = bd / 2 + LD;
+    for (const [a, b2, n] of [[[-LW / 2, lz], [LW / 2, lz], 4], [[-LW / 2, bd / 2], [-LW / 2, lz], 2], [[LW / 2, bd / 2], [LW / 2, lz], 2]]) {
+      B.quad('glass', [a[0], SY, a[1]], [b2[0], SY, b2[1]], [b2[0], SY + LH, b2[1]], [a[0], SY + LH, a[1]], { color: [0.9, 0.95, 1] });
+      for (let k = 0; k <= n; k++) B.box('alu', lerp(a[0], b2[0], k / n), SY, lerp(a[1], b2[1], k / n), 0.07, LH, 0.07, AL);
+      for (const yy of [SY, SY + 2.3, SY + LH - 0.07]) B.beam('alu', [a[0], yy + 0.035, a[1]], [b2[0], yy + 0.035, b2[1]], 0.07, 0.07, AL); }
+    B.box('alu', 0, SY + LH, bd / 2 + LD / 2, LW + 0.1, 0.1, LD + 0.1, AL);
+    B.box('dark', 0, SY + 2.38, lz + 0.05, 1.8, 0.18, 0.08, { color: [0.2, 0.2, 0.22] });                                          // door operator
+    B.box('dark', 0, SY + 0.002, lz - 0.5, 2.2, 0.01, 1.6, { color: [0.2, 0.24, 0.2] });                                         // entrance mat
+    extras.push({ t: 'box', p: B.P([-LW / 2, 0, bd / 2 + LD / 2]), hx: 0.06, hz: LD / 2, r }, { t: 'box', p: B.P([LW / 2, 0, bd / 2 + LD / 2]), hx: 0.06, hz: LD / 2, r });
+    // name in cast letters on the fascia and the crest (校章: a five-petal cherry blossom round the character 桜)
+    { const nm = signMesh(6.2, 0.36, (g, W, Hh) => { g.clearRect(0, 0, W, Hh); g.fillStyle = '#efede6'; g.fillRect(0, 0, W, Hh);
+        g.fillStyle = '#6b5a3a'; g.font = `bold ${Hh * 0.78}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('桜 川 町 立 桜 川 小 学 校', W / 2, Hh * 0.52); }, 0.35, 128);
+      const np = B.P([0.6, RY + 0.2, bd / 2 + RD - 0.2 + 0.011]); nm.position.set(...np); nm.rotation.y = r; scene.add(nm);
+      const cr = signMesh(0.62, 0.62, (g, W, Hh) => { g.clearRect(0, 0, W, Hh); g.save(); g.translate(W / 2, Hh / 2);
+        for (let k = 0; k < 5; k++) { g.rotate(Math.PI * 2 / 5); g.fillStyle = '#e8a6b8'; g.beginPath(); g.ellipse(0, -W * 0.25, W * 0.15, W * 0.22, 0, 0, Math.PI * 2); g.fill(); }
+        g.fillStyle = '#f7f1e4'; g.beginPath(); g.arc(0, 0, W * 0.16, 0, Math.PI * 2); g.fill(); g.fillStyle = '#6b5a3a'; g.font = `bold ${W * 0.2}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('桜', 0, W * 0.01); g.restore(); }, 0.3, 128);
+      cr.material.transparent = false; cr.material.alphaTest = 0.5;
+      const cp2 = B.P([-PW / 2 + 0.2, RY + 0.2, bd / 2 + RD - 0.2 + 0.012]); cr.position.set(...cp2); cr.rotation.y = r; scene.add(cr); }
+    // brick planters with flowers either side of the steps
+    for (const [cx, w2] of [[-6.3, 2.4], [6.5, 2.0]]) {
+      B.bbox('block', cx, -0.12, zf + 1.1, w2, 0.62, 1.2, 0.02, { color: [0.7, 0.42, 0.34], uv: 1 });
+      B.box('soil', cx, 0.48, zf + 1.1, w2 - 0.2, 0.01, 1.0, { color: [0.4, 0.3, 0.22] });
+      for (let k = 0; k < 10; k++) plantAt(B, k % 2 ? 'flowerP' : 'flowerY', cx - w2 / 2 + 0.3 + (k % 5) * (w2 - 0.6) / 4, 0.49, zf + 0.8 + Math.floor(k / 5) * 0.6, rng);
+      extras.push({ t: 'box', p: B.P([cx, 0, zf + 1.1]), hx: w2 / 2, hz: 0.6, r, h: 0.6 }); }
+    extras.push({ t: 'box', p: B.P([0, 0, bd / 2 + PD / 2]), hx: PW / 2, hz: PD / 2, r, h: SY });
+    addPlatformAt(B.P([0, 0, bd / 2 + PD / 2]), PW / 2, PD / 2, r, B.P([0, SY, 0])[1]);
+  }
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: bw / 2, hz: bd / 2, r });
   for (let f = 0; f < floors; f++) lampPoints.push({ p: B.P([0, f * fh + 3.0, bd / 2 + 1]), s: 0.3 });
   // gym with a barrel roof
@@ -635,6 +677,24 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   B.box('pavement', (-hw - 1.4 + ex) / 2, -0.12, pz, ex + hw + 1.4, 0.18, aw, PAVE);
   B.box('pavement', bx, -0.12, bz + bd / 2 + (pz + aw / 2 - bz - bd / 2) / 2 + 0.02, 18, 0.18, pz + aw / 2 - bz - bd / 2 - 0.04, PAVE);
   for (const sd of [-1, 1]) B.box('concrete', (-hw + ex) / 2, -0.1, pz + sd * (aw / 2 + 0.06), ex + hw, 0.2, 0.12, { color: [0.72, 0.72, 0.7] }); // edging
+  // covered way (渡り廊下) from just inside the gate to the forecourt: steel posts on the building side carrying a
+  // cantilevered polycarbonate roof with a gutter, so the approach is sheltered all the way in
+  { const x0 = -hw + 4, x1 = ex + 1, pzr = pz - aw / 2 - 0.25, RH = 2.7, G = { color: [0.55, 0.6, 0.64] };
+    const np = Math.max(2, Math.round((x1 - x0) / 3.6));
+    for (let k = 0; k <= np; k++) { const xx = lerp(x0, x1, k / np); B.box('steel', xx, 0, pzr, 0.12, RH + 0.1, 0.12, G); B.beam('steel', [xx, RH, pzr], [xx, RH - 0.15, pz + aw / 2 + 0.3], 0.1, 0.14, G);
+      extras.push({ t: 'box', p: B.P([xx, 0, pzr]), hx: 0.08, hz: 0.08, r }); }
+    B.box('steel', (x0 + x1) / 2, RH - 0.05, pzr, x1 - x0 + 0.1, 0.16, 0.12, G);
+    B.quad('poly', [x0 - 0.1, RH + 0.12, pzr], [x1 + 0.1, RH + 0.12, pzr], [x1 + 0.1, RH - 0.02, pz + aw / 2 + 0.35], [x0 - 0.1, RH - 0.02, pz + aw / 2 + 0.35], { color: [0.85, 0.92, 0.95] });
+    B.box('steel', (x0 + x1) / 2, RH - 0.12, pz + aw / 2 + 0.36, x1 - x0 + 0.2, 0.12, 0.1, G); }
+  // school name monument (校名碑): a rough standing stone on a low plinth at the corner where the way reaches the forecourt
+  { const mx = ex + 3.8, mz = pz - aw / 2 - 1.9;
+    B.bbox('concrete', mx, -0.1, mz, 2.2, 0.3, 1.1, 0.03, { color: [0.7, 0.69, 0.66] });
+    B.bbox('stone', mx, 0.2, mz, 1.6, 1.25, 0.5, 0.12, { color: [0.52, 0.52, 0.5], uv: 1 });
+    const pl = signMesh(1.2, 0.8, (g, W, Hh) => { g.fillStyle = '#44423e'; g.fillRect(0, 0, W, Hh); g.fillStyle = '#e8e2d2'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `bold ${Hh * 0.3}px ${JP_FONT}`; g.fillText('桜川小学校', W / 2, Hh * 0.42); g.font = `${Hh * 0.11}px ${JP_FONT}`; g.fillText('創立百周年記念', W / 2, Hh * 0.78); }, 0.1, 256);
+    const pp2 = B.P([mx, 0.85, mz + 0.26]); pl.position.set(...pp2); pl.rotation.y = r; scene.add(pl);
+    for (let k = 0; k < 6; k++) plantAt(B, k % 2 ? 'flowerP' : 'flowerY', mx - 1.0 + k * 0.4, 0.2, mz + 0.75, rng, 0.9);
+    extras.push({ t: 'box', p: B.P([mx, 0, mz]), hx: 1.1, hz: 0.55, r, h: 1.5 }); }
   { const nb = inFrame(B, [-hw - 0.9, 0, pz - gap - 1.3], -Math.PI / 2, () => { // notice board by the gate, facing the road
       for (const sx of [-0.8, 0.8]) B.box('metal', sx, 0, 0, 0.07, 1.9, 0.07, { color: [0.3, 0.42, 0.36] });
       B.bbox('metal', 0, 0.95, 0, 1.8, 0.95, 0.12, 0.01, { color: [0.3, 0.42, 0.36] }); B.box('plain', 0, 1.02, 0.065, 1.66, 0.8, 0.01, { color: [0.92, 0.9, 0.84] });
@@ -690,7 +750,7 @@ const HAIR = [[0.08, 0.07, 0.07], [0.08, 0.07, 0.07], [0.22, 0.14, 0.1], [0.36, 
 const BAGS = [[0.2, 0.14, 0.1], [0.12, 0.14, 0.22], [0.75, 0.18, 0.16], [0.9, 0.62, 0.3]];
 
 // paths: [{ pts: [[x,z],...], off, lift(x,z) }]; people walk along a path at `off` metres to one side, turning at the ends
-export function pedestrians(paths, groundAt, count, seed = 21) {
+export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null } = {}) {
   const rng = mulberry32(seed), geo = personGeometry();
   const walkers = [];
   const lens = paths.map(P => { let L = 0; const seg = []; for (let i = 0; i + 1 < P.pts.length; i++) { const l = Math.hypot(P.pts[i + 1][0] - P.pts[i][0], P.pts[i + 1][1] - P.pts[i][1]); seg.push(l); L += l; } P.seg = seg; P.L = L; return L; });
@@ -745,11 +805,19 @@ export function pedestrians(paths, groundAt, count, seed = 21) {
       s -= P.seg[i];
     }
   };
+  const walkAttr = geo.attributes.iWalk, rate0 = Float32Array.from(ps.filter((_, k) => k % 2 === 1)), phase0 = Float32Array.from(ps.filter((_, k) => k % 2 === 0));
   const update = (dt) => {
+    let animChanged = false;
     for (let i = 0; i < walkers.length; i++) {
       const w = walkers[i];
-      w.s += w.dir * w.speed * dt;
-      if (w.s < 0 || w.s > w.P.L) { w.dir *= -1; w.s = clamp(w.s, 0, w.P.L); }
+      // walkers stop short of anything blocked ahead (a level crossing whose bells are ringing), stand still, and go on
+      // once it clears; someone already on the crossing keeps walking off it
+      let ns = w.s + w.dir * w.speed * dt;
+      if (ns < 0 || ns > w.P.L) { w.dir *= -1; ns = clamp(ns, 0, w.P.L); }
+      let wait = false;
+      if (blocked && dt > 0) { const [nx0, nz0, ndx, ndz] = at(w.P, ns + w.dir * 0.8), oo = w.P.off * w.side; wait = blocked(w.x, w.z, nx0 - ndz * oo, nz0 + ndx * oo); }
+      if (!wait) w.s = ns;
+      if (wait !== !!w.waiting) { w.waiting = wait; ps[i * 2 + 1] = wait ? 0 : rate0[i]; ps[i * 2] = wait ? 0 : phase0[i]; animChanged = true; }
       const [x, z, dx, dz] = at(w.P, w.s), o = w.P.off * w.side;
       w.x = x - dz * o; w.z = z + dx * o;
       const y = groundAt(w.x, w.z) + (w.P.lift ? w.P.lift(w.x, w.z) : 0);
@@ -758,6 +826,7 @@ export function pedestrians(paths, groundAt, count, seed = 21) {
       im.setMatrixAt(i, m4);
     }
     im.instanceMatrix.needsUpdate = true;
+    if (animChanged) walkAttr.needsUpdate = true;
   };
   return { mesh: im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz); if (d < 0.6 && d > 1e-4) { p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
 }
@@ -800,7 +869,10 @@ export function tennisCourts(B, x, y, z, r, rng, extras, lampPts) {
   const run = (ax, az, bx, bz) => { const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 3));
     B.bbox('concrete', (ax + bx) / 2, SL - 0.02, (az + bz) / 2, Math.abs(bx - ax) + 0.24, 0.2, Math.abs(bz - az) + 0.24, 0.02, { color: KC });
     for (let i = 0; i <= n; i++) { const t = i / n; B.cyl('steel', ax + (bx - ax) * t, FB, az + (bz - az) * t, 0.045, 0.045, fh - FB, 8, { color: [0.62, 0.66, 0.64], cap: true }); }
-    B.quad('chain', [ax, FB, az], [bx, FB, bz], [bx, fh, bz], [ax, fh, az], { uv: 0.5, color: [0.46, 0.62, 0.52] });
+    B.quad('chain', [ax, FB, az], [bx, FB, bz], [bx, fh, bz], [ax, fh, az], { uv: 0.16, color: [0.4, 0.56, 0.46] });            // 45 mm tennis mesh
+    // green windbreak screen (防風ネット) tied to the inside of the long sides up to 1.8 m
+    if (Math.abs(bz - az) > 10) { const o = Math.sign(ax) * -0.06; B.poly('screen', [[ax + o, FB + 0.05, az], [bx + o, FB + 0.05, bz], [bx + o, 1.85, bz], [ax + o, 1.85, az]], [-Math.sign(ax), 0, 0], { uv: 1 }); }
+    B.beam('steel', [ax, 2.4, az], [bx, 2.4, bz], 0.03, 0.03, { color: [0.62, 0.66, 0.64] });
     B.beam('steel', [ax, fh, az], [bx, fh, bz], 0.05, 0.05, { color: [0.62, 0.66, 0.64] }); B.beam('steel', [ax, 1.2, az], [bx, 1.2, bz], 0.035, 0.035, { color: [0.62, 0.66, 0.64] });
     extras.push({ t: 'box', p: B.P([(ax + bx) / 2, 0, (az + bz) / 2]), hx: Math.abs(bx - ax) / 2 + 0.05, hz: Math.abs(bz - az) / 2 + 0.05, r, h: fh }); };
   run(-hw, -hd2, hw, -hd2); run(-hw, -hd2, -hw, hd2); run(hw, -hd2, hw, hd2); run(-hw, hd2, gx0, hd2); run(gx1, hd2, hw, hd2);
@@ -810,7 +882,7 @@ export function tennisCourts(B, x, y, z, r, rng, extras, lampPts) {
   const leaf = (x0, z0, x1, z1) => { // frame tube + chain infill + mid rail, from (x0,z0) to (x1,z1) at the gate line
     for (const yy of [SL + 0.08, SL + 1.0, SL + 2.05]) B.beam('steel', [x0, yy, z0], [x1, yy, z1], 0.04, 0.04, { color: GC });
     for (const [px, pz] of [[x0, z0], [x1, z1]]) B.beam('steel', [px, SL + 0.08, pz], [px, SL + 2.05, pz], 0.04, 0.04, { color: GC });
-    B.quad('chain', [x0, SL + 0.1, z0], [x1, SL + 0.1, z1], [x1, SL + 2.03, z1], [x0, SL + 2.03, z0], { uv: 0.5, color: [0.46, 0.62, 0.52] }); };
+    B.quad('chain', [x0, SL + 0.1, z0], [x1, SL + 0.1, z1], [x1, SL + 2.03, z1], [x0, SL + 2.03, z0], { uv: 0.16, color: [0.4, 0.56, 0.46] }); };
   leaf(gx0 + 0.08, hd2, -0.02, hd2);
   leaf(gx1 - 0.08, hd2 - 0.06, gx1 - 0.08, hd2 - 1.2);                                                                  // open, swung in
   B.box('steel', -0.08, SL + 1.0, hd2 + 0.03, 0.08, 0.1, 0.05, { color: [0.3, 0.3, 0.3] });                               // latch

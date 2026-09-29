@@ -616,7 +616,10 @@ export function roadSign(B, x, y, z, r, kind) {
   const c = outline.reduce((a, q) => [a[0] + q[0] / outline.length, a[1] + q[1] / outline.length], [0, 0]);
   for (let i = 0; i < outline.length; i++) { const a = outline[i], b = outline[(i + 1) % outline.length];
     B.poly('alu', [[c[0], sy + c[1], 0.042], [a[0], sy + a[1], 0.042], [b[0], sy + b[1], 0.042]], [0, 0, -1], { color: [0.62, 0.64, 0.66] }); }
-  B.detail(1, () => { for (const dy of [-0.18, 0.18]) B.bbox('steel', 0, sy + dy - 0.03, 0.02, 0.1, 0.06, 0.1, 0.008, { color: [0.6, 0.62, 0.64] }); });
+  // clamp bands: a ring round the post and a flat strap to the back of the plate — all behind the face (the old
+  // clamp blocks were deeper than the gap and poked through the front of the sign as two dark blocks)
+  B.detail(1, () => { for (const dy of [-0.18, 0.18]) { B.cyl('alu', 0, sy + dy - 0.025, 0, 0.04, 0.04, 0.05, 12, { color: [0.66, 0.68, 0.7], cap: true });
+    B.box('alu', 0, sy + dy - 0.02, 0.037, 0.12, 0.04, 0.008, { color: [0.66, 0.68, 0.7] }); } });
 }
 
 // ---------------------------------------------------------------- traffic signals (信号機)
@@ -697,28 +700,72 @@ export function chochin(B, x, y, z, col = [1, 0.3, 0.2], s = 1) {
 }
 // ---------------------------------------------------------------- bicycles (mamachari with front basket), instanced
 let bikeGeo = null;
+// city bicycle (ママチャリ): 26-inch wheels with spoked rims, tyres and chrome mudguards, a low step-through frame
+// (curved down tube, seat tube, twin chain- and seat-stays), fork and head tube, swept-back handlebar with grips and a
+// bell, sprung saddle on its post, a full chain case, a black wire basket at the front, a rear carrier, a dynamo lamp,
+// a ring lock and the stand. Two meshes: the painted frame (tinted per bike) and everything else (fixed colours).
 function bicycleGeometry() {
   if (bikeGeo) return bikeGeo;
-  const parts = [], add = (g, x, y, z, rx = 0, ry = 0, rz = 0) => { g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); parts.push(g.index ? g.toNonIndexed() : g); };
-  for (const x of [-0.52, 0.52]) { add(new THREE.TorusGeometry(0.33, 0.022, 6, 24), x, 0.35, 0); add(new THREE.CylinderGeometry(0.012, 0.012, 0.62, 4), x, 0.35, 0, Math.PI / 2); }
-  const tube = (a, b, r = 0.018) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length(); const g = new THREE.CylinderGeometry(r, r, L, 5); const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); g.applyQuaternion(q); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); parts.push(g.toNonIndexed()); };
-  tube([-0.52, 0.35, 0], [-0.1, 0.42, 0]); tube([-0.1, 0.42, 0], [0.38, 0.8, 0]); tube([-0.1, 0.42, 0], [-0.22, 0.85, 0]); tube([-0.52, 0.35, 0], [-0.22, 0.85, 0]);
-  tube([0.52, 0.35, 0], [0.38, 0.95, 0]); tube([0.38, 0.95, -0.25], [0.38, 0.95, 0.25], 0.012);
-  add(new THREE.BoxGeometry(0.24, 0.06, 0.12), -0.24, 0.9, 0);
-  add(new THREE.BoxGeometry(0.28, 0.22, 0.34), 0.62, 0.78, 0); // basket
-  add(new THREE.BoxGeometry(0.5, 0.02, 0.12), -0.62, 0.66, 0);  // rear carrier
-  const pos = [], nor = [];
-  for (const g of parts) { pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array); }
-  bikeGeo = new THREE.BufferGeometry();
-  bikeGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bikeGeo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  const paint = [], rest = [], V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const col = (g, c) => { g = g.index ? g.toNonIndexed() : g; const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); g.deleteAttribute('uv'); return g; };
+  const tubeC = (pts, r, seg = 12) => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => V(...p))), seg, r, 6, false);
+  const rod = (a, b, r) => { const d = V(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length(), g = new THREE.CylinderGeometry(r, r, L, 6, 1); g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d.normalize())); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); return g; };
+  const TYRE = [0.06, 0.06, 0.065], RIM = [0.78, 0.8, 0.82], STEEL = [0.62, 0.64, 0.66], BLACK = [0.08, 0.08, 0.09], SAD = [0.12, 0.1, 0.09];
+  const R = 0.33, AX = [[-0.53, 0.33], [0.53, 0.33]];
+  for (const [ax, ay] of AX) {
+    rest.push(col(new THREE.TorusGeometry(R, 0.021, 8, 36).translate(ax, ay, 0), TYRE));
+    rest.push(col(new THREE.TorusGeometry(R - 0.025, 0.007, 4, 36).translate(ax, ay, 0), RIM));
+    rest.push(col(new THREE.CylinderGeometry(0.022, 0.022, 0.1, 10).rotateX(Math.PI / 2).translate(ax, ay, 0), STEEL));
+    for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2, e = k % 2 ? 1 : -1; rest.push(col(rod([ax, ay, e * 0.03], [ax + Math.cos(a) * (R - 0.03), ay + Math.sin(a) * (R - 0.03), e * 0.004], 0.0022), RIM)); }
+    // mudguard: an arc over the top of the wheel
+    const arc = []; for (let k = 0; k <= 10; k++) { const a = (ax < 0 ? 0.25 : -0.05) * Math.PI + k / 10 * 0.9 * Math.PI; arc.push([ax + Math.cos(a) * (R + 0.04), ay + Math.sin(a) * (R + 0.04), 0]); }
+    rest.push(col(tubeC(arc, 0.028, 14).scale(1, 1, 1.4), RIM));
+  }
+  // frame (painted): low step-through down tube, seat tube, stays, head tube, fork crown
+  paint.push(tubeC([[0.36, 0.86, 0], [0.3, 0.64, 0], [0.16, 0.4, 0], [0.0, 0.31, 0], [-0.06, 0.3, 0]], 0.021, 16));
+  paint.push(tubeC([[-0.06, 0.3, 0], [-0.13, 0.55, 0], [-0.19, 0.8, 0]], 0.019, 6));
+  paint.push(tubeC([[0.36, 0.86, 0], [0.22, 0.72, 0], [-0.1, 0.46, 0]], 0.016, 8));                           // upper tube (mixte)
+  for (const e of [-1, 1]) { paint.push(col(rod([-0.06, 0.3, e * 0.035], [-0.53, 0.33, e * 0.055], 0.011), [1, 1, 1])); paint.push(col(rod([-0.17, 0.72, e * 0.02], [-0.53, 0.33, e * 0.055], 0.01), [1, 1, 1])); }
+  paint.push(rod([0.35, 0.8, 0], [0.4, 0.97, 0], 0.026));                                                       // head tube
+  for (const e of [-1, 1]) paint.push(tubeC([[0.36, 0.8, e * 0.04], [0.44, 0.58, e * 0.05], [0.53, 0.33, e * 0.055]], 0.012, 6)); // fork
+  // chain case (full cover) on the drive side, crank and pedals
+  rest.push(col(new THREE.CapsuleGeometry(0.075, 0.42, 4, 10).rotateZ(Math.PI / 2 + 0.06).scale(1, 1, 0.25).translate(-0.3, 0.32, 0.07), [0.2, 0.2, 0.21]));
+  for (const e of [-1, 1]) { const px = -0.06 + e * 0.14, py = 0.3 - e * 0.05; rest.push(col(rod([-0.06, 0.3, e * 0.07], [px, py, e * 0.09], 0.01), STEEL)); rest.push(col(new THREE.BoxGeometry(0.09, 0.02, 0.08).translate(px, py, e * 0.13), BLACK)); }
+  // steering: stem, swept-back bar, grips, bell, brake levers
+  rest.push(col(rod([0.4, 0.97, 0], [0.38, 1.06, 0], 0.016), STEEL));
+  rest.push(col(tubeC([[0.22, 1.02, -0.3], [0.33, 1.06, -0.18], [0.38, 1.06, 0], [0.33, 1.06, 0.18], [0.22, 1.02, 0.3]], 0.011, 12), STEEL));
+  for (const e of [-1, 1]) { rest.push(col(rod([0.25, 1.03, e * 0.26], [0.19, 1.01, e * 0.33], 0.017), BLACK)); rest.push(col(rod([0.3, 1.05, e * 0.2], [0.22, 1.0, e * 0.27], 0.006), STEEL)); }
+  rest.push(col(new THREE.SphereGeometry(0.026, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2).translate(0.33, 1.07, -0.14), RIM));
+  // saddle on a sprung seat post
+  rest.push(col(rod([-0.19, 0.8, 0], [-0.22, 0.9, 0], 0.012), STEEL));
+  rest.push(col(new THREE.SphereGeometry(0.1, 12, 8).scale(1.35, 0.35, 0.95).translate(-0.24, 0.95, 0), SAD));
+  for (const e of [-1, 1]) rest.push(col(new THREE.TorusGeometry(0.018, 0.005, 4, 8).rotateY(Math.PI / 2).translate(-0.33, 0.92, e * 0.05), STEEL));
+  // front basket (wire, black): frame rings and uprights on a bracket over the front wheel
+  { const bx0 = 0.5, bx1 = 0.86, by0 = 0.78, by1 = 1.02, bz = 0.17, B2 = [0.1, 0.1, 0.11];
+    for (const y of [by0, by0 + 0.12, by1]) { const ring = [[bx0, y, -bz], [bx1, y, -bz], [bx1, y, bz], [bx0, y, bz], [bx0, y, -bz]]; for (let k = 0; k < 4; k++) rest.push(col(rod(ring[k], ring[k + 1], y === by1 ? 0.006 : 0.004), B2)); }
+    for (let k = 0; k <= 5; k++) { const x = lerp(bx0, bx1, k / 5); for (const e of [-1, 1]) rest.push(col(rod([x, by0, e * bz], [x, by1, e * bz], 0.0035), B2)); }
+    for (let k = 0; k <= 4; k++) { const z = lerp(-bz, bz, k / 4); for (const x of [bx0, bx1]) rest.push(col(rod([x, by0, z], [x, by1, z], 0.0035), B2)); rest.push(col(rod([bx0, by0, z], [bx1, by0, z], 0.0035), B2)); }
+    rest.push(col(rod([0.42, 0.9, 0], [bx0, by0 + 0.06, 0], 0.01), STEEL)); rest.push(col(rod([0.53, 0.33, 0.06], [0.6, by0, 0.1], 0.006), STEEL)); rest.push(col(rod([0.53, 0.33, -0.06], [0.6, by0, -0.1], 0.006), STEEL)); }
+  // rear carrier: rails, cross bars, struts down to the axle
+  for (const e of [-1, 1]) { rest.push(col(rod([-0.2, 0.74, e * 0.09], [-0.78, 0.74, e * 0.09], 0.008), STEEL)); rest.push(col(rod([-0.7, 0.74, e * 0.09], [-0.53, 0.35, e * 0.06], 0.007), STEEL)); }
+  for (const x of [-0.3, -0.45, -0.6, -0.75]) rest.push(col(rod([x, 0.74, -0.09], [x, 0.74, 0.09], 0.006), STEEL));
+  // dynamo lamp on the fork, ring lock on the stays, a kickstand
+  rest.push(col(new THREE.CylinderGeometry(0.03, 0.035, 0.07, 10).rotateZ(Math.PI / 2).translate(0.5, 0.62, 0.07), [0.85, 0.85, 0.82]));
+  rest.push(col(new THREE.TorusGeometry(0.06, 0.012, 4, 12, Math.PI * 1.3).rotateY(Math.PI / 2).translate(-0.4, 0.45, 0), [0.15, 0.15, 0.16]));
+  rest.push(col(rod([-0.45, 0.33, 0.06], [-0.5, 0.02, 0.2], 0.01), STEEL));
+  const merge = parts => { const pos = [], nor = [], c = []; for (let g of parts) { g = g.index ? g.toNonIndexed() : g; pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array); if (g.attributes.color) c.push(...g.attributes.color.array); else for (let i = 0; i < g.attributes.position.count; i++) c.push(1, 1, 1); }
+    const G = new THREE.BufferGeometry(); G.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); G.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); G.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); G.computeBoundingSphere(); return G; };
+  bikeGeo = { paint: merge(paint), rest: merge(rest) };
   return bikeGeo;
 }
 export function bicycles(list, rng) { // list: [{x,y,z,r}]
-  const im = new THREE.InstancedMesh(bicycleGeometry(), new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.5 }), list.length);
+  const G = bicycleGeometry();
+  const im = new THREE.InstancedMesh(G.paint, new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0.35 }), list.length);
+  const im2 = new THREE.InstancedMesh(G.rest, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.55 }), list.length);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c = new THREE.Color();
-  const cols = [[0.85, 0.85, 0.85], [0.1, 0.1, 0.1], [0.55, 0.1, 0.1], [0.2, 0.3, 0.55], [0.7, 0.7, 0.72], [0.95, 0.9, 0.8], [0.25, 0.4, 0.3]];
-  list.forEach((b, i) => { e.set(0, b.r, (rng() - 0.5) * 0.08); q.setFromEuler(e); m.compose(new THREE.Vector3(b.x, b.y, b.z), q, new THREE.Vector3(1, 1, 1)); im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(...cols[Math.floor(rng() * cols.length)])); });
-  im.castShadow = true; im.receiveShadow = true; scene.add(im);
+  const cols = [[0.88, 0.88, 0.86], [0.1, 0.1, 0.1], [0.62, 0.12, 0.12], [0.2, 0.32, 0.58], [0.72, 0.72, 0.74], [0.95, 0.9, 0.78], [0.25, 0.42, 0.32], [0.86, 0.62, 0.7], [0.4, 0.62, 0.72]];
+  list.forEach((b, i) => { e.set(0, b.r, (rng() - 0.5) * 0.08 + 0.06); q.setFromEuler(e); m.compose(new THREE.Vector3(b.x, b.y, b.z), q, new THREE.Vector3(1, 1, 1)); im.setMatrixAt(i, m); im2.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(...cols[Math.floor(rng() * cols.length)])); });
+  for (const o of [im, im2]) { o.castShadow = true; o.receiveShadow = true; scene.add(o); }
   return im;
 }
 export function clockPole(B, x, y, z) {
