@@ -942,12 +942,14 @@ export async function build(progress) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     const l = new THREE.LineSegments(g, wireMat); l.frustumCulled = false; scene.add(l);
   }
-  // curve mirrors at lane junctions
+  // curve mirrors at blind lane junctions: on a corner just behind the kerb line, the dome turned into the junction so a
+  // driver edging out of either lane can see along the other; T-junctions get a double mirror on the far side
   for (const I of inters) {
-    if (!I.roads.every(r => r.kind === 'lane') || rng() < 0.4) continue;
-    const x = I.p[0] + 3.4, z = I.p[1] + 3.4;
-    if (occRect(x, z, 0.2, 0.2, 0, 0, true) && rng() < 0.5) continue;
-    curveMirror(B, x, hf.groundAt(x, z), z, Math.PI * 1.25);
+    if (!I.roads.every(r => r.kind === 'lane') || rng() < 0.35 || !I.corners.length) continue;
+    const cr = I.corners[Math.floor(rng() * I.corners.length)], mid = cr.arc[Math.floor(cr.arc.length / 2)];
+    const ox = cr.O[0] - mid[0], oz = cr.O[1] - mid[1], ol = Math.hypot(ox, oz) || 1, x = mid[0] + ox / ol * 0.75, z = mid[1] + oz / ol * 0.75;
+    const face = Math.atan2(I.p[0] - x, I.p[1] - z);
+    curveMirror(B, x, topY(x, z), z, face, I.arms.length === 3 ? 2 : 1); shrineSpots.mirrors = (shrineSpots.mirrors || []).concat([[+x.toFixed(1), +z.toFixed(1), +face.toFixed(2)]]);
   }
   // speed-limit signs on B
   for (const z of [-200, 60, 250]) roadSign(B, 110 + 4.55, topY(114.55, z), z, Math.PI / 2 * 0, 'speed30');

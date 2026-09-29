@@ -516,19 +516,44 @@ export function wires(poles) {
   return l;
 }
 
-// convex traffic mirror (カーブミラー) on an orange pole
-const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 1, roughness: 0.02 });
-export function curveMirror(B, x, y, z, r) {
+// convex traffic mirror (カーブミラー): orange steel pole on a concrete footing, clamp bands, a bracket arm to each
+// mirror; the mirror is a convex glass dome in a deep orange housing with a moulded back shell, a rain visor over the
+// top and a small ID plate. heads: 1 (single) or 2 (a T-bar carrying two mirrors angled toward both approaches).
+// Local frame: +z = the direction the (first) mirror faces.
+const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xdfe8ee, metalness: 0.85, roughness: 0.08, envMapIntensity: 1.2 });
+const mirrorShellMat = new THREE.MeshStandardMaterial({ color: 0xf07818, roughness: 0.45 });
+const mirrorGlass = new THREE.SphereGeometry(1, 28, 8, 0, Math.PI * 2, 0, 0.42).rotateX(Math.PI / 2);        // dome facing +z
+const mirrorBack = new THREE.SphereGeometry(1, 28, 8, 0, Math.PI * 2, 0, 0.9).rotateX(-Math.PI / 2);         // shell facing -z
+const mirrorRim = new THREE.TorusGeometry(0.425, 0.04, 8, 36).scale(1, 1, 1.8);
+const mirrorVisorMat = new THREE.MeshStandardMaterial({ color: 0xf07818, roughness: 0.45, side: THREE.DoubleSide });
+// rain visor: an arc over the top of the rim (after rotateX(90) the cylinder's angle PI points up)
+const mirrorVisor = new THREE.CylinderGeometry(0.47, 0.47, 0.16, 24, 1, true, Math.PI * 0.6, Math.PI * 0.8);
+
+export function curveMirror(B, x, y, z, r, heads = 1) {
   B.frame(x, y, z, r);
-  B.cyl('plain', 0, 0, 0, 0.038, 0.038, 3.0, 8, { color: [0.95, 0.42, 0.08] });
-  B.beam('plain', [0, 2.85, 0], [0, 2.85, 0.25], 0.05, 0.05, { color: [0.95, 0.42, 0.08] });
-  const disc = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 10, 0, Math.PI * 2, 0, 0.5), mirrorMat);
-  disc.rotation.x = Math.PI / 2; const p = B.P([0, 2.85, 0.3]); disc.position.set(p[0], p[1], p[2]);
-  const holder = new THREE.Group(); holder.position.copy(disc.position); holder.rotation.y = r; disc.position.set(0, 0, 0); holder.add(disc);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 6, 24), new THREE.MeshStandardMaterial({ color: 0xf06a14, roughness: 0.5 }));
-  rim.position.z = 0.03; holder.add(rim);
-  scene.add(holder);
-  addCircle(x, z, 0.1);
+  const OR = [0.94, 0.47, 0.1], H = 3.3, R = 0.4;
+  B.cyl('concrete', 0, -0.06, 0, 0.16, 0.18, 0.1, 12, { color: [0.68, 0.68, 0.66], cap: true });
+  B.cyl('plain', 0, 0, 0, 0.038, 0.038, H, 12, { color: OR });
+  B.cyl('plain', 0, H, 0, 0.042, 0.02, 0.05, 12, { color: OR, cap: true });
+  B.detail(1, () => { for (const yy of [1.9, 2.6]) B.cyl('steel', 0, yy, 0, 0.045, 0.045, 0.05, 12, { color: [0.72, 0.72, 0.74] }); });
+  const angles = heads === 2 ? [-0.5, 0.5] : [0];
+  if (heads === 2) B.beam('plain', [-0.42, H - 0.3, 0.05], [0.42, H - 0.3, 0.05], 0.05, 0.05, { color: OR });
+  for (const a of angles) {
+    const ox = heads === 2 ? Math.sign(a) * 0.4 : 0, cy = H - 0.3, holder = new THREE.Group();
+    B.beam('plain', [ox, cy, 0], [ox, cy, 0.22], 0.045, 0.045, { color: OR });                                    // arm
+    const p = B.P([ox + Math.sin(a) * 0.3, cy, 0.22 + Math.cos(a) * 0.3]); holder.position.set(p[0], p[1], p[2]); holder.rotation.y = r + a;
+    // spherical caps: a cap of angle a scaled by s has radius s*sin(a) and depth s*(1 - cos(a))
+    const gs = R / Math.sin(0.42), gz = 0.035 / (1 - Math.cos(0.42)), bs = (R + 0.04) / Math.sin(0.9), bz = 0.14 / (1 - Math.cos(0.9));
+    const back = new THREE.Mesh(mirrorBack, mirrorShellMat); back.scale.set(bs, bs, bz); back.position.z = bz * Math.cos(0.9) + 0.01;
+    const rim = new THREE.Mesh(mirrorRim, mirrorShellMat); rim.position.z = 0.02;
+    const glass = new THREE.Mesh(mirrorGlass, mirrorMat); glass.scale.set(gs, gs, gz); glass.position.z = -gz * Math.cos(0.42) + 0.005;
+    const visor = new THREE.Mesh(mirrorVisor, mirrorVisorMat); visor.rotation.x = Math.PI / 2; visor.position.z = 0.1;
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.06), new THREE.MeshStandardMaterial({ color: 0xf4f4ee, roughness: 0.6 })); plate.position.set(0, -R - 0.12, 0.02);
+    const tab = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.03), mirrorShellMat); tab.position.set(0, -R - 0.05, -0.01);
+    holder.add(back, rim, glass, visor, tab, plate); for (const m of holder.children) { m.castShadow = true; m.receiveShadow = true; }
+    scene.add(holder);
+  }
+  addCircle(x, z, 0.12);
 }
 
 // road sign on a post: kind 'stop' (inverted red triangle 止まれ), 'speed30', 'crossing'
