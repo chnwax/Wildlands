@@ -1,7 +1,7 @@
 // Town dressing for Sakuragawa: the things that make a street feel lived in. An elementary school with its sports
 // ground, a playground park, zebra crossings, shop banners and signboards, bus stops, post boxes, garbage points,
 // drying racks, mailboxes, rooftop tanks, and people walking the streets (instanced, animated in the vertex shader).
-import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle } from './core.js';
+import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle, addPlatform } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvasTex, signMesh, JP_FONT, lampPoints, materials } from './townkit.js';
 import { wallFill, reveals, windowUnit, inFrame } from './building.js';
@@ -443,10 +443,19 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   for (const [fr, off, fw] of [[0, bd / 2, bw], [Math.PI, bd / 2, bw], [Math.PI / 2, bw / 2, bd], [-Math.PI / 2, bw / 2, bd]]) {
     const F0 = B.F; B.frame(...B.P([Math.sin(fr) * off, 0, Math.cos(fr) * off]), r + fr);
     const holes = [];
-    if (fw === bw) for (let f = 0; f < floors; f++) for (let k = 0; k < bays; k++) holes.push({ x0: bay0 + k * 1.8 + 0.06, x1: bay0 + (k + 1) * 1.8 - 0.06, y0: f * fh + 0.95, y1: f * fh + 2.9, d: 0.2 });
+    if (fw === bw) for (let f = 0; f < floors; f++) for (let k = 0; k < bays; k++) { const x0 = bay0 + k * 1.8 + 0.06, x1 = bay0 + (k + 1) * 1.8 - 0.06;
+      if (fr === 0 && f === 0 && x1 > -2.7 && x0 < 2.7) continue; holes.push({ x0, x1, y0: f * fh + 0.95, y1: f * fh + 2.9, d: 0.2 }); }
     else for (let f = 0; f < floors; f++) holes.push({ x0: -0.6, x1: 0.6, y0: f * fh + 1.2, y1: f * fh + 2.6, d: 0.2 });
+    if (fr === 0) holes.push({ x0: -2.4, x1: 2.4, y0: 0.15, y1: 2.75, d: 0.25, door: true });
     wallFill(B, 'stucco', -fw / 2, fw / 2, 0, H + 1.0, holes, wall, 3);
-    for (const h of holes) { reveals(B, 'stucco', h, [0.92, 0.92, 0.9]); windowUnit(B, h, { rng, frame: [0.82, 0.84, 0.86], transom: true, glass: [1, 0.94, 0.8] }); }
+    for (const h of holes) { reveals(B, 'stucco', h, [0.92, 0.92, 0.9]);
+      if (!h.door) { windowUnit(B, h, { rng, frame: [0.82, 0.84, 0.86], transom: true, glass: [1, 0.94, 0.8] }); continue; }
+      // entrance (昇降口): four glass leaves in aluminium frames under a transom light, pull handles
+      const zg = -0.16, AL = { color: [0.78, 0.8, 0.82] };
+      B.quad('glass', [h.x0, h.y0, zg], [h.x1, h.y0, zg], [h.x1, h.y1, zg], [h.x0, h.y1, zg], { color: [0.9, 0.95, 1] });
+      for (let k = 0; k <= 4; k++) B.box('alu', lerp(h.x0, h.x1, k / 4), h.y0, zg + 0.02, 0.07, h.y1 - h.y0, 0.06, AL);
+      for (const yy of [h.y0, 2.25, h.y1 - 0.06]) B.box('alu', 0, yy, zg + 0.02, h.x1 - h.x0, 0.07, 0.06, AL);
+      for (const xx of [-0.12, 0.12]) B.box('steel', xx, 0.9, zg + 0.08, 0.03, 0.5, 0.03, { color: [0.6, 0.62, 0.64] }); }
     for (let f = 1; f <= floors; f++) B.bbox('concrete', 0, f * fh - 0.1, 0.03, fw + 0.06, 0.12, 0.06, 0.01, { color: [0.86, 0.86, 0.84] }); // floor bands
     B.F = F0;
   }
@@ -465,9 +474,13 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   B.box('stucco', 0, H - 0.3, bd / 2 - 0.15, 2.6, 2.4, 0.35, { color: [0.95, 0.94, 0.9], uv: 3 });
   const cp = B.P([0, H + 0.9, bd / 2 + 0.05]);
   schoolClock(cp[0], cp[1], cp[2], r);
-  // entrance canopy
-  B.box('concrete', 0, 2.9, bd / 2 + 1.6, 6, 0.2, 3.2, { color: [0.88, 0.88, 0.86] });
-  for (const sx of [-2.8, 2.8]) B.box('concrete', sx, 0, bd / 2 + 3, 0.3, 2.9, 0.3, { color: [0.88, 0.88, 0.86] });
+  // entrance canopy over a raised landing, the school's name on its fascia
+  B.box('concrete', 0, 2.9, bd / 2 + 1.6, 6.4, 0.2, 3.2, { color: [0.88, 0.88, 0.86] });
+  for (const sx of [-2.9, 2.9]) B.box('concrete', sx, 0, bd / 2 + 3, 0.3, 2.9, 0.3, { color: [0.88, 0.88, 0.86] });
+  B.bbox('concrete', 0, -0.1, bd / 2 + 1.3, 6.6, 0.25, 2.6, 0.02, { color: [0.8, 0.8, 0.78] });
+  B.box('dark', 0, 0.15, bd / 2 + 0.9, 2.4, 0.012, 1.2, { color: [0.2, 0.24, 0.2] });                                        // doormat
+  { const nm = signMesh(3.4, 0.26, (g, W, Hh) => { g.fillStyle = '#f4f2ec'; g.fillRect(0, 0, W, Hh); g.fillStyle = '#20314f'; g.font = `bold ${Hh * 0.7}px ${JP_FONT}`; g.textAlign = 'center'; g.fillText('桜川町立 桜川小学校', W / 2, Hh * 0.78); }, 0.25, 128);
+    const np = B.P([0, 3.0, bd / 2 + 3.21]); nm.position.set(...np); nm.rotation.y = r; scene.add(nm); }
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: bw / 2, hz: bd / 2, r });
   for (let f = 0; f < floors; f++) lampPoints.push({ p: B.P([0, f * fh + 3.0, bd / 2 + 1]), s: 0.3 });
   // gym with a barrel roof
@@ -539,7 +552,7 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   goal(-(pw / 2 - 0.2), Math.PI / 2); goal(pw / 2 - 0.2, -Math.PI / 2);
   for (const e of [-1, 1]) { // ball-stop nets behind both ends
     at(fx + e * (fw / 2 + 1.2), fz, e > 0 ? -Math.PI / 2 : Math.PI / 2);
-    const nw = fd + 4, nh = 8, n = Math.round(nw / 5);
+    const nw = fd + 1, nh = 8, n = Math.round(nw / 5);
     for (let k = 0; k <= n; k++) { const px = -nw / 2 + k * nw / n; B.cyl('steel', px, 0, 0, 0.09, 0.075, nh, 10, { color: [0.4, 0.5, 0.44] }); B.cyl('steel', px, nh, 0, 0.1, 0.1, 0.06, 10, { color: [0.35, 0.42, 0.38], cap: true }); }
     for (const yy of [0.15, 2.0, nh - 0.1]) B.beam('steel', [-nw / 2, yy, 0], [nw / 2, yy, 0], 0.05, 0.05, { color: [0.4, 0.5, 0.44] });
     B.quad('chain', [-nw / 2, 0.1, 0], [nw / 2, 0.1, 0], [nw / 2, nh, 0], [-nw / 2, nh, 0], { uv: 0.35, color: [0.26, 0.4, 0.32] });
@@ -572,11 +585,11 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   at(bx + bw / 2 - 6, bz + bd / 2 + 4); // tetsubo: horizontal bars of three heights
   for (let k = 0; k < 4; k++) B.box('plain', -2.1 + k * 1.4, 0, 0, 0.1, 0.9 + k * 0.25, 0.1, { color: [0.9, 0.3, 0.25] });
   for (let k = 0; k < 3; k++) B.box('alu', -1.4 + k * 1.4, 0.85 + k * 0.25, 0, 1.4, 0.04, 0.04, { color: [0.75, 0.77, 0.8] });
-  at(bx, bz + bd / 2 + 5.5); // assembly stage
+  at(bx + 12, bz + bd / 2 + 5.5); // assembly stage, to one side of the entrance forecourt
   B.box('concrete', 0, 0, 0, 4, 1.0, 2.4, { color: [0.86, 0.86, 0.84] });
   for (let k = 0; k < 3; k++) B.box('concrete', 0, 0, 1.2 + k * 0.3 + 0.15, 1.6, 1.0 - (k + 1) * 0.3, 0.3, { color: [0.82, 0.82, 0.8] });
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 2, hz: 1.2, r, h: 1.0 });
-  at(bx - 8, bz + bd / 2 + 5);
+  at(bx - 9, bz + bd / 2 + 2.3); // flag pole at the corner of the forecourt
   B.cyl('alu', 0, 0, 0, 0.07, 0.05, 11, 8, { color: [0.85, 0.86, 0.88] });
   B.quad('plain', [0.05, 9.2, 0], [1.6, 9.2, 0], [1.6, 10.6, 0], [0.05, 10.6, 0], { color: WHITE });
   B.quad('plain', [1.6, 9.2, 0], [0.05, 9.2, 0], [0.05, 10.6, 0], [1.6, 10.6, 0], { color: WHITE });
@@ -595,21 +608,45 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
     const p = B.P([(ax + bx2) / 2, 0, (az + bz2) / 2]);
     extras.push({ t: 'box', p, hx: hor ? L / 2 : 0.08, hz: hor ? 0.08 : L / 2, r, h: 2.2 });
   };
-  const hw = BW / 2, hd = BD / 2;
-  fence(-hw, -hd, hw, -hd); fence(-hw, -hd, -hw, hd); fence(hw, -hd, hw, hd);
-  fence(-hw, hd, -4, hd); fence(4, hd, hw, hd);
-  for (const sx of [-4.3, 4.3]) { at(sx, hd); B.box('concrete', 0, 0, 0, 0.6, 1.9, 0.6, { color: [0.82, 0.8, 0.76] }); extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 0.3, hz: 0.3, r }); }
-  at(-4.3, hd);
+  const hw = BW / 2, hd = BD / 2, pz = bz + bd / 2 + 7.2, aw = 3.6, gap = 3.3; // walkway centre line / width, half gate
+  fence(-hw, -hd, hw, -hd); fence(hw, -hd, hw, hd); fence(-hw, hd, hw, hd);
+  fence(-hw, -hd, -hw, pz - gap - 0.3); fence(-hw, pz + gap + 0.3, -hw, hd);
+  // gate pillars clad in tile with caps, a lamp on each, the name plate and an intercom on the street face
+  for (const sz of [-1, 1]) { at(-hw, pz + sz * gap);
+    B.bbox('tiles', 0, 0, 0, 0.62, 1.95, 0.62, 0.02, { color: [0.78, 0.74, 0.68], uv: 1 }); B.bbox('concrete', 0, 1.95, 0, 0.74, 0.1, 0.74, 0.02, { color: [0.62, 0.6, 0.56] });
+    B.cyl('steel', 0, 2.05, 0, 0.05, 0.05, 0.06, 10, { color: [0.3, 0.3, 0.3] }); B.cyl('lamp', 0, 2.1, 0, 0.12, 0.1, 0.28, 14, { color: [0.98, 0.96, 0.9], cap: true });
+    lampPoints.push({ p: B.P([0, 2.2, 0]), s: 0.35 });
+    extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 0.31, hz: 0.31, r }); }
+  at(-hw, pz - gap);
   const plate = signMesh(0.42, 1.3, (g, W, H) => { g.fillStyle = '#f7f3ea'; g.fillRect(0, 0, W, H); g.fillStyle = '#2b2b2b'; g.textAlign = 'center';
     const txt = '桜川小学校'; g.font = `bold ${W * 0.7}px ${JP_FONT}`; for (let i = 0; i < txt.length; i++) g.fillText(txt[i], W / 2, H * (0.16 + i * 0.17)); }, 0.2, 256);
-  const pp = B.P([0, 1.1, 0.31]); plate.position.set(...pp); plate.rotation.y = r; scene.add(plate);
+  const pp = B.P([-0.32, 1.05, 0]); plate.position.set(...pp); plate.rotation.y = Math.atan2(-Math.cos(r), Math.sin(r)); scene.add(plate);
+  B.bbox('plastic', -0.32, 1.25, 0.18, 0.03, 0.2, 0.12, 0.01, { color: [0.3, 0.3, 0.32] });                                  // intercom
+  // expanding gate (伸縮門扉) folded back against the south pillar: a pack of lattice bars on castors, and its rail
+  at(-hw + 0.45, pz + gap - 0.75);
+  for (let k = 0; k < 10; k++) B.box('alu', 0, 0.12, -0.36 + k * 0.08, 0.05, 1.25, 0.025, { color: [0.72, 0.74, 0.76] });
+  for (const yy of [0.35, 0.75, 1.15]) for (let k = 0; k < 9; k++) B.beam('alu', [0, yy - 0.18, -0.36 + k * 0.08], [0, yy + 0.18, -0.28 + k * 0.08], 0.02, 0.012, { color: [0.72, 0.74, 0.76] });
+  for (const zz of [-0.36, 0.36]) B.cyl('dark', 0, 0, zz, 0.06, 0.06, 0.12, 10, { color: [0.15, 0.15, 0.15], cap: true });
+  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: 0.1, hz: 0.42, r, h: 1.4 });
+  B.F = F;
+  B.box('steel', -hw, 0.0, pz, 0.08, 0.02, gap * 2, { color: [0.5, 0.5, 0.5] });                                              // gate rail
+  // paved approach: an apron out to the road, the walkway along the grounds, a forecourt at the entrance
+  const ex = bx - 9, PAVE = { color: [0.84, 0.82, 0.78], uv: 1.5 };
+  B.box('pavement', (-hw - 1.4 + ex) / 2, -0.12, pz, ex + hw + 1.4, 0.18, aw, PAVE);
+  B.box('pavement', bx, -0.12, bz + bd / 2 + (pz + aw / 2 - bz - bd / 2) / 2 + 0.02, 18, 0.18, pz + aw / 2 - bz - bd / 2 - 0.04, PAVE);
+  for (const sd of [-1, 1]) B.box('concrete', (-hw + ex) / 2, -0.1, pz + sd * (aw / 2 + 0.06), ex + hw, 0.2, 0.12, { color: [0.72, 0.72, 0.7] }); // edging
+  { const nb = inFrame(B, [-hw - 0.9, 0, pz - gap - 1.3], -Math.PI / 2, () => { // notice board by the gate, facing the road
+      for (const sx of [-0.8, 0.8]) B.box('metal', sx, 0, 0, 0.07, 1.9, 0.07, { color: [0.3, 0.42, 0.36] });
+      B.bbox('metal', 0, 0.95, 0, 1.8, 0.95, 0.12, 0.01, { color: [0.3, 0.42, 0.36] }); B.box('plain', 0, 1.02, 0.065, 1.66, 0.8, 0.01, { color: [0.92, 0.9, 0.84] });
+      B.box('metal', 0, 1.9, 0.02, 1.95, 0.05, 0.3, { color: [0.3, 0.42, 0.36] }); return B.P([0, 0, 0]); });
+    extras.push({ t: 'box', p: nb, hx: 0.9, hz: 0.1, r: r - Math.PI / 2 }); }
   // cherry trees along the fence, bicycle shelter by the gate
   for (let k = 0; k < 14; k++) {
     const t = (k + 0.5) / 14, lx = lerp(-hw + 3, hw - 3, t);
     if (Math.abs(lx) < 7) continue;
     B.F = F; const p = B.P([lx, 0, hd - 2.4]); sakura.push({ x: p[0], z: p[2], front: true });
   }
-  for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) { B.F = F; const p = B.P([sx * (hw - 2.4), 0, -hd + 8 + k * (BD - 16) / 3]); sakura.push({ x: p[0], z: p[2] }); }
+  for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) { const lz = -hd + 8 + k * (BD - 16) / 3; if (sx < 0 && Math.abs(lz - pz) < 5) continue; B.F = F; const p = B.P([sx * (hw - 2.4), 0, lz]); sakura.push({ x: p[0], z: p[2] }); }
   at(hw - 12, hd - 6);
   for (const sx of [-4, 4]) for (const sz of [-1.2, 1.2]) B.box('alu', sx, 0, sz, 0.08, 2.2, 0.08, { color: [0.6, 0.62, 0.64] });
   B.box('roofMetal', 0, 2.2, 0, 8.6, 0.08, 3, { color: [0.3, 0.5, 0.62] });
@@ -728,50 +765,79 @@ export function pedestrians(paths, groundAt, count, seed = 21) {
 // municipal tennis courts (市民テニスコート): two sand-filled artificial-grass courts inside a 4 m chain-link cage, nets on
 // winding posts, floodlights, a judge's chair, benches, a storage shed, worn baselines, and a gate onto the road side
 export function tennisCourts(B, x, y, z, r, rng, extras, lampPts) {
+  // y is the highest ground under the courts: everything stands on a raised concrete slab, so the terrain never breaks
+  // through, and the surfacing is laid as non-overlapping pieces (surround strips + one panel per court) with the worn
+  // patches and the lines each a few millimetres higher — no two coplanar layers to fight
   B.frame(x, y, z, r);
-  const W = 36, D = 38, fy = 0.05, g = [0.36, 0.56, 0.4], gi = [0.3, 0.5, 0.42], white = [0.96, 0.96, 0.94];
-  B.bbox('concrete', 0, -0.1, 0, W + 1.6, 0.14, D + 1.6, 0.02, { color: [0.72, 0.72, 0.7], skip: 'ny', uv: 2 });
-  B.box('plain', 0, 0.04, 0, W, 0.012, D, { color: g, skip: 'ny' });
-  const ly = fy + 0.005, line = (x0, z0, x1, z1, wd = 0.05) => { const L = Math.hypot(x1 - x0, z1 - z0), nx = -(z1 - z0) / L * wd / 2, nz = (x1 - x0) / L * wd / 2;
+  const W = 36, D = 38, SL = 0.13, TOP = 0.15, g = [0.36, 0.56, 0.4], gi = [0.3, 0.5, 0.42], white = [0.96, 0.96, 0.94];
+  const hw = W / 2 + 0.3, hd2 = D / 2 + 0.3, gx0 = -1.2, gx1 = 1.2, KC = [0.74, 0.74, 0.72];
+  B.bbox('concrete', 0, -0.45, 0, W + 1.6, SL + 0.45, D + 1.6, 0.03, { color: [0.72, 0.72, 0.7], skip: 'ny', uv: 2 });
+  const pad = (x0, x1, z0, z1, col, top = TOP) => B.box('plain', (x0 + x1) / 2, SL, (z0 + z1) / 2, x1 - x0, top - SL, z1 - z0, { color: col, skip: 'ny', uv: 2 });
+  const CW = 10.97 + 2, CD = 23.77 + 4, cxs = [-8.6, 8.6];
+  pad(-W / 2, W / 2, -D / 2, -CD / 2, g); pad(-W / 2, W / 2, CD / 2, D / 2, g);
+  pad(-W / 2, cxs[0] - CW / 2, -CD / 2, CD / 2, g); pad(cxs[0] + CW / 2, cxs[1] - CW / 2, -CD / 2, CD / 2, g); pad(cxs[1] + CW / 2, W / 2, -CD / 2, CD / 2, g);
+  const ly = TOP + 0.008, line = (x0, z0, x1, z1, wd = 0.05) => { const L = Math.hypot(x1 - x0, z1 - z0), nx = -(z1 - z0) / L * wd / 2, nz = (x1 - x0) / L * wd / 2;
     B.quad('paint', [x0 - nx, ly, z0 - nz], [x0 + nx, ly, z0 + nz], [x1 + nx, ly, z1 + nz], [x1 - nx, ly, z1 - nz], { color: white }); };
-  for (const cx of [-8.6, 8.6]) {
-    B.box('plain', cx, 0.046, 0, 10.97 + 2, 0.006, 23.77 + 4, { color: gi, skip: 'ny' });
+  for (const cx of cxs) {
+    pad(cx - CW / 2, cx + CW / 2, -CD / 2, CD / 2, gi);
     const hl = 23.77 / 2, hd = 10.97 / 2, hs = 8.23 / 2, sl = 6.4;
     for (const s2 of [-1, 1]) { line(cx - hd, s2 * hl, cx + hd, s2 * hl, 0.08); line(cx + s2 * hd, -hl, cx + s2 * hd, hl); line(cx + s2 * hs, -hl, cx + s2 * hs, hl); line(cx - hs, s2 * sl, cx + hs, s2 * sl);
       line(cx, s2 * hl, cx, s2 * (hl - 0.12)); }
     line(cx, -sl, cx, sl);
-    for (const s2 of [-1, 1]) B.box('plain', cx + (rng() - 0.5) * 2, 0.052, s2 * (hl + 0.9), 3.2 + rng() * 2, 0.004, 1.4, { color: [0.62, 0.56, 0.44], skip: 'ny' }); // worn, sandy baselines
-    for (const s2 of [-1, 1]) { B.cyl('steel', cx + s2 * 6.4, 0, 0, 0.04, 0.04, 1.07, 10, { color: [0.3, 0.42, 0.34], cap: true }); B.box('steel', cx + s2 * 6.4, 0.5, 0.06, 0.06, 0.12, 0.08, { color: [0.3, 0.3, 0.3] }); }
-    B.quad('chain', [cx - 6.4, 0.06, 0], [cx + 6.4, 0.06, 0], [cx + 6.4, 0.95, 0], [cx - 6.4, 0.95, 0], { uv: 0.08, color: [0.12, 0.12, 0.12] });
-    B.bbox('plain', cx, 0.94, 0, 12.8, 0.07, 0.03, 0.005, { color: white });
-    B.box('plain', cx, 0.06, 0, 0.05, 0.9, 0.02, { color: white }); // centre strap
+    for (const s2 of [-1, 1]) B.box('plain', cx + (rng() - 0.5) * 2, TOP, s2 * (hl + 0.8), 2.4 + rng() * 1.2, 0.004, 1.0, { color: [0.5, 0.6, 0.52], skip: 'ny' }); // worn, sandy baselines
+    for (const s2 of [-1, 1]) { B.cyl('steel', cx + s2 * 6.4, TOP, 0, 0.04, 0.04, 1.07, 10, { color: [0.3, 0.42, 0.34], cap: true }); B.box('steel', cx + s2 * 6.4, TOP + 0.5, 0.06, 0.06, 0.12, 0.08, { color: [0.3, 0.3, 0.3] }); }
+    B.quad('chain', [cx - 6.4, TOP + 0.02, 0], [cx + 6.4, TOP + 0.02, 0], [cx + 6.4, TOP + 0.9, 0], [cx - 6.4, TOP + 0.9, 0], { uv: 0.08, color: [0.12, 0.12, 0.12] });
+    B.quad('chain', [cx + 6.4, TOP + 0.02, 0], [cx - 6.4, TOP + 0.02, 0], [cx - 6.4, TOP + 0.9, 0], [cx + 6.4, TOP + 0.9, 0], { uv: 0.08, color: [0.12, 0.12, 0.12] });
+    B.bbox('plain', cx, TOP + 0.89, 0, 12.8, 0.07, 0.03, 0.005, { color: white });
+    B.box('plain', cx, TOP + 0.01, 0, 0.05, 0.88, 0.02, { color: white }); // centre strap
+    extras.push({ t: 'box', p: B.P([cx, 0, 0]), hx: 6.4, hz: 0.05, r, h: TOP + 0.95 });
     // umpire's chair
-    B.frame(...B.P([cx + 7.4, 0, 0]), r); B.beam('steel', [-0.3, 0, -0.3], [-0.2, 1.4, -0.2], 0.04, 0.04, { color: [0.3, 0.42, 0.34] }); B.beam('steel', [0.3, 0, -0.3], [0.2, 1.4, -0.2], 0.04, 0.04, { color: [0.3, 0.42, 0.34] });
+    B.frame(...B.P([cx + 7.4, TOP, 0]), r); B.beam('steel', [-0.3, 0, -0.3], [-0.2, 1.4, -0.2], 0.04, 0.04, { color: [0.3, 0.42, 0.34] }); B.beam('steel', [0.3, 0, -0.3], [0.2, 1.4, -0.2], 0.04, 0.04, { color: [0.3, 0.42, 0.34] });
     B.beam('steel', [-0.3, 0, 0.3], [-0.2, 1.4, 0.2], 0.04, 0.04, { color: [0.3, 0.42, 0.34] }); B.beam('steel', [0.3, 0, 0.3], [0.2, 1.4, 0.2], 0.04, 0.04, { color: [0.3, 0.42, 0.34] });
     B.bbox('plain', 0, 1.4, 0, 0.55, 0.06, 0.55, 0.01, { color: [0.3, 0.42, 0.34] }); B.frame(x, y, z, r);
   }
-  // fence: 4 m chain link on galvanised posts with a top rail, a gate in the middle of the road side
-  const fh = 4, gx0 = -1.2, gx1 = 1.2;
+  // fence: 4 m chain link on galvanised posts with a top rail, standing on a low concrete upstand round the slab
+  const fh = 4, FB = SL + 0.18;
   const run = (ax, az, bx, bz) => { const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 3));
-    for (let i = 0; i <= n; i++) { const t = i / n; B.cyl('steel', ax + (bx - ax) * t, 0, az + (bz - az) * t, 0.045, 0.045, fh, 8, { color: [0.62, 0.66, 0.64], cap: true }); }
-    B.quad('chain', [ax, 0.05, az], [bx, 0.05, bz], [bx, fh, bz], [ax, fh, az], { uv: 0.5, color: [0.46, 0.62, 0.52] });
+    B.bbox('concrete', (ax + bx) / 2, SL - 0.02, (az + bz) / 2, Math.abs(bx - ax) + 0.24, 0.2, Math.abs(bz - az) + 0.24, 0.02, { color: KC });
+    for (let i = 0; i <= n; i++) { const t = i / n; B.cyl('steel', ax + (bx - ax) * t, FB, az + (bz - az) * t, 0.045, 0.045, fh - FB, 8, { color: [0.62, 0.66, 0.64], cap: true }); }
+    B.quad('chain', [ax, FB, az], [bx, FB, bz], [bx, fh, bz], [ax, fh, az], { uv: 0.5, color: [0.46, 0.62, 0.52] });
     B.beam('steel', [ax, fh, az], [bx, fh, bz], 0.05, 0.05, { color: [0.62, 0.66, 0.64] }); B.beam('steel', [ax, 1.2, az], [bx, 1.2, bz], 0.035, 0.035, { color: [0.62, 0.66, 0.64] });
     extras.push({ t: 'box', p: B.P([(ax + bx) / 2, 0, (az + bz) / 2]), hx: Math.abs(bx - ax) / 2 + 0.05, hz: Math.abs(bz - az) / 2 + 0.05, r, h: fh }); };
-  const hw = W / 2 + 0.3, hd2 = D / 2 + 0.3;
   run(-hw, -hd2, hw, -hd2); run(-hw, -hd2, -hw, hd2); run(hw, -hd2, hw, hd2); run(-hw, hd2, gx0, hd2); run(gx1, hd2, hw, hd2);
-  B.box('steel', 0, 0, hd2, gx1 - gx0, 2.1, 0.04, { color: [0.62, 0.66, 0.64] });
+  // gate: gate posts, a mesh leaf shut on the left and one swung open inward on the right, a drop bolt and a latch
+  const GC = [0.62, 0.66, 0.64];
+  for (const gx of [gx0, gx1]) B.cyl('steel', gx, SL, hd2, 0.06, 0.06, 2.3, 10, { color: GC, cap: true });
+  const leaf = (x0, z0, x1, z1) => { // frame tube + chain infill + mid rail, from (x0,z0) to (x1,z1) at the gate line
+    for (const yy of [SL + 0.08, SL + 1.0, SL + 2.05]) B.beam('steel', [x0, yy, z0], [x1, yy, z1], 0.04, 0.04, { color: GC });
+    for (const [px, pz] of [[x0, z0], [x1, z1]]) B.beam('steel', [px, SL + 0.08, pz], [px, SL + 2.05, pz], 0.04, 0.04, { color: GC });
+    B.quad('chain', [x0, SL + 0.1, z0], [x1, SL + 0.1, z1], [x1, SL + 2.03, z1], [x0, SL + 2.03, z0], { uv: 0.5, color: [0.46, 0.62, 0.52] }); };
+  leaf(gx0 + 0.08, hd2, -0.02, hd2);
+  leaf(gx1 - 0.08, hd2 - 0.06, gx1 - 0.08, hd2 - 1.2);                                                                  // open, swung in
+  B.box('steel', -0.08, SL + 1.0, hd2 + 0.03, 0.08, 0.1, 0.05, { color: [0.3, 0.3, 0.3] });                               // latch
+  B.beam('steel', [gx1 - 0.14, SL, hd2 - 1.0], [gx1 - 0.14, SL + 0.5, hd2 - 1.0], 0.02, 0.02, { color: [0.3, 0.3, 0.3] }); // drop bolt
+  extras.push({ t: 'box', p: B.P([gx0 / 2, 0, hd2]), hx: Math.abs(gx0) / 2, hz: 0.06, r, h: 2.3 });
+  // outside the gate: a concrete apron ramping down from the slab to the path
+  { const za = D / 2 + 0.8, zb = za + 1.8;
+    B.quad('concrete', [-1.7, SL, za], [-1.7, -0.02, zb], [1.7, -0.02, zb], [1.7, SL, za], { color: [0.76, 0.76, 0.74], uv: 1.5 });
+    for (const sx of [-1.7, 1.7]) B.poly('concrete', [[sx, -0.3, za], [sx, -0.3, zb], [sx, -0.02, zb], [sx, SL, za]], [Math.sign(sx), 0, 0], { color: [0.7, 0.7, 0.68] }); }
   // floodlights on the long sides, benches, a store shed and a sign by the gate
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const px = sx * (hw + 0.6), pz = sz * 10;
-    B.cyl('steel', px, 0, pz, 0.12, 0.08, 10, 10, { color: [0.64, 0.66, 0.68] });
+    B.bbox('concrete', px, -0.3, pz, 0.6, 0.45, 0.6, 0.02, { color: KC });
+    B.cyl('steel', px, 0.15, pz, 0.12, 0.08, 9.85, 10, { color: [0.64, 0.66, 0.68] });
     B.bbox('steel', px - sx * 0.3, 10, pz, 0.9, 0.08, 0.9, 0.01, { color: [0.5, 0.5, 0.52] });
     for (const k of [-0.25, 0.25]) { B.bbox('plastic', px - sx * 0.45, 9.55, pz + k, 0.45, 0.4, 0.35, 0.02, { color: [0.3, 0.32, 0.34] }); B.bbox('lamp', px - sx * 0.68, 9.6, pz + k, 0.02, 0.3, 0.26, 0.01); }
     if (lampPts) lampPts.push({ p: B.P([px - sx * 0.8, 9.5, pz]), s: 1.4 });
   }
-  for (const sx of [-1, 1]) { B.bbox('wood', sx * (hw - 1.2), 0.42, 0, 0.45, 0.06, 2.2, 0.01, { color: [0.62, 0.46, 0.3] }); for (const zz of [-0.9, 0.9]) B.box('steel', sx * (hw - 1.2), 0.05, zz, 0.4, 0.38, 0.05, { color: [0.4, 0.4, 0.42] }); }
-  B.bbox('metal', hw + 2.2, 0, -hd2 + 1.6, 2.4, 2.1, 1.6, 0.02, { color: [0.62, 0.7, 0.62] }); B.bbox('metal', hw + 2.2, 2.1, -hd2 + 1.6, 2.6, 0.06, 1.8, 0.01, { color: [0.5, 0.56, 0.5] });
+  for (const sx of [-1, 1]) { B.bbox('wood', sx * (hw - 1.2), TOP + 0.42, 0, 0.45, 0.06, 2.2, 0.01, { color: [0.62, 0.46, 0.3] }); for (const zz of [-0.9, 0.9]) B.box('steel', sx * (hw - 1.2), TOP, zz, 0.4, 0.42, 0.05, { color: [0.4, 0.4, 0.42] }); }
+  B.bbox('concrete', hw + 2.2, -0.3, -hd2 + 1.6, 2.6, 0.42, 1.8, 0.02, { color: KC });
+  B.bbox('metal', hw + 2.2, 0.12, -hd2 + 1.6, 2.4, 2.0, 1.6, 0.02, { color: [0.62, 0.7, 0.62] }); B.bbox('metal', hw + 2.2, 2.12, -hd2 + 1.6, 2.6, 0.06, 1.8, 0.01, { color: [0.5, 0.56, 0.5] });
+  B.detail(1, () => { for (const dz of [-0.38, 0.38]) B.box('dark', hw + 2.2 - 1.201, 0.2, -hd2 + 1.6 + dz, 0.01, 1.8, 0.012, { color: [0.3, 0.3, 0.3] }); });
   extras.push({ t: 'box', p: B.P([hw + 2.2, 0, -hd2 + 1.6]), hx: 1.2, hz: 0.8, r });
   const sign = signMesh(1.6, 0.5, (g2, w2, h2) => { g2.fillStyle = '#f4f4ee'; g2.fillRect(0, 0, w2, h2); g2.fillStyle = '#1d4d3a'; g2.font = `bold ${h2 * 0.42}px ${JP_FONT}`; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('桜川市民テニスコート', w2 / 2, h2 / 2); }, 0.2);
   sign.position.set(...B.P([3.2, 2.2, hd2 + 0.08])); sign.rotation.y = r; scene.add(sign);
+  { const p0 = B.P([0, 0, 0]); addPlatform(p0[0], p0[2], W / 2 + 0.8, D / 2 + 0.8, r, y + TOP); }
   B.frame(0, 0, 0, 0);
+  return { top: TOP, slab: SL };
 }

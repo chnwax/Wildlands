@@ -171,13 +171,67 @@ export function buildRailway(ctx) {
   }
   B.frame(0, 0, 0, 0);
   for (const s of [-1, 1]) B.box('alu', stx + s * 1.62, y0, -73.2 + steps * 0.15, 0.05, ptop - y0 + 1.0, steps * 0.3, { color: [0.6, 0.62, 0.64], skip: 'ny' });
-  // pedestrian crossing (構内踏切) with ramps between platforms at the west end
-  const pcx = sx0 - 4;
-  B.frame(pcx, 0, -80, 0); B.box('wood', 0, y0 + 0.2, 0, 2.4, 0.26, 12.8, { color: [0.45, 0.4, 0.34] });
-  addPlatform(pcx, -80, 1.2, 6.4, 0, y0 + 0.46);
-  for (const P of platforms) {
-    const zc = (P.z0 + P.z1) / 2, n = 6;
-    for (let i = 0; i < n; i++) { const x = sx0 - 0.5 - i * 0.6, h = ptop - (i + 1) * (ptop - y0 - 0.46) / n; B.frame(x, 0, zc, 0); B.box('concrete', 0, y0, 0, 0.6, h - y0, P.z1 - P.z0, { color: [0.72, 0.72, 0.7] }); addPlatform(x, zc, 0.3, (P.z1 - P.z0) / 2, 0, h); }
+  // pedestrian crossing (構内踏切) at the west end: from each platform a ramp runs down past the platform end to a
+  // landing, and a deck at rail-head level (rubber panels inside the tracks, flangeways open) crosses both tracks between
+  // the landings. Handrails along the ramps, warning tiles top and bottom, a stop sign and chain at each landing, and
+  // the rest of each platform end is fenced.
+  {
+    const rt = railTop(y0), W = 2.0, pcx = sx0 - 8, xr = pcx + W / 2, top = rt - 0.003, g = RAIL.gauge, RAIL_C = [0.62, 0.64, 0.66];
+    const ramps = platforms.map(P => P.side > 0 ? [P.z1 - 0.25 - W, P.z1 - 0.25] : [P.z0 + 0.25, P.z0 + 0.25 + W]);
+    const zA = Math.min(...ramps.map(r => r[0])), zB = Math.max(...ramps.map(r => r[1]));
+    B.frame(0, 0, 0, 0);
+    // deck: z spans between the flangeways; concrete outside the tracks, black rubber panels in 1 m modules inside
+    const holes = [];
+    for (const tz of RAIL.z) { holes.push([tz - g / 2 - 0.045, tz - g / 2 + 0.11]); holes.push([tz + g / 2 - 0.11, tz + g / 2 + 0.045]); }
+    holes.sort((q, r) => q[0] - r[0]);
+    const spans = []; let z0 = zA;
+    for (const [h0, h1] of holes) { spans.push([z0, h0]); z0 = h1; }
+    spans.push([z0, zB]);
+    for (const [za, zb] of spans) {
+      const zc = (za + zb) / 2, inTrack = RAIL.z.some(tz => Math.abs(zc - tz) < g / 2 + 0.6);
+      if (inTrack) for (let i = 0; i < 2; i++) B.bbox('plain', pcx - W / 4 + i * W / 2, y0 + 0.2, zc, W / 2 - 0.012, top - y0 - 0.2, zb - za, 0.012, { color: [0.2, 0.2, 0.21], skip: 'ny' });
+      else B.bbox('concrete', pcx, y0 - 0.1, zc, W, top - y0 + 0.1, zb - za, 0.015, { color: [0.72, 0.72, 0.7], skip: 'ny', uv: 1.2 });
+      for (const sd of [-1, 1]) B.quad('paint', [pcx + sd * (W / 2 - 0.12) - 0.05, top + 0.003, za + 0.01], [pcx + sd * (W / 2 - 0.12) + 0.05, top + 0.003, za + 0.01], [pcx + sd * (W / 2 - 0.12) + 0.05, top + 0.003, zb - 0.01], [pcx + sd * (W / 2 - 0.12) - 0.05, top + 0.003, zb - 0.01], { color: [0.95, 0.78, 0.1] });
+    }
+    for (const [h0, h1] of holes) B.box('dark', pcx, rt - 0.09, (h0 + h1) / 2, W, 0.02, h1 - h0, { color: [0.12, 0.12, 0.12] });
+    for (const sd of [-1, 1]) B.bbox('concrete', pcx + sd * (W / 2 + 0.1), y0 - 0.1, (zA + zB) / 2, 0.2, top - y0 + 0.1, zB - zA, 0.02, { color: [0.66, 0.66, 0.64] }); // edge beams
+    addPlatform(pcx, (zA + zB) / 2, W / 2, (zB - zA) / 2, 0, top);
+    platforms.forEach((P, k) => {
+      const [r0, r1] = ramps[k], rc = (r0 + r1) / 2, L = sx0 - xr, hAt = x => lerp(top, ptop, (x - xr) / L);
+      // ramp: a sloped slab on a concrete wedge
+      B.quad('pavement', [xr, top, r1], [sx0, ptop, r1], [sx0, ptop, r0], [xr, top, r0], { color: [0.78, 0.78, 0.76], uv: 1.5 });
+      for (const [zz, sd] of [[r0, -1], [r1, 1]]) B.poly('concrete', [[xr, y0 - 0.1, zz], [sx0, y0 - 0.1, zz], [sx0, ptop, zz], [xr, top, zz]], [0, 0, sd], { color: [0.72, 0.72, 0.7], uv: 3 });
+      for (let x = xr; x < sx0 - 0.01; x += 0.3) addPlatform(x + 0.15, rc, 0.15, W / 2, 0, hAt(x + 0.15));
+      // warning tiles at the top and the bottom of the ramp, across its width
+      for (const [xa, xb, y] of [[sx0 - 0.9, sx0 - 0.3, ptop + 0.004], [xr - 0.001 - 0.6, xr - 0.001, top + 0.004]])
+        B.poly('tactileD', [[xa, y, r0 + 0.1], [xa, y, r1 - 0.1], [xb, y, r1 - 0.1], [xb, y, r0 + 0.1]], [0, 1, 0], { uvs: [[0, 0], [(W - 0.2) / 0.3, 0], [(W - 0.2) / 0.3, 2], [0, 2]] });
+      // handrails on both sides, posts every 1.5 m; the rail follows the slope and carries on round the landing
+      for (const zz of [r0 + 0.04, r1 - 0.04]) {
+        const n = Math.ceil(L / 1.5);
+        for (let i = 0; i <= n; i++) { const x = xr + L * i / n; B.cyl('steel', x, hAt(x) - 0.02, zz, 0.024, 0.024, 0.9, 8, { color: RAIL_C }); }
+        for (const dy of [0.88, 0.45]) B.beam('steel', [xr, top + dy, zz], [sx0, ptop + dy, zz], 0.045, 0.045, { color: RAIL_C });
+        addBox(xr + L / 2, zz, L / 2, 0.06, 0, y0 - 1, ptop + 1.2);
+      }
+      // fence across the rest of the platform end
+      for (const [fa, fb] of [[P.z0 + 0.05, r0], [r1, P.z1 - 0.05]]) if (fb - fa > 0.1) {
+        for (const zz of [fa, fb]) B.box('alu', sx0 + 0.05, ptop, zz, 0.05, 1.2, 0.05, { color: [0.3, 0.45, 0.35] });
+        for (const dy of [1.15, 0.5]) B.box('alu', sx0 + 0.05, ptop + dy, (fa + fb) / 2, 0.05, 0.05, fb - fa, { color: [0.3, 0.45, 0.35] });
+        addBox(sx0 + 0.05, (fa + fb) / 2, 0.08, (fb - fa) / 2, 0, ptop - 2, ptop + 1.2);
+      }
+      // at the landing: a post with a stop board facing the passenger, and a yellow-black chain hooked back (open)
+      const px = pcx - W / 2 - 0.3;
+      B.frame(px, top, P.side > 0 ? r1 - 0.2 : r0 + 0.2, 0);
+      B.cyl('steel', 0, -0.3, 0, 0.035, 0.035, 2.3, 10, { color: [0.85, 0.85, 0.85] });
+      B.bbox('plain', 0, 1.35, 0, 0.06, 0.62, 0.62, 0.01, { color: [0.95, 0.95, 0.93] });
+      B.frame(0, 0, 0, 0);
+      const sg = signMesh(0.56, 0.56, (c, w, h) => { c.fillStyle = '#fff'; c.fillRect(0, 0, w, h); c.fillStyle = '#d42020'; c.beginPath(); c.moveTo(w / 2, h * 0.08); c.lineTo(w * 0.94, h * 0.62); c.lineTo(w * 0.06, h * 0.62); c.closePath(); c.fill();
+        c.fillStyle = '#fff'; c.font = `bold ${h * 0.2}px ${JP_FONT}`; c.textAlign = 'center'; c.fillText('止まれ', w / 2, h * 0.52); c.fillStyle = '#222'; c.font = `bold ${h * 0.13}px ${JP_FONT}`; c.fillText('列車に注意', w / 2, h * 0.84); }, 0.3);
+      sg.position.set(px + 0.035, top + 1.66, P.side > 0 ? r1 - 0.2 : r0 + 0.2); sg.rotation.y = Math.PI / 2; scene.add(sg);
+      const sg2 = sg.clone(); sg2.rotation.y = -Math.PI / 2; sg2.position.x = px - 0.035; scene.add(sg2);
+      addCircle(px, P.side > 0 ? r1 - 0.2 : r0 + 0.2, 0.08);
+      { const hz = P.side > 0 ? r1 - 0.2 : r0 + 0.2, pts = []; for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push([px + 0.02, top + 0.95 - Math.sin(t * Math.PI) * 0.18, hz - (P.side > 0 ? 1 : -1) * t * 0.9]); }
+        for (let i = 0; i < 10; i++) B.beam('plastic', pts[i], pts[i + 1], 0.03, 0.03, { color: i % 2 ? [0.1, 0.1, 0.1] : [0.95, 0.78, 0.1] }); }
+    });
   }
   // station building on the plaza side
   stationBuilding(B, RAIL.stationX + 6, y0, -68, mulberry32(77));

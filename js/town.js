@@ -585,13 +585,13 @@ export async function build(progress) {
   reserve(SCH.x, SCH.z, SCH.w / 2 + 1, SCH.d / 2 + 1, 0);
   school(B, SCH.x, hf.groundAt(SCH.x, SCH.z), SCH.z, Math.PI, SCH.w, SCH.d, drng, schoolSak, bikeList, extras);
   hf.paint2(0, SCH.x - SCH.w / 2, SCH.z - SCH.d / 2, SCH.x + SCH.w / 2, SCH.z + SCH.d / 2, (x, z) => Math.abs(x - SCH.x) < SCH.w / 2 - 4 && Math.abs(z - SCH.z) < SCH.d / 2 - 4 ? 1 : 0);
-  hf.paint2(2, SCH.x - SCH.w / 2, SCH.z - SCH.d / 2, SCH.x + SCH.w / 2, SCH.z + SCH.d / 2, (x, z) => Math.abs(x - SCH.x) < SCH.w / 2 - 4.5 && Math.abs(z - SCH.z) < SCH.d / 2 - 4.5 || Math.abs(x - SCH.x) < 4.5 && z < SCH.z ? 1 : 0);
-  hf.paint2(0, SCH.x - 6, SCH.z - SCH.d / 2 - 2, SCH.x + 6, SCH.z, (x, z) => Math.abs(x - SCH.x) < 4.2 ? 1 : 0); // paved way in from the gate
+  hf.paint2(2, SCH.x - SCH.w / 2, SCH.z - SCH.d / 2, SCH.x + SCH.w / 2, SCH.z + SCH.d / 2, (x, z) => Math.abs(x - SCH.x) < SCH.w / 2 - 4.5 && Math.abs(z - SCH.z) < SCH.d / 2 - 4.5 ? 1 : 0);
   reserve(PK.x, PK.z, PK.w / 2 + 1, PK.d / 2 + 1, 0);
   { // municipal tennis courts east of road B, reached by a gravel path from the footway
     const TC = { x: 152, z: 292, r: -Math.PI / 2 };
     reserve(TC.x, TC.z, 22, 21.5, 0); reserve((TC.x - 22 + 116) / 2, TC.z, (TC.x - 22 - 116) / 2 + 0.5, 2, 0);
-    tennisCourts(B, TC.x, hf.groundAt(TC.x, TC.z), TC.z, TC.r, drng, extras, lampPoints);
+    let ty = -1e9; for (let dx = -21; dx <= 21; dx += 3) for (let dz = -21; dz <= 21; dz += 3) ty = Math.max(ty, hf.groundAt(TC.x + dx, TC.z + dz)); // the slab clears the highest ground
+    tennisCourts(B, TC.x, ty, TC.z, TC.r, drng, extras, lampPoints);
     hf.paint2(2, TC.x - 23, TC.z - 22, TC.x + 23, TC.z + 22, () => 1);
     hf.paint2(0, 114, TC.z - 2.2, TC.x - 18, TC.z + 2.2, () => 1); hf.paint2(2, 114, TC.z - 1.6, TC.x - 18, TC.z + 1.6, () => 1);
     RN.cuts.push({ id: 'B', side: -1, s0: sOf('B', 110, TC.z) - 1.5, s1: sOf('B', 110, TC.z) + 1.5 });
