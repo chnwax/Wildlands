@@ -784,7 +784,6 @@ export function tennisCourts(B, x, y, z, r, rng, extras, lampPts) {
     for (const s2 of [-1, 1]) { line(cx - hd, s2 * hl, cx + hd, s2 * hl, 0.08); line(cx + s2 * hd, -hl, cx + s2 * hd, hl); line(cx + s2 * hs, -hl, cx + s2 * hs, hl); line(cx - hs, s2 * sl, cx + hs, s2 * sl);
       line(cx, s2 * hl, cx, s2 * (hl - 0.12)); }
     line(cx, -sl, cx, sl);
-    for (const s2 of [-1, 1]) B.box('plain', cx + (rng() - 0.5) * 2, TOP, s2 * (hl + 0.8), 2.4 + rng() * 1.2, 0.004, 1.0, { color: [0.5, 0.6, 0.52], skip: 'ny' }); // worn, sandy baselines
     for (const s2 of [-1, 1]) { B.cyl('steel', cx + s2 * 6.4, TOP, 0, 0.04, 0.04, 1.07, 10, { color: [0.3, 0.42, 0.34], cap: true }); B.box('steel', cx + s2 * 6.4, TOP + 0.5, 0.06, 0.06, 0.12, 0.08, { color: [0.3, 0.3, 0.3] }); }
     B.quad('chain', [cx - 6.4, TOP + 0.02, 0], [cx + 6.4, TOP + 0.02, 0], [cx + 6.4, TOP + 0.9, 0], [cx - 6.4, TOP + 0.9, 0], { uv: 0.08, color: [0.12, 0.12, 0.12] });
     B.quad('chain', [cx + 6.4, TOP + 0.02, 0], [cx - 6.4, TOP + 0.02, 0], [cx - 6.4, TOP + 0.9, 0], [cx + 6.4, TOP + 0.9, 0], { uv: 0.08, color: [0.12, 0.12, 0.12] });
