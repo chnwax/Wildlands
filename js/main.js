@@ -167,7 +167,8 @@ async function main() {
   updateCamera(world); camera.updateMatrixWorld();
   for (const s of scatters) s.update(camera.position.x, camera.position.z);
   progress('Compiling shaders', 1); await tick();
-  renderer.compile(scene, camera);
+  // KHR_parallel_shader_compile: the GPU process compiles every program side by side instead of one blocking call each
+  await renderer.compileAsync(scene, camera);
   frame();
   const ld = $('loading'); ld.classList.add('hidden'); setTimeout(() => ld.remove(), 900);
   $('menu').classList.remove('hidden');

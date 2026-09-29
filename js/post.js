@@ -71,10 +71,10 @@ class ScenePass extends Pass {
 const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
 const TAAShader = {
   uniforms: { tCur: { value: null }, tHist: { value: null }, tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uPrevVP: { value: new THREE.Matrix4() },
-    uJit: { value: new THREE.Vector2() }, uRes: { value: new THREE.Vector2(1, 1) }, uReset: { value: 1 } },
+    uJit: { value: new THREE.Vector2() }, uRes: { value: new THREE.Vector2(1, 1) }, uReset: { value: 1 }, uSince: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
-    uniform sampler2D tCur, tHist, tDepth; uniform mat4 uInvVP, uPrevVP; uniform vec2 uJit, uRes; uniform float uReset; varying vec2 vUv;
+    uniform sampler2D tCur, tHist, tDepth; uniform mat4 uInvVP, uPrevVP; uniform vec2 uJit, uRes; uniform float uReset, uSince; varying vec2 vUv;
     vec3 toY(vec3 c){ return vec3(dot(c, vec3(0.25, 0.5, 0.25)), dot(c, vec3(0.5, 0.0, -0.5)), dot(c, vec3(-0.25, 0.5, -0.25))); }
     vec3 fromY(vec3 c){ return vec3(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
     float ndcZ(float d){
@@ -128,6 +128,7 @@ const TAAShader = {
       vec3 c = cf / wf;
       // faster response while the view moves quickly (less smear), luminance-weighted blend (no fireflies)
       float vel = length((prevUv - vUv) * uRes), alpha = mix(0.085, 0.3, clamp(vel / 24.0, 0.0, 1.0));
+      alpha = max(alpha, 1.0 / (uSince + 1.0)); // right after a reset (teleport, resize) average the frames evenly: converges in a jitter cycle
       float wc = alpha / (1.0 + c.x), wh = (1.0 - alpha) / (1.0 + hist.x);
       gl_FragColor = vec4(max(fromY((c * wc + hist * wh) / (wc + wh)), vec3(0.0)), 1.0);
     }`,
@@ -159,7 +160,7 @@ class TAAPass extends Pass {
   render(r, writeBuffer, readBuffer) {
     camera.clearViewOffset();
     const u = this.mat.uniforms, out = this.hist[1 - this.idx];
-    u.tCur.value = readBuffer.texture; u.tHist.value = this.hist[this.idx].texture; u.uPrevVP.value.copy(this.prevVP); u.uReset.value = this.reset ? 1 : 0;
+    u.tCur.value = readBuffer.texture; u.tHist.value = this.hist[this.idx].texture; u.uPrevVP.value.copy(this.prevVP); u.uReset.value = this.reset ? 1 : 0; this.since = this.reset ? 0 : (this.since || 0) + 1; u.uSince.value = this.since;
     r.setRenderTarget(out); this.quad.render(r);
     this.copy.material.uniforms.tDiffuse.value = out.texture;
     r.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.copy.render(r);

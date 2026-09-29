@@ -171,6 +171,21 @@ for (const R of ROADS) {
     if (best && best.d > 1e-3) R.pts[end] = best.q;
   }
 }
+// streets that stop at the edge of town carry on as gravel farm tracks (農道) out into the fields and up to the woods,
+// instead of ending in an asphalt cliff at the meadow
+for (const R of ROADS.slice()) {
+  if (R.kind === 'path' || R.kind === 'main' || R.noMarks) continue;
+  for (const end of [0, R.pts.length - 1]) {
+    const p = R.pts[end], q = R.pts[end === 0 ? 1 : end - 1], L = Math.hypot(p[0] - q[0], p[1] - q[1]), d = [(p[0] - q[0]) / L, (p[1] - q[1]) / L];
+    const joined = ROADS.some(O => O !== R && O.pts.some((v, i) => i + 1 < O.pts.length && (() => { const a = v, b = O.pts[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]), t = clamp(((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (l * l), 0, 1);
+      return Math.hypot(p[0] - a[0] - (b[0] - a[0]) * t, p[1] - a[1] - (b[1] - a[1]) * t) < 3; })()));
+    if (joined) continue;
+    const pts = [p.slice()];
+    for (let k = 1; k <= 8; k++) { const x = p[0] + d[0] * k * 10 + Math.sin(k * 0.9 + p[0]) * 1.2 * (k > 2), z = p[1] + d[1] * k * 10 + Math.cos(k * 0.7 + p[1]) * 1.2 * (k > 2);
+      if (baseHeight(x, z) > Y0 + 6 || Math.abs(x) > 980 || Math.abs(z) > 980) break; pts.push([x, z]); }
+    if (pts.length > 2) ROADS.push({ id: R.id + (end ? 'x' : 'w'), kind: 'path', w: 2.8, pts, mat: 'gravelPath', track: true });
+  }
+}
 
 function segInter(a, b, c, d) {
   const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0];
