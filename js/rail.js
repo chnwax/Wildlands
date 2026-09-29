@@ -133,7 +133,7 @@ export function buildRailway(ctx) {
   B.box('concrete', 0, -1.25, 0, 38, 1.2, 11.5, { color: [0.72, 0.72, 0.7], uv: 3 });  // deck: ballast trough floor 5 cm below formation
   for (const z of [-4.2, 4.2]) B.box('metal', 0, -2.4, z, 38, 1.4, 0.35, { color: [0.36, 0.42, 0.5] });
   for (const px of [-8, 8]) B.box('concrete', px, -8, 0, 2.2, 6.6, 9, { color: [0.68, 0.68, 0.66], uv: 3 });
-  for (const z of [-5.8, 5.8]) { B.box('metal', 0, -0.05, z, 38, 1.25, 0.08, { color: [0.4, 0.45, 0.5] }); }
+  for (const z of [-5.8, 5.8]) for (const [a, b] of [[-19, -17.8], [-14.4, 14.4], [17.8, 19]]) B.box('metal', (a + b) / 2, -0.05, z, b - a, 1.25, 0.08, { color: [0.4, 0.45, 0.5] }); // open at the bank walkways
   addPlatform(rx, -80, 19, 5.75, 0, y0 + 0.2);
 
   // ---------------------------------------------------------------- station
@@ -423,7 +423,7 @@ const crossbuckMat = new THREE.MeshStandardMaterial({ map: crossbuckTex, transpa
 // and the road's edge lines painted on. The approach roads ramp up to it (town.js). Each approach has its warning
 // machine on the driver's left (keep-left): striped mast, crossbuck, twin red lamps with hoods for both directions, a
 // bell speaker and a direction indicator; and a barrier machine whose striped boom swings down across the road.
-export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0, machineSide = 0 } = {}) {
+export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0, machineSide = 0, ped = false, age = 0.5 } = {}) {
   const rt = railTop(y0), zN = -86.9, zS = -73.1, zA = -86.6, zB = -73.4, W = roadW - 0.4, g = RAIL.gauge;
   const top = rt - 0.003, base = y0 + 0.2;
   B.frame(x, 0, -80, 0);
@@ -435,7 +435,7 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0,
   for (const [h0, h1] of holes) { spans.push([z0, h0 + 80]); z0 = h1 + 80; }
   spans.push([z0, zB + 80]);
   const inTrack = zc => RAIL.z.some(tz => Math.abs(zc - (tz + 80)) < g / 2 + 0.65);
-  const xs = walk > 0 ? [[-W / 2, -hw, 'foot'], [-hw, hw, 'road'], [hw, W / 2, 'foot']] : [[-W / 2, W / 2, 'road']];
+  const xs = ped ? [[-W / 2, W / 2, 'foot']] : walk > 0 ? [[-W / 2, -hw, 'foot'], [-hw, hw, 'road'], [hw, W / 2, 'foot']] : [[-W / 2, W / 2, 'road']];
   for (const [za, zb] of spans) {
     const zc = (za + zb) / 2, dz = zb - za, track = inTrack(zc);
     for (const [xa, xb, kind] of xs) {
@@ -444,10 +444,12 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0,
       else if (track) { // precast panels, 1 m modules with joints
         const n = Math.max(1, Math.round(dx));
         for (let i = 0; i < n; i++) B.bbox('concrete', xa + (i + 0.5) * dx / n, base, zc, dx / n - 0.012, top - base, dz, 0.012, { color: [0.5, 0.5, 0.49], skip: 'ny', uv: 1 });
-      } else B.box('asphalt', xc, base, zc, dx, top - base, dz, { skip: 'ny', uv: 4 });
+      } else { B.box('asphalt', xc, base, zc, dx, top - base, dz, { skip: 'ny py', uv: 4 });
+        const at = [xa, xb].flatMap(xx => [za, zb].map(zz => [xx, zz]));
+        B.quad('asphalt', [xa, top, zb], [xb, top, zb], [xb, top, za], [xa, top, za], { uvs: [[(x + xa) / 4, (zb - 80) / 4], [(x + xb) / 4, (zb - 80) / 4], [(x + xb) / 4, (za - 80) / 4], [(x + xa) / 4, (za - 80) / 4]], attr: { aRoad: [[0, age], [0, age], [0, age], [0, age]] } }); void at; }
     }
     // edge lines painted over each piece (not across the flangeways)
-    for (const s2 of [-1, 1]) { const ex = s2 * (hw - 0.25); B.quad('paint', [ex - 0.075, top + 0.003, za + 0.01], [ex + 0.075, top + 0.003, za + 0.01], [ex + 0.075, top + 0.003, zb - 0.01], [ex - 0.075, top + 0.003, zb - 0.01], { color: [0.94, 0.94, 0.92] }); }
+    if (!ped) for (const s2 of [-1, 1]) { const ex = s2 * (hw - 0.25); B.quad('paint', [ex - 0.075, top + 0.003, za + 0.01], [ex + 0.075, top + 0.003, za + 0.01], [ex + 0.075, top + 0.003, zb - 0.01], [ex - 0.075, top + 0.003, zb - 0.01], { color: [0.94, 0.94, 0.92] }); }
     if (walk > 0) for (const s2 of [-1, 1]) B.quad('paint', [s2 * hw - 0.05, top + 0.003, za + 0.01], [s2 * hw + 0.05, top + 0.003, za + 0.01], [s2 * hw + 0.05, top + 0.003, zb - 0.01], [s2 * hw - 0.05, top + 0.003, zb - 0.01], { color: [0.94, 0.94, 0.92] });
   }
   // flangeway floors (dark, below the rail head) so the gaps read as slots, not holes into the ballast

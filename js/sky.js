@@ -276,7 +276,7 @@ export function updateSky(force) {
   const useSun = el > -0.02;
   env.lightDir.copy(useSun ? sunDir : env.moonDir);
   if (useSun) { sun.color.copy(p.sun); sun.intensity = p.sunI * smoothstep(-0.02, 0.05, el); }
-  else { sun.color.copy(MOON); sun.intensity = 0.1 * smoothstep(-0.02, -0.12, el); }
+  else { sun.color.copy(MOON); sun.intensity = 0.06 * smoothstep(-0.02, -0.12, el); }
   S.uSunCol.value.set(sun.color.r, sun.color.g, sun.color.b).multiplyScalar(sun.intensity);
   skyU.uGlowAmt.value = p.glowAmt;
   skyU.uSunDisk.value.set(p.sun.r + 1, p.sun.g + 1, p.sun.b + 1).multiplyScalar(0.5 * smoothstep(-0.04, 0.02, el) * 3.0); // halfway to white
@@ -299,7 +299,7 @@ export function updateSky(force) {
     skyU.uTown.value.w = tw;
     scene.environment = envRT.texture;
   }
-  scene.environmentIntensity = lerp(1.0, 0.2, night); // the night sky's fill: dim blue, so unlit ground reads dark
+  scene.environmentIntensity = lerp(1.0, 0.12, night); // the night sky's fill: dim blue, so unlit ground reads dark
   scene.fog.color.copy(p.fog);
   scene.fog.density = 0.00022 * p.fogD; env.haze = p.haze;
   S.uFogCol.value.set(p.fog.r, p.fog.g, p.fog.b);

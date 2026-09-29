@@ -42,7 +42,10 @@ function segInter(a, b, c, d) {
   const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0];
   if (Math.abs(den) < 1e-9) return null;
   const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
-  if (t < -0.02 || t > 1.02 || u < -0.02 || u > 1.02) return null;
+  // tolerance in metres, not a fraction of the segment: a 2 % overshoot on a 600 m straight reached 12 m past a road's
+  // end and built a phantom junction (with its asphalt pad) out in the fields
+  const et = 0.6 / Math.hypot(r[0], r[1]), eu = 0.6 / Math.hypot(s[0], s[1]);
+  if (t < -et || t > 1 + et || u < -eu || u > 1 + eu) return null;
   return { p: [a[0] + r[0] * t, a[1] + r[1] * t], t, u };
 }
 // kerb + sidewalk profile [outward q, up v] from the carriageway edge: 30 cm gutter apron, 15 cm kerb with a chamfered

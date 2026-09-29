@@ -173,15 +173,24 @@ function coniferTiers(form, seed) {
 // with cloud-pruned pads on a leaning, twisting trunk
 function pineTiers(form, seed) {
   const rng = mulberry32(seed), tiers = [], limbs = [], garden = form === 'jpine';
-  const n = garden ? 6 : 8, la = rng() * TAU;
+  const n = garden ? 9 : 8, la = rng() * TAU;
+  let a = rng() * TAU;
   for (let i = 0; i < n; i++) {
     const f = i / (n - 1), top = i === n - 1;
-    const y = garden ? lerp(0.32, 0.86, f) : lerp(0.5, 0.9, Math.pow(f, 0.8));
-    const a = rng() * TAU, r = top ? 0.02 : garden ? 0.12 + rng() * 0.16 : 0.05 + rng() * 0.13 * (1 - f * 0.5);
-    const R = garden ? lerp(0.15, 0.09, f) * (0.8 + rng() * 0.4) : lerp(0.23, 0.1, f) * (0.8 + rng() * 0.45);
+    const y = garden ? lerp(0.24, 0.84, f) : lerp(0.5, 0.9, Math.pow(f, 0.8));
+    // garden pine: pads on long limbs that spiral round the trunk (golden angle), shorter toward the top
+    a = garden ? a + 2.4 + (rng() - 0.5) * 0.5 : rng() * TAU;
+    const r = top ? 0.02 : garden ? lerp(0.32, 0.14, f) * (0.8 + rng() * 0.4) : 0.05 + rng() * 0.13 * (1 - f * 0.5);
+    const R = garden ? lerp(0.2, 0.12, f) * (0.85 + rng() * 0.3) : lerp(0.23, 0.1, f) * (0.8 + rng() * 0.45);
     const lean = (garden ? 0.16 : 0.05) * f;
     const ox = Math.cos(a) * r + Math.cos(la) * lean, oz = Math.sin(a) * r + Math.sin(la) * lean;
-    tiers.push({ f, R, H: R * (garden ? 0.55 : 0.62), yb: y, droop: garden ? 0.05 : 0.1, ox, oz, rot: rng() * TAU, p1: rng() * TAU, p2: rng() * TAU, p3: rng() * TAU, amp: garden ? 0.12 : 0.28 });
+    const base = { f, R, H: R * (garden ? 0.5 : 0.62), yb: y, droop: garden ? 0.02 : 0.1, ox, oz, rot: rng() * TAU, p1: rng() * TAU, p2: rng() * TAU, p3: rng() * TAU, amp: garden ? 0.1 : 0.28 };
+    if (garden) base.dome = true;
+    tiers.push(base);
+    // cloud pruning (玉散らし): each pad is a cluster of rounded cushions, a big one and three or four smaller ones
+    // round it, their tops domed and their undersides flat
+    if (garden) for (let k = 0, m = top ? 3 : 4 + Math.floor(rng() * 3); k < m; k++) { const b = base.rot + k / m * TAU + rng() * 0.6, d = R * (0.5 + rng() * 0.3);
+      tiers.push({ ...base, dome: true, R: R * (0.55 + rng() * 0.2), H: R * (0.4 + rng() * 0.14), ox: ox + Math.cos(b) * d, oz: oz + Math.sin(b) * d, yb: y - R * (0.04 + rng() * 0.08), rot: rng() * TAU, p1: rng() * TAU, amp: 0.08 }); }
     limbs.push(V(ox * 0.85, y + 0.02, oz * 0.85));
   }
   return { tiers, limbs, la, garden };
@@ -195,7 +204,7 @@ function tierMesh(B, t, SEG, under, crownC) {
     const a = t.rot + i / SEG * TAU, cx = Math.cos(a), cz = Math.sin(a);
     const tip = i % 2 === 0, w = 1 + t.amp * (0.55 * Math.sin(2 * a + t.p1) + 0.35 * Math.sin(3 * a + t.p2) + 0.2 * Math.sin(5 * a + t.p3));
     const jag = 1 + 0.05 * Math.sin(7 * a + t.p3 * 3);
-    const rm = R * 0.58 * w * jag, ym = ya - H * 0.5;
+    const rm = R * (t.dome ? 0.78 : 0.58) * w * jag, ym = ya - H * (t.dome ? 0.32 : 0.5);
     const rr = R * (tip ? 1.06 : 0.86) * w * jag, yr = yb - (tip ? R * t.droop : -R * 0.02);
     const coneN = (r, y) => n.set(cx * H, R * 0.9, cz * H).normalize().add(p.set(cx * r + ox - crownC.x, y - crownC.y, cz * r + oz - crownC.z).normalize().multiplyScalar(0.35)).normalize().clone();
     mid.push(B.v(V(ox + cx * rm, ym, oz + cz * rm), coneN(rm, ym), shade * 0.95));
@@ -227,10 +236,13 @@ export function coniferGeo(lod = 0, seed = 3, form = 'spruce') {
   const segs = [9, 5, 3][lod];
   let trunk;
   if (pine) {
-    const bend = garden ? 0.1 : 0.03, bx = Math.cos(la), bz = Math.sin(la);
-    const top = garden ? 0.8 : 0.9;
-    const pts = [{ p: V(0, 0, 0), r: garden ? 0.05 : 0.036 }, { p: V(-bx * bend * 0.5, top * 0.35, -bz * bend * 0.5), r: garden ? 0.04 : 0.029 },
-      { p: V(bx * bend, top * 0.7, bz * bend), r: garden ? 0.03 : 0.02 }, { p: V(bx * bend * 1.6, top, bz * bend * 1.6), r: 0.01 }];
+    const bend = garden ? 0.14 : 0.03, bx = Math.cos(la), bz = Math.sin(la), tx = -bz, tz = bx;
+    const top = garden ? 0.84 : 0.9;
+    const pts = garden
+      ? [{ p: V(0, 0, 0), r: 0.058 }, { p: V(-bx * bend * 0.4 + tx * 0.03, top * 0.22, -bz * bend * 0.4 + tz * 0.03), r: 0.045 }, { p: V(bx * bend * 0.3 - tx * 0.04, top * 0.45, bz * bend * 0.3 - tz * 0.04), r: 0.037 },
+        { p: V(bx * bend, top * 0.68, bz * bend), r: 0.028 }, { p: V(bx * bend * 1.5 + tx * 0.03, top * 0.86, bz * bend * 1.5 + tz * 0.03), r: 0.018 }, { p: V(bx * bend * 1.7, top, bz * bend * 1.7), r: 0.008 }]
+      : [{ p: V(0, 0, 0), r: 0.036 }, { p: V(-bx * bend * 0.5, top * 0.35, -bz * bend * 0.5), r: 0.029 },
+        { p: V(bx * bend, top * 0.7, bz * bend), r: 0.02 }, { p: V(bx * bend * 1.6, top, bz * bend * 1.6), r: 0.01 }];
     const parts = [trunkGeo(pts, segs)];
     if (lod < 2) for (const L of limbs) { const y0 = Math.min(L.y - 0.06, top * 0.95), f = y0 / top, sx = bx * bend * f * 1.2, sz = bz * bend * f * 1.2;
       parts.push(trunkGeo([{ p: V(sx, y0, sz), r: garden ? 0.016 : 0.011 }, { p: L, r: 0.005 }], lod ? 3 : 4)); }

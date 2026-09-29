@@ -455,7 +455,7 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
     if (fr === 0) holes.push({ x0: -2.4, x1: 2.4, y0: 0.15, y1: 2.75, d: 0.25, door: true });
     wallFill(B, 'stucco', -fw / 2, fw / 2, 0, H + 1.0, holes, wall, 3);
     for (const h of holes) { reveals(B, 'stucco', h, [0.92, 0.92, 0.9]);
-      if (!h.door) { windowUnit(B, h, { rng, frame: [0.82, 0.84, 0.86], transom: true, glass: [1, 0.94, 0.8] }); continue; }
+      if (!h.door) { windowUnit(B, h, { rng, frame: [0.82, 0.84, 0.86], transom: true, glass: [1, 0.94, 0.8], glassMat: fw === bw ? 'schoolWindow' : undefined }); continue; }
       // entrance (昇降口): four glass leaves in aluminium frames under a transom light, pull handles
       const zg = -0.16, AL = { color: [0.78, 0.8, 0.82] };
       B.quad('glass', [h.x0, h.y0, zg], [h.x1, h.y0, zg], [h.x1, h.y1, zg], [h.x0, h.y1, zg], { color: [0.9, 0.95, 1] });
@@ -498,8 +498,8 @@ export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
     for (const cx of [-3.5, 0, 3.5]) { B.box('lamp', cx, RY - 0.012, bd / 2 + 2.6, 0.5, 0.012, 0.5); lampPoints.push({ p: B.P([cx, RY - 0.2, bd / 2 + 2.6]), s: 0.45 }); }
     // wind lobby: aluminium-framed glass box round the entrance doors, automatic sliding doors in its front
     const LW = 5.6, LD = 2.2, LH = 2.8, AL = { color: [0.8, 0.82, 0.84] }, lz = bd / 2 + LD;
-    for (const [a, b2, n] of [[[-LW / 2, lz], [LW / 2, lz], 4], [[-LW / 2, bd / 2], [-LW / 2, lz], 2], [[LW / 2, bd / 2], [LW / 2, lz], 2]]) {
-      B.quad('glass', [a[0], SY, a[1]], [b2[0], SY, b2[1]], [b2[0], SY + LH, b2[1]], [a[0], SY + LH, a[1]], { color: [0.9, 0.95, 1] });
+    for (const [a, b2, n, out] of [[[-LW / 2, lz], [LW / 2, lz], 4, [0, 0, 1]], [[-LW / 2, bd / 2], [-LW / 2, lz], 2, [-1, 0, 0]], [[LW / 2, bd / 2], [LW / 2, lz], 2, [1, 0, 0]]]) {
+      B.poly('glass', [[a[0], SY, a[1]], [b2[0], SY, b2[1]], [b2[0], SY + LH, b2[1]], [a[0], SY + LH, a[1]]], out, { color: [0.9, 0.95, 1] });
       for (let k = 0; k <= n; k++) B.box('alu', lerp(a[0], b2[0], k / n), SY, lerp(a[1], b2[1], k / n), 0.07, LH, 0.07, AL);
       for (const yy of [SY, SY + 2.3, SY + LH - 0.07]) B.beam('alu', [a[0], yy + 0.035, a[1]], [b2[0], yy + 0.035, b2[1]], 0.07, 0.07, AL); }
     B.box('alu', 0, SY + LH, bd / 2 + LD / 2, LW + 0.1, 0.1, LD + 0.1, AL);

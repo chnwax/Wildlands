@@ -321,6 +321,7 @@ export function materials() {
     glassLit: nightGlow(std({ color: 0x2a3036, roughness: 0.08, metalness: 0.6, emissive: 0xffd6a0, emissiveIntensity: 1 }), 1.6, 'glassLit'),
     window: windowMaterial({ night }),
     shopWindow: windowMaterial({ night, shop: true, base: 6.0, roomW: 5.5, roomH: 3.0, depth: 6.5 }),
+    schoolWindow: windowMaterial({ night, school: true, base: 6.0, roomW: 7.2, roomH: 3.6, depth: 7.5 }),
     lamp: nightGlow(std({ color: 0xf4f4f0, roughness: 0.4, emissive: 0xfff2dc, emissiveIntensity: 1 }), 6.0, 'lampGlow'),
     soil: (() => { const m = std({ map: tex('brown_mud', 'diff', '1k'), normalMap: tex('brown_mud', 'nor_gl', '1k', false), roughness: 0.96 }); m.normalScale.set(0.9, 0.9); return m; })(),
     poly: new THREE.MeshStandardMaterial({ color: 0xcfe0e6, roughness: 0.2, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),

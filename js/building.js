@@ -846,7 +846,7 @@ export function konbini(B, s, rng, extras) {
 export function apartment(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
-  const floors = 5, fh = 2.95, H = floors * fh + 0.3, units = Math.floor(w / 6.2), uw = w / units, wc = jitter(rng, [0.92, 0.88, 0.8], 0.05);
+  const floors = 5, fh = 2.95, H = floors * fh + 0.3, units = Math.floor(w / 6.2), uw = w / units, wc = jitter(rng, [0.8, 0.76, 0.69], 0.04); // muted: a white block in full sun blew out into bloom
   const front = [], backH = [], frontWins = [], doors = [];
   for (let f = 0; f < floors; f++) for (let u = 0; u < units; u++) {
     const cx = ((u + 0.5) / units - 0.5) * w, fy = 0.3 + f * fh;
@@ -860,14 +860,14 @@ export function apartment(B, s, rng, extras) {
     for (const [h, f, u] of frontWins) {
       windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], type: 'slide', sill: false });
       const cx = (h.x0 + h.x1) / 2, fy = 0.3 + f * fh;
-      B.bbox('concrete', cx, fy - 0.18, 0.72, uw - 0.02, 0.2, 1.44, 0.015, { color: [0.86, 0.85, 0.83] });                     // slab with its edge
-      B.bbox('concrete', cx, fy + 0.02, 1.4, uw - 0.02, 0.12, 0.1, 0.01, { color: [0.84, 0.83, 0.8] });                        // upstand
+      B.bbox('concrete', cx, fy - 0.18, 0.72, uw - 0.02, 0.2, 1.44, 0.015, { color: [0.7, 0.69, 0.67] });                     // slab with its edge
+      B.bbox('concrete', cx, fy + 0.02, 1.4, uw - 0.02, 0.12, 0.1, 0.01, { color: [0.68, 0.67, 0.65] });                        // upstand
       B.bbox('alu', cx, fy + 0.14, 1.4, uw - 0.2, 0.05, 0.06, 0.008, { color: [0.72, 0.74, 0.76] });
       B.bbox('alu', cx, fy + 1.05, 1.4, uw - 0.2, 0.06, 0.08, 0.008, { color: [0.72, 0.74, 0.76] });
-      B.quad('plastic', [cx - uw / 2 + 0.12, fy + 0.19, 1.43], [cx + uw / 2 - 0.12, fy + 0.19, 1.43], [cx + uw / 2 - 0.12, fy + 1.05, 1.43], [cx - uw / 2 + 0.12, fy + 1.05, 1.43], { color: [0.8, 0.83, 0.84] });
-      B.quad('plastic', [cx + uw / 2 - 0.12, fy + 0.19, 1.425], [cx - uw / 2 + 0.12, fy + 0.19, 1.425], [cx - uw / 2 + 0.12, fy + 1.05, 1.425], [cx + uw / 2 - 0.12, fy + 1.05, 1.425], { color: [0.7, 0.72, 0.72] });
+      B.quad('plain', [cx - uw / 2 + 0.12, fy + 0.19, 1.43], [cx + uw / 2 - 0.12, fy + 0.19, 1.43], [cx + uw / 2 - 0.12, fy + 1.05, 1.43], [cx - uw / 2 + 0.12, fy + 1.05, 1.43], { color: [0.55, 0.6, 0.63] }); // matte frosted panel
+      B.quad('plain', [cx + uw / 2 - 0.12, fy + 0.19, 1.425], [cx - uw / 2 + 0.12, fy + 0.19, 1.425], [cx - uw / 2 + 0.12, fy + 1.05, 1.425], [cx + uw / 2 - 0.12, fy + 1.05, 1.425], { color: [0.5, 0.54, 0.56] });
       for (let k = 0; k <= 4; k++) B.bbox('alu', cx - uw / 2 + 0.12 + k * (uw - 0.24) / 4, fy + 0.14, 1.4, 0.04, 0.95, 0.05, 0.006, { color: [0.72, 0.74, 0.76] });
-      B.bbox('plastic', cx + uw / 2 - 0.02, fy + 0.02, 0.72, 0.04, fh - 0.25, 1.36, 0.01, { color: [0.88, 0.88, 0.86] });        // fire-escape partition
+      B.bbox('plain', cx + uw / 2 - 0.02, fy + 0.02, 0.72, 0.04, fh - 0.25, 1.36, 0.01, { color: [0.72, 0.72, 0.7] });        // fire-escape partition
       if (rng() < 0.45) acUnit(B, cx - uw / 2 + 0.7, fy + 0.02, rng, { pipeTo: fy + 2.25, z: 0.35 });
       B.bbox('alu', cx, fy + 1.9, 0.4, uw - 0.8, 0.03, 0.03, 0.005, { color: [0.62, 0.64, 0.66] });
       if (rng() < 0.35) for (let i = 0; i < 4; i++) B.box('plain', cx - uw / 2 + 0.8 + i * 0.7, fy + 1.3, 0.4, 0.45, 0.6, 0.02, { color: jitter(rng, pick(rng, [[0.95, 0.95, 0.95], [0.5, 0.62, 0.9], [0.95, 0.6, 0.62], [0.98, 0.86, 0.5]]), 0.1) });
