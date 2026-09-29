@@ -63,7 +63,7 @@ export function buildRailway(ctx) {
   // ballast bed (trapezoid) along the whole line, laid in lengths of different age: renewed stone is paler, older beds
   // greyer and dirtier, and the four-foot of each track is stained rust-brown by brake dust. On the river bridge the bed
   // sits in the deck's ballast trough between the parapets (the deck top stays below the stone, never level with it)
-  const brg = [rx - 19, rx + 19], vr = mulberry32(3131);
+  const brg = [rx - 14.4, rx + 14.4], vr = mulberry32(3131);
   const cuts = [X0]; for (let x = X0 + 25; x < X1; x += 25) cuts.push(x); cuts.push(brg[0], brg[1], X1); cuts.sort((a, b) => a - b);
   B.frame(0, 0, 0, 0);
   for (let i = 0; i + 1 < cuts.length; i++) {
@@ -71,11 +71,14 @@ export function buildRailway(ctx) {
     const onB = xa >= brg[0] - 1e-3 && xb <= brg[1] + 1e-3, zc = -80, hw = onB ? 5.3 : 5.6, tw = 4.6, yb = onB ? y0 - 0.05 : y0 - 0.25, yt = y0 + 0.2;
     const age = vr(), base = age < 0.18 ? [1.06, 1.05, 1.02] : [0.97 - age * 0.12, 0.95 - age * 0.12, 0.9 - age * 0.1], rust = [base[0] * 0.86, base[1] * 0.7, base[2] * 0.56];
     const zs = [-tw, RAIL.z[0] + 80 - 0.72, RAIL.z[0] + 80 + 0.72, RAIL.z[1] + 80 - 0.72, RAIL.z[1] + 80 + 0.72, tw];
+    // ends at the bridge follow the bank lines (the channel crosses the line askew): x of an end at a given z
+    const bank = x => Math.abs(x - brg[0]) < 1e-3 ? z => riverX(z) - 14.4 : Math.abs(x - brg[1]) < 1e-3 ? z => riverX(z) + 14.4 : () => x;
+    const XA = bank(xa), XB = bank(xb);
     for (let k = 0; k + 1 < zs.length; k++) { const za = zc + zs[k], zb = zc + zs[k + 1], col = k % 2 ? rust : base;
-      B.quad('ballast', [xa, yt, zb], [xb, yt, zb], [xb, yt, za], [xa, yt, za], { uvs: [[xa / 2, zb / 2], [xb / 2, zb / 2], [xb / 2, za / 2], [xa / 2, za / 2]], color: col }); }
+      B.quad('ballast', [XA(zb), yt, zb], [XB(zb), yt, zb], [XB(za), yt, za], [XA(za), yt, za], { uvs: [[XA(zb) / 2, zb / 2], [XB(zb) / 2, zb / 2], [XB(za) / 2, za / 2], [XA(za) / 2, za / 2]], color: col }); }
     const sh = base.map(v => v * 0.93);
-    B.quad('ballast', [xa, yb, zc + hw], [xb, yb, zc + hw], [xb, yt, zc + tw], [xa, yt, zc + tw], { uv: 2, color: sh });
-    B.quad('ballast', [xb, yb, zc - hw], [xa, yb, zc - hw], [xa, yt, zc - tw], [xb, yt, zc - tw], { uv: 2, color: sh });
+    B.quad('ballast', [XA(zc + hw), yb, zc + hw], [XB(zc + hw), yb, zc + hw], [XB(zc + tw), yt, zc + tw], [XA(zc + tw), yt, zc + tw], { uv: 2, color: sh });
+    B.quad('ballast', [XB(zc - hw), yb, zc - hw], [XA(zc - hw), yb, zc - hw], [XA(zc - tw), yt, zc - tw], [XB(zc - tw), yt, zc - tw], { uv: 2, color: sh });
   }
   // rails: a real flat-bottom section (foot, web, head with rounded gauge corners) swept along the line in rust-brown
   // steel, with the bright polished running band that the wheels keep clean along the top of the head
@@ -128,13 +131,32 @@ export function buildRailway(ctx) {
 
   // tunnel portals: set into the hills by the map (town.js), which knows the terrain they must plug
 
-  // river bridge: concrete deck, steel plate girders, piers
+  // river bridge: it spans the channel only, from abutment to abutment at the tops of the two revetments (which run
+  // askew to the line here, so the deck, girders and parapets end on the bank lines); piers in the channel
+  B.frame(0, 0, 0, 0);
+  const BE = 14.4, xL = z => riverX(z) - BE, xR = z => riverX(z) + BE;
+  const prism = (mat, z0, z1, ya, yb, col, dx0 = 0, dx1 = 0) => { // a slab from bank line to bank line between z0 and z1
+    const P = (z, x, y) => [x, y, z], a0 = xL(z0) + dx0, a1 = xL(z1) + dx0, b0 = xR(z0) - dx1, b1 = xR(z1) - dx1, o = { color: col, uv: 3 };
+    B.poly(mat, [P(z0, a0, yb), P(z0, b0, yb), P(z1, b1, yb), P(z1, a1, yb)], [0, 1, 0], o);
+    B.poly(mat, [P(z0, a0, ya), P(z0, b0, ya), P(z1, b1, ya), P(z1, a1, ya)], [0, -1, 0], o);
+    B.poly(mat, [P(z0, a0, ya), P(z0, b0, ya), P(z0, b0, yb), P(z0, a0, yb)], [0, 0, -1], o);
+    B.poly(mat, [P(z1, a1, ya), P(z1, b1, ya), P(z1, b1, yb), P(z1, a1, yb)], [0, 0, 1], o);
+    B.poly(mat, [P(z0, a0, ya), P(z1, a1, ya), P(z1, a1, yb), P(z0, a0, yb)], [-1, 0, 0], o);
+    B.poly(mat, [P(z0, b0, ya), P(z1, b1, ya), P(z1, b1, yb), P(z0, b0, yb)], [1, 0, 0], o); };
+  prism('concrete', -85.75, -74.25, y0 - 1.25, y0 - 0.05, [0.72, 0.72, 0.7]);                                      // deck: ballast trough
+  for (const z of [-4.2, 4.2]) prism('metal', -80 + z - 0.175, -80 + z + 0.175, y0 - 2.65, y0 - 1.25, [0.36, 0.42, 0.5], 0.15, 0.15); // plate girders
+  for (const z of [-5.8, 5.8]) prism('metal', -80 + z - 0.04, -80 + z + 0.04, y0 - 0.05, y0 + 1.2, [0.4, 0.45, 0.5]);                // parapets
   B.frame(rx, y0, -80, 0);
-  B.box('concrete', 0, -1.25, 0, 38, 1.2, 11.5, { color: [0.72, 0.72, 0.7], uv: 3 });  // deck: ballast trough floor 5 cm below formation
-  for (const z of [-4.2, 4.2]) B.box('metal', 0, -2.4, z, 38, 1.4, 0.35, { color: [0.36, 0.42, 0.5] });
   for (const px of [-8, 8]) B.box('concrete', px, -8, 0, 2.2, 6.6, 9, { color: [0.68, 0.68, 0.66], uv: 3 });
-  for (const z of [-5.8, 5.8]) for (const [a, b] of [[-19, -17.8], [-14.4, 14.4], [17.8, 19]]) B.box('metal', (a + b) / 2, -0.05, z, b - a, 1.25, 0.08, { color: [0.4, 0.45, 0.5] }); // open at the bank walkways
-  addPlatform(rx, -80, 19, 5.75, 0, y0 + 0.2);
+  B.frame(0, 0, 0, 0);
+  for (const s of [-1, 1]) { // abutments on the bank lines: a wall under each deck end, its face toward the channel
+    const inner = z => riverX(z) + s * (BE - 0.05), outer = z => riverX(z) + s * (BE + 1.4), z0 = -86.4, z1 = -73.6, ya = y0 - 3.2, yb = y0 - 0.05, o = { color: [0.7, 0.7, 0.68], uv: 3 };
+    B.poly('concrete', [[inner(z0), ya, z0], [inner(z1), ya, z1], [inner(z1), yb, z1], [inner(z0), yb, z0]], [-s, 0, 0], o);
+    B.poly('concrete', [[inner(z0), yb, z0], [inner(z1), yb, z1], [outer(z1), yb, z1], [outer(z0), yb, z0]], [0, 1, 0], o);
+    for (const zz of [z0, z1]) B.poly('concrete', [[inner(zz), ya, zz], [outer(zz), ya, zz], [outer(zz), yb, zz], [inner(zz), yb, zz]], [0, 0, zz < -80 ? -1 : 1], o);
+    B.poly('concrete', [[inner(z0) - s * 0.02, yb, z0 - 0.05], [inner(z1) - s * 0.02, yb, z1 + 0.05], [inner(z1) - s * 0.02, yb + 0.12, z1 + 0.05], [inner(z0) - s * 0.02, yb + 0.12, z0 - 0.05]], [-s, 0, 0], { color: [0.62, 0.62, 0.6] }); // bearing shelf lip
+  }
+  addPlatform(rx, -80, BE, 5.75, 0, y0 + 0.2);
 
   // ---------------------------------------------------------------- station
   const sx0 = RAIL.stationX - RAIL.platformLen / 2, sx1 = RAIL.stationX + RAIL.platformLen / 2, ptop = rt + 1.0 - 0.1;
@@ -528,6 +550,149 @@ export function updateCrossings(dt, t) {
     c.bell.on = c.active;
     c.down = down;
   }
+}
+
+// ---------------------------------------------------------------- pedestrian level crossing (歩行者踏切)
+// A footpath crossing both tracks on the embankment, following the path's own line (cx(z) = path centre x, the path
+// runs along z, the tracks along x). Built the way such crossings are: precast concrete panels on the shoulders and
+// between the tracks, black rubber gauge panels inside each track, every rail in its own flangeway with steel guard
+// angles, concrete edge beams holding back the ballast on both sides, yellow edge lines and warning tactile blocks at
+// both ends. Each approach ramps up from the path at 1 in 12 with a grated drain across its foot, a railing on the
+// open (river) side, a pipe guard fence on the other and a pair of staggered bollard hoops; at the top of each ramp a
+// pedestrian barrier machine with a short striped boom, a warning post with twin lamps, crossbuck, bell, a name
+// plate, an emergency button and a stop sign. Returns the crossing (animated with the road crossings).
+export function pedCrossing(B, { cx, sd, y0, hw = 1.5, name = '桜川河畔踏切', zA = -86.6, zB = -73.4, ramp = 4.0, pathY = y0 + 0.12 }) {
+  const rt = railTop(y0), top = rt - 0.003, g = RAIL.gauge, DEP = 0.16;
+  const E = (z, u, y) => [cx(z) + u, y, z];                                       // u: world-x offset from the path centre
+  B.frame(0, 0, 0, 0);
+  // flangeways / rail heads to leave open
+  const holes = [];
+  for (const tz of RAIL.z) { holes.push([tz - g / 2 - 0.045, tz - g / 2 + 0.11]); holes.push([tz + g / 2 - 0.11, tz + g / 2 + 0.045]); }
+  holes.sort((p, q) => p[0] - q[0]);
+  const spans = []; { let z0 = zA; for (const [h0, h1] of holes) { spans.push([z0, h0]); z0 = h1; } spans.push([z0, zB]); }
+  const gauge = ([a, b]) => RAIL.z.some(tz => a > tz - g / 2 - 0.01 && b < tz + g / 2 + 0.01);
+  // one precast panel: a slab with a small chamfer round its top (so the joints read), skewed with the path
+  const panel = (z0, z1, u0, u1, mat, col) => {
+    const c = 0.014, yb = top - DEP, yt = top;
+    const bot = [E(z0, u0, yb), E(z0, u1, yb), E(z1, u1, yb), E(z1, u0, yb)];
+    const mid = [E(z0, u0, yt - c), E(z0, u1, yt - c), E(z1, u1, yt - c), E(z1, u0, yt - c)];
+    const tp = [E(z0 + c, u0 + c, yt), E(z0 + c, u1 - c, yt), E(z1 - c, u1 - c, yt), E(z1 - c, u0 + c, yt)];
+    B.poly(mat, [tp[0], tp[3], tp[2], tp[1]], [0, 1, 0], { color: col, uv: 1 });
+    const outs = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // side normals: -z, +x, +z, -x (per edge 0-1, 1-2, 2-3, 3-0)
+    const nrm = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];
+    for (let e = 0; e < 4; e++) { const a = e, b = (e + 1) % 4;
+      B.poly(mat, [mid[a], mid[b], tp[b], tp[a]], [nrm[e][0], 0.7, nrm[e][2]], { color: col.map(v => v * 0.9) });
+      B.poly(mat, [bot[a], bot[b], mid[b], mid[a]], nrm[e], { color: col.map(v => v * 0.85) }); void outs; }
+  };
+  const CON = [0.72, 0.71, 0.68], RUB = [0.15, 0.15, 0.16], half = [[-hw, 0], [0, hw]], thirds = [[-hw, -hw / 3], [-hw / 3, hw / 3], [hw / 3, hw]];
+  for (const sp of spans) {
+    const [z0, z1] = sp, L = z1 - z0, rub = gauge(sp);
+    if (rub) { for (const [u0, u1] of thirds) { panel(z0 + 0.004, z1 - 0.004, u0 + 0.004, u1 - 0.004, 'plain', RUB);
+        // anti-slip ribs moulded into the rubber
+        for (let k = 1; k < 6; k++) { const zz = z0 + L * k / 6; B.poly('plain', [E(zz - 0.012, u0 + 0.06, top + 0.004), E(zz + 0.012, u0 + 0.06, top + 0.004), E(zz + 0.012, u1 - 0.06, top + 0.004), E(zz - 0.012, u1 - 0.06, top + 0.004)], [0, 1, 0], { color: [0.1, 0.1, 0.11] }); } } }
+    else { const n = Math.max(1, Math.round(L / 1.2));
+      for (let k = 0; k < n; k++) for (const [u0, u1] of half) panel(z0 + L * k / n + 0.004, z0 + L * (k + 1) / n - 0.004, u0 + 0.004, u1 - 0.004, 'concrete', CON.map(v => v * (0.96 + ((k * 7 + (u0 < 0 ? 3 : 0)) % 5) * 0.015))); }
+    // yellow edge lines on the concrete, keeping walkers off the ballast
+    if (!rub) for (const s of [-1, 1]) { const u = s * (hw - 0.14); B.poly('paint', [E(z0 + 0.03, u - 0.05, top + 0.003), E(z0 + 0.03, u + 0.05, top + 0.003), E(z1 - 0.03, u + 0.05, top + 0.003), E(z1 - 0.03, u - 0.05, top + 0.003)], [0, 1, 0], { color: [0.95, 0.78, 0.12] }); }
+    // concrete edge beams against the ballast, broken at every rail
+    for (const s of [-1, 1]) { const ua = s * hw, ub = s * (hw + 0.2), yb = y0 + 0.05, ye = top - 0.003;
+      B.poly('concrete', [E(z0, ub, ye), E(z1, ub, ye), E(z1, ua, ye), E(z0, ua, ye)], [0, 1, 0], { color: [0.64, 0.64, 0.62] });
+      B.poly('concrete', [E(z0, ub, yb), E(z1, ub, yb), E(z1, ub, ye), E(z0, ub, ye)], [s, 0, 0], { color: [0.6, 0.6, 0.58] }); }
+  }
+  // flangeways: dark floors and steel guard angles along both lips
+  for (const [h0, h1] of holes) {
+    B.poly('dark', [E(h0, -hw - 0.2, rt - 0.1), E(h1, -hw - 0.2, rt - 0.1), E(h1, hw + 0.2, rt - 0.1), E(h0, hw + 0.2, rt - 0.1)], [0, 1, 0], { color: [0.08, 0.08, 0.08] });
+    for (const zz of [h0, h1]) { const s = zz === h0 ? 1 : -1;
+      B.poly('steel', [E(zz, -hw, top + 0.002), E(zz - s * 0.025, -hw, top + 0.002), E(zz - s * 0.025, hw, top + 0.002), E(zz, hw, top + 0.002)], [0, 1, 0], { color: [0.55, 0.56, 0.58] });
+      B.poly('steel', [E(zz, -hw, top - 0.09), E(zz, hw, top - 0.09), E(zz, hw, top + 0.002), E(zz, -hw, top + 0.002)], [0, 0, -s], { color: [0.4, 0.41, 0.43] }); }
+  }
+  // warning tactile blocks across the path, 30 cm in from both ends of the crossing
+  for (const [za, zb] of [[zA + 0.3, zA + 0.9], [zB - 0.9, zB - 0.3]])
+    B.poly('tactileD', [E(za, -hw + 0.25, top + 0.005), E(zb, -hw + 0.25, top + 0.005), E(zb, hw - 0.25, top + 0.005), E(za, hw - 0.25, top + 0.005)], [0, 1, 0], { uvs: [[0, 0], [2, 0], [2, (2 * hw - 0.5) / 0.3], [0, (2 * hw - 0.5) / 0.3]] });
+  // ---- approaches
+  const RC = { color: [0.3, 0.52, 0.47] }, GF = { color: [0.9, 0.9, 0.88] };
+  const posts = [];
+  for (const [zc, e] of [[zA, -1], [zB, 1]]) {
+    const zf = zc + e * ramp, yAt = z => lerp(top, pathY, Math.abs(z - zc) / ramp), N = 6;
+    for (let k = 0; k < N; k++) { const za = zc + e * ramp * k / N, zb = zc + e * ramp * (k + 1) / N;
+      const q = [E(za, -hw, yAt(za)), E(za, hw, yAt(za)), E(zb, hw, yAt(zb)), E(zb, -hw, yAt(zb))];
+      B.poly('pavement', q, [0, 1, 0], { uv: 1.5, color: [0.86, 0.84, 0.8] });
+      for (const s of [-1, 1]) { const u = s * hw; B.poly('concrete', [E(za, u, pathY - 1.1), E(zb, u, pathY - 1.1), E(zb, u, yAt(zb)), E(za, u, yAt(za))], [s, 0, 0], { color: [0.72, 0.72, 0.7] }); }
+      B.poly('concrete', [E(za, hw, yAt(za) + 0.001), E(za, hw + 0.12, yAt(za) + 0.001), E(zb, hw + 0.12, yAt(zb) + 0.001), E(zb, hw, yAt(zb) + 0.001)], [0, 1, 0], { color: [0.7, 0.7, 0.68] }); }
+    // a flat landing between the ramp and the crossing panels is the crossing's own shoulder; the ramp's end face
+    B.poly('concrete', [E(zc, -hw - 0.2, y0 - 0.3), E(zc, hw + 0.2, y0 - 0.3), E(zc, hw + 0.2, top), E(zc, -hw - 0.2, top)], [0, 0, e], { color: [0.66, 0.66, 0.64] });
+    // grated drain across the foot of the ramp
+    { const z0 = zf + e * 0.05, z1 = zf + e * 0.45, yd = pathY + 0.001;
+      B.poly('concrete', [E(z0, -hw, yd), E(z0, hw, yd), E(z1, hw, yd), E(z1, -hw, yd)], [0, 1, 0], { color: [0.62, 0.62, 0.6] });
+      B.poly('dark', [E(z0 + e * 0.07, -hw + 0.05, yd + 0.002), E(z0 + e * 0.07, hw - 0.05, yd + 0.002), E(z1 - e * 0.07, hw - 0.05, yd + 0.002), E(z1 - e * 0.07, -hw + 0.05, yd + 0.002)], [0, 1, 0], { color: [0.1, 0.1, 0.1] });
+      for (let k = 0; k <= 24; k++) { const u = -hw + 0.07 + k * (2 * hw - 0.14) / 24; B.poly('steel', [E(z0 + e * 0.07, u - 0.012, yd + 0.006), E(z0 + e * 0.07, u + 0.012, yd + 0.006), E(z1 - e * 0.07, u + 0.012, yd + 0.006), E(z1 - e * 0.07, u - 0.012, yd + 0.006)], [0, 1, 0], { color: [0.32, 0.33, 0.34] }); } }
+    // railing on the river side (continuing the walkway's), a white pipe guard fence on the land side
+    for (const [s, C, h, r] of [[-sd, RC, 1.02, 0.035], [sd, GF, 0.9, 0.024]]) {
+      const u = s < 0 === sd > 0 ? -sd * (hw - 0.4) : s * (hw - 0.1), zs = [zf, zf - e * ramp * 0.5, zc - e * 0.25]; // (river side in line with the walkway railing)
+      for (const zz of zs) { const p = E(zz, u, yAt(zz)); B.cyl('steel', p[0], p[1] - 0.05, p[2], 0.028, 0.028, h + 0.05, 8, { color: C.color, cap: true }); posts.push([p[0], p[2]]); }
+      for (const f of [1, 0.5]) { const a = E(zs[0], u, yAt(zs[0]) + h * f), b = E(zs[2], u, yAt(zs[2]) + h * f); B.beam('steel', a, b, f === 1 ? r * 2 : r, f === 1 ? r * 2 : r, C); }
+      const a = E(zs[0], u, 0), b = E(zs[2], u, 0); addBox((a[0] + b[0]) / 2, (a[2] + b[2]) / 2, 0.06, Math.abs(b[2] - a[2]) / 2, Math.atan2(b[0] - a[0], b[2] - a[2]), -1e9, pathY + h + 0.3);
+    }
+    // staggered bollard hoops (車止め) at the foot: one from each side, a bicycle slows through, a car can't enter
+    for (const [s, dz] of [[-1, 0.9], [1, 1.9]]) { const zz = zf + e * dz, uc = s * hw * 0.35, W2 = hw * 0.9, H2 = 0.85, BY = pathY, uL = uc - W2 / 2, uR = uc + W2 / 2;
+      const hoop = [E(zz, uL, BY - 0.05), E(zz, uL, BY + H2 - 0.1), E(zz, uL + 0.1, BY + H2), E(zz, uR - 0.1, BY + H2), E(zz, uR, BY + H2 - 0.1), E(zz, uR, BY - 0.05)];
+      const YB = [0.95, 0.78, 0.1], BK = [0.1, 0.1, 0.1];
+      for (let k = 0; k + 1 < hoop.length; k++) B.beam('steel', hoop[k], hoop[k + 1], 0.055, 0.055, { color: k === 2 ? BK : YB });
+      for (const u of [uL, uR]) for (const f of [0.3, 0.6]) { const p = E(zz, u, BY + H2 * f); B.cyl('steel', p[0], p[1], p[2], 0.032, 0.032, 0.09, 10, { color: BK }); }
+      const p = E(zz, uc, 0); addBox(p[0], p[2], W2 / 2, 0.06, 0, -1e9, BY + 0.9); }
+  }
+  // ---- warning equipment at the top of each ramp, on the land side of the path
+  const c = { x: cx((zA + zB) / 2), active: false, t: 0, arms: [], lamps: [], bell: new Emitter('bell'), roadW: 2 * hw + 0.4, ped: true };
+  c.bell.set(c.x, y0 + 2.6, (zA + zB) / 2);
+  const STRIPE = i => i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.75, 0.05];
+  for (const [zc, e] of [[zA, -1], [zB, 1]]) {
+    const mz = zc + e * 0.55, mx = cx(mz) + sd * (hw + 0.55), gy = pathY + (top - pathY) * (1 - 0.55 / ramp) - 0.05, face = e;
+    // warning post: footing, striped mast, lamp bar with two hooded lamps facing the approach, crossbuck, bell
+    B.frame(mx, gy, mz, 0);
+    B.bbox('concrete', 0, -0.4, 0, 0.5, 0.45, 0.5, 0.02, { color: [0.7, 0.7, 0.68] });
+    for (let i = 0; i < 10; i++) B.cyl('plain', 0, 0.05 + i * 0.25, 0, 0.06, 0.06, 0.25, 12, { color: STRIPE(i) });
+    B.cyl('steel', 0, 2.55, 0, 0.07, 0.04, 0.08, 12, { color: [0.2, 0.2, 0.2], cap: true });
+    B.box('dark', 0, 1.95, 0, 0.9, 0.06, 0.06, { color: [0.12, 0.12, 0.12] });                                               // lamp bar
+    for (const lx of [-0.32, 0.32]) B.bbox('dark', lx, 1.62, 0, 0.3, 0.34, 0.12, 0.025, { color: [0.1, 0.1, 0.1] });
+    B.bbox('plastic', 0, 2.62, 0, 0.24, 0.2, 0.2, 0.03, { color: [0.18, 0.18, 0.2] });                                        // bell speaker
+    B.bbox('plastic', sd * 0.1, 0.95, e * 0.1, 0.2, 0.26, 0.12, 0.02, { color: [0.85, 0.12, 0.1] });                        // emergency button box
+    B.box('plastic', sd * 0.1, 1.04, e * 0.165, 0.08, 0.08, 0.01, { color: [0.95, 0.9, 0.3] });
+    B.frame(0, 0, 0, 0);
+    const cb = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), crossbuckMat); cb.position.set(mx, gy + 2.3, mz); cb.rotation.y = face > 0 ? 0 : Math.PI; cb.castShadow = true; scene.add(cb);
+    for (const lx of [-0.32, 0.32]) {
+      const l = new THREE.Mesh(new THREE.CircleGeometry(0.12, 18), lampOff), hood = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.18, 18, 1, true, -Math.PI / 2, Math.PI), hoodMat);
+      const grp = new THREE.Group(); grp.position.set(mx + lx, gy + 1.79, mz); grp.rotation.y = face > 0 ? 0 : Math.PI;
+      l.position.set(0, 0, 0.065); hood.rotation.x = Math.PI / 2; hood.position.set(0, 0, 0.15); grp.add(l, hood); scene.add(grp);
+      c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 });
+    }
+    // plates: name, and a stop / look-out sign facing the walker
+    { const np = signMesh(0.5, 0.16, (gg, W2, H2) => { gg.fillStyle = '#f4f4ee'; gg.fillRect(0, 0, W2, H2); gg.fillStyle = '#222'; gg.font = `bold ${H2 * 0.62}px ${JP_FONT}`; gg.textAlign = 'center'; gg.textBaseline = 'middle'; gg.fillText(name, W2 / 2, H2 * 0.54); }, 0.2, 64);
+      np.position.set(mx, gy + 1.28, mz + e * 0.065); np.rotation.y = face > 0 ? 0 : Math.PI; scene.add(np);
+      const st = signMesh(0.5, 0.62, (gg, W2, H2) => { gg.fillStyle = '#fff'; gg.fillRect(0, 0, W2, H2); gg.fillStyle = '#d42020'; gg.beginPath(); gg.moveTo(W2 / 2, H2 * 0.05); gg.lineTo(W2 * 0.95, H2 * 0.55); gg.lineTo(W2 * 0.05, H2 * 0.55); gg.closePath(); gg.fill();
+        gg.fillStyle = '#fff'; gg.font = `bold ${H2 * 0.15}px ${JP_FONT}`; gg.textAlign = 'center'; gg.fillText('止まれ', W2 / 2, H2 * 0.46); gg.fillStyle = '#111'; gg.font = `bold ${H2 * 0.12}px ${JP_FONT}`; gg.fillText('踏切注意', W2 / 2, H2 * 0.72); gg.fillText('左右確認', W2 / 2, H2 * 0.9); }, 0.25, 128);
+      st.position.set(mx, gy + 0.62, mz + e * 0.065); st.rotation.y = face > 0 ? 0 : Math.PI; scene.add(st); }
+    addCircle(mx, mz, 0.22);
+    // pedestrian barrier machine beside the post, a short boom across the path
+    const bz = mz - e * 0.45, bx = cx(bz) + sd * (hw + 0.45), by = pathY + (top - pathY) * (1 - Math.abs(bz - zc) / ramp) - 0.03;
+    B.frame(bx, by, bz, 0);
+    B.bbox('concrete', 0, -0.3, 0, 0.5, 0.33, 0.44, 0.02, { color: [0.7, 0.7, 0.68] });
+    B.bbox('dark', 0, 0.03, 0, 0.34, 0.86, 0.3, 0.03, { color: [0.13, 0.13, 0.14] }); B.cyl('dark', 0, 0.89, 0, 0.15, 0.09, 0.07, 14, { color: [0.18, 0.18, 0.19], cap: true });
+    B.frame(0, 0, 0, 0);
+    for (const s2 of [-1, 1]) { const pn = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.8), coverMat); pn.position.set(bx, by + 0.45, bz + s2 * 0.152); pn.rotation.y = s2 > 0 ? 0 : Math.PI; scene.add(pn); }
+    addBox(bx, bz, 0.2, 0.18, 0);
+    const pivot = new THREE.Group(); pivot.position.set(bx - sd * 0.02, by + 0.72, bz + e * 0.2);
+    const armL = 2 * hw + 0.25, m = sd;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.038, armL - 0.25, 12).rotateZ(Math.PI / 2), armMat); arm.geometry.translate(-m * (armL / 2 + 0.12), 0, 0); arm.castShadow = true;
+    { const at = arm.geometry.attributes.uv; for (let i = 0; i < at.count; i++) { const u = at.getX(i), v = at.getY(i); at.setXY(i, v * armL / 1.0, u); } }
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.07, 16).rotateX(Math.PI / 2), gateMetal);
+    const holder = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.08).translate(-m * 0.15, 0, 0), gateMetal);
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.07, 10).rotateZ(Math.PI / 2).translate(-m * (armL - 0.01), 0, 0), tipMat);
+    const cw = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 0.12).translate(m * 0.3, -0.02, 0), hoodMat);
+    pivot.add(arm, hub, holder, tip, cw); scene.add(pivot);
+    c.arms.push({ pivot, side: m, len: armL, x0: bx, z: bz });
+  }
+  crossings.push(c);
+  return c;
 }
 
 // ---------------------------------------------------------------- trains
