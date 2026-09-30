@@ -22,10 +22,36 @@ const leafTexs = {};
 function leafTexture(kind = 'round') {
   if (leafTexs[kind]) return leafTexs[kind];
   const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
-  const g = cv.getContext('2d'), rng = mulberry32({ round: 11, lance: 12, maple: 13 }[kind] || 11);
+  const g = cv.getContext('2d'), rng = mulberry32({ round: 11, lance: 12, maple: 13, bamboo: 14 }[kind] || 11);
   g.translate(N / 2, N / 2);
   const shadeAt = y => lerp(175, 255, 0.5 - 0.5 * y / (N * 0.36)) * (0.9 + rng() * 0.1);
-  if (kind === 'lance') {
+  if (kind === 'bamboo') {
+    // bamboo foliage: fans of long, narrow, pointed leaves hanging from thin twigs. The card hangs from its top
+    // centre, so each spray starts near the top and its leaves fan out downward like fingers (the upper leaves lit,
+    // the lower ones in their own shade), each with a darker midrib
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const leaf = (x, y, a, L, W, sh) => {
+      g.save(); g.translate(x, y); g.rotate(a);
+      g.fillStyle = `rgb(${sh},${sh},${sh})`;
+      g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(W * 0.9, L * 0.18, W * 0.75, L * 0.62, W * 0.12, L); g.lineTo(0, L * 1.04);
+      g.lineTo(-W * 0.1, L); g.bezierCurveTo(-W * 0.7, L * 0.62, -W * 0.85, L * 0.18, 0, 0); g.fill();
+      g.strokeStyle = `rgba(0,0,0,0.16)`; g.lineWidth = 1.1; g.beginPath(); g.moveTo(0, L * 0.04); g.quadraticCurveTo(W * 0.1, L * 0.5, 0, L * 0.95); g.stroke();
+      g.restore();
+    };
+    const sprays = [[0.5, 0.05, 0], [0.28, 0.2, -0.35], [0.73, 0.18, 0.35], [0.42, 0.42, -0.15], [0.62, 0.44, 0.2]];
+    for (const [sx, sy, lean] of sprays) {
+      // the twig, then a fan of 5-8 leaves from its end
+      const tx = sx * N + Math.sin(lean) * N * 0.12, ty = sy * N + N * 0.1;
+      g.strokeStyle = 'rgb(150,150,150)'; g.lineWidth = 2; g.beginPath(); g.moveTo(N / 2, 2); g.quadraticCurveTo(sx * N, sy * N * 0.6, tx, ty); g.stroke();
+      const nl = 5 + Math.floor(rng() * 4);
+      for (let i = 0; i < nl; i++) {
+        const f = nl > 1 ? i / (nl - 1) : 0.5, a = lean + lerp(-1.25, 1.25, f) * (0.8 + rng() * 0.3) + (rng() - 0.5) * 0.2;
+        const L = N * (0.24 + rng() * 0.12) * (1 - 0.25 * Math.abs(f - 0.5)), W = L * (0.12 + rng() * 0.03);
+        const sh = Math.round(lerp(255, 185, clamp(ty / N + Math.cos(a) * 0.25, 0, 1)) * (0.92 + rng() * 0.08));
+        leaf(tx, ty, a, L, W, sh);
+      }
+    }
+  } else if (kind === 'lance') {
     for (let i = 0; i < 95; i++) {
       const r = Math.sqrt(rng()) * N * 0.34, a = rng() * TAU, x = Math.cos(a) * r, y = Math.sin(a) * r * 0.9 - N * 0.04;
       const s = Math.round(shadeAt(y)); g.fillStyle = `rgb(${s},${s},${s})`;
@@ -56,7 +82,7 @@ function leafTexture(kind = 'round') {
   }
   // an opaque white patch in the corner: the crown's solid blobs are drawn with the card material, sampling this one
   // texel (their UVs are constant, so no mip blending), which puts a whole broadleaf crown in a single draw
-  g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#fff'; g.fillRect(0, 0, 12, 12);
+  g.setTransform(1, 0, 0, 1, 0, 0); if (kind !== 'bamboo') { g.fillStyle = '#fff'; g.fillRect(0, 0, 12, 12); } // (bamboo has no solid crown)
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 4;
   return (leafTexs[kind] = t);
@@ -97,8 +123,11 @@ function barkTexture(kind) {
     const gr = g.createLinearGradient(0, 0, 64, 0);
     gr.addColorStop(0, '#9a9a9a'); gr.addColorStop(0.45, '#f2f2f2'); gr.addColorStop(1, '#a6a6a6');
     g.fillStyle = gr; g.fillRect(0, 0, 64, 128);
-    g.fillStyle = 'rgba(70,70,70,0.9)'; g.fillRect(0, 120, 64, 5);    // node ring
-    g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(0, 117, 64, 3);
+    for (let i = 0; i < 9; i++) { g.fillStyle = `rgba(255,255,255,${0.05 + rng() * 0.08})`; g.fillRect(rng() * 64, 0, 1 + rng() * 2, 128); } // fibre streaks
+    const bl = g.createLinearGradient(0, 96, 0, 118); bl.addColorStop(0, 'rgba(255,255,255,0)'); bl.addColorStop(1, 'rgba(255,255,255,0.35)');
+    g.fillStyle = bl; g.fillRect(0, 96, 64, 22);                                                // waxy bloom below the node
+    g.fillStyle = 'rgba(70,70,60,0.9)'; g.fillRect(0, 120, 64, 4);    // node ring
+    g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillRect(0, 117, 64, 3);
   } else {
     g.fillStyle = '#ecebe6'; g.fillRect(0, 0, 64, 128);
     for (let i = 0; i < 26; i++) { const y = rng() * 128, x = rng() * 64, w = 6 + rng() * 22, h = 1.5 + rng() * 2.5;
@@ -448,47 +477,51 @@ export function broadleafGeo(lod = 0, seed = 7, shape = 'leaf') {
   return { solid, cards: B.geometry(true), trunk: mergeGeometries(trunkParts) };
 }
 
-// bamboo: a clump of tall thin culms arching out at the top, feathery sprays of narrow leaves along their upper half
-export function bambooGeo(lod = 0, seed = 9) {
-  const rng = mulberry32(seed), n = [16, 9, 5][lod], culms = [], B = meshBuilder(), crown = V(0, 0.72, 0);
-  const d = V(0, 0, 0), nn = V(0, 0, 0), ax = V(0, 0, 0), ay = V(0, 0, 0), tops = [];
-  for (let i = 0; i < n; i++) {
-    const a = rng() * TAU, r = Math.sqrt(rng()) * 0.075, h = 0.72 + rng() * 0.28, lean = 0.03 + rng() * 0.09;
-    const bx = Math.cos(a) * r, bz = Math.sin(a) * r, ox = Math.cos(a), oz = Math.sin(a);
-    const at = t => V(bx + ox * lean * t * t * h * 1.3, t * h * (1 - 0.06 * t * t), bz + oz * lean * t * t * h * 1.3);
-    if (lod < 2) culms.push(trunkGeo([{ p: at(0), r: 0.0055 }, { p: at(0.4), r: 0.0048 }, { p: at(0.75), r: 0.0036 }, { p: at(1), r: 0.0018 }], lod ? 3 : 5, 9));
-    tops.push(at(0.8));
-    if (lod === 2) continue;
-    const nk = lod ? 5 : 12;
-    for (let k = 0; k < nk; k++) {
-      const t = 0.42 + 0.58 * (k + rng() * 0.6) / nk, c = at(t), side = rng() * TAU;
-      d.set(Math.cos(side) * 0.8 + ox * 0.6, -0.25 - rng() * 0.3, Math.sin(side) * 0.8 + oz * 0.6).normalize();
-      c.addScaledVector(d, 0.03);
-      const size = 0.08 + rng() * 0.05;
-      ax.set(0, 1, 0).cross(d); if (ax.lengthSq() < 1e-3) ax.set(1, 0, 0); ax.normalize();
-      ay.copy(d).cross(ax).normalize();
-      nn.copy(c).sub(crown).normalize().add(V(0, 0.3, 0)).normalize();
-      const ao = 0.62 + 0.38 * t;
-      const ids = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => B.v(c.clone().addScaledVector(ax, u * size * 0.5).addScaledVector(ay, v * size * 0.5), nn, ao, [(u + 1) / 2, (v + 1) / 2]));
-      B.tri(ids[0], ids[1], ids[2]); B.tri(ids[0], ids[2], ids[3]);
+// bamboo (height 1): one clump of 1-3 culms (the variant decides how many) — groves are built from many of them. A
+// culm is a straight, slowly tapering tube with node rings every ~30 cm (painted bark), bare over its lower half. From
+// the nodes of its upper half short, thin branches alternate left and right; each carries hanging fans of narrow
+// leaves (cards), longer low in the crown and shorter toward the top, and the tip arches over and hangs a last spray.
+// No solid foliage mass: the crown is only leaves, so it stays light and feathery at every distance (the far LODs keep
+// fewer, larger sprays instead of switching to a blob).
+export function bambooGeo(lod = 0, seed = 9, edge = false) {
+  const rng = mulberry32(seed), B = meshBuilder(), culms = [], nC = 1 + (seed % 3);
+  const tmp = V(0, 0, 0), ax = V(0, 0, 0), dn = V(0, 0, 0), nn = V(0, 0, 0);
+  // one hanging spray: top edge centred on p, hanging along `out` and down, turned at random about its hanging axis
+  const spray = (p, out, size, ao, axis) => {
+    dn.set(out.x * 0.5 + (rng() - 0.5) * 0.35, -1, out.z * 0.5 + (rng() - 0.5) * 0.35).normalize();
+    const a = rng() * TAU; tmp.set(Math.cos(a), 0, Math.sin(a)); ax.copy(tmp).cross(dn).normalize(); if (ax.lengthSq() < 1e-4) ax.set(1, 0, 0);
+    nn.set(p.x - axis.x, 0, p.z - axis.z); if (nn.lengthSq() < 1e-8) nn.copy(out); nn.normalize().multiplyScalar(0.85).add(V(0, 0.45, 0)).normalize();
+    const w = size * (0.8 + rng() * 0.3), h = size * (0.95 + rng() * 0.3);
+    const P0 = p.clone().addScaledVector(ax, -w / 2), P1 = p.clone().addScaledVector(ax, w / 2), P2 = P1.clone().addScaledVector(dn, h), P3 = P0.clone().addScaledVector(dn, h);
+    const i0 = B.v(P0, nn, ao, [0, 1]), i1 = B.v(P1, nn, ao, [1, 1]), i2 = B.v(P2, nn, ao * 0.9, [1, 0]), i3 = B.v(P3, nn, ao * 0.9, [0, 0]);
+    B.tri(i0, i1, i2); B.tri(i0, i2, i3);
+  };
+  for (let c = 0; c < nC; c++) {
+    const a0 = rng() * TAU, rr = c ? 0.014 + rng() * 0.022 : 0, bx = Math.cos(a0) * rr, bz = Math.sin(a0) * rr;
+    const h = c ? 0.74 + rng() * 0.2 : 0.95 + rng() * 0.05;
+    const la = c ? a0 + (rng() - 0.5) * 0.9 : rng() * TAU, lean = 0.01 + rng() * 0.028, arch = 0.07 + rng() * 0.06, ox = Math.cos(la), oz = Math.sin(la);
+    const at = t => { const k = Math.max(0, t - 0.66) / 0.34, off = h * (lean * t + arch * k * k); return V(bx + ox * off, h * t - h * arch * 0.3 * k * k * k, bz + oz * off); };
+    const r0 = (0.0038 + rng() * 0.0014) * (c ? 0.85 : 1), rad = t => r0 * (1 - 0.66 * Math.pow(t, 1.5));
+    const ts = lod === 0 ? [0, 0.18, 0.36, 0.52, 0.64, 0.74, 0.82, 0.89, 0.95, 1] : lod === 1 ? [0, 0.4, 0.66, 0.84, 1] : [0, 0.62, 1];
+    culms.push(trunkGeo(ts.map(t => ({ p: at(t), r: rad(t) })), lod === 0 ? 6 : lod === 1 ? 4 : 3, 36));
+    // culms on a grove's sunlit rim (edge) carry leafy branches much lower down, closing the stand's side
+    const axis = at(0.8), t0 = edge ? 0.16 + rng() * 0.1 : 0.42 + rng() * 0.1, nodes = Math.round((lod === 0 ? 20 : lod === 1 ? 12 : 7) * (edge ? 1.4 : 1)), big = lod === 0 ? 1 : lod === 1 ? 1.5 : 2.1;
+    let side = la + Math.PI / 2;
+    for (let k = 0; k < nodes; k++) {
+      const t = t0 + (0.96 - t0) * (k + 0.3 + rng() * 0.4) / nodes, p = at(t), f = (t - t0) / (0.96 - t0);
+      side += Math.PI + (rng() - 0.5) * 1.2;                                                  // branches alternate
+      const bl = h * (0.048 + rng() * 0.035) * (0.8 + 0.55 * Math.sin(Math.PI * Math.min(1, f * 1.2))) * (edge && t < 0.45 ? 0.75 : 1); // crown widest a little above its middle
+      const out = V(Math.cos(side), 0, Math.sin(side)), dir = V(out.x, 0.5 + rng() * 0.35, out.z).normalize();
+      const tip = p.clone().addScaledVector(dir, bl); tip.y -= bl * 0.25 * f;
+      if (lod === 0) culms.push(trunkGeo([{ p, r: r0 * 0.2 }, { p: p.clone().lerp(tip, 0.5).add(V(0, bl * 0.06, 0)), r: r0 * 0.14 }, { p: tip, r: r0 * 0.06 }], 3, 36));
+      const ns = lod === 0 ? 4 : 2, ao = 0.56 + 0.44 * f;
+      for (let q = 0; q < ns; q++) spray(p.clone().lerp(tip, (q + 0.7) / ns), out, h * (0.06 + rng() * 0.025) * big, ao * (0.92 + rng() * 0.08), axis);
+      if (lod < 2 && rng() < 0.55) spray(p.clone().lerp(tip, 0.3), out.clone().negate(), h * 0.05 * big, ao * 0.85, axis); // a small spray on the node
     }
+    const top = at(1), dirT = V(ox, -0.2, oz);
+    for (let q = 0; q < (lod === 2 ? 1 : 2); q++) spray(top, dirT, h * 0.06 * big, 1.0, axis);
   }
-  // a few soft foliage masses give the grove body (and are all that is left far away)
-  const ico = new THREE.IcosahedronGeometry(1, lod ? 0 : 1), parts = [], q = V(0, 0, 0);
-  const nb = lod === 2 ? 2 : 4;
-  for (let k = 0; k < nb; k++) {
-    const tp = tops[Math.floor(rng() * tops.length)], c = V(tp.x * 0.8, tp.y - 0.05 - rng() * 0.12, tp.z * 0.8), R = lod === 2 ? 0.16 : 0.1, s = rng() * 10;
-    const g = ico.clone(), pos = g.attributes.position, nor = g.attributes.normal, col = [];
-    for (let i = 0; i < pos.count; i++) {
-      d.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
-      q.copy(d).multiplyScalar(R * (1 + lump(d, s))); q.y *= 1.7; q.add(c);
-      pos.setXYZ(i, q.x, q.y, q.z);
-      nn.copy(d).add(q.clone().sub(crown).normalize().multiplyScalar(0.7)).normalize(); nor.setXYZ(i, nn.x, nn.y, nn.z);
-      const ao = 0.55 + 0.4 * clamp((q.y - 0.45) / 0.5, 0, 1); col.push(ao, ao, ao);
-    }
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.deleteAttribute('uv'); parts.push(g);
-  }
-  return { solid: mergeGeometries(parts), cards: lod < 2 ? B.geometry(true) : null, trunk: culms.length ? mergeGeometries(culms) : null };
+  return { solid: null, cards: B.geometry(true), trunk: mergeGeometries(culms) };
 }
 
 // ---------------------------------------------------------------- materials
@@ -544,7 +577,7 @@ const MATS = {
   zelkova: { tex: 'round', bark: ['japanese_zelkova_bark', 'diff', 0xdcd0c0], sway: 1.3 },
   maple: { tex: 'maple', bark: ['sakura_bark', 'diff', 0xbcaea4], sway: 1.5 },
   willow: { tex: 'lance', bark: ['pine_bark', 'diff', 0xb8a898], sway: 2.2 },
-  bamboo: { tex: 'lance', bark: ['bamboo', null, 0xa6bd62], sway: 2.6 },
+  bamboo: { tex: 'bamboo', bark: ['bamboo', null, 0xc2d67a], sway: 2.2 },
   sakura: { tex: 'sakura', bark: ['sakura_bark', 'diff', 0x8a6662], sway: 1.3 },
   bush: { tex: 'round', sway: 0.5 },
   hydra: { tex: 'hydra', sway: 0.5, solidColor: 0x4c9a3e },
@@ -595,7 +628,7 @@ const SPECIES = {
   maple:   { mat: 'maple', n: 1, geo: (l, v) => broadleafGeo(l, 31 + v * 8, 'maple'), trunk: 0.035 },
   willow:  { mat: 'willow', n: 1, geo: (l, v) => broadleafGeo(l, 37, 'willow'), trunk: 0.05 },
   sakura:  { mat: 'sakura', n: 2, geo: (l, v) => broadleafGeo(l, 13 + v * 8, 'sakura'), trunk: 0.05, cardShadow: false },
-  bamboo:  { mat: 'bamboo', n: 2, geo: (l, v) => bambooGeo(l, 9 + v * 4), trunk: 0.06 },
+  bamboo:  { mat: 'bamboo', n: 9, geo: (l, v) => bambooGeo(l, 9 + v * 4, v >= 6), trunk: 0.0065, farCards: true, hiScale: 0.6 }, // v 6-8: grove-rim culms
 };
 // painted bark colour of trunks merged into the foliage mesh (mid / far LODs)
 const BARK = { fir: '#524438', leaf: '#56483e', oak: '#544a42', birch: '#c9c6bf', zelkova: '#6a6158', maple: '#4c4541', willow: '#4a3f36', bamboo: '#869a4c', sakura: '#3e2e2e' };
@@ -626,7 +659,7 @@ function mergeCrown(solid, cards) {
 const SEPARATE_CARDS = { sakura: true, hydra: true }; // blossom cards cast no shadow / are tinted apart from their green mound
 function speciesParts(sp, M, g, lod) {
   const p = [], near = lod === 0, far = lod === 2;
-  let solid = g.solid, trunk = g.trunk, cards = g.cards && M.cards && !far ? g.cards : null;
+  let solid = g.solid, trunk = g.trunk, cards = g.cards && M.cards && (!far || sp.farCards) ? g.cards : null;
   if (solid && M.solid) {
     if (trunk && !near && BARK[sp.mat]) { solid = mergeBark(solid, trunk, BARK[sp.mat]); trunk = null; }
     else barkAttr(solid, 0);
@@ -650,11 +683,12 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
   for (const [k, list] of groups) {
     const [kind, vs] = k.split('|'), v = +vs, sp = SPECIES[kind], M = materials(sp.mat);
     // conifer tiers past ~300 m read the same with 9 segments as with 16: the detailed set stays close
-    const hiD = sp.short ? () => Q.ferns * 0.5 : sp.tiny ? () => Q.ferns * 1.1 : sp.small ? () => Q.treeHi * 0.55 : sp.mat === 'fir' ? () => Math.min(hiDist(), Q.treeHi * 0.6) : hiDist;
+    const hiD = sp.short ? () => Q.ferns * 0.5 : sp.tiny ? () => Q.ferns * 1.1 : sp.small ? () => Q.treeHi * 0.55 : sp.mat === 'fir' ? () => Math.min(hiDist(), Q.treeHi * 0.6) : sp.hiScale ? () => hiDist() * sp.hiScale : hiDist;
     const loD = sp.short ? () => Q.ferns * 1.1 : sp.tiny ? () => Q.treeHi * 0.7 : sp.small ? () => Q.trees * 0.3 : farDist;
     const lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
     if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) });
     new Scatter(list, lods, sp.tiny ? 128 : cell);
+    (globalThis.__treeDbg ||= {})[kind] = ((globalThis.__treeDbg || {})[kind] || []).concat(list.map(t => [Math.round(t.x), Math.round(t.z), +t.s.toFixed(1), t.town ? 1 : 0]));
     if (colliders && sp.trunk) for (const t of list) { const r = sp.trunk * t.s * (t.sx || 1); if (r > 0.07) addCircle(t.x, t.z, r + 0.05); }
   }
 }
@@ -818,7 +852,7 @@ function vary(base, rng, cl = 0.5, br = 0.5, hueAmt = 0.045, satMul = 1) {
 }
 const CONIFER_BASE = { young: '#4f9c61', spruce: '#317e5a', tall: '#347656', old: '#2a6650', pine: '#4e8a52', jpine: '#3c7a4b', sapling: '#5ca668' };
 export const coniferColor = (rng, form = 'spruce', cl = 0.5, br = 0.5) => vary(CONIFER_BASE[form] || CONIFER_BASE.spruce, rng, cl, br, 0.07, 0.88);
-const BROAD_BASE = { leaf: '#5aa646', oak: '#4c943e', camphor: '#3f8a3a', birch: '#93c85a', zelkova: '#61a848', maple: '#72b84a', mapleRed: '#b4503c', willow: '#9ccd5c', bamboo: '#8fc052' };
+const BROAD_BASE = { leaf: '#5aa646', oak: '#4c943e', camphor: '#3f8a3a', birch: '#93c85a', zelkova: '#61a848', maple: '#72b84a', mapleRed: '#b4503c', willow: '#9ccd5c', bamboo: '#a2cf58' };
 export const broadColor = (rng, kind = 'leaf', cl = 0.5, br = 0.5) => vary(BROAD_BASE[kind] || BROAD_BASE.leaf, rng, cl, br, kind === 'mapleRed' ? 0.03 : 0.06, kind === 'mapleRed' ? 0.72 : 0.84);
 // weathered dead wood is pale and silvery (over the dark bark texture the tint needs to be light, or snags read black)
 export const deadColor = (rng, broken) => vary(broken ? '#e6d8c8' : '#f2ece6', rng, 0.5, 0.5, 0.02, 0.8);

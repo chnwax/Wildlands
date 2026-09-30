@@ -5,7 +5,7 @@
 // has its sacred camphor. Out on the valley floor, tree lines follow the paddy edges and the main road, farm groves
 // stand in the fields, and the satoyama woods at the foot of the hills lead up into the cedar forest.
 import { THREE, clamp, lerp, smoothstep, mulberry32, fbm, addBox } from './core.js';
-import { makeTree, TreeHash } from './ecology.js';
+import { makeTree, TreeHash, bambooGrove, bambooCulm } from './ecology.js';
 import { broadColor, bushColor, hydraColor } from './trees.js';
 
 const pickW = (w, r) => { let tot = 0; for (const k in w) tot += w[k]; let a = r * tot; for (const k in w) { a -= w[k]; if (a <= 0) return k; } return Object.keys(w)[0]; };
@@ -15,13 +15,34 @@ const pickW = (w, r) => { let tot = 0; for (const k in w) tot += w[k]; let a = r
 export function plantTown(ctx) {
   const { hf, free, lots, lotW, riverX, inPaddyZone, SHRINE, Y0, PADDIES, isShop } = ctx;
   const rng = mulberry32(8123), hash = ctx.hash || new TreeHash(10);
-  const out = { trees: [], bushes: [], hydras: [], hedges: [], ivy: [], pots: [], weeds: [] };
+  const out = { trees: [], bushes: [], hydras: [], hedges: [], ivy: [], pots: [], weeds: [], groves: [] };
   const gy = (x, z) => hf.groundAt(x, z);
   const flat = (x, z) => { const g = gy(x, z); return g > Y0 - 0.6 && g < Y0 + 1.4; };
   // leafier and plainer neighbourhoods (km-scale noise), commercial frontage stays sparse
   const leafy = (x, z) => smoothstep(-0.35, 0.35, fbm(x * 0.006 + 2.3, z * 0.006 - 5.1, 2)) * (isShop(x, z) ? 0.2 : 1);
   const add = (t, k = 0.5) => { if (!hash.fits(t.x, t.z, t.cr, k, 0.9)) return false; hash.add(t); out.trees.push(t); return true; };
   const tree = (kind, x, z, o = {}) => makeTree(kind, x, gy(x, z) - 0.15, z, rng, o);
+  // bamboo is always planted as a group: a garden clump (a few culms in a tight patch) or a grove (bambooGrove). Culms
+  // keep clear of other trees' trunks and of anything built; the grove is recorded for its leaf-litter floor
+  const nv = new THREE.Vector3(), gentle = (x, z) => hf.normalAt(x, z, nv).y > 0.86 && gy(x, z) > Y0 - 0.6;
+  const culmOK = (x, z, pad = 1.0, slope = false) => free(x, z, Math.ceil(pad)) && (slope ? gentle(x, z) : flat(x, z)) && hash.fits(x, z, 0.5, 0.45, 0.6);
+  const grove = (x, z, R, o = {}) => {
+    const list = bambooGrove({ x, z, R, rng, groundAt: gy, ok: (px, pz) => culmOK(px, pz, o.pad ?? 1.2, o.slope) && (!o.ok || o.ok(px, pz)), sp: o.sp ?? 1.55, H: o.H ?? [10, 14], edgeH: o.edgeH ?? [4, 7] });
+    // a stand that came out patchy (built land, slopes and other trees took too much of it) is not planted at all: bamboo
+    // is either a proper grove or nothing, never a scatter of culms
+    const expect = Math.PI * R * R * 0.62 / ((o.sp ?? 1.55) ** 2);
+    if (list.length < (o.min ?? 12) || list.length < expect * 0.42) return 0;
+    for (const t of list) { t.town = true; hash.add(t); out.trees.push(t); }
+    out.groves.push({ x, z, R: R * 1.25, n: list.length });
+    return list.length;
+  };
+  const clump = (x, z, R, n, H) => { // a garden clump: n culms in a patch R across, the middle ones tallest
+    const tone = broadColor(rng, 'bamboo', rng(), rng()); let k = 0;
+    for (let i = 0; i < n * 3 && k < n; i++) { const a = rng() * 6.28, d = Math.sqrt(rng()) * R, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+      if (!hash.fits(px, pz, 0.3, 0.4, 0.3)) continue;                                        // (inside its own garden)
+      const t = bambooCulm(px, gy(px, pz), pz, rng, lerp(H[1], H[0], d / R) * (0.85 + rng() * 0.25), tone, d / R); t.town = true; t.cr = 0.4; hash.add(t); out.trees.push(t); k++; }
+    return k;
+  };
   const hedgeLine = (ax, az, bx, bz, h = 1, dark = 0.66) => {
     const col = bushColor(rng).multiplyScalar(dark); // one clipped hedge, one colour
     const L = Math.hypot(bx - ax, bz - az); if (L < 0.8) return;
@@ -34,6 +55,9 @@ export function plantTown(ctx) {
     addBox(cx, cz, L / 2, 0.3, yaw, g - 1, g + h * 0.9);
   };
 
+  // designed bamboo stands the map asks for, planted first so they stand whole (behind the shrine, along the river beyond the town, at the town's edges)
+  for (const g of ctx.bambooSites || []) grove(g.x, g.z, g.R, { H: g.H || [11, 15], edgeH: g.edgeH || [4.5, 7.5], sp: g.sp || 1.6, min: 10, pad: 0.6, slope: true });
+
   // ---------------------------------------------------------------- gardens
   for (const lot of lots) {
     if (lot.shop || !lot.info) continue;
@@ -41,9 +65,9 @@ export function plantTown(ctx) {
     const fz0 = I.hz + I.D / 2 + 0.7, fz1 = LD / 2 - 0.75, gx0 = -LW / 2 + 0.9, gx1 = I.gate[0] - 0.6;
     // the front garden: a clipped pine, a maple (some red-leaved), a blossom tree, a dark evergreen or a slim cypress
     if (gx1 - gx0 > 1.0 && fz1 - fz0 > 0.6 && rng() < 0.5 + 0.45 * L) {
-      const kind = pickW({ jpine: 0.24, maple: 0.24, sakura: 0.14, leaf: 0.2, tall: 0.12, bamboo: 0.04 }, rng());
+      const kind = pickW({ jpine: 0.24, maple: 0.24, sakura: 0.14, leaf: 0.2, tall: 0.12 }, rng());
       const lx = lerp(gx0 + 0.3, Math.min(gx1, gx0 + 2.6), rng()), lz = lerp(fz0 + 0.3, fz1, rng()), [x, z] = W(lx, lz);
-      const t = tree(kind, x, z, { scale: { jpine: 1, maple: 0.72, sakura: 0.72, leaf: 0.42, tall: 0.28, bamboo: 0.45 }[kind], red: 0.3 });
+      const t = tree(kind, x, z, { scale: { jpine: 1, maple: 0.72, sakura: 0.72, leaf: 0.42, tall: 0.28 }[kind], red: 0.3 });
       if (kind === 'tall') { t.sx *= 0.7; t.cr *= 0.7; }
       if (kind === 'leaf') t.c = broadColor(rng, 'camphor', 0.5, 0.35);
       if (add(t, 0.4)) lot.frontTree = true; else if (rng() < 0.7) for (let k = 0; k < 2; k++) { const [hx, hz] = W(-LW / 2 + 0.9 + k * 1.2, LD / 2 - 0.9); out.hydras.push({ x: hx, y: gy(hx, hz) - 0.05, z: hz, s: 0.9 + rng() * 0.4, sx: 0.9 + rng() * 0.3, r: rng() * 6.28, c: hydraColor(rng) }); }
@@ -52,9 +76,14 @@ export function plantTown(ctx) {
     if (rng() < 0.15 + 0.42 * L) {
       const side = I.shedSide ? -I.shedSide : rng() < 0.5 ? -1 : 1, [x, z] = W(side * (LW / 2 - 0.85), -LD / 2 + 0.55);
       const kind = pickW({ oak: 0.3, zelkova: 0.18, leaf: 0.26, tall: 0.16, bamboo: 0.1 }, rng());
-      const t = tree(kind, x, z, { scale: { oak: 0.72, zelkova: 0.75, leaf: 0.85, tall: 0.42, bamboo: 0.62 }[kind], a: 0.4 + rng() * 0.6 });
-      if (kind === 'oak') t.c = broadColor(rng, 'camphor', 0.5, 0.45);
-      if (add(t, 0.35)) lot.backSide = side;
+      if (kind === 'bamboo') { // a clump of garden bamboo in the back corner, taller than the eaves
+        const [bx, bz] = W(side * (LW / 2 - 1.5), -LD / 2 + 1.3);
+        if (clump(bx, bz, 1.3, 7 + Math.floor(rng() * 6), [4.5, 8]) > 3) lot.backSide = side;
+      } else {
+        const t = tree(kind, x, z, { scale: { oak: 0.72, zelkova: 0.75, leaf: 0.85, tall: 0.42 }[kind], a: 0.4 + rng() * 0.6 });
+        if (kind === 'oak') t.c = broadColor(rng, 'camphor', 0.5, 0.45);
+        if (add(t, 0.35)) lot.backSide = side;
+      }
     }
     // a second small tree or a shrub group beside the house in the leafiest streets
     if (L > 0.55 && rng() < 0.35) {
@@ -101,6 +130,7 @@ export function plantTown(ctx) {
     const type = pickW({ grove: 0.45, park: 0.2, orchard: 0.2, bamboo: 0.15 }, rng()), R = type === 'park' ? 12 : 7 + rng() * 7;
     groves.push({ x: cx, z: cz, type });
     const near = cand.filter(([x, z]) => Math.hypot(x - cx, z - cz) < R);
+    if (type === 'bamboo') { grove(cx, cz, 7 + rng() * 6, { H: [9, 13], edgeH: [3.5, 6.5], min: 16 }); continue; }  // a bamboo grove, nothing else in it
     if (type === 'orchard') { // persimmons in loose rows
       const a = rng() * Math.PI;
       for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) {
@@ -112,12 +142,11 @@ export function plantTown(ctx) {
     }
     for (const [x, z] of near) {
       if (rng() > (type === 'park' ? 0.45 : 0.7)) continue;
-      const kind = type === 'bamboo' ? (rng() < 0.85 ? 'bamboo' : 'leaf')
-        : type === 'park' ? pickW({ zelkova: 0.4, sakura: 0.25, leaf: 0.2, maple: 0.15 }, rng())
-        : pickW({ oak: 0.28, zelkova: 0.14, leaf: 0.2, tall: 0.2, maple: 0.08, bamboo: 0.1 }, rng());
-      const t = tree(kind, x, z, { scale: { tall: 0.55, oak: 0.85, bamboo: 0.8 }[kind] || 1, red: 0.25 });
+      const kind = type === 'park' ? pickW({ zelkova: 0.4, sakura: 0.25, leaf: 0.2, maple: 0.15 }, rng())
+        : pickW({ oak: 0.28, zelkova: 0.14, leaf: 0.24, tall: 0.24, maple: 0.1 }, rng());
+      const t = tree(kind, x, z, { scale: { tall: 0.55, oak: 0.85 }[kind] || 1, red: 0.25 });
       if (kind === 'oak' && rng() < 0.5) t.c = broadColor(rng, 'camphor', 0.5, 0.45);
-      add(t, kind === 'bamboo' ? 0.75 : 0.6);
+      add(t, 0.6);
     }
     // an understorey of shrubs and hydrangeas round the edge
     for (let k = 0; k < 6; k++) {
@@ -171,8 +200,9 @@ export function plantTown(ctx) {
         if (fbm((ax + bx) * 0.01 + d * 0.03, (az + bz) * 0.01, 2) < -0.1) { d += 20; continue; } // gaps
         const off = 2.5 + rng() * 2.5, x = lerp(ax, bx, d / L) - nx * off, z = lerp(az, bz, d / L) - nz * off; // just outside the fields
         if (inPaddyZone(x, z) || !free(x, z, 1.8) || Math.abs(x - riverX(z)) < 28) continue;
-        const kind = pickW({ leaf: 0.35, oak: 0.2, zelkova: 0.15, sakura: 0.1, tall: 0.1, bamboo: 0.1 }, rng());
-        add(tree(kind, x, z, { scale: kind === 'tall' ? 0.6 : kind === 'bamboo' ? 0.8 : 0.9 }), 0.55);
+        if (rng() < 0.05) { const o = 5 + rng() * 3; if (grove(x - nx * o, z - nz * o, 6 + rng() * 4, { H: [9, 13], ok: (px, pz) => !inPaddyZone(px, pz), min: 14 })) { d += 18; continue; } }
+        const kind = pickW({ leaf: 0.38, oak: 0.22, zelkova: 0.17, sakura: 0.11, tall: 0.12 }, rng());
+        add(tree(kind, x, z, { scale: kind === 'tall' ? 0.6 : 0.9 }), 0.55);
       }
     }
   }
@@ -186,10 +216,12 @@ export function plantTown(ctx) {
     const cx = (rng() * 2 - 1) * 900, cz = (rng() * 2 - 1) * 520;
     if (Math.abs(cx) < 470 && Math.abs(cz) < 350 || inPaddyZone(cx, cz) || !flat(cx, cz) || !free(cx, cz, 8) || Math.abs(cx - riverX(cz)) < 40) continue;
     placed++;
+    // a farm grove: cedars and broadleaves round the old homestead, and on its sheltered side a bamboo stand
+    if (rng() < 0.7) { const a = rng() * 6.28, d = 14 + rng() * 6; grove(cx + Math.cos(a) * d, cz + Math.sin(a) * d, 8 + rng() * 6, { H: [10.5, 14.5], ok: (px, pz) => !inPaddyZone(px, pz), min: 20 }); }
     for (let m = 0; m < 12; m++) {
       const a = rng() * 6.28, d = Math.sqrt(rng()) * 13, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
       if (!free(x, z, 1.5) || inPaddyZone(x, z)) continue;
-      const kind = pickW({ tall: 0.35, oak: 0.25, leaf: 0.15, bamboo: 0.2, sakura: 0.05 }, rng());
+      const kind = pickW({ tall: 0.42, oak: 0.3, leaf: 0.2, sakura: 0.08 }, rng());
       add(tree(kind, x, z, { scale: kind === 'tall' ? 0.7 : 1 }), 0.55);
     }
   }

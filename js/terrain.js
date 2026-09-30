@@ -58,7 +58,7 @@ export class Heightfield {
       for (let dj = -rc; dj <= rc; dj++) for (let di = -rc; di <= rc; di++) {
         const i = ci + di, j = cj + dj; if (i < 0 || j < 0 || i > GRID || j > GRID) continue;
         const d = Math.hypot(di * CELL, dj * CELL) / R; if (d > 1) continue;
-        const o = (j * HN + i) * 4 + 2; mask[o] = Math.max(mask[o], (1 - d * d) * 255);
+        const o = (j * HN + i) * 4 + 2; mask[o] = Math.max(mask[o], (1 - d * d) * 255 * (t.shade ?? 1)); // shade: how much light the crown stops
       }
     }
   }

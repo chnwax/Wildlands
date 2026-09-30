@@ -64,6 +64,45 @@ export function makeTree(kind, x, y, z, rng, { a = rng(), scale = 1, cl = 0.5, b
   return t;
 }
 
+// Bamboo grove (竹林): culms planted as one coherent stand rather than as single clumps among other trees. The outline is
+// a lobed, stretched blob; culm clumps stand on a jittered grid (spacing sp), densest in the core and thinning toward
+// the rim, with a few small openings inside; the tallest culms stand in the middle and the rim is younger and lower,
+// so the stand reads as one soft, feathery dome. The grove shares one foliage tone (with a little drift culm to culm);
+// culms range from fresh green to the yellowed green of old stems. ok(x, z): ground free for a culm.
+export function bambooGrove({ x: cx, z: cz, R, rng, groundAt, ok = () => true, sp = 1.6, H = [10, 14], edgeH = [4, 7], stretch = 1 + rng() * 0.6 }) {
+  const out = [], ang = rng() * Math.PI, ca = Math.cos(ang), sa = Math.sin(ang), seed = rng() * 100;
+  const lobes = [[2 + Math.floor(rng() * 2), rng() * 6.28, 0.12 + rng() * 0.1], [4 + Math.floor(rng() * 3), rng() * 6.28, 0.06 + rng() * 0.05]];
+  const Rth = th => R * (1 + lobes.reduce((a, [k, ph, m]) => a + m * Math.sin(k * th + ph), 0));
+  const tone = broadColor(rng, 'bamboo', rng(), rng()), n = Math.ceil(R * stretch * 1.35 / sp);
+  for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+    const lx = (i + (rng() - 0.5) * 0.85) * sp, lz = (j + (rng() - 0.5) * 0.85) * sp;
+    const u = (lx * ca + lz * sa) / stretch, w = -lx * sa + lz * ca, e = Math.hypot(u, w) / Rth(Math.atan2(w, u));
+    if (e > 1 || rng() > (e < 0.55 ? 0.96 : lerp(0.96, 0.28, (e - 0.55) / 0.45))) continue;
+    const x = cx + lx, z = cz + lz;
+    if (e < 0.8 && fbm(x * 0.11 + seed, z * 0.11 - seed, 2) > 0.45) continue;               // small openings in the stand
+    if (!ok(x, z)) continue;
+    const core = 1 - smoothstep(0.2, 1, e), rl = Math.hypot(lx, lz) || 1;
+    // rim culms lean out toward the light, so the stand's side bows outward under its canopy instead of standing as a wall
+    const lean = (0.03 + 0.14 * smoothstep(0.5, 1, e)) * (0.7 + rng() * 0.6);
+    out.push(bambooCulm(x, groundAt(x, z), z, rng, lerp(lerp(edgeH[0], edgeH[1], rng()), lerp(H[0], H[1], rng()), core) * (0.86 + rng() * 0.28), tone, e, [lx / rl * lean, lz / rl * lean]));
+    if (e > 0.72) out[out.length - 1].v = 6 + Math.floor(rng() * 3);                           // the rim: leafy low down
+  }
+  return out;
+}
+// one bamboo clump record (tree format): h = height (m), tone = the grove's foliage colour, e = 0 core .. 1 rim
+// lean = [x, z] lean of the culm (radians toward that direction), plus a little random wander
+export function bambooCulm(x, y, z, rng, h, tone, e = 0.5, lean = [0, 0]) {
+  const age = rng(), g = 0.9 + rng() * 0.15;
+  // the instance turns by Rx(tilt) Ry(r) Rz(tilt2): with the yaw kept within 45 degrees of an axis the two tilts can
+  // steer the lean to any direction (the clump itself looks the same from every side)
+  const r = (rng() - 0.5) * 1.5 + (rng() < 0.5 ? 0 : Math.PI), lx = lean[0] + (rng() - 0.5) * 0.03, lz = lean[1] + (rng() - 0.5) * 0.03;
+  const tilt2 = -lx / Math.cos(r), tilt = lz - tilt2 * Math.sin(r);
+  const t = { kind: 'bamboo', v: Math.floor(rng() * 6), x, y: y - 0.1, z, s: h, sx: 0.85 + rng() * 0.35, r, tilt, tilt2, shade: 0.4,
+    c: tone.clone().multiplyScalar(0.93 + rng() * 0.12 - e * 0.06), bc: new THREE.Color(lerp(0.9, 1.08, age) * g, lerp(1.0, 0.96, age) * g, lerp(0.9, 0.62, age) * g) };
+  t.cr = CROWN.bamboo * t.s; t.tr = 0.08;
+  return t;
+}
+
 // Plants the forests and their meadow fringe. Returns { trees, saplings, fields: { FB, FW } }.
 //   blocked(x, z, pad): landmarks, paths, streams — nothing grows there
 //   alpine: altitude band (above water) where the woods thin into rocky pine woodland; lowland: band below which damp
@@ -87,6 +126,8 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
     return { f, fb, m, alt, age, interior, rocky, low, mixed, edge: 1 - interior, cl, br };
   };
   const place = (t, k) => { if (!hash.fits(t.x, t.z, t.cr, k, 1.2)) return false; hash.add(t); trees.push(t); return true; };
+  // bamboo stands on the damp low ground at the foot of the hills: > 0 inside a stand (its margin: 0 at the rim)
+  const bambooAt = (x, z, Z) => bamboo > 0 && Z.low > 0.4 ? fbm(x * 0.016 + 3.7, z * 0.016 - 8.2, 2) - (0.62 - bamboo * 0.3) : -1;
   // ---- pass 1: the canopy, candidates in random order on a jittered grid, each kept apart from its neighbours by a
   // share of their crown radii (old stands: little overlap and open trunks; young regrowth: crowded)
   const n = Math.floor(2 * HALF / step), order = new Uint32Array(n * n);
@@ -100,6 +141,7 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
     const h = hf.heightAt(x, z); if (h < water + 2.2 || h > snow) continue;
     const ny = hf.normalAt(x, z, nrm).y; if (ny < 0.78) continue;
     const Z = zone(x, z, h, ny);
+    if (bambooAt(x, z, Z) > 0) continue;                                                    // left to the bamboo stands (below)
     // treefall gaps and a clumped, uneven density
     if (fbm(x * 0.03 + 5.1, z * 0.03 - 9.7, 2) > 0.34 + 0.12 * Z.edge) continue;
     const clump = smoothstep(-0.35, 0.35, fbm(x * 0.05 + 1.7, z * 0.05 + 3.3, 2));
@@ -111,7 +153,6 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
     if (r < pSnag) kind = 'snag';
     else if (r < pSnag + pBroken) kind = 'broken';
     else if (rng() < bl) { const q = rng(); kind = q < 0.22 + 0.45 * Z.rocky + 0.2 * (1 - Z.low) ? 'birch' : q < 0.62 ? 'oak' : 'leaf'; }
-    else if (bamboo > 0 && Z.low > 0.4 && fbm(x * 0.012 + 3.7, z * 0.012 - 8.2, 2) > 0.5 - bamboo * 0.35) kind = 'bamboo';
     else kind = pickW({ old: (0.04 + 0.62 * Z.age * Z.interior * (1 - Z.rocky)) * (mix.old ?? 1), spruce: 0.36 * (1 - 0.5 * Z.rocky) * (mix.spruce ?? 1), tall: (0.08 + 0.18 * Z.m * (1 - Z.rocky)) * (mix.tall ?? 1),
       young: (0.05 + 0.5 * (1 - Z.age) * (1 - Z.rocky) + 0.22 * Z.edge) * (mix.young ?? 1), pine: (0.02 + 0.85 * Z.rocky + 0.1 * (1 - Z.m)) * (mix.pine ?? 1) }, rng());
     const stunt = 1 - 0.4 * smoothstep(alpine[0] + 20, alpine[1] + 40, Z.alt);
@@ -122,6 +163,25 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
       // no room for a canopy tree: a younger one grows up between the big crowns
       const u = makeTree(Z.mixed > 0.4 && rng() < 0.4 ? 'leaf' : 'young', x, h - 0.2, z, rng, { a: rng() * 0.5, scale: 0.75, cl: Z.cl, br: Z.br });
       place(u, 0.42);
+    }
+  }
+  // ---- the bamboo stands: whole patches of dense culms, tall in the middle and lower and thinner toward the rim
+  if (bamboo > 0) {
+    const tone = new Map(), SP = 2.0;
+    for (let gz = -HALF + 4; gz < HALF - 4; gz += SP) for (let gx = -HALF + 4; gx < HALF - 4; gx += SP) {
+      const x = gx + (rng() - 0.5) * SP * 0.85, z = gz + (rng() - 0.5) * SP * 0.85;
+      const f = at(forest, x, z); if (f < 0.1) continue;
+      const h = hf.heightAt(x, z); if (h < water + 2.2 || h > snow) continue;
+      if (fbm(x * 0.016 + 3.7, z * 0.016 - 8.2, 2) < 0.6 - bamboo * 0.3) continue;            // cheap reject before the zone
+      const ny = hf.normalAt(x, z, nrm).y; if (ny < 0.8) continue;
+      const Z = zone(x, z, h, ny), m = bambooAt(x, z, Z); if (m <= 0) continue;
+      const e = 1 - smoothstep(0, 0.1, m);                                                     // 0 deep in the stand, 1 at its rim
+      if (rng() > lerp(0.95, 0.3, e) || fbm(x * 0.09 + 1.1, z * 0.09 - 7.7, 2) > 0.5 || blocked(x, z, 1)) continue;
+      const k = Math.floor(x / 60) * 1000 + Math.floor(z / 60);                                // one tone per ~60 m of stand
+      if (!tone.has(k)) tone.set(k, broadColor(rng, 'bamboo', Z.cl, Z.br));
+      const t = bambooCulm(x, h, z, rng, lerp(lerp(4.5, 7.5, rng()), lerp(10.5, 15, rng()), 1 - e), tone.get(k), e);
+      if (e > 0.6) t.v = 6 + Math.floor(rng() * 3);
+      hash.add(t); trees.push(t);
     }
   }
   // ---- pass 2: saplings where light reaches the floor (gaps, glades, the forest edge)
@@ -164,6 +224,10 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
 // fallen top beside every snapped trunk), spreads of dead branches, low dark shrubs in patches, and weights for ferns.
 export function forestFloor({ hf, forest, moist, trees, seed = 5, water = 0, blocked = () => false, logs = 700, twigs = 6000, shrubs = 2600 }) {
   const rng = mulberry32(seed), nrm = new THREE.Vector3(), at = (A, x, z) => A[hf.idx(x, z)], HALF = hf.HALF;
+  // bamboo stands keep a clean floor of their own fallen leaves: no shrubs, logs or brash under the culms
+  const bam = new TreeHash(8); for (const t of trees) if (t.kind === 'bamboo') bam.add(t);
+  const inBamboo = (x, z, r = 3) => !bam.each(x, z, r, o => Math.hypot(o.x - x, o.z - z) < r ? false : undefined);
+  const blocked0 = blocked; blocked = (x, z, pad) => blocked0(x, z, pad) || inBamboo(x, z, 3 + (pad || 0));
   const out = { logs: [], twigs: [], shrubs: [], stumps: [] };
   const logAt = (x, z, len, rad, r) => {
     const h = hf.heightAt(x, z); hf.normalAt(x, z, nrm);

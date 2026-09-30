@@ -44,6 +44,11 @@ const LEVEL = [[-147, 190, -32.5, 256]]; // school block
 const BRIDGES = [[-25, 12, 'A', ['桜川橋', 'さくらがわばし']], [200, 5, 'F', ['舟橋', 'ふなばし']]];
 const BRIDGE_EDGE = { A: 6.0, F: 2.45 }; // road centre to the back of its footway / gutter on the approaches
 const RIVER_STAIRS = [[-170, 1], [-150, -1], [95, -1], [130, 1], [270, -1]]; // [z where the stair starts, bank side]
+// bamboo stands the town is known for: in the shrine's wood behind the hall, on the river terraces beyond the houses,
+// and on the town's outer edges toward the fields (the hill-foot stands come from the forest planting, the garden and
+// block groves from towngreen.js). [x, z, radius]
+const BAMBOO_SITES = [[-60, -364, 15], [-103, -336, 9], [-18, -342, 10], [riverX(392) + 42, 392, 13], [riverX(436) - 44, 436, 11], [riverX(-392) + 40, -392, 12],
+  [riverX(-446) - 42, -446, 10], [-455, -150, 12], [-458, 196, 11], [-236, 356, 12], [42, 360, 10], [168, -345, 9]].map(([x, z, R]) => ({ x, z, R }));
 const SHRINE_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
 
 function paddyCell(x, z) { // returns {inside (0..1), levee} for the paddy grid
@@ -1306,7 +1311,8 @@ export async function build(progress) {
   const free = (x, z, r = 0) => { for (let dz = -r; dz <= r; dz += Math.max(1, r)) for (let dx = -r; dx <= r; dx += Math.max(1, r)) if (occAt(x + dx, z + dz)) return false; return !occAt(x, z); };
   const inCut = (x, z, zc, pw, pe, w) => Math.abs(z - zc) < w && Math.abs(x) < (x < 0 ? pw : pe) + 4; // trees grow over the tunnels
   const wildBlocked = (x, z, pad = 0) => inCut(x, z, -80, PORTALS.railW, PORTALS.railE, 12 + pad) || inCut(x, z, -25, PORTALS.roadW, PORTALS.roadE, 9 + pad) || Math.abs(x - riverX(z)) < 20 + pad
-    || inPaddyZone(x, z) && paddyOK(x, z) || !free(x, z, Math.ceil(pad)) || Math.hypot(x - SHRINE.x, z - SHRINE.z + 10) < 26 || Math.abs(x - SHRINE.x) < 9 && z > SHRINE.z && z < -220;
+    || inPaddyZone(x, z) && paddyOK(x, z) || !free(x, z, Math.ceil(pad)) || Math.hypot(x - SHRINE.x, z - SHRINE.z + 10) < 26 || Math.abs(x - SHRINE.x) < 9 && z > SHRINE.z && z < -220
+    || BAMBOO_SITES.some(g => Math.hypot(x - g.x, z - g.z) < g.R * 1.35 + pad);
   // cedar plantations dominate the Japanese hills (tall straight sugi), with konara / camphor / maple woods and bamboo
   // groves at their damp feet; the meadow fringe stays out of the town (towngreen.js plants that)
   const { trees: wild, saplings, hash: treeHash } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: 77, water: Y0 - 3, snow: 900, blocked: wildBlocked,
@@ -1343,8 +1349,18 @@ export async function build(progress) {
   }
   // gardens, groves, hedges, the station, the shrine, and the valley floor between the town and the hills
   const LBg = new LGeo(64);
-  const green = plantTown({ hf, free, lots, lotW, riverX, inPaddyZone, SHRINE, Y0, PADDIES, stationX: RAIL.stationX, hash: treeHash, B, LB: LBg, bench,
+  const green = plantTown({ hf, free, lots, lotW, riverX, inPaddyZone, SHRINE, Y0, PADDIES, stationX: RAIL.stationX, hash: treeHash, B, LB: LBg, bench, bambooSites: BAMBOO_SITES,
     isShop: (x, z) => Math.abs(z + 25) < 26 && x > -275 && x < 205 || Math.hypot(x - 134, z) < 26 });
+  // the floor of every bamboo stand is its own fallen leaves: forest-floor litter in the middle (the lawn and most of the
+  // grass give way), grass creeping back in toward the rim
+  const litter = (x, z, R) => hf.paint2(2, x - R, z - R, x + R, z + R, (px, pz) => 0.45 * smoothstep(R * 0.85, R * 0.45, Math.hypot(px - x, pz - z)));
+  globalThis.__groves = green.groves.map(g => [Math.round(g.x), Math.round(g.z), Math.round(g.R), g.n]);
+  for (const g of green.groves) {
+    litter(g.x, g.z, g.R);
+    const { HN, HALF, CELL } = hf, i0 = Math.floor((g.x - g.R + HALF) / CELL), i1 = Math.ceil((g.x + g.R + HALF) / CELL), j0 = Math.floor((g.z - g.R + HALF) / CELL), j1 = Math.ceil((g.z + g.R + HALF) / CELL);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const o = j * HN + i, f = smoothstep(g.R, g.R * 0.55, Math.hypot(-HALF + i * CELL - g.x, -HALF + j * CELL - g.z));
+      if (f <= 0) continue; hf.mask[o * 4] = Math.max(hf.mask[o * 4], f * 235); FOREST[o] = Math.max(FOREST[o], f * 0.92); hf.mask2[o * 4 + 3] = Math.min(hf.mask2[o * 4 + 3], (1 - f) * 255); }
+  }
   for (const t of green.trees) { t.town = true; (t.kind === 'sakura' ? sakura : trees).push(t); }
   for (const t of estateSak) { const h = hf.groundAt(t.x, t.z); sakura.push({ town: true, x: t.x, y: h - 0.2, z: t.z, s: lerp(6.5, 8.5, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
   for (const t of schoolSak) { const h = hf.groundAt(t.x, t.z); sakura.push({ town: true, x: t.x, y: h - 0.2, z: t.z, s: lerp(7, 9, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
