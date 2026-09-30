@@ -20,11 +20,13 @@ import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utili
 import { RAIL, buildRailway, railFences, trackside, buildCrossing, pedCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads } from './roads.js';
+import { DANCHI, DANCHI_ROADS, danchiGround, inDanchi, buildDanchi } from './danchi.js';
 
 export const meta = { name: 'Sakuragawa 桜川', startHour: 16.6, sunAzimuth: 2.6 };
 const Y0 = 6;
 const riverX = z => 215 + 22 * Math.sin(z * 0.0075) + 8 * Math.sin(z * 0.021 + 1);
-const PADDIES = [[-650, -330, -430, -110], [-650, -40, -430, 330], [262, 0, 650, 330], [262, -330, 650, -100]];
+const PADDIES = [[-650, -330, -430, -110], [-650, -40, -430, 330], [262, 0, 334, 330], [262, -330, 650, -100]]; // (east of the river the fields north of the
+// main road are a belt between the river and the apartment district)
 const inPaddyZone = (x, z) => PADDIES.some(([a, b, c, d]) => x > a && x < c && z > b && z < d);
 const SHRINE = { x: -60, z: -300 };
 // level crossings: road centre x, half width incl. footways (the riverside lane R crosses the line beside the rail bridge)
@@ -41,8 +43,8 @@ let XINGS = []; // [centre x, half width to the back of the footway / gutter] �
 const LEVEL = [[-147, 190, -32.5, 256]]; // school block
 // road bridges over the river: [centre z, deck width between the parapets, road id, name plates]; the deck spans the
 // channel only (abutments on the two bank lines, 14.4 m either side of the river centre), road edge half width off it
-const BRIDGES = [[-25, 12, 'A', ['桜川橋', 'さくらがわばし']], [200, 5, 'F', ['舟橋', 'ふなばし']]];
-const BRIDGE_EDGE = { A: 6.0, F: 2.45 }; // road centre to the back of its footway / gutter on the approaches
+const BRIDGES = [[-25, 12, 'A', ['桜川橋', 'さくらがわばし']], [200, 11.5, 'F', ['舟橋', 'ふなばし']]];
+const BRIDGE_EDGE = { A: 6.0, F: 5.75 }; // road centre to the back of its footway / gutter on the approaches
 const RIVER_STAIRS = [[-170, 1], [-150, -1], [95, -1], [130, 1], [270, -1]]; // [z where the stair starts, bank side]
 // bamboo stands the town is known for: in the shrine's wood behind the hall, on the river terraces beyond the houses,
 // and on the town's outer edges toward the fields (the hill-foot stands come from the forest planting, the garden and
@@ -123,6 +125,8 @@ function baseHeight(x, z) {
     const sd = Math.sign(x - riverX(z));
     if (rd > 12.4 && RIVER_STAIRS.some(([z0, s2]) => s2 === sd && z > z0 - 2.4 && z < z0 + 9.8)) h = Math.min(h, 0.2);
   }
+  // the apartment district stands on a graded platform cut into the foot of the hills (its rim blends back to them)
+  h = danchiGround(x, z, h, Y0);
   // bridge approaches: an embankment at road level from the abutment back to the valley floor
   for (const [bz, bw] of BRIDGES) { const dz = Math.abs(z - bz) - (bw / 2 + 0.6);
     if (rd > 14.7 && rd < 26 && dz < 1.5) h = Math.max(h, lerp(Y0 + 0.28, h, smoothstep(18, 24, rd)) - Math.max(0, dz) * 0.4); }
@@ -167,7 +171,9 @@ const ROADS = [
   // narrow unmarked dead-end alleys (roji) into the blocks
   { id: 'Y1', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.97, pts: [[-210, -150], [-212, -170], [-209, -190]] },
   { id: 'Y3', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.93, pts: [[40, -225], [42, -245], [39, -262]] },
-  { id: 'F', kind: 'lane', w: 4.0, pts: [[110, 200], [640, 200]], mat: 'asphalt', age: 0.95 }, // service road out to the yards
+  // the district road: from road B over the Funabashi bridge and the paddy belt into the apartment district
+  { id: 'F', kind: 'road', w: 6.5, walk: 2.5, center: 'white', pts: [[110, 200], [600, 200]], mat: 'asphalt', age: 0.45, district: true },
+  ...DANCHI_ROADS,
   { id: 'R', kind: 'lane', w: 4.5, mat: 'asphalt', age: 0.6, xing: true, pts: (() => { // follows the river RRD out; square across the railway
     // river-following points away from the line; near it the lane leaves the river on smooth Hermite curves onto the
     // crossing's straight (held square to the rails for XD + XT + 2 m either side of the track axis)
@@ -392,7 +398,7 @@ export async function build(progress) {
     const band = 4;
     for (const arm of I.arms) {
       const R = arm.n.R, other = arm.n.R === r1 ? r2 : r1;
-      const hasX = (R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340 && !other.noMarks; // no zebras across alley mouths
+      const hasX = ((R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340 || R.district && other.district || R.district && other.id === 'A') && !other.noMarks; // no zebras across alley mouths
       const d = other.w / 2 + I.rF + 0.4 + band / 2;
       const cq = RN.sampleAt(arm.n, clamp(arm.s + arm.dir * d, 0, arm.n.PL.len));
       if (hasX && !onBridge(cq.x, cq.z)) zebras.push({ id: R.id, s: arm.s + arm.dir * d, band, I }); else if (hasX) continue;
@@ -749,98 +755,13 @@ export async function build(progress) {
   reserve(SHRINE.x, SHRINE.z - 15, 12.5, 24.5, 0);
   // an elementary school fills the block between lanes C, V1, S2 and S3; a playground park opens onto lane S0
   const drng = mulberry32(2024), schoolSak = [], parkTrees = [], bikeList = [];
-  // ---------------------------------------------------------------- 桜川団地: a public housing estate on the southern meadow
-  // Six five-storey slab blocks in two rows either side of the estate lane (balconies to the open meadow and the
-  // woods, access corridors and stair towers to the lane), parking courts with marked bays, paved walks to every stair,
-  // mown lawns with zelkova and cherry trees between the blocks, a play corner, bench seats, bicycle shelters, refuse
-  // points, the estate's water tower, block numbers on the gable ends and a sign at each entrance. The meadow round
-  // it is left as it was.
-  const ESTATE = { x0: -393, x1: -157, z0: -321, z1: -248, lane: -282 };
-  reserve((ESTATE.x0 + ESTATE.x1) / 2, (ESTATE.z0 + ESTATE.z1) / 2, (ESTATE.x1 - ESTATE.x0) / 2, (ESTATE.z1 - ESTATE.z0) / 2, 0);
-  const estateTrees = [], estateSak = [];
-  {
-    const erng = mulberry32(1955), BW = 40, BD = 11, yE = z => hf.groundAt(-275, z), L = ESTATE.lane;
-    const blocks = [];
-    for (const [row, zc, r] of [[0, -259, 0], [1, -307, Math.PI]]) for (const [k, xc] of [-355, -283, -211].entries()) blocks.push({ n: row * 3 + k + 1, x: xc, z: zc, r, row });
-    const LAWN = (x0, z0, x1, z1) => hf.paint2(3, x0, z0, x1, z1, () => 1), BARE = (x0, z0, x1, z1) => hf.paint2(2, x0, z0, x1, z1, () => 1);
-    LAWN(ESTATE.x0 + 2, ESTATE.z0 + 2, ESTATE.x1 - 2, ESTATE.z1 - 2);
-    for (const b of blocks) {
-      const y = yE(b.z), fz = b.row ? 1 : -1; // direction from the block toward the lane
-      apartment(B, { x: b.x, y, z: b.z, r: b.r, w: BW, d: BD }, erng, extras);
-      BARE(b.x - BW / 2 - 4, b.z - BD / 2 - 6, b.x + BW / 2 + 4, b.z + BD / 2 + 6);
-      // walk along the corridor side, parking court between it and the lane
-      const zw0 = b.z + fz * (BD / 2 + 1.6), zw1 = b.z + fz * (BD / 2 + 5.4), zp1 = L - fz * 2.9;
-      B.frame(0, 0, 0, 0);
-      B.box('pavement', b.x + (b.row ? -1.6 : 1.6), y - 0.1, (zw0 + zw1) / 2, BW + 3.4, 0.17, Math.abs(zw1 - zw0), { color: [0.86, 0.84, 0.8], uv: 1.5, skip: 'ny' });
-      const zpA = Math.min(zw1, zp1), zpB = Math.max(zw1, zp1);
-      B.box('asphaltLane2', b.x, y - 0.1, (zpA + zpB) / 2, BW, 0.16, zpB - zpA, { uv: 4, skip: 'ny' });
-      B.box('concrete', b.x, y - 0.1, zw1, BW, 0.2, 0.14, { color: [0.74, 0.74, 0.72] });                                       // kerb between walk and court
-      const nb = 14, stallZ = zw1 + fz * 2.6;
-      for (let i = 0; i <= nb; i++) { const xx = b.x - BW / 2 + 2 + i * (BW - 4) / nb;
-        RN.decal(B, 'paint', [xx, stallZ], [0, 1], 2.4, 0.06, { color: [0.93, 0.93, 0.9], y: () => y + 0.075, lift: 0.004, road: false }); }
-      for (let i = 0; i < nb; i++) { const xx = b.x - BW / 2 + 2 + (i + 0.5) * (BW - 4) / nb;
-        B.frame(xx, y + 0.07, zw1 + fz * 0.5, 0); B.bbox('concrete', 0, 0, 0, 1.6, 0.1, 0.14, 0.02, { color: [0.8, 0.8, 0.78], skip: 'ny' }); B.frame(0, 0, 0, 0); // wheel stops
-        if (erng() < 0.62) carSpots.push({ p: [xx, y, stallZ], r: 0, y: y + 0.07 }); }
-      RN.cuts.push({ id: 'E0', side: b.row ? -1 : 1, s0: sOf('E0', b.x - BW / 2, L), s1: sOf('E0', b.x + BW / 2, L) });
-      hf.paint2(0, b.x - BW / 2, Math.min(zw0, zp1), b.x + BW / 2, Math.max(zw0, zp1), () => 1);
-      // block number on the gable end without the stair, facing along the lane
-      { const ex = b.x + (b.row ? 1 : -1) * (BW / 2 + 0.02), nm = signMesh(2.6, 2.6, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#55504a'; g.textAlign = 'center'; g.textBaseline = 'middle';
-          g.font = `bold ${H2 * 0.62}px Arial`; g.fillText(String(b.n), W2 / 2, H2 * 0.42); g.font = `bold ${H2 * 0.2}px ${JP_FONT}`; g.fillText('号棟', W2 / 2, H2 * 0.84); }, 0.05, 256);
-        nm.material.transparent = true; nm.material.alphaTest = 0.3; nm.position.set(ex + (b.row ? 0.01 : -0.01), y + 11.5, b.z); nm.rotation.y = b.row ? Math.PI / 2 : -Math.PI / 2; scene.add(nm); }
-      // bicycle shelter and refuse point at the stair end of the walk
-      { const sx = b.x + (b.row ? -1 : 1) * (BW / 2 - 4), sz = b.z + fz * (BD / 2 + 3.5);
-        B.frame(sx, y, sz, 0);
-        for (const dx of [-3.6, 3.6]) for (const dz of [-0.9, 0.9]) B.box('alu', dx, 0, dz, 0.07, 2.1, 0.07, { color: [0.62, 0.64, 0.66] });
-        B.bbox('roofMetal', 0, 2.1, 0, 7.6, 0.06, 2.3, 0.01, { color: [0.4, 0.55, 0.62] });
-        B.frame(0, 0, 0, 0);
-        for (let i = 0; i < 8; i++) if (erng() < 0.7) bikeList.push({ x: sx - 3.2 + i * 0.9, y, z: sz, r: Math.PI / 2 + (erng() - 0.5) * 0.12 });
-        garbagePoint(B, b.x + (b.row ? 1 : -1) * (BW / 2 - 3), y, b.z + fz * (BD / 2 + 3.4), 0, erng); B.frame(0, 0, 0, 0); }
-      // trees on the balcony side lawn, well off the facade
-      for (let i = 0; i < 3; i++) estateTrees.push({ x: b.x - 12 + i * 12 + (erng() - 0.5) * 3, z: b.z - fz * (BD / 2 + 9 + erng() * 3) });
-    }
-    // between the blocks: cherries along the lane, a play corner in the north row's gaps, the water tower in the south's
-    for (const gx of [-319, -247]) {
-      for (const dz of [-6.5, 6.5]) estateSak.push({ x: gx + (erng() - 0.5) * 2, z: L + dz });
-      // play corner: sand pit with a timber edge, a swing frame, a small slide, two benches
-      { const py = yE(-259), pz = -259;
-        B.frame(gx, py, pz, 0);
-        B.bbox('wood', 0, -0.05, -3.5, 4.2, 0.3, 3.2, 0.02, { color: [0.58, 0.44, 0.3] }); B.box('ballast', 0, 0.2, -3.5, 3.8, 0.01, 2.8, { color: [1.0, 0.9, 0.72], uv: 2 });
-        for (const sx of [-1.8, 1.8]) for (const sz of [-0.9, 0.9]) B.beam('steel', [sx, 0, sz * 1.2 + 2.5], [sx, 2.4, 2.5], 0.07, 0.07, { color: [0.85, 0.3, 0.25] });
-        B.beam('steel', [-1.9, 2.4, 2.5], [1.9, 2.4, 2.5], 0.08, 0.08, { color: [0.85, 0.3, 0.25] });
-        for (const sx of [-0.8, 0.8]) { for (const e of [-0.2, 0.2]) B.beam('steel', [sx + e, 2.38, 2.5], [sx + e, 0.5, 2.5], 0.012, 0.012, { color: [0.6, 0.6, 0.6] }); B.bbox('plastic', sx, 0.44, 2.5, 0.5, 0.05, 0.22, 0.01, { color: [0.2, 0.3, 0.6] }); }
-        B.bbox('plastic', 5.2, 0, 0, 0.9, 1.3, 0.9, 0.03, { color: [0.3, 0.55, 0.8] }); B.poly('plastic', [[4.75, 1.3, -0.35], [4.75, 1.3, 0.35], [2.2, 0.25, 0.35], [2.2, 0.25, -0.35]], [-0.4, 1, 0], { color: [0.95, 0.75, 0.2] });
-        for (const bx of [-4.5, 4.5]) { B.bbox('wood', bx, 0.42, 5.2, 1.6, 0.05, 0.4, 0.01, { color: [0.62, 0.46, 0.3] }); for (const e of [-0.6, 0.6]) B.box('concrete', bx + e, 0, 5.2, 0.12, 0.42, 0.34, { color: [0.7, 0.7, 0.68] }); }
-        B.frame(0, 0, 0, 0);
-        extras.push({ t: 'box', p: [gx, py, pz + 2.5], hx: 2, hz: 0.5, r: 0, h: 2.5 }, { t: 'box', p: [gx + 5.2, py, pz], hx: 0.5, hz: 0.5, r: 0, h: 1.3 });
-        BARE(gx - 3, pz - 6, gx + 3, pz - 1); }
-      // the estate's water tower (給水塔) in the south row's gap: a concrete shaft carrying a drum tank, a ladder cage
-      if (gx === -247) { const tz = -307, ty = yE(tz);
-        B.frame(gx, ty, tz, 0);
-        B.cyl('concrete', 0, -0.3, 0, 1.7, 1.5, 17.5, 20, { color: [0.82, 0.8, 0.76] });
-        B.cyl('concrete', 0, 17.2, 0, 1.6, 3.3, 1.2, 24, { color: [0.8, 0.78, 0.74] });
-        B.cyl('concrete', 0, 18.4, 0, 3.4, 3.4, 4.2, 28, { color: [0.86, 0.85, 0.82] });
-        B.cyl('concrete', 0, 22.6, 0, 3.5, 0.4, 0.9, 28, { color: [0.7, 0.7, 0.68], cap: true });
-        for (let k = 0; k < 30; k++) B.box('steel', 1.72, 0.6 + k * 0.6, 0, 0.06, 0.03, 0.5, { color: [0.5, 0.52, 0.54] });
-        for (const e of [-0.28, 0.28]) B.box('steel', 1.75, 0.5, e, 0.04, 18, 0.04, { color: [0.5, 0.52, 0.54] });
-        B.box('lamp', 0, 23.5, 0, 0.3, 0.3, 0.3, { color: [1, 0.2, 0.15] }); // aircraft warning light
-        B.frame(0, 0, 0, 0); addCircle(gx, tz, 1.8);
-        const tag = signMesh(4.6, 1.1, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#3f6fa0'; g.font = `bold ${H2 * 0.7}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('桜川団地', W2 / 2, H2 * 0.52); }, 0.1, 128);
-        tag.material.transparent = true; tag.material.alphaTest = 0.3;
-        for (const e of [1, -1]) { const t2 = tag.clone(); t2.position.set(gx, ty + 20.5, tz + e * 3.43); t2.rotation.y = e > 0 ? 0 : Math.PI; scene.add(t2); } }
-    }
-    // entrance signs from road D and lane C, and lamp posts along the lane
-    for (const [ex, face] of [[-393.5, Math.PI / 2], [-157, -Math.PI / 2]]) { const ez = L + 5, ey = yE(ez);
-      B.frame(ex, ey, ez, face); B.bbox('concrete', 0, -0.2, 0, 2.6, 0.5, 0.5, 0.02, { color: [0.7, 0.7, 0.68] }); for (const e of [-1.1, 1.1]) B.box('metal', e, 0.3, 0, 0.08, 1.6, 0.08, { color: [0.3, 0.42, 0.36] });
-      B.bbox('metal', 0, 0.9, 0, 2.4, 1.2, 0.1, 0.01, { color: [0.3, 0.42, 0.36] }); B.frame(0, 0, 0, 0);
-      const sg = signMesh(2.2, 1.05, (g, W2, H2) => { g.fillStyle = '#f5f2ea'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#23456b'; g.textAlign = 'center'; g.font = `bold ${H2 * 0.3}px ${JP_FONT}`; g.fillText('桜川団地', W2 / 2, H2 * 0.34);
-        g.font = `${H2 * 0.12}px ${JP_FONT}`; g.fillStyle = '#333'; g.fillText('1号棟〜6号棟  遊び場  給水塔', W2 / 2, H2 * 0.62); g.fillText('← 駐車場は各棟前', W2 / 2, H2 * 0.84); }, 0.3, 256);
-      const sp = [ex + Math.sin(face) * 0.06, ey + 1.5, ez + Math.cos(face) * 0.06]; sg.position.set(...sp); sg.rotation.y = face; scene.add(sg);
-      addBox(ex, ez, 1.3, 0.3, face); }
-    for (let x = -385; x <= -165; x += 22) for (const e of [-1, 1]) { if (Math.abs(Math.round((x + 385) / 22)) % 2 !== (e > 0 ? 0 : 1)) continue;
-      const lz = L + e * 3.4, ly = yE(lz); B.frame(x, ly, lz, 0); B.cyl('steel', 0, 0, 0, 0.07, 0.055, 5.2, 10, { color: [0.72, 0.74, 0.76] });
-      B.beam('steel', [0, 5.1, 0], [0, 5.25, -e * 1.0], 0.05, 0.05, { color: [0.72, 0.74, 0.76] }); B.bbox('steel', 0, 5.0, -e * 1.05, 0.3, 0.14, 0.5, 0.02, { color: [0.6, 0.62, 0.64] }); B.box('lamp', 0, 4.98, -e * 1.05, 0.22, 0.02, 0.4);
-      B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, ly + 4.8, lz - e * 1.05], s: 0.7 }); addCircle(x, lz, 0.1); }
-  }
+  // ---------------------------------------------------------------- 桜川ニュータウン: the apartment district (danchi.js)
+  // east of the river, beyond the paddy belt: its buildings, parking courts, courtyards, paths, park and sports ground
+  const LBd = new LGeo(64), estateTrees = [], estateSak = [];
+  const danchi = buildDanchi({ B, Y0, gy: (x, z) => hf.groundAt(x, z), RN, occRect, extras, hf, bench, LB: LBd, busStop, garbagePoint, occAt: (x, z, r) => occRect(x, z, r, r, 0, 0, true) });
+  for (const sp of danchi.carSpots) carSpots.push(sp);
+  for (const b of danchi.bikes) bikeList.push(b);
+  for (const g of danchi.groves) BAMBOO_SITES.push({ ...g, H: [9, 13] });
   { // covered bicycle park beside the station forecourt (駐輪場): steel frames, a long mono-pitch roof, racks, bikes
     const bx = 37, z0 = -62, z1 = -34, y = hf.groundAt(bx, (z0 + z1) / 2), L = z1 - z0;
     reserve(bx, (z0 + z1) / 2, 4.6, L / 2 + 0.5, 0);
@@ -920,10 +841,11 @@ export async function build(progress) {
   const rr = (a2, b2) => a2 + rng() * (b2 - a2);
   const pickW = obj => { let v = rng(); for (const k in obj) { if ((v -= obj[k]) <= 0) return k; } return Object.keys(obj)[0]; };
   const lots = [], poles = [];
-  const lotFree = (cx, cz, hw, hd, r) => !occRect(cx, cz, hw, hd, r, 0, true) && Math.abs(cx) < 640 && Math.abs(cz) < 345 && !inPaddyZone(cx, cz)
+  // (no frontage lots in the apartment district, nor in the gap of fields between it and the river)
+  const lotFree = (cx, cz, hw, hd, r) => !occRect(cx, cz, hw, hd, r, 0, true) && Math.abs(cx) < 640 && Math.abs(cz) < 345 && !inPaddyZone(cx, cz) && !inDanchi(cx, cz, 8) && !(cx > 232 && cx < 342 && cz > -75 && cz < 340)
     && hf.groundAt(cx, cz) < Y0 + 1.2 && hf.groundAt(cx, cz) > Y0 - 0.6;
   for (const R of [...ROADS].sort((a2, b2) => (b2.noMarks ? 1 : 0) - (a2.noMarks ? 1 : 0))) {
-    if (R.kind === 'path') continue;
+    if (R.kind === 'path' || R.noLots) continue;
     const alley = !!R.noMarks;
     let segS = 0;
     for (const [a, b] of roadSegs(R)) {
@@ -983,7 +905,7 @@ export async function build(progress) {
   // corners of the main junctions that no lot could take (the curb returns eat into them) become small coin car parks,
   // the way Japanese street corners usually end up
   for (const I of inters) {
-    if (!I.roads.some(R => R.id === 'A' || R.id === 'B') || onBridge(I.p[0], I.p[1])) continue;
+    if (!I.roads.some(R => R.id === 'A' || R.id === 'B') || onBridge(I.p[0], I.p[1]) || inDanchi(I.p[0], I.p[1], 30) || I.p[0] > 232) continue;
     for (const cr of I.corners) {
       const bx = cr.O[0] - I.p[0], bz = cr.O[1] - I.p[1], bl = Math.hypot(bx, bz); if (bl < 1) continue;
       const r = Math.atan2(cr.a.d[0], cr.a.d[1]);
@@ -1157,7 +1079,7 @@ export async function build(progress) {
   for (const [x, sd] of [[-205, 1], [58, -1], [300, 1]]) { const z = -25 + sd * 5.55; busStop(B, x, topY(x, z), z, sd > 0 ? Math.PI : 0); }
   for (const z of [-150, 120]) busStop(B, 110 + 4.3, topY(114.3, z), z, -Math.PI / 2, false);
   for (const [x, sd] of [[-128, 1], [22, 1], [158, -1], [-240, -1]]) postBox(B, x, topY(x, -25 + sd * 5.4), -25 + sd * 5.4, sd > 0 ? Math.PI : 0);
-  for (const R of ROADS) if (R.kind === 'lane' && R.id !== 'R') for (const [a, b] of roadSegs(R)) {
+  for (const R of ROADS) if (R.kind === 'lane' && R.id !== 'R' && !R.district) for (const [a, b] of roadSegs(R)) {
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
     for (let t = 40 + drng() * 30; t < L - 20; t += 90 + drng() * 60) {
       const sd = drng() < 0.5 ? 1 : -1, x = a[0] + dx * t - dz * sd * (R.w / 2 + 0.45), z = a[1] + dz * t + dx * sd * (R.w / 2 + 0.45);
@@ -1227,7 +1149,7 @@ export async function build(progress) {
   // ---------------------------------------------------------------- utility poles and wires
   const allPoles = [];
   for (const R of ROADS) {
-    if (R.kind === 'path' || R.id === 'A' && false) continue;
+    if (R.kind === 'path' || R.district) continue; // (the district's cables are underground)
     for (const [a, b] of roadSegs(R)) {
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L, side = R.id.charCodeAt(0) % 2 ? 1 : -1;
       const nx = -dz * side, nz = dx * side, off = R.w / 2 + (R.walk ? R.walk - 0.5 : 0.45);
@@ -1322,12 +1244,12 @@ export async function build(progress) {
   const inCut = (x, z, zc, pw, pe, w) => Math.abs(z - zc) < w && Math.abs(x) < (x < 0 ? pw : pe) + 4; // trees grow over the tunnels
   const wildBlocked = (x, z, pad = 0) => inCut(x, z, -80, PORTALS.railW, PORTALS.railE, 12 + pad) || inCut(x, z, -25, PORTALS.roadW, PORTALS.roadE, 9 + pad) || Math.abs(x - riverX(z)) < 20 + pad
     || inPaddyZone(x, z) && paddyOK(x, z) || !free(x, z, Math.ceil(pad)) || Math.hypot(x - SHRINE.x, z - SHRINE.z + 10) < 26 || Math.abs(x - SHRINE.x) < 9 && z > SHRINE.z && z < -220
-    || BAMBOO_SITES.some(g => Math.hypot(x - g.x, z - g.z) < g.R * 1.35 + pad);
+    || BAMBOO_SITES.some(g => Math.hypot(x - g.x, z - g.z) < g.R * 1.35 + pad) || inDanchi(x, z, 3 + pad);
   // cedar plantations dominate the Japanese hills (tall straight sugi), with konara / camphor / maple woods and bamboo
   // groves at their damp feet; the meadow fringe stays out of the town (towngreen.js plants that)
   const { trees: wild, saplings, hash: treeHash } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: 77, water: Y0 - 3, snow: 900, blocked: wildBlocked,
     alpine: [200, 320], lowland: [8, 34], meadow: 700, meadowMaxH: 60, mix: { tall: 3.2, spruce: 0.9, old: 0.7, pine: 0.6, young: 0.9 }, bamboo: 0.55, conifer: 0.9, edgeBroad: 0.45, step: 5.5, spacing: 1.12,
-    meadowOK: (x, z) => !(Math.abs(x) < 470 && Math.abs(z) < 350) && !inPaddyZone(x, z) });
+    meadowOK: (x, z) => !(Math.abs(x) < 470 && Math.abs(z) < 350) && !inPaddyZone(x, z) && !inDanchi(x, z, 18) });
   for (const t of wild) trees.push(t);
   // sakura: the town's namesake — a blossom promenade along both river banks and an avenue up the shrine approach
   const riverTrees = [], LB = new LGeo(96), bankClear = z => Math.abs(z + 25) > 13 && Math.abs(z - 200) > 9 && Math.abs(z + 80) > 15;
@@ -1375,6 +1297,9 @@ export async function build(progress) {
   for (const t of estateSak) { const h = hf.groundAt(t.x, t.z); sakura.push({ town: true, x: t.x, y: h - 0.2, z: t.z, s: lerp(6.5, 8.5, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
   for (const t of schoolSak) { const h = hf.groundAt(t.x, t.z); sakura.push({ town: true, x: t.x, y: h - 0.2, z: t.z, s: lerp(7, 9, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
   for (const b of green.bushes) bushes.push(b);
+  for (const b of danchi.bushes) bushes.push(b);
+  for (const hd of danchi.hedges) { const [ax, az] = hd.a, [bx, bz] = hd.b, L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L)), yaw = Math.atan2(-(bz - az), bx - ax), col = new THREE.Color(0.3, 0.46, 0.26);
+    for (let k = 0; k < n; k++) { const t = (k + 0.5) / n, x = lerp(ax, bx, t), z = lerp(az, bz, t); green.hedges.push({ x, y: hf.groundAt(x, z) - 0.05, z, s: hd.h, sx: L / n / 1.04 * 1.3 / hd.h, sz: 1, r: yaw, c: col.clone().multiplyScalar(0.95 + srng() * 0.1) }); } }
   for (const b of green.hydras) hydras.push(b);
   // under the hill woods: logs, dead branches, low shrubs
   const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: 9, water: Y0 - 3, blocked: wildBlocked, logs: 260, twigs: 2600, shrubs: 1400 });
@@ -1401,7 +1326,7 @@ export async function build(progress) {
   progress('Merging geometry', 0.82); await tick();
   B.flush(MT, { paint: false, stopLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false, chain: false, poly: false });
   Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
-  const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg);
+  const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg), danchiBenches = flushLandmarks(LBd);
 
   // ---------------------------------------------------------------- scanned props (gardens, shops)
   const [shrub, potted, planter, crate, ubox, weed, manhole] = await modelsP;
@@ -1436,6 +1361,7 @@ export async function build(progress) {
   for (const t of estateTrees) greenTrees.push(makeTree(drng() < 0.5 ? 'zelkova' : 'leaf', t.x, hf.groundAt(t.x, t.z) - 0.2, t.z, drng, { scale: 0.8 }));
   for (const t of parkTrees) greenTrees.push(makeTree(drng() < 0.6 ? 'zelkova' : 'oak', t.x, hf.groundAt(t.x, t.z) - 0.2, t.z, drng, { scale: 0.75 }));
   for (const t of streetTrees) greenTrees.push(makeTree('zelkova', t.x, t.y, t.z, drng, { scale: 0.62, a: 0.5 }));
+  for (const t of danchi.trees) greenTrees.push(makeTree(t.kind, t.x, (t.pit ? topY(t.x, t.z) + 0.1 : hf.groundAt(t.x, t.z)) - 0.2, t.z, drng, { scale: t.scale, a: 0.6 }));
   greenTrees.push(shrineTree);
   buildTrees(greenTrees);
   bicycles(bikeList, drng);
@@ -1473,6 +1399,11 @@ export async function build(progress) {
     { pts: [[110, -25], [110, -225], [-150, -225], [-150, -25]], n: 3, v: 9 },
     { pts: [[-1050, -25], [1050, -25]], n: 6, v: 14, open: true },
     { pts: [[1050, -25], [-1050, -25]], n: 6, v: 14, open: true },
+    // the apartment district: in from the main road up the avenue, home to town over the Funabashi bridge, and round its loop
+    { pts: [[110, -25], [422, -25], [422, 40], [425, 100], [435, 150], [452, 200], [110, 200]], n: 5, v: 11 },
+    { pts: [[110, 200], [452, 200], [435, 150], [425, 100], [422, 40], [422, -25], [110, -25]], n: 5, v: 11 },
+    { pts: [[346, -25], [346, 200], [452, 200], [435, 150], [425, 100], [422, 56], [346, 56]], n: 2, v: 8 },
+    { pts: [[614, -25], [614, 140], [598, 202], [452, 200], [435, 150], [425, 100], [422, 40], [422, -25]], n: 2, v: 8 },
   ];
   const routes = loops.map(L => new Route(L.pts, { closed: !L.open, vmax: L.v, lane: L.v > 12 ? 1.75 : L.v > 9 ? 1.5 : 1.05 }));
   // mandatory stops: every stop line we painted that lies on the route with matching heading
@@ -1511,10 +1442,11 @@ export async function build(progress) {
   // people on the streets: sidewalks of the main road, lane shoulders, the riverside walkways and the shrine approach
   const walkPaths = [];
   for (const R of ROADS) {
-    const pts = R.pts.map(([x, z]) => [clamp(x, -440, 440), clamp(z, -335, 335)]);
+    const pts = R.district ? R.pts : R.pts.map(([x, z]) => [clamp(x, -440, 440), clamp(z, -335, 335)]);
     walkPaths.push({ pts, off: R.kind === 'path' ? 1.0 : R.w / 2 + (R.walk ? R.walk / 2 : 0.55), lift: null, w: R.id === 'A' ? 3 : 1 });
   }
   for (const sd of [-1, 1]) walkPaths.push({ pts: Array.from({ length: 67 }, (_, i) => { const z = lerp(-330, 330, i / 66); return [riverX(z) + sd * 16.1, z]; }), off: 0, lift: null });
+  for (const P of danchi.walkPaths) walkPaths.push(P);
   // across the station forecourt: from the main road to the ticket hall, and over the crossing to the bus berths
   walkPaths.push({ pts: [[-2.5, -30.2], [-2.5, -62.8]], off: 1.1, lift: null, w: 2 }, { pts: [[-1, -48.5], [12.7, -48.5], [12.7, -32]], off: 0.4, lift: null });
   // nobody steps onto a level crossing while its bells ring or its booms are down
@@ -1557,7 +1489,7 @@ export async function build(progress) {
     },
     collide(p) { traffic.collide(p); people.collide(p); for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
     update(dt, t, cam) {
-      updateNight(); updateGlow(); updateLod(cam); updateCrops(cam); landmarks.update(); parkBenches.update(); people.update(dt);
+      updateNight(); updateGlow(); updateLod(cam); updateCrops(cam); landmarks.update(); parkBenches.update(); danchiBenches.update(); people.update(dt);
       const pl = { x: cam.position.x, y: cam.position.y - 1.6, z: cam.position.z };
       for (const tr of trains) tr.update(dt, pl);
       for (const c of crossings) c.active = crossingActive(c, trains);

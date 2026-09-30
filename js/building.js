@@ -351,7 +351,7 @@ function solarPanels(B, w, z0, z1, yAt, rows) {
     B.beam('alu', [gx, yAt(zb) + 0.07, zb], [gx + cols * pw, yAt(zb) + 0.07, zb], 0.04, 0.05, { color: [0.75, 0.77, 0.8] });
   }
 }
-function antenna(B, x, y, z) { B.detail(1, () => antenna0(B, x, y, z)); }
+export function antenna(B, x, y, z) { B.detail(1, () => antenna0(B, x, y, z)); }
 function antenna0(B, x, y, z) {
   B.cyl('alu', x, y, z, 0.025, 0.02, 2.3, 6, { color: [0.7, 0.72, 0.75] });
   B.box('alu', x, y + 1.9, z, 0.03, 0.03, 1.4, { color: [0.7, 0.72, 0.75] });
@@ -359,7 +359,7 @@ function antenna0(B, x, y, z) {
   for (const [dx, dz] of [[0.9, 0.5], [-0.9, -0.5]]) B.beam('steel', [x, y + 1.6, z], [x + dx, y - 0.15, z + dz], 0.008, 0.008, { color: [0.4, 0.4, 0.4] }); // guy wires
 }
 // walls of a box (centre cx on x, w by d, from y0 to y1) with per-face holes; mats per band [[mat, color, uv, yTop]]
-function boxWalls(B, cx, w, d, y0, y1, bands, holesOf, revealC) {
+export function boxWalls(B, cx, w, d, y0, y1, bands, holesOf, revealC) {
   const faces = [[0, d / 2, w], [Math.PI, d / 2, w], [Math.PI / 2, w / 2, d], [-Math.PI / 2, w / 2, d]];
   faces.forEach(([fr, off, fw], fi) => inFrame(B, [cx + Math.sin(fr) * off, 0, Math.cos(fr) * off], fr, () => {
     const holes = holesOf(fi, fw) || [];
