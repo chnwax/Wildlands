@@ -12,7 +12,24 @@ export class Heightfield {
     this.H = new Float32Array(this.HN * this.HN);
     this.mask = new Uint8Array(this.HN * this.HN * 4);   // R forest, G ambient occlusion, B canopy, A unused
     this.mask2 = new Uint8Array(this.HN * this.HN * 4);  // R urban ground, G paddy, B no-grass, A mowed lawn
-    this.U = { tHeight: { value: null }, tMask: { value: null }, tMask2: { value: null }, uHalf: { value: this.HALF }, uCell: { value: this.CELL }, uHN: { value: this.HN } };
+    this.U = { tHeight: { value: null }, tMask: { value: null }, tMask2: { value: null }, uHalf: { value: this.HALF }, uCell: { value: this.CELL }, uHN: { value: this.HN },
+      tPave: { value: null }, uPaveH: { value: 1 } };
+    // pavement mask: a fine grid (PC m) over the central 2·PH m, allocated when a map paints into it. Grass and flowers
+    // keep off paved ground exactly, so a lawn runs up to a kerb or a path edge instead of the 2 m mask cells leaving a
+    // band of bare gravel along every footway
+    this.PC = 0.5; this.PH = 800; this.PN = Math.round(2 * this.PH / this.PC); this.pave = null;
+  }
+  // rasterise fn (0..1, sampled at cell centres) over a world rectangle into the pavement mask (max-blend)
+  paintPave(minX, minZ, maxX, maxZ, fn) {
+    const { PC, PH, PN } = this; if (!this.pave) this.pave = new Uint8Array(PN * PN);
+    const i0 = clamp(Math.floor((minX + PH) / PC), 0, PN - 1), i1 = clamp(Math.ceil((maxX + PH) / PC), 0, PN - 1);
+    const j0 = clamp(Math.floor((minZ + PH) / PC), 0, PN - 1), j1 = clamp(Math.ceil((maxZ + PH) / PC), 0, PN - 1), P = this.pave;
+    for (let j = j0; j <= j1; j++) { const z = -PH + (j + 0.5) * PC;
+      for (let i = i0; i <= i1; i++) { const v = fn(-PH + (i + 0.5) * PC, z); if (v <= 0) continue; const o = j * PN + i; P[o] = Math.max(P[o], Math.min(255, v * 255)); } }
+  }
+  paveAt(x, z) {
+    if (!this.pave) return 0; const { PC, PH, PN } = this, i = Math.floor((x + PH) / PC), j = Math.floor((z + PH) / PC);
+    return i < 0 || j < 0 || i >= PN || j >= PN ? 0 : this.pave[j * PN + i] / 255;
   }
   async generate(progress, from = 0, to = 1) {
     const { HN, CELL, HALF, H } = this;
@@ -83,6 +100,10 @@ export class Heightfield {
       if (this.U[key].value) this.U[key].value.dispose();
       this.U[key].value = t;
     }
+    const N = this.pave ? this.PN : 1, pt = new THREE.DataTexture(this.pave || new Uint8Array(1), N, N, THREE.RedFormat, THREE.UnsignedByteType);
+    pt.minFilter = pt.magFilter = THREE.LinearFilter; pt.generateMipmaps = false; pt.unpackAlignment = 1; pt.needsUpdate = true;
+    if (this.U.tPave.value) this.U.tPave.value.dispose();
+    this.U.tPave.value = pt; this.U.uPaveH.value = this.pave ? this.PH : 1;
   }
 }
 
@@ -96,6 +117,11 @@ float hAt(vec2 p){
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
+`;
+// paved ground (roads, footways, paths, plazas) from the fine pavement mask: 1 on paving, 0 off it
+export const GLSL_PAVE = /* glsl */`
+uniform sampler2D tPave; uniform float uPaveH;
+float paveAt(vec2 p){ vec2 uv = (p + uPaveH) / (2.0 * uPaveH); return uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 ? textureLod(tPave, uv, 0.0).r : 0.0; }
 `;
 // ground height on the first outer terrain ring, exactly on its rendered triangles (quads split along the
 // (i+1,j)-(i,j+1) diagonal), so grass past the map edge stands on the ground; gAt picks the right source
@@ -694,6 +720,7 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
         varying vec2 vCardUv; varying vec3 vFlCol; varying float vFl;
         ${GLSL_HEIGHT}
+        ${GLSL_PAVE}
         ${GLSL_OUTER_HEIGHT}
         ${CLOUD_SHADE_GLSL}
         ${MEADOW_GLSL}`)
@@ -733,6 +760,9 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         float hw = gh - uWaterLv, reedN = gz3.b * 0.55 + gz2.g * 0.65 + gz1.r * 0.2;
         bool reed = !rice && uReeds > 0.5 && uLod < 0.9 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
         if (reed) dens = 1.0;
+        // nothing grows on paving; along its edge the sward thins and stays low, so no blade stands through a kerb
+        float pv = inMap ? paveAt(wp2) : 0.0;
+        dens *= 1.0 - smoothstep(0.04, 0.3, pv);
         float keep = step(iRand.w + 0.002, dens); // strict: dens 0 keeps nothing
         if (keep < 0.5) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
         float gs = keep;
@@ -781,6 +811,7 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
           Hh = uCard.y * (0.7 + 0.6 * iRand.y) * (0.55 + 0.65 * gz2.g) * mix(0.75, 1.0, fade) * keep * (1.0 - 0.6 * gm2.a) * (rice ? 0.75 : 1.0);
           flower = false;
         #endif
+        Hh *= 1.0 - 0.75 * smoothstep(0.0, 0.3, pv);
         float t = bladeUV.y;
         vec2 windDir = normalize(vec2(1.0, 0.35));
         float gust = textureLod(tNoise, wp2 * 0.012 - windDir * uTime * 0.05, 0.0).r;

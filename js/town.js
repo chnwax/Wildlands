@@ -445,17 +445,22 @@ export async function build(progress) {
         if (Math.abs(x) > 800 || Math.abs(z) > 800) continue;
         occRect(x, z, hw + (R.walk ? R.walk + 0.05 : 0.45), 1, Math.atan2(dx, dz), 1); // footways have a hard edge; lanes keep their L-gutter
       }
-      const ext = hw + (R.walk || 0) + (R.kind === 'lane' ? 0.5 : 0) + 0.6;
-      hf.paint2(2, Math.min(a[0], b[0]) - ext, Math.min(a[1], b[1]) - ext, Math.max(a[0], b[0]) + ext, Math.max(a[1], b[1]) + ext, (x, z) => { const q = nearestOnRoad({ pts: [a, b] }, x, z); return q.d < ext ? 1 : 0; });
-      hf.paint2(0, Math.min(a[0], b[0]) - ext - 2, Math.min(a[1], b[1]) - ext - 2, Math.max(a[0], b[0]) + ext + 2, Math.max(a[1], b[1]) + ext + 2, (x, z) => { const q = nearestOnRoad({ pts: [a, b] }, x, z); return q.d < ext + 1.5 ? 0.8 : 0; });
+      // paved: the carriageway and its footways (or a lane's L-gutter) exactly — the verge beyond stays lawn to the kerb
+      const ext = hw + (R.walk || 0) + (R.kind === 'lane' ? 0.5 : 0) + 0.12;
+      hf.paintPave(Math.min(a[0], b[0]) - ext, Math.min(a[1], b[1]) - ext, Math.max(a[0], b[0]) + ext, Math.max(a[1], b[1]) + ext, (x, z) => nearestOnRoad({ pts: [a, b] }, x, z).d < ext ? 1 : 0);
     }
   }
-  for (const I of inters) for (const cr of I.corners) hf.paint2(2, cr.O[0] - cr.rF, cr.O[1] - cr.rF, cr.O[0] + cr.rF, cr.O[1] + cr.rF, () => 1);
+  // junction corners: the footway round the kerb arc and the carriageway inside the corner's sector
+  for (const I of inters) for (const cr of I.corners) {
+    const u1 = [(cr.T1[0] - cr.O[0]) / cr.rF, (cr.T1[1] - cr.O[1]) / cr.rF], u2 = [(cr.T2[0] - cr.O[0]) / cr.rF, (cr.T2[1] - cr.O[1]) / cr.rF], k = u1[0] * u2[1] - u1[1] * u2[0], E = cr.rF + 1;
+    hf.paintPave(cr.O[0] - E, cr.O[1] - E, cr.O[0] + E, cr.O[1] + E, (x, z) => { const vx = x - cr.O[0], vz = z - cr.O[1], r = Math.hypot(vx, vz);
+      return r > cr.rF - (cr.walk || 0.5) - 0.15 && (u1[0] * vz - u1[1] * vx) * k >= -0.3 * r && (vx * u2[1] - vz * u2[0]) * k >= -0.3 * r ? 1 : 0; });
+  }
   // footways the pedestrian network carries on round corners onto lanes: lots keep off them, nothing grows through
   for (const n of RN.net) if (!n.walk) for (const side of [1, -1]) for (const [s0, s1, w] of n.ws[side]) for (let s = s0; s <= s1 + 0.5; s += 0.8) {
     const q = RN.sampleAt(n, Math.min(s, s1)), l = [-q.d[1], q.d[0]], off = side * (n.hw + w / 2), x = q.x + l[0] * off, z = q.z + l[1] * off;
     occRect(x, z, w / 2 + 0.05, 0.5, Math.atan2(q.d[0], q.d[1]), 1);
-    hf.paint2(2, x - w, z - w, x + w, z + w, (px, pz) => Math.hypot(px - x, pz - z) < w * 0.75 + 0.3 ? 1 : 0);
+    hf.paintPave(x - w, z - w, x + w, z + w, (px, pz) => { const dx = px - x, dz = pz - z; return Math.abs(dx * q.d[0] + dz * q.d[1]) < 0.5 && Math.abs(-dx * q.d[1] + dz * q.d[0]) < w / 2 + 0.12 ? 1 : 0; });
   }
   // footway width in front of a stretch [s0, s1] of road R on one side (0 where there is none)
   const walkAlong = (R, side, s0, s1) => { const n = RN.byId.get(R.id); let w = 0; for (let k = 0; k <= 4; k++) w = Math.max(w, RN.walkAt(n, side, lerp(s0, s1, k / 4))); return w; };
@@ -545,7 +550,7 @@ export async function build(progress) {
   const stationCars = [], forecourt = stationForecourt(B, { Y0, RN, sOf, rng: mulberry32(55), parked: stationCars });
   // river banks: concrete revetments with railings, plus bridges. Nothing grows through the revetment slabs or
   // under the walkway deck (the ground there sits below the concrete)
-  hf.paint2(2, 100, -800, 330, 800, (x, z) => Math.abs(x - riverX(z)) < 18.2 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
+  hf.paintPave(100, -800, 330, 800, (x, z) => Math.abs(x - riverX(z)) < 18.3 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
   // where the bank walkway stops: the two road bridges (it meets their footways at the parapet line) and the railway
   const WALK_GAPS = [...BRIDGES.map(([bz, , id]) => [bz - BRIDGE_EDGE[id] - 3.0, bz + BRIDGE_EDGE[id] + 3.0]), [-90.6, -69.4]]; // (ramps up to the roads / pedestrian crossings take over there)
   // river stairs: [z of the head landing's start, z of the flight's foot, side]
@@ -909,7 +914,7 @@ export async function build(progress) {
     B.frame(P.x, hf.groundAt(P.x, P.z), P.z, P.r);
     B.bbox('concrete', 0, -0.05, 0, 2.4, 0.09, P.len, 0.01, { color: [0.73, 0.73, 0.71], skip: 'ny', uv: 2 });
     for (let k = -P.len / 2 + 2.5; k < P.len / 2 - 0.5; k += 2.5) B.box('dark', 0, 0.035, k, 2.3, 0.004, 0.02, { color: [0.45, 0.45, 0.44] });
-    hf.paint2(2, P.x - 12, P.z - 12, P.x + 12, P.z + 12, (x2, z2) => { const cc = Math.cos(P.r), ss = Math.sin(P.r), ddx = x2 - P.x, ddz = z2 - P.z; return Math.abs(ddx * cc - ddz * ss) < 1.4 && Math.abs(ddx * ss + ddz * cc) < P.len / 2 ? 1 : 0; });
+    hf.paintPave(P.x - 12, P.z - 12, P.x + 12, P.z + 12, (x2, z2) => { const cc = Math.cos(P.r), ss = Math.sin(P.r), ddx = x2 - P.x, ddz = z2 - P.z; return Math.abs(ddx * cc - ddz * ss) < 1.32 && Math.abs(ddx * ss + ddz * cc) < P.len / 2 + 0.1 ? 1 : 0; });
     if (RN.walkAt(RN.byId.get(P.road.id), P.side, P.s)) RN.cuts.push({ id: P.road.id, side: P.side, s0: P.s - 1.6, s1: P.s + 1.6 });
   }
   // corners of the main junctions that no lot could take (the curb returns eat into them) become small coin car parks,
@@ -919,9 +924,6 @@ export async function build(progress) {
     for (const cr of I.corners) {
       const bx = cr.O[0] - I.p[0], bz = cr.O[1] - I.p[1], bl = Math.hypot(bx, bz); if (bl < 1) continue;
       const r = Math.atan2(cr.a.d[0], cr.a.d[1]);
-      // the corner behind the curb return is paved gravel, never a patch of meadow
-      hf.paint2(2, cr.O[0] - 9, cr.O[1] - 9, cr.O[0] + 9, cr.O[1] + 9, (x2, z2) => Math.hypot(x2 - cr.O[0], z2 - cr.O[1]) < 8.5 ? 1 : 0);
-      hf.paint2(0, cr.O[0] - 9, cr.O[1] - 9, cr.O[0] + 9, cr.O[1] + 9, (x2, z2) => Math.hypot(x2 - cr.O[0], z2 - cr.O[1]) < 8.5 ? 1 : 0);
       let cx = 0, cz = 0, ok = false;
       for (const off of [5.5, 7, 8.5, 10]) { cx = cr.O[0] + bx / bl * off; cz = cr.O[1] + bz / bl * off;
         if (!(Math.abs(cx) > 640 || Math.abs(cz) > 345 || inPaddyZone(cx, cz) || occRect(cx, cz, 6.2, 6.2, r, 0, true))) { ok = true; break; } }
@@ -1012,7 +1014,7 @@ export async function build(progress) {
       B.frame(0, 0, 0, 0);
       for (let k = 0; k < N; k++) { const t0 = L * k / N, t1 = L * (k + 1) / N, pts = [P(t0, 1, e[k][0]), P(t1, 1, e[k + 1][0]), P(t1, -1, e[k + 1][1]), P(t0, -1, e[k][1])];
         B.poly('gravelPath', pts, [0, 1, 0], { color: [0.84, 0.76, 0.64], uvs: pts.map(v => [v[0] / 2, v[2] / 2]) }); }
-      hf.paint2(2, Math.min(x0, x1) - 2, Math.min(z0, z1) - 2, Math.max(x0, x1) + 2, Math.max(z0, z1) + 2, (px, pz) => { const vx = px - x0, vz = pz - z0, t = vx * ux + vz * uz; return t > 0 && t < L && Math.abs(vx * uz - vz * ux) < 0.5 ? 1 : 0; });
+      hf.paintPave(Math.min(x0, x1) - 2, Math.min(z0, z1) - 2, Math.max(x0, x1) + 2, Math.max(z0, z1) + 2, (px, pz) => { const vx = px - x0, vz = pz - z0, t = vx * ux + vz * uz; return t > -0.2 && t < L + 0.2 && Math.abs(vx * uz - vz * ux) < 0.62 ? 1 : 0; });
     };
     const blocked = [[-156, -144], [104, 120], [-406, -393]]; // the track C carries on as, road B, road D
     for (const row of rows) {
@@ -1494,7 +1496,7 @@ export async function build(progress) {
       if (Math.abs(x - riverX(z)) < 14.5) return g < 0.2 ? 'water' : 'gravel';
       if (inPaddyZone(x, z) && paddyOK(x, z) && paddyCell(x, z) > 1.2) return 'water';
       const m2 = hf.mask2[hf.idx(x, z) * 4 + 2], ur = hf.mask2[hf.idx(x, z) * 4];
-      if (m2 > 128) return 'asphalt';
+      if (m2 > 128 || hf.paveAt(x, z) > 0.5) return 'asphalt';
       if (ur > 128) return 'gravel';
       return FOREST[hf.idx(x, z)] > 0.4 ? 'forest' : 'grass';
     },

@@ -2,7 +2,7 @@
 // flower blossoms in colourful patches, butterflies, sakura petals, and a flock of birds wheeling over the valley.
 // Everything is GPU-animated from a handful of uniforms.
 import { THREE, scene, camera, renderer, S, fogU, clamp, smoothstep, mulberry32 } from './core.js';
-import { GLSL_HEIGHT, FLOWER_GLSL } from './terrain.js';
+import { GLSL_HEIGHT, GLSL_PAVE, FLOWER_GLSL } from './terrain.js';
 import { env } from './sky.js';
 
 const U = { uPx: { value: 1 }, uPR: { value: 1 }, uFire: { value: 0 }, uMote: { value: 0 } };
@@ -112,6 +112,7 @@ function flowers(world) {
       uniform sampler2D tMask, tMask2, tNoise;
       varying vec3 vCol; varying float vAng;
       ${GLSL_HEIGHT}
+      ${GLSL_PAVE}
       ${wrapGLSL}
       ${FLOWER_GLSL}
       #include <common>
@@ -132,7 +133,7 @@ function flowers(world) {
           * (1.0 - m2.b) * (1.0 - smoothstep(0.2, 0.7, m2.r) * 0.85) * (1.0 - 0.45 * m2.a);
         float flD = flowerDensity(flowerPatch(z1, z2, z3, m.r), alpine) * sward * step(0.35, sward) * (1.0 - 0.6 * m2.a);
         // strictly off roads, lots, paddies and water (the masks are bilinear at metre scale)
-        float ok = step(aRnd.w * ${(COUNT / (4 * R * R)).toFixed(3)}, flD) * step(uWaterLv + 1.0, g) * step(0.86, flat_) * step(m2.r, 0.05) * step(m2.b, 0.05) * step(m2.g, 0.3);
+        float ok = step(aRnd.w * ${(COUNT / (4 * R * R)).toFixed(3)}, flD) * step(uWaterLv + 1.0, g) * step(0.86, flat_) * step(m2.r, 0.05) * step(m2.b, 0.05) * step(m2.g, 0.3) * step(paveAt(wp), 0.03);
         float d = length(wp - uCam.xz);
         float fade = 1.0 - smoothstep(${(R * 0.7).toFixed(1)}, ${R.toFixed(1)}, d);
         float sway = sin(uTime * (1.5 + aRnd.z) + aRnd.x * 30.0) * 0.04 * uWind;

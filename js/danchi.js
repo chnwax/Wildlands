@@ -67,20 +67,20 @@ const BUILDINGS = [
   ['M', 450, 114, -Math.PI / 2, { w: 33, floors: 7, pal: 'mocha', no: 5, name: 'パークハイツ桜川 東' }],
   // south-east block B: a long mid-rise with pilotis parking, a tower over the paved court
   ['M', 568, 84, Math.PI, { w: 46.2, floors: 8, pal: 'grey', no: 6, pilotis: 1, name: 'パークハイツ桜川 南' }],
-  ['T', 575, 160, Math.PI - 0.35, { floors: 13, pal: 'white', no: 2, name: 'サクラタワー 弐番館' }],
+  ['T', 575, 160, Math.PI - 0.35, { floors: 13, pal: 'blue', no: 2, name: 'サクラタワー 弐番館' }],
   // the loop road's outer frontage on the east: two slabs looking out to the wooded hill, entered from the loop road
   ['S', 637, 74, Math.PI / 2, { w: 41.4, floors: 5, pal: 'salmon', no: 10 }],
-  ['S', 637, 121, Math.PI / 2, { w: 27.6, floors: 5, pal: 'grey', no: 11, bal: 'rail' }],
+  ['S', 637, 121, Math.PI / 2, { w: 27.6, floors: 5, pal: 'terra', no: 11, bal: 'rail' }],
   // north-west: low-rise terraces along the west edge (toward the paddies), a tower and a slab turned along the avenue
   ['R', 372, 225, Math.PI / 2, { w: 20, pal: 'sand', name: 'ハイツ川辺' }],
   ['R', 371, 252, Math.PI / 2, { w: 20, pal: 'cream', name: 'メゾン花水木' }],
   ['R', 372, 279, Math.PI / 2, { w: 18, pal: 'salmon', name: 'グリーンハイツ' }],
-  ['T', 428, 236, Math.PI - 0.1, { floors: 10, pal: 'white', no: 3, name: 'サクラタワー 参番館' }],
+  ['T', 428, 236, Math.PI - 0.1, { floors: 10, pal: 'terra', no: 3, name: 'サクラタワー 参番館' }],
   ['R', 440, 214, Math.PI, { w: 22, pal: 'cream', name: 'レジデンス若葉' }],
   ['S', 468, 280, 2.125, { w: 27.6, floors: 5, pal: 'cream', no: 7 }],
   // north-east: a mid-rise facing F, a tower looking out over the hill foot
-  ['M', 503, 224, Math.PI + 0.08, { w: 39.6, floors: 7, pal: 'mocha', no: 8, name: 'パークハイツ桜川 北' }],
-  ['T', 548, 236, Math.PI - 0.4, { floors: 11, pal: 'white', no: 4, name: 'サクラタワー 四番館' }],
+  ['M', 503, 224, Math.PI + 0.08, { w: 39.6, floors: 7, pal: 'blue', no: 8, name: 'パークハイツ桜川 北' }],
+  ['T', 548, 236, Math.PI - 0.4, { floors: 11, pal: 'sand', no: 4, name: 'サクラタワー 四番館' }],
   // the north rim: low-rise flats stepping up the hill foot beyond the loop road, their galleries toward it
   ['R', 400, 336, Math.PI, { w: 22, pal: 'sand', name: 'ハイム東雲' }],
   ['R', 432, 340, Math.PI, { w: 22, pal: 'grey', name: 'サンライズ桜川' }],
@@ -101,13 +101,27 @@ const PARKING = [
 ];
 
 export function buildDanchi(ctx) {
-  const { B, Y0, gy, RN, occRect, extras, hf } = ctx, rng = mulberry32(19740), out = { trees: [], hedges: [], bushes: [], carSpots: [], bikes: [], walkPaths: [], lamps: [], benches: [], groves: [] };
+  const { B, Y0, gy, RN, extras, hf } = ctx, rng = mulberry32(19740), out = { trees: [], hedges: [], bushes: [], carSpots: [], bikes: [], walkPaths: [], lamps: [], benches: [], groves: [] };
   const P2 = (x, z) => [x, gy(x, z), z];
   const BUS = [[492, 194.8, Math.PI], [420, 205.2, 0]];                               // F's bus stops at the centre, both ways
   const paint = (c, x0, z0, x1, z1, fn) => hf.paint2(c, Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1), fn);
+  // paved ground (fine mask): no grass through paving, and lawn right up to its edge
+  const pave = (x0, z0, x1, z1, fn) => hf.paintPave(Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1), fn);
   const inRect = (x, z, cx, cz, r, hw, hd, m = 0) => { const c = Math.cos(r), s = Math.sin(r), dx = x - cx, dz = z - cz; return Math.abs(dx * c - dz * s) < hw + m && Math.abs(dx * s + dz * c) < hd + m; };
   // the whole district is mown lawn unless something else is laid there
   paint(3, 338, -18, 624, 332, (x, z) => inDanchi(x, z, -1) ? 1 : 0);
+  // pedestrian navigation grid (1 m) over the district, kept alongside the town's occupancy: 0 lawn, 1 paving (a path
+  // or plaza, with its region id), 2 blocked (buildings, water, equipment, fences), 3 footway, 4 car park. Entrance paths
+  // are routed over it so every door is reached without cutting through a building, a court or a pond, and designed
+  // paths that stop short of a footway are joined to the network
+  const NX0 = 330, NZ0 = -34, NW = 340, NH = 396, NAV = new Uint8Array(NW * NH), REG = new Int16Array(NW * NH).fill(-1), regions = [];
+  const navI = (x, z) => { const i = Math.floor(x - NX0), j = Math.floor(z - NZ0); return i < 0 || j < 0 || i >= NW || j >= NH ? -1 : j * NW + i; };
+  const navRect = (cx, cz, hw, hd, r, v, rid = -1) => { const R = Math.hypot(hw, hd) + 1;
+    for (let z = Math.floor(cz - R); z <= cz + R; z++) for (let x = Math.floor(cx - R); x <= cx + R; x++) {
+      if (!inRect(x + 0.5, z + 0.5, cx, cz, r, hw, hd)) continue; const k = navI(x + 0.5, z + 0.5); if (k < 0) continue;
+      if (v === 2) { NAV[k] = 2; REG[k] = -1; } else if (NAV[k] !== 2) { NAV[k] = v; REG[k] = v === 1 ? rid : -1; } } };
+  // occupancy for the town (lots, props, scattered trees) and the grid: kind 2 blocked unless said otherwise
+  const occRect = (cx, cz, hw, hd, r, val, kind = 2, rid = -1) => { ctx.occRect(cx, cz, hw, hd, r, val); navRect(cx, cz, hw, hd, r, kind, rid); };
 
   // ---- buildings
   const blds = [];
@@ -115,17 +129,21 @@ export function buildDanchi(ctx) {
     const y = gy(x, z) + 0.02, pal = PALETTES[o.pal] || PALETTES.cream, s = { ...o, x, y, z, r, pal };
     const info = fam === 'S' ? walkupSlab(B, s, rng, extras) : fam === 'T' ? pointTower(B, s, rng, extras) : fam === 'M' ? mansion(B, s, rng, extras) : fam === 'L' ? centreBlock(B, s, rng, extras) : lowRise(B, s, rng, extras);
     info.fam = fam; info.x = x; info.z = z; info.r = r; info.y = y; blds.push(info);
-    // keep everything else off its footprint; the ground round it is bare under a gravel strip
-    const fp = info.footprint || [[-30, -12], [30, 12]], hw = (fp[1][0] - fp[0][0]) / 2, hd = (fp[1][1] - fp[0][1]) / 2, cx = (fp[0][0] + fp[1][0]) / 2, cz = (fp[0][1] + fp[1][1]) / 2;
-    const c = Math.cos(r), sn = Math.sin(r), wx = x + cx * c + cz * sn, wz = z - cx * sn + cz * c;
-    occRect(wx, wz, hw, hd, r, 1);
-    info.box = { x: wx, z: wz, hw, hd, r };
-    paint(2, wx - hw - 2, wz - hw - 2, wx + hw + 2, wz + hw + 2, (px, pz) => inRect(px, pz, wx, wz, r, hw, hd, 0.8) ? 1 : 0);
+    // keep everything else off its footprint (one rectangle, or several for the L-shaped centre); no grass against it
+    info.boxes = [];
+    for (const fp of info.boxes0 || [info.footprint || [[-30, -12], [30, 12]]]) {
+      const hw = (fp[1][0] - fp[0][0]) / 2, hd = (fp[1][1] - fp[0][1]) / 2, cx = (fp[0][0] + fp[1][0]) / 2, cz = (fp[0][1] + fp[1][1]) / 2;
+      const c = Math.cos(r), sn = Math.sin(r), wx = x + cx * c + cz * sn, wz = z - cx * sn + cz * c, R = Math.hypot(hw, hd) + 1;
+      occRect(wx, wz, hw, hd, r, 1);
+      info.boxes.push({ x: wx, z: wz, hw, hd, r });
+      pave(wx - R, wz - R, wx + R, wz + R, (px, pz) => inRect(px, pz, wx, wz, r, hw, hd, 0.3) ? 1 : 0);
+    }
   }
-  const clear = (x, z, m = 1.0) => !blds.some(b => inRect(x, z, b.box.x, b.box.z, b.box.r, b.box.hw, b.box.hd, m));
+  const clear = (x, z, m = 1.0) => !blds.some(b => b.boxes.some(q => inRect(x, z, q.x, q.z, q.r, q.hw, q.hd, m)));
 
   // ---- paved paths: pavers with concrete edging, draped on the ground; lamps (short posts) along them
-  const pathLine = (pts, w = 2.4, { lamps = true, edge = true, mat = 'pavement', color = [0.84, 0.82, 0.78] } = {}) => {
+  const pathLine = (pts, w = 2.4, { lamps = true, edge = true, mat = 'pavement', color = [0.84, 0.82, 0.78], link = false } = {}) => {
+    const rid = regions.length; regions.push({ kind: 'path', pts: pts.map(p => [p[0], p[1]]), w, link, connected: false });
     for (let i = 0; i + 1 < pts.length; i++) {
       const [ax, az] = pts[i], [bx, bz] = pts[i + 1], L = Math.hypot(bx - ax, bz - az); if (L < 0.2) continue;
       const ux = (bx - ax) / L, uz = (bz - az) / L, nx = -uz, nz = ux, N = Math.max(1, Math.ceil(L / 2));
@@ -136,8 +154,8 @@ export function buildDanchi(ctx) {
         B.poly(mat, pts4, [0, 1, 0], { color, uvs: pts4.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: mat === 'pavement' ? { aPave: [[t0, 0.5], [t1, 0.5], [t1, 0.5 + w], [t0, 0.5 + w]] } : undefined });
         if (edge) for (const e of [-1, 1]) B.detail(1, () => { const a = q(t0, e * (w / 2 + 0.05)), b = q(t1, e * (w / 2 + 0.05)); B.beam('concrete', [a[0], a[1] - 0.04, a[2]], [b[0], b[1] - 0.04, b[2]], 0.1, 0.12, { color: [0.74, 0.74, 0.72] }); });
       }
-      paint(2, Math.min(ax, bx) - w, Math.min(az, bz) - w, Math.max(ax, bx) + w, Math.max(az, bz) + w, (px, pz) => { const t = (px - ax) * ux + (pz - az) * uz, e = Math.abs((px - ax) * nx + (pz - az) * nz); return t > -0.5 && t < L + 0.5 && e < w / 2 + 0.4 ? 1 : 0; });
-      occRect((ax + bx) / 2, (az + bz) / 2, w / 2 + 0.3, L / 2 + 0.3, Math.atan2(bx - ax, bz - az), 1);
+      pave(Math.min(ax, bx) - w, Math.min(az, bz) - w, Math.max(ax, bx) + w, Math.max(az, bz) + w, (px, pz) => { const t = (px - ax) * ux + (pz - az) * uz, e = Math.abs((px - ax) * nx + (pz - az) * nz); return t > -w / 2 && t < L + w / 2 && e < w / 2 + 0.18 ? 1 : 0; });
+      occRect((ax + bx) / 2, (az + bz) / 2, w / 2 + 0.3, L / 2 + 0.3, Math.atan2(bx - ax, bz - az), 1, 1, rid);
       if (lamps) for (let t = 6; t < L - 2; t += 16) { const x = ax + ux * t + nx * (w / 2 + 0.6), z = az + uz * t + nz * (w / 2 + 0.6); if (clear(x, z, 0.3)) pathLamp(x, z); }
     }
     out.walkPaths.push({ pts: pts.map(p => [p[0], p[1]]), off: 0, lift: null });
@@ -254,32 +272,15 @@ export function buildDanchi(ctx) {
     const sEntry = RN.byId.get(id) ? (() => { let best = null; for (const g of n.PL.segs) { const t = clamp((ex0 - g.a[0]) * g.d[0] + (ez0 - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(ex0 - g.a[0] - g.d[0] * t, ez0 - g.a[1] - g.d[1] * t); if (!best || d < best.d) best = { d, s: g.s0 + t, side: Math.sign((ex0 - g.a[0]) * -g.d[1] + (ez0 - g.a[1]) * g.d[0]) }; } return best; })() : null;
     if (sEntry) RN.cuts.push({ id, side: sEntry.side, s0: sEntry.s - 3.2, s1: sEntry.s + 3.2 });
     for (const e of [-1, 1]) { const px = cx + lx * e * (D / 2 + 0.8) + fx * (len / 2 - 2), pz = cz + lz * e * (D / 2 + 0.8) + fz * (len / 2 - 2); streetLamp(px, pz, yaw + Math.PI + e * 0.4); }
-    occRect(cx, cz, D / 2 + 0.3, len / 2 + 0.3, yaw, 1);
-    paint(2, cx - len, cz - len, cx + len, cz + len, (px, pz) => inRect(px, pz, cx, cz, yaw, D / 2 + 0.4, len / 2 + 0.4) ? 1 : 0);
-    paint(0, cx - len, cz - len, cx + len, cz + len, (px, pz) => inRect(px, pz, cx, cz, yaw, D / 2 + 0.2, len / 2 + 0.2) ? 1 : 0);
+    occRect(cx, cz, D / 2 + 0.3, len / 2 + 0.3, yaw, 1, 4);
+    pave(cx - len, cz - len, cx + len, cz + len, (px, pz) => inRect(px, pz, cx, cz, yaw, D / 2 + 0.3, len / 2 + 0.3) || inRect(px, pz, ex0 - fx * 0.3, ez0 - fz * 0.3, yaw, 3.3, 1.4) ? 1 : 0);
     // hedge along the court's long sides, a walkway from its far end
     for (const e of [-1, 1]) { const a = [cx + lx * e * (D / 2 + 1.2) - fx * (len / 2 - 1), cz + lz * e * (D / 2 + 1.2) - fz * (len / 2 - 1)], b = [cx + lx * e * (D / 2 + 1.2) + fx * (len / 2 - 1), cz + lz * e * (D / 2 + 1.2) + fz * (len / 2 - 1)];
-      if (clear((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.8)) out.hedges.push({ a, b, h: 1.0 }); }
+      if (clear((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.8)) { out.hedges.push({ a, b, h: 1.0 }); navRect((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.45, Math.hypot(b[0] - a[0], b[1] - a[1]) / 2, Math.atan2(b[0] - a[0], b[1] - a[1]), 2); } }
     out.carSpots.push(...spots);
     out.parkings = (out.parkings || []).concat([{ cx, cz, yaw, len, D }]);
   }
 
-  // ---- entrances: a path from every door to the nearest footway (or path), lamps along it
-  const footwayPt = (x, z) => { let best = null; for (const n of RN.net) { if (!n.R.district && n.R.id !== 'A') continue; const W = n.walk || 0; if (!W) continue;
-    for (const g of n.PL.segs) { const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), px = g.a[0] + g.d[0] * t, pz = g.a[1] + g.d[1] * t, d = Math.hypot(x - px, z - pz);
-      if (!best || d < best.d) { const k = (n.hw + W * 0.55) / (d || 1); best = { d, x: px + (x - px) * k, z: pz + (z - pz) * k }; } } } return best; };
-  for (const b of blds) for (const e of b.entrances || []) {
-    const [x, , z] = e.p; if (e.kind === 'shop') continue;
-    const f = footwayPt(x, z); if (!f || f.d > 60) continue;
-    // straight out of the door, then turning onto the footway
-    const k = 3.5, mx = x + e.out[0] * k, mz = z + e.out[1] * k;
-    pathLine([[x - e.out[0] * 0.2, z - e.out[1] * 0.2], [mx, mz], [f.x, f.z]], e.kind === 'lobby' ? 3.2 : 2.2, { lamps: true });
-    // planting beds either side of the entrance and a bicycle shelter beside it
-    for (const sd of [-1, 1]) { const px = x + e.out[0] * 1.6 - e.out[1] * sd * 2.6, pz = z + e.out[1] * 1.6 + e.out[0] * sd * 2.6;
-      if (clear(px, pz, 0.2)) for (let q = 0; q < 3; q++) out.bushes.push({ x: px + (rng() - 0.5) * 1.2, y: gy(px, pz) - 0.05, z: pz + (rng() - 0.5) * 1.2, s: 0.6 + rng() * 0.3, sx: 1, r: rng() * 6.28, c: new THREE.Color().setHSL(0.26 + rng() * 0.06, 0.45, 0.32 + rng() * 0.08) }); }
-    if (e.kind !== 'gallery' && rng() < 0.8) { const sd = rng() < 0.5 ? -1 : 1, px = x + e.out[0] * 5 - e.out[1] * sd * 6, pz = z + e.out[1] * 5 + e.out[0] * sd * 6;
-      if (clear(px, pz, 2.5)) bikeShelter(px, pz, Math.atan2(e.out[0], e.out[1]) + Math.PI / 2, 6 + Math.floor(rng() * 4)); }
-  }
   function bikeShelter(x, z, yaw, n) { const y = gy(x, z); B.frame(x, y, z, yaw); const L = n * 0.8 + 0.6;
     B.box('concrete', 0, -0.05, 0, L, 0.08, 2.4, { color: [0.72, 0.72, 0.7] });
     for (const e of [-1, 1]) for (const zz of [-0.95]) B.cyl('steel', e * (L / 2 - 0.2), 0, zz, 0.045, 0.045, 2.2, 8, { color: [0.62, 0.64, 0.66] });
@@ -289,16 +290,18 @@ export function buildDanchi(ctx) {
     B.frame(0, 0, 0, 0);
     for (let i = 0; i < n; i++) if (rng() < 0.8) { const p = [x + Math.cos(yaw) * (-L / 2 + 0.7 + i * 0.8), z - Math.sin(yaw) * (-L / 2 + 0.7 + i * 0.8)]; out.bikes.push({ x: p[0], y, z: p[1], r: yaw + Math.PI / 2 + (rng() - 0.5) * 0.1 }); }
     addBox(x, z, L / 2, 1.2, yaw, y - 1, y + 2.3); occRect(x, z, L / 2 + 0.3, 1.4, yaw, 1);
+    pave(x - L, z - L, x + L, z + L, (px, pz) => inRect(px, pz, x, z, yaw, L / 2 + 0.1, 1.3) ? 1 : 0);
   }
 
   // ---- courtyards, each of its own kind
   const benchAt = (x, z, yaw) => { if (!clear(x, z, 0.4)) return; ctx.bench(ctx.LB, x, gy(x, z), z, yaw); occRect(x, z, 1.0, 0.6, yaw, 1); };
-  const tree = (kind, x, z, scale = 1) => { if (clear(x, z, 1.2)) out.trees.push({ kind, x, z, scale }); };
+  const tree = (kind, x, z, scale = 1) => { if (clear(x, z, 1.2)) { out.trees.push({ kind, x, z, scale }); navRect(x, z, 0.6, 0.6, 0, 2); } };
   const plaza = (x0, z0, x1, z1, color = [0.82, 0.8, 0.76]) => { B.frame(0, 0, 0, 0);
     for (let x = x0; x < x1 - 1e-3; x += 4) for (let z = z0; z < z1 - 1e-3; z += 4) { const xa = x, xb = Math.min(x1, x + 4), za = z, zb = Math.min(z1, z + 4), q = (px, pz) => [px, gy(px, pz) + 0.05, pz];
       B.poly('pavement', [q(xa, za), q(xb, za), q(xb, zb), q(xa, zb)], [0, 1, 0], { color, uvs: [[xa / 1.2, za / 1.2], [xb / 1.2, za / 1.2], [xb / 1.2, zb / 1.2], [xa / 1.2, zb / 1.2]], attr: { aPave: [[xa, za - z0 + 0.5], [xb, za - z0 + 0.5], [xb, zb - z0 + 0.5], [xa, zb - z0 + 0.5]] } }); }
-    paint(2, x0 - 1, z0 - 1, x1 + 1, z1 + 1, (px, pz) => px > x0 - 0.3 && px < x1 + 0.3 && pz > z0 - 0.3 && pz < z1 + 0.3 ? 1 : 0);
-    occRect((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2, 0, 1); };
+    pave(x0 - 1, z0 - 1, x1 + 1, z1 + 1, (px, pz) => px > x0 - 0.15 && px < x1 + 0.15 && pz > z0 - 0.15 && pz < z1 + 0.15 ? 1 : 0);
+    const rid = regions.length; regions.push({ kind: 'plaza', pts: [[(x0 + x1) / 2, (z0 + z1) / 2]], connected: false });
+    occRect((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2, 0, 1, 1, rid); };
   // C1 south-west: a lawn court under a group of big zelkovas, a curving path between the two slabs, a wisteria pergola
   { const pts = []; for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push([lerp(366, 410, t), lerp(96, 114, t) + Math.sin(t * Math.PI * 2) * 3.5]); } pathLine(pts, 2.0);
     for (const [x, z, s] of [[375, 106, 1.0], [392, 99, 0.9], [404, 110, 0.85], [383, 113, 0.75]]) tree('zelkova', x, z, s);
@@ -315,7 +318,7 @@ export function buildDanchi(ctx) {
   { plaza(556, 120, 600, 147, [0.8, 0.79, 0.77]);
     for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) { const x = 561 + i * 11, z = 126 + j * 15; tree('zelkova', x, z, 0.6); const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.box('metal', 0, 0.005, 0, 1.4, 0.01, 1.4, { color: [0.22, 0.22, 0.23] }); B.frame(0, 0, 0, 0); }
     for (const [x, z] of [[566.5, 133.5], [588.5, 133.5]]) { const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 4.2, 0.45, 1.6, 0.03, { color: [0.76, 0.75, 0.72] }); B.box('plain', 0, 0.44, 0, 3.9, 0.04, 1.3, { color: [0.3, 0.24, 0.18] });
-      B.bbox('wood', 0, 0.45, 1.0, 4.2, 0.06, 0.45, 0.01, { color: [0.6, 0.46, 0.32] }); B.frame(0, 0, 0, 0); addBox(x, z, 2.1, 0.8, 0, y - 1, y + 0.5);
+      B.bbox('wood', 0, 0.45, 1.0, 4.2, 0.06, 0.45, 0.01, { color: [0.6, 0.46, 0.32] }); B.frame(0, 0, 0, 0); addBox(x, z, 2.1, 0.8, 0, y - 1, y + 0.5); navRect(x, z, 2.2, 1.3, 0, 2);
       for (let k = 0; k < 4; k++) out.bushes.push({ x: x - 1.5 + k, y: y + 0.45, z: z + (rng() - 0.5) * 0.4, s: 0.55, sx: 1, r: rng() * 6, c: new THREE.Color().setHSL(0.28, 0.5, 0.34) }); }
     fountain(577.5, 133.5); }
   // C4 north-west: a shaded bosque of trees on gravel between the tower and the slab, benches under it; a bamboo grove
@@ -362,7 +365,7 @@ export function buildDanchi(ctx) {
     pathLine([[x0 + 16, z1 + 0.2], [x0 + 16, 47.5]], 3.0, { lamps: false }); }
   // C8 the centre plaza between the avenue and the shops: pavers, trees in planters, a clock, benches, bike racks
   { plaza(442, 142, 457.5, 192, [0.84, 0.8, 0.74]);
-    for (const [x, z] of [[447, 150], [447, 166], [447, 182]]) { tree('zelkova', x, z, 0.6); const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 2.2, 0.5, 2.2, 0.03, { color: [0.76, 0.75, 0.72] }); B.box('plain', 0, 0.46, 0, 1.9, 0.04, 1.9, { color: [0.3, 0.24, 0.18] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.1, 0, y - 1, y + 0.55); }
+    for (const [x, z] of [[447, 150], [447, 166], [447, 182]]) { tree('zelkova', x, z, 0.6); const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 2.2, 0.5, 2.2, 0.03, { color: [0.76, 0.75, 0.72] }); B.box('plain', 0, 0.46, 0, 1.9, 0.04, 1.9, { color: [0.3, 0.24, 0.18] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.1, 0, y - 1, y + 0.55); navRect(x, z, 1.2, 1.2, 0, 2); }
     const cy = gy(452, 158); B.frame(452, cy + 0.05, 158, 0); B.cyl('steel', 0, 0, 0, 0.09, 0.07, 3.6, 12, { color: [0.24, 0.3, 0.28] }); B.cyl('metal', 0, 3.6, 0, 0.42, 0.42, 0.18, 20, { color: [0.24, 0.3, 0.28], cap: true }); B.frame(0, 0, 0, 0);
     for (const face of [0, Math.PI]) { const m = signMesh(0.76, 0.76, (g, W2, H2) => { g.fillStyle = '#f4f2ea'; g.beginPath(); g.arc(W2 / 2, H2 / 2, W2 * 0.48, 0, 7); g.fill(); g.strokeStyle = '#222'; g.lineWidth = 4; g.stroke(); g.lineWidth = 6; g.beginPath(); g.moveTo(W2 / 2, H2 / 2); g.lineTo(W2 / 2, H2 * 0.2); g.moveTo(W2 / 2, H2 / 2); g.lineTo(W2 * 0.72, H2 * 0.56); g.stroke(); }, 0.2, 128);
       m.position.set(452 + Math.sin(face) * 0.1, cy + 3.69, 158 + Math.cos(face) * 0.19); m.rotation.y = face; scene.add(m); }
@@ -372,12 +375,83 @@ export function buildDanchi(ctx) {
   for (const [x, z, yaw] of BUS) ctx.busStop(B, x, gy(x, z), z, yaw); B.frame(0, 0, 0, 0);
   // garbage stations beside the parking courts
   for (const pk of out.parkings) { const x = pk.cx + Math.cos(pk.yaw) * (pk.D / 2 + 2.2) - Math.sin(pk.yaw) * (pk.len / 2 - 3), z = pk.cz - Math.sin(pk.yaw) * (pk.D / 2 + 2.2) - Math.cos(pk.yaw) * (pk.len / 2 - 3);
-    if (clear(x, z, 1.2)) { ctx.garbagePoint(B, x, gy(x, z), z, pk.yaw, rng); B.frame(0, 0, 0, 0); } }
+    if (clear(x, z, 1.2)) { ctx.garbagePoint(B, x, gy(x, z), z, pk.yaw, rng); B.frame(0, 0, 0, 0); navRect(x, z, 1.6, 1.2, pk.yaw, 2); } }
   // pedestrian links through the blocks (緑道): between the park and the centre, and across the north-west block
-  pathLine([[440, 47.5], [440, 64], [458, 88], [462, 92]], 2.6);
-  pathLine([[415, 64], [412, 90]], 2.2);
-  pathLine([[520, 64], [520, 92], [499, 98]], 2.2);
-  pathLine([[408.5, 232], [416, 232]], 2.2); pathLine([[440, 262], [452, 268]], 2.2);
+  // (the park path meets the south street's footway; the link goes on from the far footway: people cross at the corner)
+  pathLine([[440, 47.5], [440, 51.6]], 2.6, { lamps: false }); pathLine([[440, 60.6], [440, 64], [458, 88], [462, 92]], 2.6);
+  pathLine([[415, 60.6], [415, 64], [412, 90]], 2.2);
+  pathLine([[520, 60.6], [520, 64], [520, 92], [499, 98]], 2.2);
+  pathLine([[404.6, 232], [416, 232]], 2.2); pathLine([[440, 262], [452, 268]], 2.2);
+
+  // ---- walkways at the buildings' own doors: along the front of the low-rise flats (ground-floor doors, round the
+  // gable to the foot of the outside stair) and under the ground-floor access corridor of the mid-rises
+  for (const b of blds) {
+    const c = Math.cos(b.r), sn = Math.sin(b.r), Wd = (lx, lz) => [b.x + lx * c + lz * sn, b.z - lx * sn + lz * c];
+    b.own = new Set();
+    if (b.fam === 'R' && b.walk) { const { w, d } = b.walk, f = d / 2; b.own.add(regions.length);
+      pathLine([Wd(-w / 2 - 0.4, f + 0.85), Wd(w / 2 + 1.95, f + 0.85), Wd(w / 2 + 1.95, f - 3.95), Wd(w / 2 + 0.7, f - 3.95)], 1.3, { lamps: false, edge: false, link: true });
+      // its entrance path starts from the middle of the walkway
+      for (const e of b.entrances) if (e.kind === 'gallery') { e.from = Wd(0, f + 0.85); const q = Wd(0, f + 1.95); e.p = [q[0], 0, q[1]]; } }
+    if (b.fam === 'M' && b.corridor) { const { w, d, X } = b.corridor, f = -d / 2 - 0.85, fz = -d / 2 - 6.2;
+      // along under the corridor, round the lobby's corner to meet its entrance path under the canopy
+      if (X - 4.5 > -w / 2 + 1) { b.own.add(regions.length); pathLine([Wd(-w / 2 - 0.3, f), Wd(X - 4.5, f), Wd(X - 4.5, fz), Wd(X - 1.6, fz)], 1.5, { lamps: false, edge: false, link: true }); }
+      if (w / 2 - (X + 4.5) > 1) { b.own.add(regions.length); pathLine([Wd(w / 2 + 0.3, f), Wd(X + 4.5, f), Wd(X + 4.5, fz), Wd(X + 1.6, fz)], 1.5, { lamps: false, edge: false, link: true }); } }
+  }
+
+  // ---- routing over the grid: footway cells from the road network, the carriageways blocked
+  for (let j = 0; j < NH; j++) for (let i = 0; i < NW; i++) { const k = j * NW + i; if (NAV[k] === 2 || NAV[k] === 1) continue;
+    const x = NX0 + i + 0.5, z = NZ0 + j + 0.5; if (!inDanchi(x, z, 14)) continue;
+    if (RN.roadAt(x, z)) NAV[k] = 2; else if (RN.walkY(x, z) !== null) NAV[k] = 3; }
+  const nearFoot = (x, z, r = 1.6) => { for (let dz = -r; dz <= r; dz += 0.8) for (let dx = -r; dx <= r; dx += 0.8) { const k = navI(x + dx, z + dz); if (k >= 0 && NAV[k] === 3) return true; } return false; };
+  for (let k = 0; k < NW * NH; k++) if (NAV[k] === 1 && REG[k] >= 0 && !regions[REG[k]].connected) {
+    const i = k % NW, j = (k - i) / NW; if (nearFoot(NX0 + i + 0.5, NZ0 + j + 0.5, 1.2)) regions[REG[k]].connected = true; }
+  // cheapest way from (sx, sz) to a footway or to paving of another region; returns the cells walked, or null
+  const COST = [1, 0.3, Infinity, 0.3, 2.6];
+  const route = (sx, sz, own, maxCost) => {                                     // own: region ids not to stop on
+    const s0 = navI(sx, sz); if (s0 < 0) return null;
+    const dist = new Float32Array(NW * NH).fill(Infinity), prev = new Int32Array(NW * NH).fill(-1), heap = [[0, s0]]; dist[s0] = 0;
+    const push = (d, k) => { heap.push([d, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    while (heap.length) {
+      const [d, k] = pop(); if (d > dist[k]) continue; if (d > maxCost) return null;
+      if (k !== s0 && (NAV[k] === 3 || NAV[k] === 1 && REG[k] >= 0 && !own.has(REG[k]))) { const cells = []; for (let q = k; q >= 0; q = prev[q]) cells.push(q); return cells.reverse(); }
+      const i = k % NW, j = (k - i) / NW;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= NW || jj >= NH) continue;
+        const kk = jj * NW + ii, cst = COST[NAV[kk]]; if (cst === Infinity) continue;
+        if (di && dj && (NAV[j * NW + ii] === 2 || NAV[jj * NW + i] === 2)) continue;                                  // no corner cutting past a wall
+        const nd = d + cst * (di && dj ? 1.414 : 1); if (nd < dist[kk]) { dist[kk] = nd; prev[kk] = k; push(nd, kk); } }
+    }
+    return null;
+  };
+  // the walked cells as a polyline: straight runs where nothing blocks the view between their ends
+  const clearLine = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.ceil(L / 0.4);
+    for (let q = 0; q <= n; q++) { const k = navI(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n); if (k < 0 || NAV[k] === 2 || NAV[k] === 4) return false; } return true; };
+  const toLine = (cells, from) => { const pts = [from, ...cells.slice(1).map(k => [NX0 + k % NW + 0.5, NZ0 + Math.floor(k / NW) + 0.5])], outp = [pts[0]];
+    let i = 0; while (i < pts.length - 1) { let j = pts.length - 1; while (j > i + 1 && !clearLine(pts[i], pts[j])) j--; outp.push(pts[j]); i = j; } return outp; };
+  const link = (x, z, own, w, maxCost, from = null) => { const cells = route(x, z, own, maxCost); if (!cells) return false;
+    const end = cells[cells.length - 1], pts = toLine(cells, [x, z]); if (from) pts.unshift(from);
+    // run on half a metre into what it joins, so the paving overlaps rather than butts
+    const a = pts[pts.length - 2], b = pts[pts.length - 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; pts[pts.length - 1] = [b[0] + (b[0] - a[0]) / L * 0.5, b[1] + (b[1] - a[1]) / L * 0.5];
+    if (REG[end] >= 0) regions[REG[end]].connected = true;
+    pathLine(pts, w, { lamps: Math.hypot(b[0] - x, b[1] - z) > 10, link: true }); regions[regions.length - 1].connected = true; return true; };
+  // designed paths and plazas that stop short of the network are joined to it (from each free end, or a plaza's middle)
+  for (let rid = 0; rid < regions.length; rid++) { const R = regions[rid]; if (R.link) continue;
+    const ends = R.kind === 'path' ? [R.pts[0], R.pts[R.pts.length - 1]] : R.connected ? [] : [R.pts[0]];
+    for (const [x, z] of ends) { if (nearFoot(x, z, R.kind === 'path' ? R.w / 2 + 0.9 : 1)) continue;
+      let near = false; for (let dz = -1.6; dz <= 1.6 && !near; dz += 0.8) for (let dx = -1.6; dx <= 1.6; dx += 0.8) { const k = navI(x + dx, z + dz); if (k >= 0 && NAV[k] === 1 && REG[k] !== rid && REG[k] >= 0) { near = true; break; } }
+      if (!near) link(x, z, new Set([rid]), Math.min(R.w || 2.2, 2.2), 40); }
+  }
+  // every door: a path from its landing to the nearest footway or path, lamps along it, planting beside the door, a
+  // bicycle shelter near stair halls and lobbies
+  for (const b of blds) for (const e of b.entrances || []) {
+    const [x, , z] = e.p; if (e.kind === 'shop') continue;
+    link(x - e.out[0] * 0.3, z - e.out[1] * 0.3, b.own || new Set(), e.kind === 'lobby' ? 2.8 : e.kind === 'gallery' ? 1.6 : 2.0, 220, e.from || null);
+    for (const sd of [-1, 1]) { const px = x + e.out[0] * 1.6 - e.out[1] * sd * 2.6, pz = z + e.out[1] * 1.6 + e.out[0] * sd * 2.6, k = navI(px, pz);
+      if (clear(px, pz, 0.2) && k >= 0 && NAV[k] === 0) for (let q = 0; q < 3; q++) out.bushes.push({ x: px + (rng() - 0.5) * 1.2, y: gy(px, pz) - 0.05, z: pz + (rng() - 0.5) * 1.2, s: 0.6 + rng() * 0.3, sx: 1, r: rng() * 6.28, c: new THREE.Color().setHSL(0.26 + rng() * 0.06, 0.45, 0.32 + rng() * 0.08) }); }
+    if (e.kind !== 'gallery' && rng() < 0.8) for (const sd of rng() < 0.5 ? [-1, 1] : [1, -1]) { const px = x + e.out[0] * 5 - e.out[1] * sd * 6, pz = z + e.out[1] * 5 + e.out[0] * sd * 6, yaw = Math.atan2(e.out[0], e.out[1]) + Math.PI / 2;
+      let free = clear(px, pz, 2.5); for (let q = -4; q <= 4 && free; q += 1) for (const t of [-1.6, 0, 1.6]) { const k = navI(px + Math.cos(yaw) * q + Math.sin(yaw) * t, pz - Math.sin(yaw) * q + Math.cos(yaw) * t); if (k < 0 || NAV[k] !== 0) { free = false; break; } }
+      if (free) { bikeShelter(px, pz, yaw, 6 + Math.floor(rng() * 4)); break; } }
+  }
   // edge planting: a hedge along the west loop road facing the paddies, trees along the district's rim
   for (let z = 70; z < 300; z += 9 + rng() * 5) { const x = 341.5 - rng() * 1.5; if (clear(x, z, 1)) out.trees.push({ kind: rng() < 0.6 ? 'leaf' : 'zelkova', x, z, scale: 0.7 + rng() * 0.2 }); }
   for (let t = 0; t < 1; t += 0.05) { const a = lerp(-0.3, 2.3, t), x = 476 + Math.cos(a) * 158, z = 170 + Math.sin(a) * 158; if (inDanchi(x, z, 14) && !inDanchi(x, z, 3) && clear(x, z, 2)) out.trees.push({ kind: rng() < 0.5 ? 'oak' : 'leaf', x, z, scale: 0.9 }); }
@@ -442,7 +516,7 @@ export function buildDanchi(ctx) {
       B.tri('pondWater', [x, wy, z], b1, a1, { colors: [deep, midC, midC] });
       B.tri('pondWater', a1, b1, b2, { colors: [midC, midC, shal] }); B.tri('pondWater', a1, b2, a2, { colors: [midC, shal, shal] });
       B.beam('stone', [p[0], gy(p[0], p[1]) - 0.1, p[1]], [q[0], gy(q[0], q[1]) - 0.1, q[1]], 0.55, 0.32, { color: [0.62, 0.6, 0.56] }); }
-    paint(2, x - a - 2, z - b - 2, x + a + 2, z + b + 2, (px, pz) => ((px - x) / (a + 0.8)) ** 2 + ((pz - z) / (b + 0.8)) ** 2 < 1 ? 1 : 0);
+    pave(x - a - 2, z - b - 2, x + a + 2, z + b + 2, (px, pz) => ((px - x) / (a * 1.2 + 0.5)) ** 2 + ((pz - z) / (b * 1.2 + 0.5)) ** 2 < 1 ? 1 : 0);
     for (let k = 0; k < 8; k++) { const t = rng() * Math.PI * 2; out.bushes.push({ x: x + Math.cos(t) * (a + 1.2), y: y - 0.05, z: z + Math.sin(t) * (b + 1.2), s: 0.7 + rng() * 0.4, sx: 1, r: rng() * 6, c: new THREE.Color().setHSL(0.27, 0.45, 0.3) }); }
     occRect(x, z, a, b, 0, 1); addCircle(x, z, Math.min(a, b)); }
   function toilet(x, z, yaw) { const y = gy(x, z); B.frame(x, y, z, yaw);

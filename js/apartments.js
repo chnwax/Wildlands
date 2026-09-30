@@ -28,7 +28,17 @@ export const PALETTES = {
   white:  { wall: [0.92, 0.92, 0.9], parapet: [0.94, 0.94, 0.92], trim: [0.7, 0.72, 0.74], accent: [0.2, 0.24, 0.28], base: [0.6, 0.42, 0.36] },
   brick:  { wall: [0.72, 0.52, 0.42], parapet: [0.9, 0.88, 0.84], trim: [0.86, 0.84, 0.8], accent: [0.9, 0.88, 0.84], base: [0.46, 0.34, 0.3] },
   mocha:  { wall: [0.7, 0.62, 0.54], parapet: [0.86, 0.84, 0.8], trim: [0.28, 0.28, 0.3], accent: [0.9, 0.86, 0.78], base: [0.4, 0.36, 0.34] },
+  blue:   { wall: [0.82, 0.84, 0.84], parapet: [0.9, 0.9, 0.88], trim: [0.72, 0.74, 0.76], accent: [0.3, 0.45, 0.62], base: [0.42, 0.46, 0.52] },
+  terra:  { wall: [0.86, 0.8, 0.7], parapet: [0.9, 0.87, 0.8], trim: [0.76, 0.72, 0.66], accent: [0.66, 0.36, 0.26], base: [0.5, 0.36, 0.3] },
 };
+// panel colour for the vertical accent strips and gable graphics: the accent, or where that is pale, the base
+const strong = pal => (pal.accent[0] + pal.accent[1] + pal.accent[2] > 2.1 ? pal.base : pal.accent);
+const mix3 = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+
+// facade kit (in a wall frame, +z out of the wall): slab-edge bands at the floor lines, proud tiled panels, so large
+// walls read at a distance as storeys and bays rather than a blank box
+function floorBands(B, x0, x1, ys, color, dz = 0.07) { if (x1 - x0 < 0.3) return; for (const y of ys) B.box('concrete', (x0 + x1) / 2, y - 0.09, dz / 2, x1 - x0, 0.18, dz, { color }); }
+function panel(B, x0, x1, y0, y1, color, dz = 0.06) { if (x1 - x0 < 0.2 || y1 - y0 < 0.2) return; B.bbox('tiles', (x0 + x1) / 2, y0, dz / 2, x1 - x0, y1 - y0, dz, 0.012, { color, uv: 2.5 }); }
 
 // a sign plate (canvas) on a face: text lines centred
 function plate(B, lx, ly, lz, face, w, h, draw, glow = 0.1, px = 256) {
@@ -109,7 +119,8 @@ export function walkupSlab(B, s, rng, ex) {
     gable.push({ x0: d / 2 - 2.6, x1: d / 2 - 1.6, y0: fy + 1.0, y1: fy + 2.0, d: 0.14 });
   }
   const mir = hs => hs.map(h => ({ ...h, x0: -h.x1, x1: -h.x0 }));                                                   // (+x gable runs front-to-back reversed)
-  boxWalls(B, 0, w, d, y0, H + 0.7, [['tiles', wall, 2.5]], fi => fi === 0 ? front : fi === 1 ? back : fi === 2 ? mir(gable) : gable, mul(wall, 0.95));
+  boxWalls(B, 0, w, d, y0, H + 0.7, [['tiles', mix3(wall, pal.base, 0.35), 2.5, y0 + fh - 0.1], ['tiles', wall, 2.5]], fi => fi === 0 ? front : fi === 1 ? back : fi === 2 ? mir(gable) : gable, mul(wall, 0.95));
+  const towerC = mix3(wall, strong(pal), 0.28), floorsY = []; for (let f = 1; f < floors; f++) floorsY.push(y0 + f * fh);
   // front: windows, balconies (the ground floor has garden terraces), AC units, laundry
   inFrame(B, [0, 0, d / 2], 0, () => {
     for (const h of front) windowUnit(B, h, { rng, frame: [0.78, 0.8, 0.82], type: 'slide', sill: false, shutterBox: h.kind === 'room' && rng() < 0.35 });
@@ -124,7 +135,11 @@ export function walkupSlab(B, s, rng, ex) {
   });
   // back: service windows, meter boxes, and a stair tower at every core with its entrance
   inFrame(B, [0, 0, -d / 2], Math.PI, () => {
-    for (const h of back) windowUnit(B, h, { rng, frame: [0.78, 0.8, 0.82], grille: h.kind === 'kitchen', frosted: h.kind === 'bath' || rng() < 0.4, type: h.kind === 'bath' ? 'fixed' : 'slide' });
+    for (const h of back) windowUnit(B, h, { rng, frame: [0.78, 0.8, 0.82], grille: h.kind === 'kitchen', frosted: h.kind === 'bath' || rng() < 0.4, type: h.kind === 'bath' ? 'fixed' : 'slide', hood: h.kind === 'kitchen' ? mul(pal.trim, 0.9) : null });
+    // slab edges along the back between the stair towers, a downpipe beside each tower
+    { const xs = cores.map(c => -c).sort((a, b) => a - b); let xa = -w / 2;
+      for (const X of xs) { floorBands(B, xa, X - 1.35, floorsY, pal.trim); xa = X + 1.35; } floorBands(B, xa, w / 2, floorsY, pal.trim);
+      for (const X of xs) downpipe(B, [X + 1.6, H + 0.3, 0.08], [X + 1.6, 0, 0.08], 0, [0.72, 0.72, 0.7]); }
     for (const c of cores) {
       const X = -c, tw = 2.7, td = 1.5, top = H + 2.4;
       // tower walls (its back face is open at the half landings)
@@ -135,7 +150,7 @@ export function walkupSlab(B, s, rng, ex) {
         B.frame(...B.P([0, 0, 0]), B.F.r);
         // face with openings
         const Fr = B.F;
-        const wf = (x0, x1, yb, yt) => B.quad('tiles', [x0, yb, 0], [x1, yb, 0], [x1, yt, 0], [x0, yt, 0], { color: mul(wall, 1.02), uvs: [[x0 / 2.5, yb / 2.5], [x1 / 2.5, yb / 2.5], [x1 / 2.5, yt / 2.5], [x0 / 2.5, yt / 2.5]] });
+        const wf = (x0, x1, yb, yt) => B.quad('tiles', [x0, yb, 0], [x1, yb, 0], [x1, yt, 0], [x0, yt, 0], { color: towerC, uvs: [[x0 / 2.5, yb / 2.5], [x1 / 2.5, yb / 2.5], [x1 / 2.5, yt / 2.5], [x0 / 2.5, yt / 2.5]] });
         let yb = 0;
         for (const h of hl) { if (h.y0 > yb) { wf(-tw / 2, tw / 2, yb, h.y0); } wf(-tw / 2, h.x0, h.y0, h.y1); wf(h.x1, tw / 2, h.y0, h.y1); yb = h.y1; }
         wf(-tw / 2, tw / 2, yb, top);
@@ -155,14 +170,21 @@ export function walkupSlab(B, s, rng, ex) {
         out.entrances.push({ p: B.P([0, 0, 2.2]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'stair' });
       });
       // the tower's side walls and roof (it stands td proud of the back wall)
-      for (const sx of [-1, 1]) inFrame(B, [X + sx * tw / 2, 0, td / 2], sx * Math.PI / 2, () => B.quad('tiles', [-td / 2, 0, 0], [td / 2, 0, 0], [td / 2, top, 0], [-td / 2, top, 0], { color: mul(wall, 0.96), uv: 2.5 }));
+      for (const sx of [-1, 1]) inFrame(B, [X + sx * tw / 2, 0, td / 2], sx * Math.PI / 2, () => B.quad('tiles', [-td / 2, 0, 0], [td / 2, 0, 0], [td / 2, top, 0], [-td / 2, top, 0], { color: mul(towerC, 0.96), uv: 2.5 }));
       B.bbox('concrete', X, top, td / 2 - 0.05, tw + 0.2, 0.14, td + 0.3, 0.015, { color: pal.trim });
+      B.bbox('concrete', X, top - 0.55, td + 0.02, tw + 0.04, 0.5, 0.06, 0.01, { color: strong(pal) });                      // coloured band at the tower head
       for (let f = 1; f < floors; f++) meterBox(B, X + (rng() < 0.5 ? -1 : 1) * 2.1, y0 + f * fh + 1.2, 'power');
     }
   });
-  // gables: small windows, the block number high up on the east end
-  inFrame(B, [w / 2, 0, 0], Math.PI / 2, () => { for (const h of mir(gable)) windowUnit(B, h, { rng, frame: [0.78, 0.8, 0.82], type: 'slide' }); blockNumber(B, 0.8, H - 3.6, 0.03, 0, no); });
-  inFrame(B, [-w / 2, 0, 0], -Math.PI / 2, () => { for (const h of gable) windowUnit(B, h, { rng, frame: [0.78, 0.8, 0.82], type: 'slide' }); });
+  // gables: the estate's graphic painted on the blank part (stepped stripes or storey bands in the accent), the block
+  // number high on the east end
+  const graphic = no % 3, gA = strong(pal), gB = mix3(gA, [1, 1, 1], 0.45), gC = mul(gA, 0.72);
+  const gableArt = (xa, xb) => { const span = xb - xa;
+    if (graphic === 0) [[0, 0.62, gC], [0.24, 0.8, gA], [0.48, 1, gB]].forEach(([t, k, c]) => panel(B, xa + span * t, xa + span * (t + 0.2), y0 + fh * 0.5, y0 + fh * 0.5 + (H - y0 - fh) * k, c, 0.04));
+    else if (graphic === 1) for (let f = 0; f < floors; f += 2) panel(B, xa, xb, y0 + f * fh + 0.35, y0 + (f + 1) * fh - 0.35, f % 4 === 0 ? gA : gB, 0.04);
+    else { panel(B, xa, xb, H - fh * 1.6, H - 0.3, gA, 0.04); panel(B, xa, xa + 1.3, y0 + 0.4, H - fh * 1.6, gC, 0.04); panel(B, xa + 1.6, xa + 2.1, y0 + 0.4, H - fh * 1.6, gB, 0.04); } };
+  inFrame(B, [w / 2, 0, 0], Math.PI / 2, () => { for (const h of mir(gable)) windowUnit(B, h, { rng, frame: [0.78, 0.8, 0.82], type: 'slide' }); gableArt(-d / 2 + 3.2, d / 2 - 0.7); blockNumber(B, 0.8, H - 3.6, 0.07, 0, no); });
+  inFrame(B, [-w / 2, 0, 0], -Math.PI / 2, () => { for (const h of gable) windowUnit(B, h, { rng, frame: [0.78, 0.8, 0.82], type: 'slide' }); gableArt(-d / 2 + 0.7, d / 2 - 3.2); });
   const roofY = flatRoof(B, { w, d, y: H, para: 0.7, color: wall, wallMat: 'tiles', coping: pal.trim });
   B.bbox('metal', cores[0], roofY, -d / 4, 2.4, 1.9, 2.4, 0.03, { color: [0.86, 0.86, 0.83] });                            // water tank
   for (let i = 0; i < Math.min(3, cores.length); i++) antenna(B, cores[i] + 1.5, roofY, 0);
@@ -186,24 +208,34 @@ export function pointTower(B, s, rng, ex) {
     for (const u of [-1, 1]) { const cx = u * w / 4;
       front.push({ x0: cx - 3.3, x1: cx - 0.6, y0: fy + 0.05, y1: fy + 2.1, d: 0.18 }, { x0: cx + 0.2, x1: cx + 2.6, y0: fy + 0.05, y1: fy + 2.1, d: 0.18 }); }
     side.push({ x0: d / 2 - WR + 0.5, x1: d / 2 - 0.6, y0: fy + 0.05, y1: fy + 2.1, d: 0.18 }, { x0: -d / 2 + 1.2, x1: -d / 2 + 2.9, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 }, { x0: -1.6, x1: 0.2, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 });
-    for (const u of [-1, 1]) back.push({ x0: u * 6.6 - 0.8, x1: u * 6.6 + 0.8, y0: fy + 1.0, y1: fy + 2.0, d: 0.14, frosted: true });
+    for (const u of [-1, 1]) back.push({ x0: u * 6.4 - 0.75, x1: u * 6.4 + 0.75, y0: fy + 1.0, y1: fy + 2.0, d: 0.14, frosted: true },
+      { x0: u * 4.3 - 0.55, x1: u * 4.3 + 0.55, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 });
   }
-  const bands = [['tiles', pal.base, 2.5, y0 + fh], ['tiles', wall, 2.5]];
+  const crown = mix3(wall, strong(pal), 0.3), floorsY = []; for (let f = 2; f < floors; f++) floorsY.push(y0 + f * fh);
+  const bands = [['tiles', pal.base, 2.5, y0 + 2 * fh], ['tiles', wall, 2.5, y0 + (floors - 1) * fh], ['tiles', crown, 2.5]];
   const mir = hs => hs.map(h => ({ ...h, x0: -h.x1, x1: -h.x0 }));
   boxWalls(B, 0, w, d, y0, H + 0.9, bands, fi => fi === 0 ? front : fi === 1 ? back : fi === 2 ? mir(side) : side, mul(wall, 0.95));
   // front and side balconies: one continuous slab across the front turning the corners
+  const parC = mix3(pal.parapet, strong(pal), 0.22);
   const balc = f => {
     const fy = y0 + f * fh, dp = 1.5;
-    inFrame(B, [0, 0, d / 2], 0, () => balconyRun(B, rng, -w / 2 - dp, w / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: pal.parapet, trim: pal.trim, parts: [0], acs: rng() < 0.6 ? [-w / 4 + 1, w / 4 + 1] : [], fh, laundry: 0.35, ground: f === 0 }));
-    for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, d / 2 - WR / 2], sx * Math.PI / 2, () => balconyRun(B, rng, sx > 0 ? -WR / 2 - dp : -WR / 2, sx > 0 ? WR / 2 : WR / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: pal.parapet, trim: pal.trim, fh, laundry: 0, ground: f === 0 }));
+    inFrame(B, [0, 0, d / 2], 0, () => balconyRun(B, rng, -w / 2 - dp, w / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: parC, trim: pal.trim, parts: [0], acs: rng() < 0.6 ? [-w / 4 + 1, w / 4 + 1] : [], fh, laundry: 0.35, ground: f === 0 }));
+    for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, d / 2 - WR / 2], sx * Math.PI / 2, () => balconyRun(B, rng, sx > 0 ? -WR / 2 - dp : -WR / 2, sx > 0 ? WR / 2 : WR / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: parC, trim: pal.trim, fh, laundry: 0, ground: f === 0 }));
   };
   for (let f = 0; f < floors; f++) balc(f);
   inFrame(B, [0, 0, d / 2], 0, () => { for (const h of front) windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], type: 'slide', sill: false }); });
-  for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, 0], sx * Math.PI / 2, () => { for (const h of sx > 0 ? mir(side) : side) windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], type: 'slide', sill: (h.y0 - y0) % fh > 0.5, shutterBox: (h.y0 - y0) % fh > 0.5 && rng() < 0.3 }); });
+  for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, 0], sx * Math.PI / 2, () => { for (const h of sx > 0 ? mir(side) : side) windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], type: 'slide', sill: (h.y0 - y0) % fh > 0.5, shutterBox: (h.y0 - y0) % fh > 0.5 && rng() < 0.3, hood: (h.y0 - y0) % fh > 0.5 ? mul(pal.trim, 0.85) : null });
+    // the back corner of each side carries a full-height accent panel; slab edges run from it to the balcony wrap
+    const m = x => sx > 0 ? -x : x;
+    panel(B, Math.min(m(-d / 2), m(-d / 2 + 0.95)), Math.max(m(-d / 2), m(-d / 2 + 0.95)), y0 + 2 * fh, H + 0.9, strong(pal));
+    floorBands(B, Math.min(m(-d / 2 + 0.95), m(d / 2 - WR - 0.2)), Math.max(m(-d / 2 + 0.95), m(d / 2 - WR - 0.2)), floorsY, pal.trim); });
   // the core: a shaft on the back rising over the roof (lift machine room), hall windows up it, glazed lobby below
   const cw = 6.4, cd = 2.6, ctop = H + 3.6;
   inFrame(B, [0, 0, -d / 2], Math.PI, () => {
-    for (const h of back) windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], frosted: true, type: 'slide' });
+    for (const h of back) windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], frosted: h.frosted, type: 'slide', hood: mul(pal.trim, 0.85) });
+    for (const sx of [-1, 1]) { panel(B, sx > 0 ? w / 2 - 0.95 : -w / 2, sx > 0 ? w / 2 : -w / 2 + 0.95, y0 + 2 * fh, H + 0.9, strong(pal));
+      floorBands(B, sx > 0 ? cw / 2 : -w / 2 + 0.95, sx > 0 ? w / 2 - 0.95 : -cw / 2, floorsY, pal.trim);
+      for (let f = 2; f < floors; f += 1) if (rng() < 0.5) acUnit(B, sx * 4.3, y0 + f * fh + 0.2, rng, { z: 0.3, onWall: true }); }
     B.bbox('tiles', 0, 0, cd / 2, cw, ctop, cd, 0.03, { color: mul(wall, 0.97), uv: 2.5, skip: 'ny' });
     for (let f = 1; f < floors; f++) { const fy = y0 + f * fh; B.quad('shopWindow', [-0.7, fy + 0.4, cd + 0.005], [0.7, fy + 0.4, cd + 0.005], [0.7, fy + 2.3, cd + 0.005], [-0.7, fy + 2.3, cd + 0.005], { color: [0.9, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
       B.box('alu', 0, fy + 0.35, cd + 0.02, 1.5, 0.06, 0.06, { color: pal.trim }); B.box('alu', 0, fy + 2.3, cd + 0.02, 1.5, 0.06, 0.06, { color: pal.trim }); }
@@ -249,8 +281,20 @@ export function mansion(B, s, rng, ex) {
       back.push({ x0: X - 0.5, x1: X + 0.5, y0: fy + 0.02, y1: fy + 2.12, d: 0.14, door: true }, { x0: X + 0.9, x1: X + 2.1, y0: fy + 1.05, y1: fy + 2.0, d: 0.14 });
     }
   }
-  const gableH = [];
-  boxWalls(B, 0, w, d, y0, H + 0.9, [['tiles', wall, 2.5]], fi => fi === 0 ? front : fi === 1 ? back.filter(h => !h.door || true) : gableH, mul(wall, 0.95));
+  // gables: a bedroom window at the front (and at the back where no stair stands) on each floor either side of a
+  // full-height accent panel. (+x gable: local x runs toward the back; -x gable: toward the front, its back 4.5 m under
+  // the stair tower)
+  const gP = [], gM = [], gFloors = [];
+  for (let f = podium ? 0 : 1; f < floors; f++) { const fy = y0 + f * fh; gFloors.push(fy);
+    gP.push({ x0: -d / 2 + 1.1, x1: -d / 2 + 2.3, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 }, { x0: d / 2 - 2.3, x1: d / 2 - 1.1, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 });
+    gM.push({ x0: d / 2 - 2.3, x1: d / 2 - 1.1, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 }); }
+  const bodyBands = podium ? [['tiles', wall, 2.5]] : [['tiles', mix3(wall, pal.base, 0.45), 2.5, y0 + fh - 0.1], ['tiles', wall, 2.5]];
+  boxWalls(B, 0, w, d, y0, H + 0.9, bodyBands, fi => fi === 0 ? front : fi === 1 ? back.filter(h => !h.door || true) : fi === 2 ? gP : gM, mul(wall, 0.95));
+  for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, 0], sx * Math.PI / 2, () => {
+    for (const h of sx > 0 ? gP : gM) windowUnit(B, h, { rng, frame: [0.3, 0.3, 0.32], type: 'slide', hood: mul(pal.trim, 0.9) });
+    panel(B, sx > 0 ? -1.1 : -1.0, sx > 0 ? 1.1 : 1.2, y0 + (podium ? 0.2 : fh), H + 0.9, strong(pal));
+    floorBands(B, sx > 0 ? -d / 2 + 0.2 : -d / 2 + 4.6, sx > 0 ? -1.1 : -1.0, gFloors, pal.trim); floorBands(B, sx > 0 ? 1.1 : 1.2, d / 2 - 0.2, gFloors, pal.trim);
+  });
   // front: balconies whose fronts alternate glass and tiled panels in vertical stripes, AC units, partitions
   inFrame(B, [0, 0, d / 2], 0, () => {
     for (const h of front) windowUnit(B, h, { rng, frame: [0.3, 0.3, 0.32], type: 'slide', sill: false });
@@ -319,7 +363,7 @@ export function mansion(B, s, rng, ex) {
   const roofY = flatRoof(B, { w, d, y: H, para: 0.9, color: wall, wallMat: 'tiles', coping: pal.trim });
   for (let i = 0; i < 3; i++) acUnit(B, -w / 3 + i * 2.2, roofY, rng, { pipeTo: roofY + 0.4 });
   ex.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2 + 0.2, hz: d / 2 + 1.8, r, h: H + 1 });
-  out.footprint = [[-w / 2 - 3, -d / 2 - 4.6], [w / 2 + 0.3, d / 2 + 2]]; out.H = H;
+  out.footprint = [[-w / 2 - 3, -d / 2 - 4.6], [w / 2 + 0.3, d / 2 + 2]]; out.H = H; if (!podium) out.corridor = { w, d, X: liftX };
   for (const e of out.lamps) lampPoints.push(e);
   B.frame(0, 0, 0, 0);
   return out;
@@ -365,6 +409,21 @@ export function centreBlock(B, s, rng, ex) {
   });
   front(wa, [wa / 2, 0, 0], 0);
   front(wb, [0, 0, -wb / 2], -Math.PI / 2);
+  // residents' lobbies for the flats above, in the podium's inner faces: glazed doors, a canopy on columns, the
+  // building's name, mailboxes and a light inside
+  const lobby = (place, faceR, label) => inFrame(B, place, faceR, () => {
+    const lob = { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] }, fr = { color: [0.3, 0.3, 0.32] };
+    B.quad('dark', [-1.75, 0.1, 0.02], [1.75, 0.1, 0.02], [1.75, 3.0, 0.02], [-1.75, 3.0, 0.02], { color: [0.1, 0.1, 0.1] });
+    B.quad('shopWindow', [-1.65, 0.12, 0.04], [1.65, 0.12, 0.04], [1.65, 2.92, 0.04], [-1.65, 2.92, 0.04], lob);
+    for (const xx of [-1.7, -0.55, 0.55, 1.7]) B.box('alu', xx, 0.1, 0.06, 0.07, 2.86, 0.07, fr);
+    B.box('alu', 0, 2.92, 0.06, 3.5, 0.07, 0.07, fr); B.box('alu', 0, 2.2, 0.06, 3.4, 0.05, 0.06, fr);
+    entranceCanopy(B, 0, 0.1, 4.4, 2.2, { cols: true, color: [0.3, 0.31, 0.33], lampAt: out.lamps, h: 3.15 });
+    plate(B, 0, 3.72, 0.03, 0, 3.8, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.48}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, W2 / 2, H2 * 0.55); }, 0.5, 256);
+    out.entrances.push({ p: B.P([0, 0, 3.2]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby' });
+  });
+  lobby([wa / 2 + 5, 0, -dp], Math.PI, 'センタービル桜川 東館');
+  lobby([dp, 0, -dp - (wb - dp) / 2 - 1.5], Math.PI / 2, 'センタービル桜川 西館');
+  out.boxes0 = [[[-3.0, -dp - 0.3], [wa, 3.0]], [[-3.0, -wb - 0.3], [dp + 0.3, -dp]]];
   B.frame(x, y, z, r);
   // wings above: set back from the street faces
   const cA = B.P([wa / 2 + 5, 0, -7]);
@@ -424,7 +483,7 @@ export function lowRise(B, s, rng, ex) {
       balconyRun(B, rng, cx - uw / 2 + 0.1, cx + uw / 2 - 0.1, y0, 1.0, { ground: true, trim: [0.55, 0.56, 0.56] }); }
   });
   ex.push({ t: 'box', p: B.P([0, 0, 0.3]), hx: w / 2 + 1.2, hz: d / 2 + 1.3, r, h: H + 1 });
-  out.footprint = [[-w / 2 - 1.3, -d / 2 - 2.2], [w / 2 + 1.3, d / 2 + 1.4]]; out.H = H;
+  out.footprint = [[-w / 2 - 1.3, -d / 2 - 2.2], [w / 2 + 1.3, d / 2 + 1.4]]; out.H = H; out.walk = { w, d };
   B.frame(0, 0, 0, 0);
   return out;
 }
