@@ -9,9 +9,9 @@
 //               balconies of glass and tiled panels on the front, lobby and optional pilotis parking
 //   centreBlock the neighbourhood centre: an L of shops under a canopy on a podium, with mansion wings above
 //   lowRise     2-storey terraced flats (アパート) with an outside stair and an access gallery, hip roof
-import { scene, clamp, lerp } from './core.js';
-import { lampPoints, signMesh, JP_FONT } from './townkit.js';
-import { inFrame, windowUnit, doorUnit, flatRoof, hipRoof, acUnit, meterBox, downpipe, boxWalls, antenna, reveals } from './building.js';
+import { THREE, scene, clamp, lerp } from './core.js';
+import { lampPoints, signMesh, JP_FONT, materials } from './townkit.js';
+import { inFrame, windowUnit, doorUnit, flatRoof, hipRoof, acUnit, meterBox, downpipe, boxWalls, antenna, reveals, wallFill } from './building.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
 const mul = (c, k) => c.map(v => v * k);
@@ -50,34 +50,62 @@ function blockNumber(B, lx, ly, lz, face, n, color = '#5d5750') {
     g.font = `bold ${H2 * 0.6}px Arial`; g.fillText(String(n), W2 / 2, H2 * 0.4); g.font = `bold ${H2 * 0.2}px ${JP_FONT}`; g.fillText('号棟', W2 / 2, H2 * 0.84); }, 0.05);
   m.material.transparent = true; m.material.alphaTest = 0.3;
 }
+// one straight guard between two points of the current frame (ax, az) -> (bx, bz) on a floor at fy, its outer face to
+// the left of the direction of travel (so a run walked wall -> front -> along -> front -> wall faces outward all round).
+// Every guard is 1.1 m high (建築基準法 手すり高さ), carries posts at both ends and at its bays, and runs 6 cm past its
+// ends so neighbouring guards meet at the corners instead of leaving a notch.
+//   solid  tiled concrete parapet with a coping and drip line       glass  laminated glass in an aluminium frame
+//   rail   steel railing: frosted lower panel, balusters, handrail  fence  a low garden fence (0.95 m) of posts and rails
+function guard(B, kind, ax, az, bx, bz, fy, { color = [0.9, 0.88, 0.84], trim = [0.7, 0.72, 0.74], ext = 0.06 } = {}) {
+  const L0 = Math.hypot(bx - ax, bz - az); if (L0 < 0.05) return;
+  const ux = (bx - ax) / L0, uz = (bz - az) / L0, L = L0 + 2 * ext;
+  inFrame(B, [ax - ux * ext, 0, az - uz * ext], Math.atan2(-uz, ux), () => {
+    const cx = L / 2, post = x => B.bbox('alu', x, fy + 0.02, 0, 0.05, 1.06, 0.05, 0.006, { color: trim });
+    if (kind === 'solid') {
+      B.bbox('tiles', cx, fy + 0.02, 0, L, 1.03, 0.12, 0.012, { color, uv: 2.5 });
+      B.bbox('concrete', cx, fy + 1.05, 0, L + 0.02, 0.05, 0.16, 0.01, { color: trim });
+      B.box('plain', cx, fy + 0.02, 0.062, L, 0.12, 0.004, { color: mul(color, 0.8) });                                // drip line
+    } else if (kind === 'glass') {
+      B.quad('plastic', [0, fy + 0.1, 0.012], [L, fy + 0.1, 0.012], [L, fy + 1.02, 0.012], [0, fy + 1.02, 0.012], { color: [0.62, 0.72, 0.76] });
+      B.quad('plastic', [L, fy + 0.1, -0.012], [0, fy + 0.1, -0.012], [0, fy + 1.02, -0.012], [L, fy + 1.02, -0.012], { color: [0.58, 0.66, 0.7] });
+      B.bbox('alu', cx, fy + 1.02, 0, L, 0.08, 0.09, 0.008, { color: trim });                                         // handrail cap
+      B.bbox('alu', cx, fy + 0.03, 0, L, 0.07, 0.06, 0.006, { color: trim });                                         // shoe on the slab
+      const n = Math.max(1, Math.round(L0 / 1.2)); for (let k = 0; k <= n; k++) post(ext + L0 * k / n);
+    } else if (kind === 'rail') {
+      B.quad('plastic', [0, fy + 0.1, 0.004], [L, fy + 0.1, 0.004], [L, fy + 0.68, 0.004], [0, fy + 0.68, 0.004], { color: [0.84, 0.86, 0.86] });
+      B.quad('plastic', [L, fy + 0.1, -0.004], [0, fy + 0.1, -0.004], [0, fy + 0.68, -0.004], [L, fy + 0.68, -0.004], { color: [0.8, 0.82, 0.82] });
+      B.bbox('alu', cx, fy + 1.04, 0, L, 0.06, 0.07, 0.008, { color: trim });
+      B.box('alu', cx, fy + 0.66, 0, L, 0.04, 0.035, { color: trim });
+      B.box('alu', cx, fy + 0.05, 0, L, 0.05, 0.035, { color: trim });
+      B.detail(1, () => { for (let x = 0.12; x < L - 0.06; x += 0.12) B.box('alu', x, fy + 0.7, 0, 0.02, 0.34, 0.02, { color: trim }); });
+      const n = Math.max(1, Math.round(L0 / 1.8)); for (let k = 0; k <= n; k++) post(ext + L0 * k / n);
+    } else { // fence
+      const n = Math.max(1, Math.round(L0 / 1.5));
+      B.detail(1, () => { for (let k = 0; k <= n; k++) B.box('alu', ext + L0 * k / n, fy - 0.33, 0, 0.045, 1.26, 0.045, { color: trim });
+        B.box('alu', cx, fy + 0.86, 0, L, 0.045, 0.045, { color: trim }); B.box('alu', cx, fy + 0.1, 0, L, 0.035, 0.035, { color: trim });
+        for (let x = 0.15; x < L; x += 0.15) B.box('alu', x, fy + 0.1, 0, 0.018, 0.76, 0.018, { color: trim }); });
+    }
+  });
+}
 // balcony run along the current (wall) frame: x0..x1, floor level fy, depth dp; kind 'solid' | 'rail' | 'glass';
-// partitions at `parts`; laundry and AC units on some
-function balconyRun(B, rng, x0, x1, fy, dp, { kind = 'solid', color, trim, parts = [], acs = [], laundry = 0.3, fh = 2.8, ground = false }) {
+// partitions at `parts`; laundry and AC units on some. ends [left, right]: close that end with a return guard back to
+// the wall (off where a fin, a wall or another run already closes it)
+function balconyRun(B, rng, x0, x1, fy, dp, { kind = 'solid', color, trim, parts = [], acs = [], laundry = 0.3, fh = 2.8, ground = false, ends = [true, true], lift = 0 }) {
   const len = x1 - x0, cx = (x0 + x1) / 2;
   if (!ground) B.bbox('concrete', cx, fy - 0.17, dp / 2, len, 0.19, dp, 0.015, { color: [0.72, 0.71, 0.69] });           // slab with its edge
-  if (ground) { // a garden terrace instead: paving and a low fence with a hedge behind
-    B.box('pavement', cx, fy - 0.33, dp / 2 + 0.6, len, 0.05, dp + 1.2, { color: [0.82, 0.8, 0.76] });
-    B.detail(1, () => { for (let x = x0; x <= x1 + 1e-3; x += 1.5) B.box('alu', Math.min(x, x1), fy - 0.33, dp + 1.15, 0.04, 0.95, 0.04, { color: trim });
-      B.box('alu', cx, fy + 0.55, dp + 1.15, len, 0.04, 0.04, { color: trim }); B.box('alu', cx, fy + 0.1, dp + 1.15, len, 0.03, 0.03, { color: trim }); });
+  if (ground) { // a garden terrace instead: paving, a low fence round it and between the flats' gardens
+    const fz = dp + 1.15;
+    B.box('pavement', cx, fy - 0.33 + lift, dp / 2 + 0.6, len, 0.05, dp + 1.2, { color: [0.82, 0.8, 0.76] });
+    guard(B, 'fence', x0, fz, x1, fz, fy, { trim, ext: 0 });
+    if (ends[0]) guard(B, 'fence', x0, 0.05, x0, fz, fy, { trim, ext: 0 });
+    if (ends[1]) guard(B, 'fence', x1, fz, x1, 0.05, fy, { trim, ext: 0 });
+    for (const px of parts) guard(B, 'fence', px, 0.05, px, fz, fy, { trim, ext: 0 });
     return;
   }
-  const pz = dp - 0.06;
-  if (kind === 'solid') {
-    B.bbox('tiles', cx, fy + 0.02, pz, len, 1.05, 0.12, 0.012, { color, uv: 2.5 });
-    B.bbox('concrete', cx, fy + 1.07, pz, len + 0.02, 0.05, 0.16, 0.01, { color: trim });
-    B.box('plain', cx, fy + 0.02, pz + 0.062, len, 0.12, 0.004, { color: mul(color, 0.8) });                            // drip line
-  } else if (kind === 'glass') {
-    B.quad('plastic', [x0, fy + 0.1, pz + 0.03], [x1, fy + 0.1, pz + 0.03], [x1, fy + 1.02, pz + 0.03], [x0, fy + 1.02, pz + 0.03], { color: [0.62, 0.72, 0.76] });
-    B.quad('plastic', [x1, fy + 0.1, pz + 0.025], [x0, fy + 0.1, pz + 0.025], [x0, fy + 1.02, pz + 0.025], [x1, fy + 1.02, pz + 0.025], { color: [0.58, 0.66, 0.7] });
-    B.bbox('alu', cx, fy + 1.02, pz + 0.03, len, 0.06, 0.08, 0.008, { color: trim });
-    B.bbox('alu', cx, fy + 0.04, pz + 0.03, len, 0.06, 0.06, 0.006, { color: trim });
-    B.detail(1, () => { for (let x = x0 + 1.2; x < x1 - 0.3; x += 1.2) B.box('alu', x, fy + 0.04, pz + 0.03, 0.04, 1.0, 0.05, { color: trim }); });
-  } else { // steel railing with a frosted lower panel
-    B.quad('plastic', [x0, fy + 0.12, pz], [x1, fy + 0.12, pz], [x1, fy + 0.72, pz], [x0, fy + 0.72, pz], { color: [0.84, 0.86, 0.86] });
-    B.quad('plastic', [x1, fy + 0.12, pz - 0.005], [x0, fy + 0.12, pz - 0.005], [x0, fy + 0.72, pz - 0.005], [x1, fy + 0.72, pz - 0.005], { color: [0.8, 0.82, 0.82] });
-    B.bbox('alu', cx, fy + 1.0, pz, len, 0.06, 0.07, 0.008, { color: trim });
-    B.detail(1, () => { for (let x = x0 + 0.12; x < x1; x += 0.12) B.box('alu', x, fy + 0.72, pz, 0.02, 0.28, 0.02, { color: trim }); });
-  }
+  const pz = dp - 0.06, g = { color, trim };
+  guard(B, kind, x0, pz, x1, pz, fy, { ...g, ext: 0 });
+  if (ends[0]) guard(B, kind, x0 + 0.06, 0.02, x0 + 0.06, pz, fy, g);
+  if (ends[1]) guard(B, kind, x1 - 0.06, pz, x1 - 0.06, 0.02, fy, g);
   for (const px of parts) B.bbox('plain', px, fy + 0.02, dp / 2, 0.05, fh - 0.35, dp - 0.1, 0.008, { color: [0.86, 0.85, 0.82] }); // fire-escape partitions
   for (const ax of acs) acUnit(B, ax, fy + 0.02, rng, { pipeTo: fy + fh - 0.5, z: 0.36 });
   if (rng() < laundry) B.detail(2, () => { // laundry poles between the partitions, something hung out
@@ -87,16 +115,181 @@ function balconyRun(B, rng, x0, x1, fy, dp, { kind = 'solid', color, trim, parts
   });
 }
 // ground-floor entrance canopy + steps + light, in the current wall frame (door centred at x, sill at y0)
-function entranceCanopy(B, x, y0, w, depth, { h = 2.65, color = [0.86, 0.85, 0.82], cols = false, lampAt = null } = {}) {
+function entranceCanopy(B, x, y0, w, depth, { h = 2.65, color = [0.86, 0.85, 0.82], cols = false, lampAt = null, steps = true } = {}) {
   B.bbox('concrete', x, y0 + h, depth / 2, w, 0.16, depth, 0.02, { color });
   B.box('plain', x, y0 + h + 0.16, depth / 2, w - 0.1, 0.02, depth - 0.1, { color: mul(color, 0.92) });
+  B.bbox('metal', x, y0 + h - 0.06, depth - 0.03, w + 0.02, 0.28, 0.06, 0.01, { color: mul(color, 0.8) });           // fascia
   if (cols) for (const sx of [-1, 1]) B.cyl('steel', x + sx * (w / 2 - 0.2), y0 - 0.05, depth - 0.25, 0.07, 0.07, h + 0.05, 10, { color: [0.62, 0.64, 0.66] });
-  B.box('lamp', x, y0 + h - 0.03, depth * 0.5, 0.5, 0.03, 0.5);
-  if (lampAt) lampAt.push({ p: B.P([x, y0 + h - 0.2, depth * 0.5]), s: 0.5 });
+  for (const k of depth > 1.8 ? [0.3, 0.7] : [0.5]) { B.cyl('lamp', x, y0 + h - 0.02, depth * k, 0.1, 0.1, 0.02, 12, { cap: true }); if (lampAt) lampAt.push({ p: B.P([x, y0 + h - 0.2, depth * k]), s: 0.5 }); }
+  if (!steps) return;
   // a landing level with the door sill and a step down to the path
   B.bbox('concrete', x, y0 - 0.45, 0.45, w - 0.2, 0.45, 0.9, 0.012, { color: [0.76, 0.75, 0.72] });
   B.bbox('concrete', x, y0 - 0.6, 1.1, w - 0.2, 0.45, 0.4, 0.012, { color: [0.74, 0.73, 0.7] });
 }
+
+// ---------------------------------------------------------------- entrance hardware
+// One texture atlas (1024 px square) holds the entrance hardware faces, so every intercom, mailbox bank, delivery
+// locker and notice board in the district batches into one material: regions [x, y, w, h] in canvas pixels.
+const ATL = { intercom: [0, 0, 256, 512], bell: [256, 0, 64, 128], card: [320, 0, 64, 128], cam: [384, 0, 256, 96], auto: [384, 96, 256, 64],
+  fire: [640, 0, 128, 128], notice: [768, 0, 256, 192], mail: [0, 512, 512, 512], locker: [512, 512, 256, 512], mat: [768, 512, 256, 128],
+  rules: [768, 640, 256, 192], keypad: [640, 160, 128, 192] };
+function entryMaterial() {
+  const M = materials(); if (M.entry) return M.entry;
+  const c = document.createElement('canvas'); c.width = c.height = 1024; const g = c.getContext('2d');
+  const R = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+  const T = (t, x, y, px, col, font = JP_FONT, wt = 'bold') => { g.fillStyle = col; g.font = `${wt} ${px}px ${font}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y); };
+  const steel = (x, y, w, h, a = '#c9cdd0', b = '#9ea3a8') => { const gr = g.createLinearGradient(x, y, x + w, y + h); gr.addColorStop(0, a); gr.addColorStop(0.5, b); gr.addColorStop(1, a); g.fillStyle = gr; g.fillRect(x, y, w, h);
+    g.globalAlpha = 0.07; for (let k = 0; k < h; k += 2) R(x, y + k, w, 1, k % 4 ? '#fff' : '#000'); g.globalAlpha = 1; };
+  const rr = (x, y, w, h, r, col) => { g.fillStyle = col; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fill(); };
+  // 集合玄関機: camera, speaker, display, ten-key pad with call and cancel, a key cylinder
+  { const [x, y, w, h] = ATL.intercom; steel(x, y, w, h); g.strokeStyle = '#7d8286'; g.lineWidth = 4; g.strokeRect(x + 2, y + 2, w - 4, h - 4);
+    rr(x + 98, y + 22, 60, 60, 30, '#1b1d20'); rr(x + 110, y + 34, 36, 36, 18, '#2c3a4a'); rr(x + 121, y + 45, 14, 14, 7, '#0b0d10'); R(x + 170, y + 40, 8, 8, '#3fdc6a');
+    for (let r = 0; r < 4; r++) for (let q = 0; q < 9; q++) rr(x + 64 + q * 15, y + 100 + r * 12, 6, 6, 3, '#34383c');
+    R(x + 34, y + 160, 188, 86, '#1d3440'); T('お部屋番号を', x + 128, y + 188, 20, '#8fe7ff'); T('押してください', x + 128, y + 218, 20, '#8fe7ff');
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].forEach((k, i) => { const kx = x + 44 + (i % 3) * 58, ky = y + 266 + Math.floor(i / 3) * 44;
+      rr(kx, ky, 50, 36, 6, '#e7e9ea'); rr(kx + 2, ky + 30, 46, 6, 3, '#b8bcbf'); T(k, kx + 25, ky + 17, 22, '#222', 'Arial'); });
+    rr(x + 44, y + 446, 108, 40, 6, '#2d6fb8'); T('呼出', x + 98, y + 466, 22, '#fff'); rr(x + 160, y + 446, 52, 40, 6, '#c8cbce'); T('取消', x + 186, y + 466, 16, '#333');
+    rr(x + 196, y + 110, 26, 26, 13, '#8a8f93'); R(x + 205, y + 116, 8, 14, '#3a3d40'); T('INTERCOM', x + 128, y + 500, 12, '#5d6266', 'Arial'); }
+  // a flat's own camera doorbell, and a card reader
+  { const [x, y, w, h] = ATL.bell; rr(x + 4, y + 4, w - 8, h - 8, 10, '#e9eae7'); rr(x + 20, y + 16, 24, 24, 12, '#1b1d20'); rr(x + 27, y + 23, 10, 10, 5, '#35506a');
+    for (let r = 0; r < 3; r++) for (let q = 0; q < 4; q++) rr(x + 18 + q * 8, y + 52 + r * 8, 4, 4, 2, '#8a8d8f'); rr(x + 14, y + 86, 36, 28, 8, '#c9ccce'); rr(x + 20, y + 92, 24, 16, 5, '#f4f4f2'); }
+  { const [x, y, w, h] = ATL.card; rr(x + 4, y + 4, w - 8, h - 8, 6, '#3a3e42'); rr(x + 10, y + 12, w - 20, 60, 4, '#50565c'); g.strokeStyle = '#d8dde0'; g.lineWidth = 3;
+    for (const r of [8, 14, 20]) { g.beginPath(); g.arc(x + 26, y + 42, r, -0.8, 0.8); g.stroke(); } R(x + 20, y + 84, 24, 8, '#3fdc6a'); T('かざす', x + 32, y + 108, 11, '#e8e8e8'); }
+  // signs: 防犯カメラ作動中, the auto-lock sticker, the extinguisher sign, the management board
+  { const [x, y, w, h] = ATL.cam; R(x, y, w, h, '#ffd400'); R(x + 4, y + 4, w - 8, h - 8, '#111'); R(x + 8, y + 8, w - 16, h - 16, '#ffd400');
+    g.fillStyle = '#111'; g.beginPath(); g.moveTo(x + 24, y + 34); g.lineTo(x + 64, y + 28); g.lineTo(x + 64, y + 52); g.lineTo(x + 24, y + 48); g.fill(); R(x + 64, y + 34, 10, 12, '#111');
+    T('防犯カメラ', x + 160, y + 34, 26, '#111'); T('作動中', x + 160, y + 66, 26, '#c00'); }
+  { const [x, y, w, h] = ATL.auto; R(x, y, w, h, '#dfe6ee'); rr(x + 4, y + 6, w - 8, h - 12, 8, '#1e5aa8'); T('オートロック', x + w / 2, y + 24, 20, '#fff'); T('AUTO LOCK · 自動ドア', x + w / 2, y + 45, 12, '#dfe9f6'); }
+  { const [x, y, w, h] = ATL.fire; R(x, y, w, h, '#c81e1e'); R(x + 6, y + 6, w - 12, h - 12, '#d8262a'); T('消火器', x + w / 2, y + 40, 30, '#fff'); T('FIRE', x + w / 2, y + 78, 20, '#fff', 'Arial'); T('EXTINGUISHER', x + w / 2, y + 100, 12, '#fff', 'Arial'); }
+  { const [x, y, w, h] = ATL.notice; R(x, y, w, h, '#6d5a42'); R(x + 8, y + 8, w - 16, h - 16, '#b99b6e');
+    for (const [px, py, pw, ph, col] of [[18, 16, 70, 92, '#fdfcf6'], [96, 20, 64, 48, '#fff4c8'], [168, 14, 70, 88, '#f6f9ff'], [96, 76, 64, 90, '#fdfcf6'], [20, 116, 66, 58, '#e8f4e2'], [168, 110, 70, 62, '#fdeeee']]) {
+      R(x + px, y + py, pw, ph, col); for (let k = 12; k < ph - 6; k += 7) R(x + px + 6, y + py + k, pw * (0.55 + ((k * 7) % 5) / 12), 2, '#9aa0a6'); R(x + px + 6, y + py + 5, pw - 12, 4, '#44546a'); rr(x + px + pw / 2 - 3, y + py - 2, 6, 6, 3, '#d33'); }
+    T('お知らせ', x + 128, y + 184, 12, '#f3ead8'); }
+  { const [x, y, w] = ATL.rules; R(x, y, w, 192, '#f6f4ee'); R(x, y, w, 40, '#2f4f6f'); T('桜川ニュータウン 管理組合', x + w / 2, y + 20, 17, '#fff');
+    for (let k = 0; k < 6; k++) { R(x + 18, y + 58 + k * 18, 8, 8, '#2f4f6f'); R(x + 34, y + 60 + k * 18, 150 + (k * 37) % 50, 4, '#6a6f75'); }
+    T('ゴミ出しは朝8時まで', x + w / 2, y + 176, 14, '#b02020'); }
+  // 集合ポスト: 4 x 5 doors (a bank takes as many as it needs), each with its room number, the slot, a dial lock
+  { const [x, y] = ATL.mail;
+    for (let r = 0; r < 5; r++) for (let q = 0; q < 4; q++) { const cx = x + q * 128, cy = y + r * 102.4;
+      steel(cx, cy, 128, 102, '#d9dcdd', '#b7bbbe'); g.strokeStyle = '#6d7276'; g.lineWidth = 3; g.strokeRect(cx + 1.5, cy + 1.5, 125, 99);
+      R(cx + 14, cy + 12, 100, 10, '#2a2c2e'); R(cx + 16, cy + 14, 96, 3, '#555');
+      R(cx + 12, cy + 36, 58, 22, '#fdfdfb'); T(`${5 - r}0${q + 1}`, cx + 41, cy + 47, 16, '#222', 'Arial');
+      rr(cx + 84, cy + 36, 30, 30, 15, '#50565c'); rr(cx + 90, cy + 42, 18, 18, 9, '#8d9398'); R(cx + 98, cy + 42, 2, 8, '#222'); R(cx + 12, cy + 76, 104, 3, '#9aa0a4'); } }
+  // 宅配ボックス: numbered locker doors round a touch panel
+  { const [x, y, w, h] = ATL.locker; R(x, y, w, h, '#5d7288'); let n = 0;
+    for (const [q, r, cw] of [[0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1], [0, 2, 1], [1, 2, 1], [0, 3, 2], [0, 4, 1], [1, 4, 1]]) { const cx = x + 8 + q * 120, cy = y + 8 + r * 100, W2 = cw * 120 - 8, H2 = 92;
+      if (cw === 2) { R(cx, cy, W2, H2, '#2b3440'); R(cx + 50, cy + 14, 130, 60, '#8fd3ff'); T('宅配ボックス', cx + 115, cy + 32, 18, '#12324a'); T('タッチしてください', cx + 115, cy + 58, 12, '#12324a'); rr(cx + 14, cy + 30, 22, 22, 4, '#e9e9e9'); continue; }
+      steel(cx, cy, W2, H2, '#c4ccd4', '#a2acb6'); R(cx + W2 - 26, cy + H2 / 2 - 16, 8, 32, '#3d4650'); rr(cx + 10, cy + 10, 26, 18, 3, '#f2f2ee'); T(String(++n), cx + 23, cy + 19, 13, '#222', 'Arial'); R(cx + 44, cy + 14, 6, 6, '#3fdc6a'); } }
+  { const [x, y, w, h] = ATL.mat; R(x, y, w, h, '#3a3c3e'); R(x + 10, y + 10, w - 20, h - 20, '#4a4d50'); g.globalAlpha = 0.25; for (let k = 14; k < w - 14; k += 6) R(x + k, y + 14, 2, h - 28, '#222'); g.globalAlpha = 1; }
+  { const [x, y, w, h] = ATL.keypad; steel(x, y, w, h); for (let i = 0; i < 12; i++) rr(x + 16 + (i % 3) * 34, y + 30 + Math.floor(i / 3) * 36, 28, 28, 5, '#e3e5e6'); rr(x + 40, y + 6, 48, 16, 4, '#1d3440'); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  M.entry = new THREE.MeshStandardMaterial({ map: t, vertexColors: true, roughness: 0.42, metalness: 0.25 });
+  return M.entry;
+}
+// a face of the atlas as a quad in the current frame: corners a (bottom-left) b c d; sub [u0, v0, u1, v1] picks a part
+function atlasQuad(B, key, a, b, c, d, sub = [0, 0, 1, 1]) {
+  entryMaterial(); const [x, y, w, h] = ATL[key], u = t => (x + w * t) / 1024, v = t => 1 - (y + h * (1 - t)) / 1024;
+  B.quad('entry', a, b, c, d, { uvs: [[u(sub[0]), v(sub[1])], [u(sub[2]), v(sub[1])], [u(sub[2]), v(sub[3])], [u(sub[0]), v(sub[3])]] });
+}
+// a panel on a wall (current frame: wall plane z = 0, +z out): a box dz deep with the atlas face on its front
+function wallPanel(B, key, cx, y0, w, h, dz, { sub, color = [0.72, 0.74, 0.76], mat = 'alu' } = {}) {
+  B.bbox(mat, cx, y0, dz / 2, w, h, dz, 0.004, { color });
+  atlasQuad(B, key, [cx - w / 2, y0, dz + 0.002], [cx + w / 2, y0, dz + 0.002], [cx + w / 2, y0 + h, dz + 0.002], [cx - w / 2, y0 + h, dz + 0.002], sub);
+}
+// a flat's door furniture beside its door (current frame on the wall, at x): the camera doorbell and a nameplate
+function doorFurniture(B, x, y0) {
+  B.detail(2, () => { wallPanel(B, 'bell', x, y0 + 1.25, 0.1, 0.2, 0.025, { color: [0.9, 0.9, 0.88], mat: 'plastic' });
+    B.bbox('plastic', x, y0 + 1.55, 0.012, 0.16, 0.08, 0.02, 0.004, { color: [0.95, 0.94, 0.9] }); B.box('dark', x, y0 + 1.575, 0.023, 0.1, 0.03, 0.002, { color: [0.25, 0.25, 0.26] }); });
+}
+// Recessed entrance porch in the current wall frame: the opening (w wide, floor at y0, head at yh) is cut in the wall at
+// z = 0 by the caller and the porch runs back to its doors at z = -depth. Stone-tiled floor with a mat, tiled walls, a
+// soffit with a downlight, a door screen (a pair of glazed doors with pulls and kick plates, or an automatic sliding
+// pair with its sensor) under a transom, the hall beyond; the entrance panel (intercom, card reader) on one wall by the
+// doors with the management board; the mail bank on the other with delivery lockers or a notice board; the security
+// camera and its sign, an extinguisher, a lamp either side of the mouth.
+function entrancePorch(B, rng, { w, y0, yh, depth, wall, frame = [0.3, 0.31, 0.33], floorC = [0.5, 0.48, 0.46], soffit = [0.9, 0.9, 0.88],
+  auto = false, mail = [2, 5], lockers = false, side = rng() < 0.5 ? -1 : 1, lampAt = null, noticeOut = false, back = 0.12 }) {
+  const hw = w / 2, D = depth, P = side, Q = -side;                                                                // P: panel wall, Q: mail wall
+  B.bbox('tiles', 0, y0 - 0.12, -D / 2, w, 0.12, D, 0.004, { color: floorC, uv: 0.9 });
+  B.box('concrete', 0, y0 - 0.001, -0.06, w, 0.012, 0.12, { color: [0.72, 0.71, 0.68] });                               // threshold
+  atlasQuad(B, 'mat', [-0.7, y0 + 0.004, -D + 1.2], [0.7, y0 + 0.004, -D + 1.2], [0.7, y0 + 0.004, -D + 0.35], [-0.7, y0 + 0.004, -D + 0.35]);
+  for (const e of [-1, 1]) B.poly('tiles', [[e * hw, y0, 0], [e * hw, y0, -D], [e * hw, yh, -D], [e * hw, yh, 0]], [-e, 0, 0], { color: mul(wall, 0.94), uv: 2.5 });
+  B.poly('plain', [[-hw, yh, 0], [hw, yh, 0], [hw, yh, -D], [-hw, yh, -D]], [0, -1, 0], { color: soffit });
+  B.cyl('lamp', 0, yh - 0.02, -D / 2, 0.11, 0.11, 0.02, 12, { cap: true }); if (lampAt) lampAt.push({ p: B.P([0, yh - 0.3, -D / 2]), s: 0.45 });
+  // the door screen
+  const dw = Math.min(w - 0.3, auto ? 2.0 : 1.8), dh = Math.min(2.25, yh - y0 - 0.35), zd = -D, fr = { color: frame };
+  B.poly('tiles', [[-hw, y0, zd], [-dw / 2, y0, zd], [-dw / 2, yh, zd], [-hw, yh, zd]], [0, 0, 1], { color: mul(wall, 0.9), uv: 2.5 });
+  B.poly('tiles', [[dw / 2, y0, zd], [hw, y0, zd], [hw, yh, zd], [dw / 2, yh, zd]], [0, 0, 1], { color: mul(wall, 0.9), uv: 2.5 });
+  B.quad('shopWindow', [-dw / 2, y0, zd - back], [dw / 2, y0, zd - back], [dw / 2, yh, zd - back], [-dw / 2, yh, zd - back], { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+  for (const e of [-1, 1]) B.bbox('alu', e * (dw / 2 - 0.04), y0, zd - 0.02, 0.08, yh - y0, 0.1, 0.006, fr);
+  B.bbox('alu', 0, y0 + dh, zd - 0.02, dw, 0.08, 0.1, 0.006, fr); B.bbox('alu', 0, yh - 0.06, zd - 0.02, dw, 0.06, 0.1, 0.006, fr);
+  const lw = (dw - 0.16) / 2;
+  for (const e of [-1, 1]) { const lx = e * (lw / 2 + 0.005), zl = zd - 0.03 + (auto && e > 0 ? -0.05 : 0);
+    for (const sx of [-1, 1]) B.box('alu', lx + sx * (lw / 2 - 0.035), y0 + 0.02, zl, 0.07, dh - 0.03, 0.05, fr);
+    B.box('alu', lx, y0 + 0.02, zl, lw, 0.2, 0.05, fr); B.box('alu', lx, y0 + dh - 0.08, zl, lw, 0.07, 0.05, fr);
+    if (!auto) { const hx = e * 0.1; B.cyl('steel', hx, y0 + 0.75, zl + 0.09, 0.016, 0.016, 0.7, 8, { color: [0.8, 0.82, 0.84], cap: true });
+      for (const yy of [0.8, 1.38]) B.box('steel', hx, y0 + yy, zl + 0.025, 0.02, 0.02, 0.07, { color: [0.8, 0.82, 0.84] }); } }
+  if (auto) { B.bbox('alu', 0, y0 + dh + 0.1, zd + 0.05, 0.5, 0.1, 0.1, 0.01, { color: [0.2, 0.2, 0.22] }); B.box('dark', 0, y0 + dh + 0.09, zd + 0.1, 0.12, 0.02, 0.02, { color: [0.6, 0.1, 0.1] }); }
+  atlasQuad(B, 'auto', [-0.36, y0 + 1.2, zd + 0.012], [0.36, y0 + 1.2, zd + 0.012], [0.36, y0 + 1.38, zd + 0.012], [-0.36, y0 + 1.38, zd + 0.012]);
+  // P wall: the entrance panel a step before the doors, the card reader beside it, the management board toward the mouth
+  inFrame(B, [P * hw, 0, 0], -P * Math.PI / 2, () => { const a = t => -P * t;                                   // a(t): t metres in from the mouth
+    wallPanel(B, 'intercom', a(D - 0.55), y0 + 1.0, 0.22, 0.44, 0.05, { color: [0.62, 0.64, 0.66] });
+    B.bbox('alu', a(D - 0.55), y0 + 1.46, 0.035, 0.26, 0.03, 0.07, 0.004, { color: [0.62, 0.64, 0.66] });
+    wallPanel(B, 'card', a(D - 0.25), y0 + 1.1, 0.08, 0.16, 0.03, { color: [0.3, 0.32, 0.34], mat: 'plastic' });
+    if (lockers && D >= 2.0) { const cl = a(0.62); B.bbox('metal', cl, y0 + 0.05, 0.25, 0.9, 1.8, 0.5, 0.01, { color: [0.36, 0.44, 0.52] });     // 宅配ボックス
+      atlasQuad(B, 'locker', [cl - 0.44, y0 + 0.08, 0.502], [cl + 0.44, y0 + 0.08, 0.502], [cl + 0.44, y0 + 1.82, 0.502], [cl - 0.44, y0 + 1.82, 0.502]); }
+    else if (D > 1.5) wallPanel(B, 'rules', a(Math.max(0.45, D - 1.3)), y0 + 1.2, 0.5, 0.375, 0.02, { color: [0.3, 0.3, 0.3] });
+    atlasQuad(B, 'cam', [a(0.18) - 0.18, yh - 0.42, 0.003], [a(0.18) + 0.18, yh - 0.42, 0.003], [a(0.18) + 0.18, yh - 0.285, 0.003], [a(0.18) - 0.18, yh - 0.285, 0.003]);
+  });
+  B.detail(1, () => { B.box('plain', P * (hw - 0.1), yh - 0.1, -0.3, 0.1, 0.1, 0.1, { color: [0.92, 0.92, 0.9] }); B.cyl('dark', P * (hw - 0.1), yh - 0.19, -0.3, 0.055, 0.055, 0.09, 10, { color: [0.12, 0.12, 0.14], cap: true }); });
+  // Q wall: the mail bank (a steel cabinet, its doors on the face), then delivery lockers or a notice board
+  inFrame(B, [Q * hw, 0, 0], -Q * Math.PI / 2, () => { const a = t => -Q * t;
+    const [mc, mr] = mail, bw = mc * 0.3, bh = mr * 0.24, mz = 0.34, t0 = Math.max(0.3, Math.min(D - 0.25 - bw, 0.45)), cm = a(t0 + bw / 2);
+    B.bbox('metal', cm, y0 + 0.36, mz / 2, bw + 0.06, bh + 0.08, mz, 0.01, { color: [0.7, 0.72, 0.73] });
+    atlasQuad(B, 'mail', [cm - bw / 2, y0 + 0.4, mz + 0.002], [cm + bw / 2, y0 + 0.4, mz + 0.002], [cm + bw / 2, y0 + 0.4 + bh, mz + 0.002], [cm - bw / 2, y0 + 0.4 + bh, mz + 0.002], [0, 1 - mr / 5, mc / 4, 1]);
+    const t1 = t0 + bw + 0.12;
+    if (D - t1 > 0.6) wallPanel(B, 'notice', a(t1 + 0.3), y0 + 1.25, 0.5, 0.375, 0.04, { color: [0.4, 0.34, 0.26], mat: 'wood' });
+    B.detail(1, () => { const e0 = a(0.17); B.bbox('metal', e0, y0 + 0.05, 0.12, 0.26, 0.62, 0.24, 0.01, { color: [0.78, 0.12, 0.12] });
+      atlasQuad(B, 'fire', [e0 - 0.1, y0 + 0.74, 0.004], [e0 + 0.1, y0 + 0.74, 0.004], [e0 + 0.1, y0 + 0.94, 0.004], [e0 - 0.1, y0 + 0.94, 0.004]); });
+  });
+  // outside: bracket lamps either side of the mouth; the notice board outside where asked
+  for (const e of [-1, 1]) { B.bbox('metal', e * (hw + 0.28), y0 + 2.0, 0.06, 0.16, 0.26, 0.12, 0.01, { color: [0.26, 0.27, 0.29] }); B.box('lamp', e * (hw + 0.28), y0 + 2.04, 0.125, 0.12, 0.18, 0.01);
+    if (lampAt) lampAt.push({ p: B.P([e * (hw + 0.28), y0 + 2.1, 0.4]), s: 0.3 }); }
+  if (noticeOut) wallPanel(B, 'notice', -(hw + 0.95), y0 + 1.15, 0.6, 0.45, 0.04, { color: [0.4, 0.34, 0.26], mat: 'wood' });
+}
+// Approach to an entrance at sill height y0 (current frame on the facade, +z out, door centred at x = 0): a landing
+// the entrance's width, steps down to the ground found at its foot (risers near 15 cm, 30 cm treads) with handrails
+// where there are three or more, a barrier-free ramp (1:12) along the facade to one side with a cheek wall and rails
+// where the rise needs it, and a paved forecourt laid on the ground in front of it all. Returns the forecourt's front
+// centre (where the path takes over) and its outline, in the current frame. gy: world ground height.
+function approach(B, gy, { w, y0, land = 1.3, ramp = 0, rail = [0.55, 0.57, 0.6], court = 2.4, extraW = 0 }) {
+  const F = B.F, gl = (lx, lz) => { const p = B.P([lx, 0, lz]); return gy(p[0], p[2]) - F.y; };
+  const g0 = Math.min(gl(0, land + 0.9), gl(-w / 2, land + 0.9), gl(w / 2, land + 0.9)), rise = Math.max(0, y0 - g0);
+  const n = Math.max(1, Math.round(rise / 0.15)), rs = rise / n, SC = [0.76, 0.75, 0.72], ST = [0.7, 0.69, 0.66];
+  B.bbox('concrete', 0, g0 - 0.3, land / 2, w, y0 - g0 + 0.3, land, 0.012, { color: SC });                            // landing
+  B.box('tiles', 0, y0 + 0.001, land / 2 - 0.02, w - 0.1, 0.01, land - 0.1, { color: [0.56, 0.54, 0.52], uv: 0.9 });
+  for (let k = 1; k < n; k++) B.bbox('concrete', 0, g0 - 0.3, land + (k - 0.5) * 0.3, w, y0 - k * rs - g0 + 0.3, 0.3, 0.012, { color: k % 2 ? ST : SC });
+  const foot = land + (n - 1) * 0.3;
+  if (n >= 3) for (const e of [-1, 1]) B.detail(1, () => { const x = e * (w / 2 - 0.12); B.beam('steel', [x, y0 + 0.85, land - 0.1], [x, g0 + rs + 0.85, foot], 0.04, 0.04, { color: rail });
+    B.box('steel', x, y0, land - 0.1, 0.04, 0.85, 0.04, { color: rail }); B.box('steel', x, g0 + rs, foot, 0.04, 0.85, 0.04, { color: rail }); });
+  let rampEnd = null;
+  if (ramp && rise > 0.06) {
+    const L = Math.max(1.2, rise * 12), x0 = ramp * w / 2, x1 = ramp * (w / 2 + L), rw = 1.3, zi = 0.08, zo = zi + rw, zc = (zi + zo) / 2;
+    B.poly('concrete', [[x0, y0, zi], [x1, g0 + 0.02, zi], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 1, 0], { color: SC, uv: 1.5 });
+    // cheek walls both sides (the inner one stands against the facade where there is one) with handrails on posts
+    B.poly('concrete', [[x0, g0 - 0.2, zo], [x1, g0 - 0.2, zo], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 0, 1], { color: ST, uv: 1.5 });
+    for (const zz of [zi - 0.06, zo + 0.06]) { B.beam('concrete', [x0, y0 - 0.03, zz], [x1, g0 - 0.03, zz], 0.12, 0.34, { color: SC });
+      B.detail(1, () => { B.beam('steel', [x0, y0 + 0.9, zz], [x1, g0 + 0.92, zz], 0.045, 0.045, { color: rail });
+        const m = Math.max(1, Math.round(L / 1.5)); for (let k = 0; k <= m; k++) { const t = k / m; B.box('steel', x0 + (x1 - x0) * t, y0 + (g0 - y0) * t + 0.14, zz, 0.045, 0.76, 0.045, { color: rail }); } }); }
+    rampEnd = [x1 + ramp * 0.5, zc];
+  }
+  const xa = -w / 2 - 0.6 - (ramp < 0 && rampEnd ? -rampEnd[0] - w / 2 : 0) - extraW, xb = w / 2 + 0.6 + (ramp > 0 && rampEnd ? rampEnd[0] - w / 2 : 0) + extraW;
+  const block = [[-w / 2 - 0.1, 0, w / 2 + 0.1, foot + 0.1]]; if (rampEnd) block.push([Math.min(ramp * w / 2, rampEnd[0] - ramp * 0.5), 0, Math.max(ramp * w / 2, rampEnd[0] - ramp * 0.5), 1.6]);
+  return { foot: [0, foot + court], court: [xa, rampEnd ? 0.05 : land - 0.1, xb, foot + court], rampEnd, g0, rise, block };
+}
+
+// a forecourt rectangle [x0, z0, x1, z1] of the current frame as world corners
+const courtW = (B, [x0, z0, x1, z1]) => [B.P([x0, 0, z0]), B.P([x1, 0, z0]), B.P([x1, 0, z1]), B.P([x0, 0, z1])].map(p => [p[0], p[2]]);
 
 // ---------------------------------------------------------------- 階段室型 walk-up slab
 export function walkupSlab(B, s, rng, ex) {
@@ -128,7 +321,7 @@ export function walkupSlab(B, s, rng, ex) {
       const fy = y0 + f * fh, parts = [];
       for (let u = 1; u < nU; u++) parts.push(-w / 2 + u * uw);
       const acs = []; for (let u = 0; u < nU; u++) if (rng() < 0.55) acs.push(-w / 2 + u * uw + 0.7);
-      balconyRun(B, rng, -w / 2 - 0.1, w / 2 + 0.1, fy, 1.3, { kind: bal, color: pal.parapet, trim: pal.trim, parts, acs, laundry: 0.45, fh, ground: f === 0 });
+      balconyRun(B, rng, -w / 2 - 0.1, w / 2 + 0.1, fy, 1.3, { kind: bal, color: pal.parapet, trim: pal.trim, parts: f === 0 ? parts.map(p => p) : parts, acs: f === 0 ? [] : acs, laundry: f === 0 ? 0 : 0.45, fh, ground: f === 0 });
       if (bal === 'solid') B.box('plain', 0, fy + 1.12, 1.25, w + 0.12, 0.05, 0.1, { color: pal.accent });           // accent line on the coping
     }
     for (const e of [-1, 1]) downpipe(B, [e * (w / 2 + 0.05), H + 0.3, 1.2], [e * (w / 2 + 0.05), 0, 1.2], 0, [0.72, 0.72, 0.7]);
@@ -143,7 +336,7 @@ export function walkupSlab(B, s, rng, ex) {
     for (const c of cores) {
       const X = -c, tw = 2.7, td = 1.5, top = H + 2.4;
       // tower walls (its back face is open at the half landings)
-      const holes = [{ x0: X - 0.85, x1: X + 0.85, y0: 0.08, y1: 2.35, d: 0.12 }];
+      const holes = [{ x0: X - 1.0, x1: X + 1.0, y0: y0, y1: 2.6, d: 1.25, porch: true }];
       for (let f = 0; f < floors; f++) { const hy = y0 + f * fh + fh / 2; holes.push({ x0: X - 0.95, x1: X + 0.95, y0: hy + 0.95, y1: hy + 1.95, d: 0.12, open: true }); }
       inFrame(B, [X, 0, td], 0, () => {
         const hl = holes.map(h => ({ ...h, x0: h.x0 - X, x1: h.x1 - X }));
@@ -155,19 +348,22 @@ export function walkupSlab(B, s, rng, ex) {
         for (const h of hl) { if (h.y0 > yb) { wf(-tw / 2, tw / 2, yb, h.y0); } wf(-tw / 2, h.x0, h.y0, h.y1); wf(h.x1, tw / 2, h.y0, h.y1); yb = h.y1; }
         wf(-tw / 2, tw / 2, yb, top);
         // inside: the dark stair well behind each opening, its reveals, and the landing railing
-        for (const h of hl) {
+        for (const h of hl) { if (h.porch) continue;
           B.quad('dark', [h.x0, h.y0, -0.9], [h.x1, h.y0, -0.9], [h.x1, h.y1, -0.9], [h.x0, h.y1, -0.9], { color: [0.2, 0.2, 0.21] });
           reveals(B, 'tiles', { ...h, d: 0.9 }, mul(wall, 0.88), 1.2);
-          if (h.open) { B.box('steel', 0, h.y0 + 0.02, 0.04, h.x1 - h.x0, 0.05, 0.05, { color: [0.6, 0.62, 0.64] }); B.detail(1, () => { for (let xx = h.x0 + 0.12; xx < h.x1; xx += 0.14) B.box('steel', xx, h.y0 - 0.95, 0.03, 0.02, 0.95, 0.02, { color: [0.6, 0.62, 0.64] }); }); }
+          if (h.open) { B.box('steel', (h.x0 + h.x1) / 2, h.y0 + 0.2, -0.06, h.x1 - h.x0, 0.04, 0.04, { color: [0.6, 0.62, 0.64] }); B.detail(1, () => { for (let xx = h.x0 + 0.12; xx < h.x1; xx += 0.14) B.box('steel', xx, h.y0, -0.06, 0.02, 0.2, 0.02, { color: [0.6, 0.62, 0.64] }); }); }
         }
-        // mailboxes on the inner wall of the entrance, lit inside
-        B.detail(1, () => { B.bbox('metal', -0.62, 0.95, -0.55, 0.14, 0.9, 0.7, 0.01, { color: [0.62, 0.64, 0.66] });
-          for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) B.box('metal', -0.55, 1.05 + i * 0.28, -0.8 + j * 0.24, 0.005, 0.22, 0.2, { color: [0.7, 0.72, 0.74] }); });
-        B.box('lamp', 0, 2.3, -0.5, 0.35, 0.03, 0.35);
+        // the entrance: a porch into the stair hall with its doors, intercom, mail bank for the ten flats it serves,
+        // under a canopy; the landing and steps down to a forecourt
         B.frame(Fr.x, Fr.y, Fr.z, Fr.r);
-        entranceCanopy(B, 0, 0.3, 2.9, 1.3, { color: pal.parapet, lampAt: out.lamps });
-        plate(B, 1.05, 2.1, 0.02, 0, 0.36, 0.26, (g, W2, H2) => { g.fillStyle = '#f2f0ea'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#333'; g.font = `bold ${H2 * 0.5}px Arial`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(`${no}-${cores.indexOf(c) + 1}`, W2 / 2, H2 / 2); }, 0.1, 64);
-        out.entrances.push({ p: B.P([0, 0, 2.2]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'stair' });
+        const ci = cores.indexOf(c);
+        entrancePorch(B, rng, { w: 2.0, y0, yh: 2.6, depth: 1.25, wall: towerC, mail: [2, floors], side: ci % 2 ? 1 : -1, lampAt: out.lamps, frame: [0.36, 0.37, 0.38] });
+        entranceCanopy(B, 0, y0, 2.9, 1.45, { color: pal.parapet, lampAt: out.lamps, steps: false, h: 2.62 });
+        const rooms = `${ci * 2 + 1 < 10 ? '10' : '1'}${ci * 2 + 1}〜${floors}${String(ci * 2 + 2).padStart(2, '0')}`;
+        plate(B, 0, 2.78, 0.02, 0, 0.9, 0.3, (g, W2, H2) => { g.fillStyle = '#f2f0ea'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#2d3136'; g.textAlign = 'center'; g.textBaseline = 'middle';
+          g.font = `bold ${H2 * 0.52}px Arial`; g.fillText(`${no}-${ci + 1}`, W2 * 0.26, H2 * 0.54); g.fillRect(W2 * 0.5, H2 * 0.18, 2, H2 * 0.64); g.font = `${H2 * 0.34}px ${JP_FONT}`; g.fillText(rooms, W2 * 0.75, H2 * 0.54); }, 0.25, 128);
+        const ap = s.gy ? approach(B, s.gy, { w: 2.4, y0, land: 1.45, ramp: 0 }) : { foot: [0, 2.2], court: [-1.8, 1.2, 1.8, 3.4] };
+        out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'stair', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)), front: B.P([0, 0, ap.foot[1] - 0.9]) });
       });
       // the tower's side walls and roof (it stands td proud of the back wall)
       for (const sx of [-1, 1]) inFrame(B, [X + sx * tw / 2, 0, td / 2], sx * Math.PI / 2, () => B.quad('tiles', [-td / 2, 0, 0], [td / 2, 0, 0], [td / 2, top, 0], [-td / 2, top, 0], { color: mul(towerC, 0.96), uv: 2.5 }));
@@ -219,8 +415,8 @@ export function pointTower(B, s, rng, ex) {
   const parC = mix3(pal.parapet, strong(pal), 0.22);
   const balc = f => {
     const fy = y0 + f * fh, dp = 1.5;
-    inFrame(B, [0, 0, d / 2], 0, () => balconyRun(B, rng, -w / 2 - dp, w / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: parC, trim: pal.trim, parts: [0], acs: rng() < 0.6 ? [-w / 4 + 1, w / 4 + 1] : [], fh, laundry: 0.35, ground: f === 0 }));
-    for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, d / 2 - WR / 2], sx * Math.PI / 2, () => balconyRun(B, rng, sx > 0 ? -WR / 2 - dp : -WR / 2, sx > 0 ? WR / 2 : WR / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: parC, trim: pal.trim, fh, laundry: 0, ground: f === 0 }));
+    inFrame(B, [0, 0, d / 2], 0, () => balconyRun(B, rng, -w / 2 - dp, w / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: parC, trim: pal.trim, parts: [0], acs: rng() < 0.6 ? [-w / 4 + 1, w / 4 + 1] : [], fh, laundry: 0.35, ground: f === 0, ends: [false, false] }));
+    for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, d / 2 - WR / 2], sx * Math.PI / 2, () => balconyRun(B, rng, sx > 0 ? -WR / 2 - dp : -WR / 2, sx > 0 ? WR / 2 : WR / 2 + dp, fy, dp, { kind: f % 2 ? 'glass' : 'solid', color: parC, trim: pal.trim, fh, laundry: 0, ground: f === 0, ends: sx > 0 ? [false, true] : [true, false], lift: 0.004 }));
   };
   for (let f = 0; f < floors; f++) balc(f);
   inFrame(B, [0, 0, d / 2], 0, () => { for (const h of front) windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], type: 'slide', sill: false }); });
@@ -236,19 +432,23 @@ export function pointTower(B, s, rng, ex) {
     for (const sx of [-1, 1]) { panel(B, sx > 0 ? w / 2 - 0.95 : -w / 2, sx > 0 ? w / 2 : -w / 2 + 0.95, y0 + 2 * fh, H + 0.9, strong(pal));
       floorBands(B, sx > 0 ? cw / 2 : -w / 2 + 0.95, sx > 0 ? w / 2 - 0.95 : -cw / 2, floorsY, pal.trim);
       for (let f = 2; f < floors; f += 1) if (rng() < 0.5) acUnit(B, sx * 4.3, y0 + f * fh + 0.2, rng, { z: 0.3, onWall: true }); }
-    B.bbox('tiles', 0, 0, cd / 2, cw, ctop, cd, 0.03, { color: mul(wall, 0.97), uv: 2.5, skip: 'ny' });
+    B.bbox('tiles', 0, 0, cd / 2, cw, ctop, cd, 0.03, { color: mul(wall, 0.97), uv: 2.5, skip: 'nypz' });
+    inFrame(B, [0, 0, cd], 0, () => wallFill(B, 'tiles', -cw / 2 + 0.03, cw / 2 - 0.03, 0, ctop, [{ x0: -2.6, x1: 2.6, y0: y0, y1: 3.0 }], mul(wall, 0.97), 2.5));
     for (let f = 1; f < floors; f++) { const fy = y0 + f * fh; B.quad('shopWindow', [-0.7, fy + 0.4, cd + 0.005], [0.7, fy + 0.4, cd + 0.005], [0.7, fy + 2.3, cd + 0.005], [-0.7, fy + 2.3, cd + 0.005], { color: [0.9, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
       B.box('alu', 0, fy + 0.35, cd + 0.02, 1.5, 0.06, 0.06, { color: pal.trim }); B.box('alu', 0, fy + 2.3, cd + 0.02, 1.5, 0.06, 0.06, { color: pal.trim }); }
     B.bbox('concrete', 0, ctop, cd / 2, cw + 0.2, 0.18, cd + 0.2, 0.02, { color: pal.trim });
-    // lobby: a glass front with a pair of sliding doors in the base of the core, a canopy on two columns
-    B.quad('dark', [-2.6, 0.1, cd + 0.01], [2.6, 0.1, cd + 0.01], [2.6, 2.9, cd + 0.01], [-2.6, 2.9, cd + 0.01], { color: [0.1, 0.1, 0.1] });
-    B.quad('shopWindow', [-2.5, 0.12, cd + 0.03], [2.5, 0.12, cd + 0.03], [2.5, 2.85, cd + 0.03], [-2.5, 2.85, cd + 0.03], { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
-    for (const xx of [-2.55, -1.3, 0, 1.3, 2.55]) B.box('alu', xx, 0.1, cd + 0.05, 0.08, 2.8, 0.08, { color: [0.3, 0.3, 0.32] });
-    B.box('alu', 0, 2.85, cd + 0.05, 5.2, 0.08, 0.08, { color: [0.3, 0.3, 0.32] });
+    // lobby: glazed screens either side of a recessed entrance porch with automatic doors, a canopy on two columns
     B.frame(...B.P([0, 0, cd]), B.F.r);
-    entranceCanopy(B, 0, 0.35, 5.6, 3.0, { cols: true, color: [0.9, 0.9, 0.88], lampAt: out.lamps, h: 3.0 });
-    plate(B, 0, 3.25, 0.02, 0, 3.2, 0.4, (g, W2, H2) => { g.fillStyle = '#2f3438'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e8e4d8'; g.font = `bold ${H2 * 0.55}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s.name || `サクラタワー ${no}`, W2 / 2, H2 * 0.55); }, 0.4, 256);
-    out.entrances.push({ p: B.P([0, 0, 4.2]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby' });
+    const lob = { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] }, fr = { color: [0.3, 0.3, 0.32] };
+    for (const e of [-1, 1]) { const a = e * 1.4, b = e * 2.6;
+      B.quad('dark', [Math.min(a, b), y0, -0.3], [Math.max(a, b), y0, -0.3], [Math.max(a, b), 3.0, -0.3], [Math.min(a, b), 3.0, -0.3], { color: [0.1, 0.1, 0.1] });
+      B.quad('shopWindow', [Math.min(a, b), y0, 0.02], [Math.max(a, b), y0, 0.02], [Math.max(a, b), 3.0, 0.02], [Math.min(a, b), 3.0, 0.02], lob);
+      for (const xx of [b, (a + b) / 2]) B.box('alu', xx, y0, 0.04, 0.08, 3.0 - y0, 0.08, fr); B.box('alu', (a + b) / 2, y0, 0.04, 1.24, 0.12, 0.08, fr); B.box('alu', (a + b) / 2, 2.94, 0.04, 1.24, 0.06, 0.08, fr); }
+    entrancePorch(B, rng, { w: 2.8, y0, yh: 3.0, depth: 2.2, wall: [0.86, 0.85, 0.82], auto: true, mail: [4, 5], lockers: true, lampAt: out.lamps, floorC: [0.42, 0.4, 0.39] });
+    entranceCanopy(B, 0, y0, 5.6, 3.0, { cols: true, color: [0.9, 0.9, 0.88], lampAt: out.lamps, h: 3.0, steps: false });
+    plate(B, 0, 3.86, 0.02, 0, 3.2, 0.4, (g, W2, H2) => { g.fillStyle = '#2f3438'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e8e4d8'; g.font = `bold ${H2 * 0.55}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s.name || `サクラタワー ${no}`, W2 / 2, H2 * 0.55); }, 0.4, 256);
+    const ap = s.gy ? approach(B, s.gy, { w: 3.6, y0, land: 1.8, ramp: rng() < 0.5 ? -1 : 1, court: 2.6 }) : { foot: [0, 4.2], court: [-2.4, 1.6, 2.4, 4.4] };
+    out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)) });
   });
   B.frame(x, y, z, r);
   const roofY = flatRoof(B, { w, d, y: H, para: 0.9, color: wall, wallMat: 'tiles', coping: pal.trim });
@@ -266,9 +466,9 @@ export function pointTower(B, s, rng, ex) {
 export function mansion(B, s, rng, ex) {
   const { x, y, z, r, w, d = 11.5, floors = 8, pal = PALETTES.mocha, no = 1, podium = false, pilotis = 0, name = null } = s, fh = 3.0, y0 = podium ? 0.1 : 0.4, H = y0 + floors * fh;
   const nU = Math.max(3, Math.round(w / 6.6)), uw = w / nU, out = { entrances: [], lamps: [] }, wall = jit(rng, pal.wall, 0.02);
-  const lift = Math.round(nU / 2) - 1, liftX = -w / 2 + (lift + 1) * uw;                                                    // lift at a unit boundary near the middle
+  const lift = s.lift ?? Math.round(nU / 2) - 1, liftX = -w / 2 + (lift + 1) * uw;                                        // lift at a unit boundary near the middle
   B.frame(x, y, z, r);
-  if (!podium) B.bbox('concrete', 0, -0.45, 0, w + 0.12, 0.85, d + 0.12, 0.02, { color: pal.base });
+  if (!podium) { const pw = pilotis * uw; B.bbox('concrete', -pw / 2, -0.45, 0, w + 0.12 - pw, 0.85, d + 0.12, 0.02, { color: pal.base }); }  // (the pilotis bays stand at grade)
   const front = [], back = [];
   for (let f = 0; f < floors; f++) {
     const fy = y0 + f * fh;
@@ -289,7 +489,10 @@ export function mansion(B, s, rng, ex) {
     gP.push({ x0: -d / 2 + 1.1, x1: -d / 2 + 2.3, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 }, { x0: d / 2 - 2.3, x1: d / 2 - 1.1, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 });
     gM.push({ x0: d / 2 - 2.3, x1: d / 2 - 1.1, y0: fy + 0.95, y1: fy + 2.05, d: 0.16 }); }
   const bodyBands = podium ? [['tiles', wall, 2.5]] : [['tiles', mix3(wall, pal.base, 0.45), 2.5, y0 + fh - 0.1], ['tiles', wall, 2.5]];
-  boxWalls(B, 0, w, d, y0, H + 0.9, bodyBands, fi => fi === 0 ? front : fi === 1 ? back.filter(h => !h.door || true) : fi === 2 ? gP : gM, mul(wall, 0.95));
+  // pilotis: the ground floor of the end units is open to the front and the end, a beam over the opening
+  const px0 = -w / 2 + (nU - pilotis) * uw, pTop = y0 + fh - 0.35, pil = !podium && pilotis > 0;
+  const pilF = pil ? [{ x0: px0 + 0.3, x1: w / 2 + 0.01, y0: y0 - 0.01, y1: pTop, d: 0.25 }] : [], pilG = pil ? [{ x0: -d / 2 - 0.01, x1: d / 2 - 0.3, y0: y0 - 0.01, y1: pTop, d: 0.25 }] : [];
+  boxWalls(B, 0, w, d, y0, H + 0.9, bodyBands, fi => fi === 0 ? front.concat(pilF) : fi === 1 ? back : fi === 2 ? gP.concat(pilG) : gM, mul(wall, 0.95));
   for (const sx of [-1, 1]) inFrame(B, [sx * w / 2, 0, 0], sx * Math.PI / 2, () => {
     for (const h of sx > 0 ? gP : gM) windowUnit(B, h, { rng, frame: [0.3, 0.3, 0.32], type: 'slide', hood: mul(pal.trim, 0.9) });
     panel(B, sx > 0 ? -1.1 : -1.0, sx > 0 ? 1.1 : 1.2, y0 + (podium ? 0.2 : fh), H + 0.9, strong(pal));
@@ -303,20 +506,23 @@ export function mansion(B, s, rng, ex) {
       for (let u = 0; u < nU; u++) {
         const x0 = -w / 2 + u * uw, x1 = x0 + uw, pil = !podium && f === 0 && u >= nU - pilotis;
         if (pil) continue;
-        balconyRun(B, rng, x0, x1, fy, 1.8, { kind: (u + (f > floors - 3 ? 1 : 0)) % 3 === 1 ? 'solid' : 'glass', color: u % 3 === 1 ? pal.accent : pal.parapet, trim: pal.trim, parts: u ? [x0] : [], acs: rng() < 0.6 ? [x0 + 0.7] : [], fh, laundry: 0.25, ground: f === 0 && !podium });
+        const gnd = f === 0 && !podium;
+        balconyRun(B, rng, x0 + (gnd ? 0 : 0.125), x1 - (gnd ? 0 : 0.125), fy, 1.8, { kind: (u + (f > floors - 3 ? 1 : 0)) % 3 === 1 ? 'solid' : 'glass', color: u % 3 === 1 ? pal.accent : pal.parapet, trim: pal.trim, parts: [], acs: rng() < 0.6 ? [x0 + 0.7] : [], fh, laundry: 0.25, ground: gnd, ends: gnd ? [u === 0, true] : [false, false] });
       }
     }
     // the balcony slabs' edges read as bands across the face; slim fins between the columns of balconies
-    for (let u = 0; u <= nU; u++) B.bbox('concrete', -w / 2 + u * uw, y0 + fh - 0.2, 0.95, 0.25, H - y0 - fh + 0.3, 1.9, 0.01, { color: pal.trim });
+    const finY = podium ? y0 - 0.2 : y0 + fh - 0.2;
+    for (let u = 0; u <= nU; u++) B.bbox('concrete', -w / 2 + u * uw, finY, 0.95, 0.25, H - finY + 0.1, 1.9, 0.01, { color: pal.trim });
   });
   // back: an open access corridor on every upper floor, doors and small windows along it
   inFrame(B, [0, 0, -d / 2], Math.PI, () => {
-    for (const h of back) { if (h.door) doorUnit(B, h, { color: jit(rng, [0.38, 0.32, 0.28], 0.06), mat: 'metal', frame: [0.3, 0.3, 0.32] }); else windowUnit(B, h, { rng, grille: true, frosted: true, frame: [0.3, 0.3, 0.32] }); }
+    for (const h of back) { if (h.door) { doorUnit(B, h, { color: jit(rng, [0.38, 0.32, 0.28], 0.06), mat: 'metal', frame: [0.3, 0.3, 0.32] }); doorFurniture(B, h.x1 + 0.15, h.y0); } else windowUnit(B, h, { rng, grille: true, frosted: true, frame: [0.3, 0.3, 0.32] }); }
     for (let f = 1; f < floors; f++) {
       const fy = y0 + f * fh;
       B.bbox('concrete', 0, fy - 0.18, 0.8, w, 0.18, 1.6, 0.012, { color: [0.8, 0.8, 0.78] });
       B.bbox('tiles', 0, fy, 1.54, w + 0.04, 1.15, 0.12, 0.012, { color: pal.parapet, uv: 2.5 });
       B.box('plain', 0, fy + 1.15, 1.54, w + 0.06, 0.06, 0.16, { color: pal.accent });
+      guard(B, 'solid', -w / 2 + 0.06, 1.54, -w / 2 + 0.06, 0.02, fy, { color: pal.parapet, trim: pal.trim });
       B.box('lamp', 0, fy + fh - 0.22, 0.8, w - 1, 0.02, 0.08);
       lampPoints.push({ p: B.P([0, fy + fh - 0.4, 1.0]), s: 0.4 });
       for (let u = 0; u < nU; u++) meterBox(B, -w / 2 + (u + 0.5) * uw - 1.0, fy + 1.3, 'power');
@@ -332,38 +538,122 @@ export function mansion(B, s, rng, ex) {
     if (!podium) {
       const lob = { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] }, mul3 = { color: [0.3, 0.3, 0.32] };
       B.bbox('concrete', X, -0.45, LD / 2, LW + 0.2, y0 + 0.45, LD + 0.1, 0.02, { color: pal.base });
-      B.quad('shopWindow', [X - LW / 2, y0 + 0.02, LD], [X + LW / 2, y0 + 0.02, LD], [X + LW / 2, LH, LD], [X - LW / 2, LH, LD], lob);
+      // glazed screens either side of a recessed porch with automatic doors; glazed ends
+      for (const e of [-1, 1]) { const a = X + e * 1.4, b = X + e * LW / 2;
+        B.quad('shopWindow', [Math.min(a, b), y0 + 0.02, LD], [Math.max(a, b), y0 + 0.02, LD], [Math.max(a, b), LH, LD], [Math.min(a, b), LH, LD], lob);
+        for (const xx of [b, (a + b) / 2, a]) B.box('alu', xx, y0, LD + 0.02, 0.08, LH - y0, 0.08, mul3);
+        B.box('alu', (a + b) / 2, LH - 0.8, LD + 0.02, LW / 2 - 1.4, 0.06, 0.06, mul3); }
       for (const e of [-1, 1]) B.poly('shopWindow', [[X + e * LW / 2, y0 + 0.02, 0.05], [X + e * LW / 2, y0 + 0.02, LD], [X + e * LW / 2, LH, LD], [X + e * LW / 2, LH, 0.05]], [e, 0, 0], lob);
-      for (const xx of [-3.6, -1.8, 0, 1.8, 3.6]) B.box('alu', X + xx, y0, LD + 0.02, 0.08, LH - y0, 0.08, mul3);
       for (const e of [-1, 1]) for (const zz of [0.1, LD / 2]) B.box('alu', X + e * LW / 2, y0, zz, 0.08, LH - y0, 0.08, mul3);
-      B.box('alu', X, LH - 0.8, LD + 0.02, LW, 0.06, 0.06, mul3);
       B.bbox('tiles', X, LH, (1.6 + LD + 0.2) / 2, LW + 0.3, 0.6, LD + 0.2 - 1.6, 0.02, { color: mul(wall, 0.92), uv: 2.5 });
-      ex.push({ t: 'box', p: B.P([X, 0, LD / 2]), hx: LW / 2 + 0.1, hz: LD / 2, r, h: LH + 0.6 });
-      B.frame(...B.P([X, 0, LD + 0.2]), B.F.r);
-      entranceCanopy(B, 0, y0, 3.8, 2.2, { cols: true, color: [0.28, 0.28, 0.3], lampAt: out.lamps, h: 2.55 });
-      plate(B, 0, LH + 0.3, 0.02, 0, 4.4, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name || `パークハイツ桜川 ${no}`, W2 / 2, H2 * 0.55); }, 0.5, 256);
-      out.entrances.push({ p: B.P([0, 0, 2.4]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby' });
+      // colliders: the lobby's two glazed wings and its back, so the porch itself can be walked into
+      for (const e of [-1, 1]) ex.push({ t: 'box', p: B.P([X + e * (LW / 2 + 1.4) / 2, 0, LD / 2]), hx: (LW / 2 - 1.4) / 2 + 0.1, hz: LD / 2, r, h: LH + 0.6 });
+      ex.push({ t: 'box', p: B.P([X, 0, (LD - 2.2) / 2]), hx: 1.5, hz: (LD - 2.2) / 2, r, h: LH + 0.6 });
+      B.frame(...B.P([X, 0, LD]), B.F.r);
+      entrancePorch(B, rng, { w: 2.8, y0, yh: LH - 0.35, depth: 2.2, wall: mix3(wall, [0.9, 0.88, 0.84], 0.5), auto: true, mail: [4, 5], lockers: true, lampAt: out.lamps, floorC: [0.4, 0.38, 0.37] });
+      entranceCanopy(B, 0, y0, 3.8, 2.3, { cols: true, color: [0.28, 0.28, 0.3], lampAt: out.lamps, h: LH - y0 - 0.22, steps: false });
+      plate(B, 0, LH + 0.3, 0.22, 0, 4.4, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name || `パークハイツ桜川 ${no}`, W2 / 2, H2 * 0.55); }, 0.5, 256);
+      const ap = s.gy ? approach(B, s.gy, { w: 3.0, y0, land: 1.6, ramp: rng() < 0.5 ? -1 : 1, court: 2.6 }) : { foot: [0, 2.4], court: [-2, 1.4, 2, 3.4] };
+      out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)) });
+      // walks from the ground-floor doors under the corridor, round the lobby's glazed sides, into the apron's side
+      { const [xa, za, xb, zb] = ap.court, zm = (za + zb) / 2 + 0.3; out.walkways = [];
+        for (const e of [-1, 1]) { const sideX = e < 0 ? xa : xb, cx2 = e * Math.max(Math.abs(sideX) + 1.1, LW / 2 + 0.95), endX = e * (w / 2 + 0.3) + (-X);
+          if (e * endX < e * cx2 + 1) continue;
+          out.walkways.push([[endX, -LD + 0.85], [cx2, -LD + 0.85], [cx2, zm], [sideX - e * 0.6, zm]].map(([lx, lz]) => { const q = B.P([lx, 0, lz]); return [q[0], q[2]]; })); } }
     }
   });
   B.frame(x, y, z, r);
-  // stair: an open stair tower at the far end with solid parapets
-  inFrame(B, [-w / 2, 0, -d / 2 + 2.2], -Math.PI / 2, () => {
-    const top = H + 1.2;
-    for (const cx2 of [-2.1, 2.1]) B.bbox('tiles', cx2, 0, 1.4, 0.3, top, 0.3, 0.02, { color: mul(wall, 0.95) });
-    for (let f = 0; f < floors; f++) { const fy = y0 + f * fh; B.bbox('concrete', 0, fy + fh / 2 - 0.15, 1.3, 4.5, 0.15, 2.6, 0.01, { color: [0.8, 0.8, 0.78] });
-      B.bbox('tiles', 0, fy + fh / 2, 2.55, 4.5, 1.1, 0.12, 0.01, { color: pal.parapet, uv: 2.5 }); }
+  // stair: an open stair tower against the far gable, at the access corridor's end: a landing level with the corridor
+  // on every floor, a half landing against the outer face, two flights a storey, solid parapets on every open side and
+  // along the flights. (local x: -2.25 at the building's back, where the corridor comes in, to +2.25; z: 0 at the
+  // gable wall to 2.6 out)
+  inFrame(B, [-w / 2, 0, -d / 2 + 0.65], -Math.PI / 2, () => {
+    const top = H + 1.2, SC = [0.8, 0.8, 0.78], pc = pal.parapet, g = { color: pc, trim: pal.trim };
+    for (const cx2 of [-2.1, 2.1]) B.bbox('tiles', cx2, 0, 2.45, 0.3, top, 0.3, 0.02, { color: mul(wall, 0.95) });
+    for (let f = 0; f < floors; f++) {
+      const fy = y0 + f * fh, hy = fy + fh / 2;
+      if (f > 0) { B.bbox('concrete', -1.5, fy - 0.16, 1.3, 1.5, 0.16, 2.6, 0.01, { color: SC });
+        guard(B, 'solid', -0.75, 2.54, -2.19, 2.54, fy, g); guard(B, 'solid', -2.19, 2.54, -2.19, 0.02, fy, g); }
+      B.bbox('concrete', 1.5, hy - 0.16, 1.3, 1.5, 0.16, 2.6, 0.01, { color: SC });
+      guard(B, 'solid', 2.19, 0.02, 2.19, 2.54, hy, g); guard(B, 'solid', 2.19, 2.54, 0.75, 2.54, hy, g);
+      // flights: up along the wall to the half landing, back along the outer face to the next floor; the outer one
+      // carries a raking parapet, the inner a steel handrail
+      if (f < floors - 1 || true) {
+        B.beam('concrete', [-0.75, fy - 0.1, 0.65], [0.75, hy - 0.1, 0.65], 1.2, 0.2, { color: SC });
+        if (f < floors - 1) { B.beam('concrete', [0.75, hy - 0.1, 1.95], [-0.75, fy + fh - 0.1, 1.95], 1.2, 0.2, { color: SC });
+          B.beam('tiles', [0.75, hy + 0.55, 2.54], [-0.75, fy + fh + 0.55, 2.54], 0.12, 1.1, { color: pc });
+          B.detail(1, () => B.beam('steel', [0.75, hy + 0.85, 1.32], [-0.75, fy + fh + 0.85, 1.32], 0.04, 0.04, { color: [0.6, 0.62, 0.64] })); }
+        B.detail(1, () => B.beam('steel', [-0.75, fy + 0.85, 1.28], [0.75, hy + 0.85, 1.28], 0.04, 0.04, { color: [0.6, 0.62, 0.64] }));
+      }
+    }
     B.bbox('concrete', 0, top, 1.3, 4.7, 0.16, 2.9, 0.02, { color: pal.trim });
   });
   if (pilotis && !podium) { // open ground floor at the far end: columns, a ceiling, parking bays under the building
-    for (let u = nU - pilotis; u <= nU; u++) for (const zz of [-d / 2 + 0.3, d / 2 - 0.3]) B.bbox('concrete', -w / 2 + u * uw, 0, zz, 0.6, y0 + fh, 0.6, 0.02, { color: [0.8, 0.8, 0.78] });
-    B.box('dark', -w / 2 + (nU - pilotis / 2) * uw, y0 + fh - 0.35, 0, pilotis * uw - 0.2, 0.02, d - 0.8, { color: [0.25, 0.25, 0.26] });
-    B.box('lamp', -w / 2 + (nU - pilotis / 2) * uw, y0 + fh - 0.38, 0, 0.8, 0.03, 0.3);
-    out.pilotis = { x0: -w / 2 + (nU - pilotis) * uw, x1: w / 2 };
+    for (let u = nU - pilotis; u <= nU; u++) for (const zz of [-d / 2 + 0.3, d / 2 - 0.3]) B.bbox('concrete', Math.min(w / 2 - 0.3, -w / 2 + u * uw), 0, zz, 0.6, y0 + fh, 0.6, 0.02, { color: [0.8, 0.8, 0.78] });
+    const pc = (px0 + w / 2) / 2, pw = w / 2 - px0, SOF = [0.82, 0.82, 0.8];
+    // inside: the soffit, the back wall and the flats' end wall seen from under the slab, a base course along the back,
+    // lights under the soffit, a lined floor laid by the parking builder
+    B.box('plain', pc, pTop - 0.02, 0, pw, 0.02, d, { color: SOF, skip: 'py' });
+    B.quad('tiles', [px0, 0, d / 2], [px0, 0, -d / 2], [px0, pTop, -d / 2], [px0, pTop, d / 2], { color: mul(wall, 0.9), uv: 2.5 });
+    B.quad('tiles', [px0, 0, -d / 2 + 0.01], [w / 2, 0, -d / 2 + 0.01], [w / 2, pTop, -d / 2 + 0.01], [px0, pTop, -d / 2 + 0.01], { color: mul(wall, 0.9), uv: 2.5 });
+    B.bbox('concrete', pc, -0.45, -d / 2 + 0.1, pw, 0.85, 0.3, 0.02, { color: pal.base });
+    for (const zz of [-d / 4, d / 4]) { B.box('lamp', pc, pTop - 0.06, zz, 1.2, 0.04, 0.14); lampPoints.push({ p: B.P([pc, pTop - 0.3, zz]), s: 0.5 }); }
+    out.pilotis = { x0: px0, x1: w / 2 };
   }
   const roofY = flatRoof(B, { w, d, y: H, para: 0.9, color: wall, wallMat: 'tiles', coping: pal.trim });
   for (let i = 0; i < 3; i++) acUnit(B, -w / 3 + i * 2.2, roofY, rng, { pipeTo: roofY + 0.4 });
   ex.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2 + 0.2, hz: d / 2 + 1.8, r, h: H + 1 });
   out.footprint = [[-w / 2 - 3, -d / 2 - 4.6], [w / 2 + 0.3, d / 2 + 2]]; out.H = H; if (!podium) out.corridor = { w, d, X: liftX };
+  for (const e of out.lamps) lampPoints.push(e);
+  B.frame(0, 0, 0, 0);
+  return out;
+}
+
+// ---------------------------------------------------------------- corner block (コーナー棟)
+// Two mid-rise wings meeting at a street corner round a taller corner tower. Frame: the corner tower centred at the
+// origin, wing A along +x with its balconies to -z, wing B along +z with its balconies to -x; both wings' access
+// corridors and lobbies face the court inside the L (+x +z). The tower rises two floors over the wings and carries
+// recessed loggias (balconies set into the building, walled both sides) on its two street faces, glazed corner rooms at
+// the top, a community room with a glazed front at street level, and the block's name on its crown.
+export function cornerBlock(B, s, rng, ex) {
+  const { x, y, z, r, wa = 30, wb = 26, floors = 7, pal = PALETTES.white, no = 1, name = 'グランコート桜川', gy } = s, C = 6.0, fh = 3.0, y0 = 0.4, CF = floors + 2, H = y0 + CF * fh;
+  const P = (lx, lz) => { B.frame(x, y, z, r); return B.P([lx, 0, lz]); };
+  const pa = P(C + wa / 2 - 0.3, 0), A = mansion(B, { x: pa[0], y, z: pa[2], r: r + Math.PI, w: wa, floors, pal, no, name: name + ' A棟', gy, lift: 0 }, rng, ex);
+  const pb = P(0, C + wb / 2 - 0.3), Bw = mansion(B, { x: pb[0], y, z: pb[2], r: r - Math.PI / 2, w: wb, floors, pal, no: no + 1, name: name + ' B棟', gy, lift: 2 }, rng, ex);
+  const out = { entrances: A.entrances.concat(Bw.entrances), walkways: (A.walkways || []).concat(Bw.walkways || []), lamps: [], H };
+  const cxA = C + wa / 2 - 0.3, czB = C + wb / 2 - 0.3, d = 11.5;
+  out.boxes0 = [[[-C - 0.5, -C - 0.5], [C + 0.5, C + 0.5]], [[cxA - wa / 2 - 0.3, -d / 2 - 2], [cxA + wa / 2 + 3, d / 2 + 4.6]], [[-d / 2 - 2, czB - wb / 2 - 3], [d / 2 + 4.6, czB + wb / 2 + 0.3]]];
+  // the tower
+  B.frame(x, y, z, r);
+  const wall = mix3(jit(rng, pal.wall, 0.02), pal.parapet, 0.25), acc = strong(pal);
+  B.bbox('concrete', 0, -0.45, 0, 2 * C + 0.12, 0.85, 2 * C + 0.12, 0.02, { color: pal.base });
+  const logg = [], upper = [], ground = [];
+  for (let f = 1; f < CF; f++) { const fy = y0 + f * fh; for (const [a, b] of [[-C + 0.9, -0.55], [0.55, C - 0.9]]) logg.push({ x0: a, x1: b, y0: fy + 0.02, y1: fy + fh - 0.35, d: 1.6, f }); }
+  for (let f = floors; f < CF; f++) { const fy = y0 + f * fh; upper.push({ x0: -C + 1.0, x1: -1.0, y0: fy + 0.6, y1: fy + 2.4, d: 0.18 }, { x0: 1.0, x1: C - 1.0, y0: fy + 0.6, y1: fy + 2.4, d: 0.18 }); }
+  ground.push({ x0: -C + 0.8, x1: C - 0.8, y0: y0 + 0.02, y1: y0 + 2.7, d: 0.2, shop: true });
+  const bands = [['tiles', mix3(wall, pal.base, 0.5), 2.5, y0 + fh - 0.1], ['tiles', wall, 2.5, H - fh * 0.5], ['tiles', mix3(wall, acc, 0.35), 2.5]];
+  boxWalls(B, 0, 2 * C, 2 * C, y0, H + 0.9, bands, fi => fi === 1 || fi === 3 ? logg.concat(ground) : upper, mul(wall, 0.92));
+  // loggias: the flat's glazed wall at the back of the recess, a guard across the mouth, AC unit and laundry inside;
+  // the community room behind a shop-front at street level; windows in the corner rooms at the top
+  for (const fr of [Math.PI, -Math.PI / 2]) inFrame(B, [Math.sin(fr) * C, 0, Math.cos(fr) * C], fr, () => {
+    for (const h of logg) { const kind = (h.f + (h.x0 < 0 ? 0 : 1)) % 3 === 0 ? 'solid' : 'glass';
+      inFrame(B, [0, 0, -h.d], 0, () => { const dh = { x0: h.x0 + 0.35, x1: h.x1 - 0.35, y0: h.y0 + 0.03, y1: h.y0 + 2.15, d: 0.12 };
+        wallFill(B, 'tiles', h.x0, h.x1, h.y0, h.y1, [dh], mul(wall, 0.9), 2.5); reveals(B, 'tiles', dh, mul(wall, 0.85), 1.2); windowUnit(B, dh, { rng, frame: [0.3, 0.3, 0.32], type: 'slide', sill: false }); });
+      guard(B, kind, h.x0, -0.1, h.x1, -0.1, h.y0, { color: kind === 'solid' ? mix3(pal.parapet, acc, 0.3) : pal.parapet, trim: pal.trim, ext: 0 });
+      if (rng() < 0.5) acUnit(B, h.x1 - 0.55, h.y0, rng, { pipeTo: h.y1 - 0.4, z: -h.d + 0.22 });
+      if (rng() < 0.35) B.detail(2, () => { for (let xx = h.x0 + 0.5; xx < h.x1 - 0.5; xx += 0.5 + rng() * 0.3) if (rng() < 0.7) B.box('plain', xx, h.y0 + 1.15, -h.d + 0.5, 0.3 + rng() * 0.15, 0.6, 0.02, { color: pick(rng, LAUNDRY) }); }); }
+    for (const h of ground) { B.quad('shopWindow', [h.x0, h.y0, -h.d + 0.03], [h.x1, h.y0, -h.d + 0.03], [h.x1, h.y1, -h.d + 0.03], [h.x0, h.y1, -h.d + 0.03], { color: [1.1, 1, 4.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+      for (let k = 0; k <= 4; k++) B.box('alu', h.x0 + (h.x1 - h.x0) * k / 4, h.y0, -h.d + 0.05, 0.07, h.y1 - h.y0, 0.07, { color: [0.3, 0.3, 0.32] });
+      B.bbox('metal', 0, h.y1 + 0.1, 0.5, h.x1 - h.x0 + 0.6, 0.14, 1.0, 0.01, { color: [0.3, 0.31, 0.33] }); }
+    floorBands(B, -C, C, Array.from({ length: CF - 1 }, (_, k) => y0 + (k + 1) * fh), pal.trim, 0.05);
+  });
+  plate(B, -C - 0.03, y0 + 3.05, -C + 3.5, -Math.PI / 2, 2.6, 0.36, (g, W2, H2) => { g.fillStyle = '#f4f1ea'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#2f3a44'; g.font = `bold ${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('集会所・管理事務所', W2 / 2, H2 * 0.55); }, 0.4, 256);
+  for (const fr of [0, Math.PI / 2]) inFrame(B, [Math.sin(fr) * C, 0, Math.cos(fr) * C], fr, () => { for (const h of upper) windowUnit(B, h, { rng, frame: [0.3, 0.3, 0.32], type: 'slide' }); });
+  const roofY = flatRoof(B, { w: 2 * C, d: 2 * C, y: H, para: 1.2, color: wall, wallMat: 'tiles', coping: pal.trim });
+  B.bbox('concrete', -C - 0.02, H - 0.2, -C - 0.02, 0.6, 1.5, 0.6, 0.02, { color: acc });                                   // the corner's accent pier head
+  plate(B, 0, H + 0.5, -C - 0.05, Math.PI, 5.0, 0.7, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#3a4550'; g.font = `bold ${H2 * 0.6}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, W2 / 2, H2 * 0.55); }, 0.6, 512).material.transparent = true;
+  B.bbox('metal', C / 2, roofY, C / 2, 2.4, 2.0, 2.4, 0.03, { color: [0.86, 0.86, 0.83] });
+  ex.push({ t: 'box', p: B.P([0, 0, 0]), hx: C + 0.2, hz: C + 0.2, r, h: H + 1 });
   for (const e of out.lamps) lampPoints.push(e);
   B.frame(0, 0, 0, 0);
   return out;
@@ -412,14 +702,18 @@ export function centreBlock(B, s, rng, ex) {
   // residents' lobbies for the flats above, in the podium's inner faces: glazed doors, a canopy on columns, the
   // building's name, mailboxes and a light inside
   const lobby = (place, faceR, label) => inFrame(B, place, faceR, () => {
-    const lob = { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] }, fr = { color: [0.3, 0.3, 0.32] };
-    B.quad('dark', [-1.75, 0.1, 0.02], [1.75, 0.1, 0.02], [1.75, 3.0, 0.02], [-1.75, 3.0, 0.02], { color: [0.1, 0.1, 0.1] });
-    B.quad('shopWindow', [-1.65, 0.12, 0.04], [1.65, 0.12, 0.04], [1.65, 2.92, 0.04], [-1.65, 2.92, 0.04], lob);
-    for (const xx of [-1.7, -0.55, 0.55, 1.7]) B.box('alu', xx, 0.1, 0.06, 0.07, 2.86, 0.07, fr);
-    B.box('alu', 0, 2.92, 0.06, 3.5, 0.07, 0.07, fr); B.box('alu', 0, 2.2, 0.06, 3.4, 0.05, 0.06, fr);
-    entranceCanopy(B, 0, 0.1, 4.4, 2.2, { cols: true, color: [0.3, 0.31, 0.33], lampAt: out.lamps, h: 3.15 });
-    plate(B, 0, 3.72, 0.03, 0, 3.8, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.48}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, W2 / 2, H2 * 0.55); }, 0.5, 256);
-    out.entrances.push({ p: B.P([0, 0, 3.2]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby' });
+    // an entrance pavilion standing out from the podium: stone-clad cheeks and roof round a porch with automatic doors
+    const D = 2.2, hw = 1.2, t = 0.3, yh = 2.9, CL = [0.4, 0.38, 0.37];
+    const DP = D + 0.15;                                                                                            // the doors stand 15 cm off the podium
+    for (const e of [-1, 1]) B.bbox('stone', e * (hw + t / 2), -0.3, DP / 2, t, yh + 0.7, DP, 0.02, { color: CL, skip: e < 0 ? 'px' : 'nx' });
+    B.bbox('stone', 0, yh, DP / 2, 2 * (hw + t), 0.4, DP, 0.02, { color: CL, skip: 'ny' });
+    for (const e of [-1, 1]) ex.push({ t: 'box', p: B.P([e * (hw + t / 2), 0, DP / 2]), hx: t / 2, hz: DP / 2, r: B.F.r, h: yh + 0.5 });
+    B.frame(...B.P([0, 0, DP]), B.F.r);
+    entrancePorch(B, rng, { w: 2 * hw, y0: 0.1, yh, depth: D, wall: [0.8, 0.78, 0.74], auto: true, mail: [4, 5], lockers: true, lampAt: out.lamps, floorC: [0.38, 0.36, 0.35] });
+    entranceCanopy(B, 0, 0.1, 4.2, 2.0, { cols: true, color: [0.3, 0.31, 0.33], lampAt: out.lamps, h: 3.1, steps: false });
+    plate(B, 0, 3.72, -DP + 0.03, 0, 3.8, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.48}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, W2 / 2, H2 * 0.55); }, 0.5, 256);
+    const ap = s.gy ? approach(B, s.gy, { w: 3.2, y0: 0.1, land: 1.2, ramp: 0, court: 2.4 }) : { foot: [0, 3.2], court: [-2, 1, 2, 3.4] };
+    out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)) });
   });
   lobby([wa / 2 + 5, 0, -dp], Math.PI, 'センタービル桜川 東館');
   lobby([dp, 0, -dp - (wb - dp) / 2 - 1.5], Math.PI / 2, 'センタービル桜川 西館');
@@ -457,12 +751,16 @@ export function lowRise(B, s, rng, ex) {
   hipRoof(B, { w: w + 0.2, d: d + 0.2, y: H + 0.1, pitch: 0.28, over: 0.55, mat: 'roofMetal', color: rc });
   // front: doors on both floors, the upper floor reached by a gallery and an open steel stair at one end
   inFrame(B, [0, 0, d / 2], 0, () => {
-    for (const h of front) { if (h.door) doorUnit(B, h, { color: jit(rng, [0.62, 0.55, 0.46], 0.08), mat: 'metal' }); else windowUnit(B, h, { rng, grille: true, frosted: rng() < 0.5 }); }
+    for (const h of front) { if (h.door) { doorUnit(B, h, { color: jit(rng, [0.62, 0.55, 0.46], 0.08), mat: 'metal' }); doorFurniture(B, h.x1 + 0.16, h.y0); } else windowUnit(B, h, { rng, grille: true, frosted: rng() < 0.5 }); }
     const gy = y0 + fh, gc = pick(rng, [[0.3, 0.32, 0.36], [0.55, 0.3, 0.26], [0.86, 0.85, 0.82]]);
     // the gallery runs on past the end wall to the stair landing
     B.bbox('concrete', 0.6, gy - 0.16, 0.65, w + 1.2, 0.16, 1.3, 0.01, { color: [0.78, 0.78, 0.76] });
-    B.bbox('metal', 0.1, gy + 0.98, 1.28, w + 0.2, 0.06, 0.06, 0.008, { color: gc });
-    B.detail(1, () => { for (let xx = -w / 2 + 0.1; xx <= w / 2 + 0.2; xx += 0.12) B.box('metal', xx, gy, 1.28, 0.02, 0.98, 0.02, { color: gc }); });
+    // its railing runs the whole front, past the end wall to the stair landing, and returns to the wall at both ends
+    const rail = (ax, az, bx, bz) => inFrame(B, [ax, 0, az], Math.atan2(-(bz - az), bx - ax), () => { const L = Math.hypot(bx - ax, bz - az);
+      B.bbox('metal', L / 2, gy + 1.02, 0, L + 0.06, 0.06, 0.06, 0.008, { color: gc }); B.box('metal', L / 2, gy + 0.08, 0, L, 0.04, 0.04, { color: gc });
+      for (const xx of [0, L]) B.box('metal', xx, gy, 0, 0.05, 1.05, 0.05, { color: gc });
+      B.detail(1, () => { for (let xx = 0.12; xx < L - 0.05; xx += 0.12) B.box('metal', xx, gy + 0.1, 0, 0.02, 0.92, 0.02, { color: gc }); }); });
+    rail(-w / 2 + 0.03, 0.05, -w / 2 + 0.03, 1.28); rail(-w / 2 + 0.03, 1.28, w / 2 + 1.27, 1.28); rail(w / 2 + 1.27, 1.28, w / 2 + 1.27, 0.3);
     for (let xx = -w / 2 + 0.1; xx <= w / 2; xx += w / Math.ceil(w / 4)) B.box('metal', xx, 0, 1.25, 0.09, gy, 0.09, { color: gc });
     // stair: one straight flight along the gable end, rising from behind toward the gallery; steel stringers and treads
     const sx = w / 2 + 0.7, n = 14, zs = -3.4;
@@ -475,15 +773,25 @@ export function lowRise(B, s, rng, ex) {
     plate(B, -w / 2 + 1.4, 1.6, 0.03, 0, 1.4, 0.36, (g, W2, H2) => { g.fillStyle = '#f5f1e6'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#4a3a2c'; g.font = `bold ${H2 * 0.55}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s.name || pick(rng, APATO), W2 / 2, H2 * 0.55); }, 0.15, 256);
     out.entrances.push({ p: B.P([0, 0, 2.6]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'gallery' });
   });
+  // the mail bank on the near gable by the walkway's end, under a little hood with a lamp, the notice board beside it
+  inFrame(B, [-w / 2, 0, d / 2 - 1.45], -Math.PI / 2, () => {
+    const cols = Math.min(4, nU), bw = cols * 0.3, bh = 0.48, yb = 0.85;
+    B.bbox('metal', 0, yb - 0.04, 0.17, bw + 0.06, bh + 0.08, 0.34, 0.01, { color: [0.7, 0.72, 0.73] });
+    atlasQuad(B, 'mail', [-bw / 2, yb, 0.342], [bw / 2, yb, 0.342], [bw / 2, yb + bh, 0.342], [-bw / 2, yb + bh, 0.342], [0, 1 - 2 / 5, cols / 4, 1]);
+    B.bbox('metal', 0, yb + bh + 0.5, 0.3, bw + 0.5, 0.05, 0.6, 0.008, { color: [0.36, 0.38, 0.4] });
+    B.box('lamp', 0, yb + bh + 0.47, 0.3, 0.3, 0.03, 0.1); out.lamps.push({ p: B.P([0, yb + bh + 0.3, 0.5]), s: 0.3 });
+    wallPanel(B, 'rules', -(bw / 2 + 0.45), 1.0, 0.44, 0.33, 0.02, { color: [0.3, 0.3, 0.3] });
+  });
   // back: small balconies on the upper floor, garden fences on the ground floor
   inFrame(B, [0, 0, -d / 2], Math.PI, () => {
     for (const h of back) windowUnit(B, h, { rng, type: 'slide', sill: false, shutterBox: rng() < 0.4 });
     for (let u = 0; u < nU; u++) { const cx = -(-w / 2 + (u + 0.5) * uw);
       balconyRun(B, rng, cx - 2.3, cx + 0.9, y0 + fh, 0.9, { kind: 'rail', trim: [0.4, 0.42, 0.44], fh, laundry: 0.5 });
-      balconyRun(B, rng, cx - uw / 2 + 0.1, cx + uw / 2 - 0.1, y0, 1.0, { ground: true, trim: [0.55, 0.56, 0.56] }); }
+      balconyRun(B, rng, cx - uw / 2, cx + uw / 2, y0, 1.0, { ground: true, trim: [0.55, 0.56, 0.56], ends: [u === nU - 1, true] }); }
   });
   ex.push({ t: 'box', p: B.P([0, 0, 0.3]), hx: w / 2 + 1.2, hz: d / 2 + 1.3, r, h: H + 1 });
   out.footprint = [[-w / 2 - 1.3, -d / 2 - 2.2], [w / 2 + 1.3, d / 2 + 1.4]]; out.H = H; out.walk = { w, d };
+  for (const e of out.lamps) lampPoints.push(e);
   B.frame(0, 0, 0, 0);
   return out;
 }

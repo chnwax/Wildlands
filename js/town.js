@@ -1440,7 +1440,11 @@ export async function build(progress) {
   const moving = [];
   loops.forEach((L, i) => { for (let k = 0; k < L.n; k++) moving.push({ route: routes[i], s: routes[i].len * (k + crng() * 0.5) / L.n, spec: randomCar(crng) }); });
   const fleet = new Fleet([...parked.map(p => p.spec), ...moving.map(m => m.spec)]);
-  parked.forEach((p, i) => { const car = fleet.cars[i]; fleet.place(car, p.sp.p[0], p.sp.y ?? hf.groundAt(p.sp.p[0], p.sp.p[2]) + (p.sp.p[1] > Y0 + 0.1 ? 0.14 : 0), p.sp.p[2], p.sp.r + Math.PI / 2, 0, 0, 0); const T = carDims(car.type); addBox(p.sp.p[0], p.sp.p[2], T.L / 2, T.W / 2, p.sp.r + Math.PI / 2, -1e9, Y0 + 1.6); });
+  parked.forEach((p, i) => { const car = fleet.cars[i], T = carDims(car.type), sp = p.sp;
+    // bays with a wheel stop: back the car in until its rear tyres touch it (sp.stop: bay point to the stop's face)
+    let [x, , z] = sp.p; if (sp.stop != null) { const k = sp.stop - (T.truck ? T.L / 2 - 0.75 : T.wb / 2) - T.r - 0.03; x += Math.sin(sp.r) * k; z += Math.cos(sp.r) * k; }
+    const y = sp.y ?? hf.groundAt(x, z) + (sp.p[1] > Y0 + 0.1 ? 0.14 : 0);
+    fleet.place(car, x, y, z, sp.r + Math.PI / 2, 0, 0, 0); addBox(x, z, T.L / 2, T.W / 2, sp.r + Math.PI / 2, -1e9, Math.max(Y0, y) + 1.6); });
   const traffic = new Traffic(fleet, (x, z) => (Math.abs(z + 80) < 6.8 && XINGS.some(([cx, hw]) => Math.abs(x - cx) < hw) ? Y0 + 0.45 : surfaceY(x, z)) - 0.04);
   moving.forEach((m, i) => traffic.add(fleet.cars[parked.length + i], m.route, m.s));
   fleet.commit();
@@ -1469,7 +1473,7 @@ export async function build(progress) {
   // nobody steps onto a level crossing while its bells ring or its booms are down
   const xingClosed = (x0, z0, x1, z1) => Math.abs(z1 + 80) < 7.2 && Math.abs(z0 + 80) >= 7.2 - 1e-3 && crossings.some(c => (c.active || c.down > 0.01) && Math.abs(x1 - c.x) < c.roadW / 2 + 3);
   let crowd = null; try { crowd = await loadCrowd(); } catch (e) { console.warn('crowd models failed, box figures instead', e); }
-  const people = pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 260, 21, { blocked: xingClosed, crowd });
+  const people = pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 300, 21, { blocked: xingClosed, crowd });
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3();
   const world = {
