@@ -53,8 +53,6 @@ export function tunnelPortal(MT, { xFace, xBack, y, z, sx, archW = 10, archH = 9
 // ground level y0: ballast top = y0 + 0.2, rail top = y0 + 0.45
 export function railTop(y0) { return y0 + 0.45; }
 
-const stripeTex = canvasTex(256, 32, (g, W, H) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#111' : '#f2c200'; g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32 + 32, 0); g.lineTo(i * 32 + 16, H); g.lineTo(i * 32 - 16, H); g.fill(); } });
-stripeTex.wrapS = THREE.RepeatWrapping;
 
 export function buildRailway(ctx) {
   const { y0, riverX, B } = ctx, MT = materials();
@@ -426,26 +424,152 @@ function stationSign() {
 // ---------------------------------------------------------------- level crossings
 export const crossings = [];
 const lampOn = new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff1a0a, emissiveIntensity: 9 });
-const lampOff = new THREE.MeshStandardMaterial({ color: 0x220505, roughness: 0.3 });
-const hoodMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.6, side: THREE.DoubleSide });
-const armMat = new THREE.MeshStandardMaterial({ map: stripeTex, roughness: 0.45 });
-const gateMetal = new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.45, metalness: 0.6 });
-const tipMat = new THREE.MeshStandardMaterial({ color: 0xc81010, roughness: 0.3, emissive: 0x400000 });
-// cover panels of the barrier machine: diagonal yellow and black
-const coverTex = canvasTex(128, 256, (g, W, H) => { g.fillStyle = '#111'; g.fillRect(0, 0, W, H); g.fillStyle = '#f2c200'; for (let i = -8; i < 16; i++) { g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32 + 16, 0); g.lineTo(i * 32 + 16 + H * 0.5, H); g.lineTo(i * 32 + H * 0.5, H); g.fill(); } });
-const coverMat = new THREE.MeshStandardMaterial({ map: coverTex, roughness: 0.5 });
+const lampOff = new THREE.MeshStandardMaterial({ color: 0x2a0606, roughness: 0.25 });
+// barrier boom: a tapered aluminium tube in retro-reflective red and white bands (0.5 m each), the red leaning to pink
+const boomTex = canvasTex(256, 16, (g, W, H) => { g.fillStyle = '#f3f2ee'; g.fillRect(0, 0, W, H); g.fillStyle = '#d93b52'; g.fillRect(0, 0, W / 2, H);
+  g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(W / 2 - 1, 0, 2, H); g.fillRect(W - 1, 0, 1, H); g.fillRect(0, 0, 1, H); });
+boomTex.wrapS = THREE.RepeatWrapping;
+const boomMat = new THREE.MeshStandardMaterial({ map: boomTex, roughness: 0.38 });
+const galvMat = new THREE.MeshStandardMaterial({ color: 0xa4a8ac, roughness: 0.42, metalness: 0.55 });   // galvanised steel (boom holder, hub)
+const castMat = new THREE.MeshStandardMaterial({ color: 0x33363a, roughness: 0.6, metalness: 0.35 });   // cast counterweights, lamp heads
+// crossbuck (踏切警標): two white boards with a red border crossed at right angles
 const crossbuckTex = canvasTex(256, 256, (g, W, H) => {
   g.clearRect(0, 0, W, H); g.translate(W / 2, H / 2);
-  for (const a of [Math.PI / 4, -Math.PI / 4]) { g.save(); g.rotate(a); g.fillStyle = '#111'; g.fillRect(-120, -22, 240, 44); for (let i = -120; i < 120; i += 40) { g.fillStyle = '#f2c200'; g.fillRect(i, -18, 20, 36); } g.restore(); }
+  for (const a of [Math.PI / 4, -Math.PI / 4]) { g.save(); g.rotate(a); g.fillStyle = '#d42f3c'; g.fillRect(-124, -22, 248, 44); g.restore(); }
+  for (const a of [Math.PI / 4, -Math.PI / 4]) { g.save(); g.rotate(a); g.fillStyle = '#f6f5f0'; g.fillRect(-116, -14, 232, 28); g.restore(); }
 });
 const crossbuckMat = new THREE.MeshStandardMaterial({ map: crossbuckTex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.5 });
+const GALV = [0.66, 0.68, 0.7], GRAPHITE = [0.22, 0.235, 0.25], BLACK = [0.06, 0.06, 0.065], CONC = [0.7, 0.7, 0.68];
+const circ = (r, n = 12, a0 = 0, a1 = Math.PI * 2) => Array.from({ length: n }, (_, i) => [Math.cos(a0 + (a1 - a0) * i / (a1 - a0 < 6.28 ? n - 1 : n)) * r, Math.sin(a0 + (a1 - a0) * i / (a1 - a0 < 6.28 ? n - 1 : n)) * r]);
+// base plate with four anchor bolts and nuts, on a footing top at local y 0
+function basePlate(B, w, d) {
+  B.box('steel', 0, 0, 0, w, 0.022, d, { color: GALV });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const bx = sx * (w / 2 - 0.05), bz = sz * (d / 2 - 0.05);
+    B.cyl('steel', bx, 0.022, bz, 0.03, 0.03, 0.022, 6, { color: [0.5, 0.52, 0.54], cap: true, smooth: false }); B.cyl('steel', bx, 0.044, bz, 0.013, 0.011, 0.035, 6, { color: [0.55, 0.56, 0.58], cap: true }); }
+}
+// Warning post (警報機) at (x, y, z), lamps facing each of `faces` (yaw; 0 = toward +z): a concrete footing and bolted
+// base plate, a galvanised mast with a terminal box and its conduit, a steel cross-arm carrying back-to-back lamp
+// targets (black boards with a white rim) with twin hooded red lamps each way, a direction indicator, the red-and-white
+// crossbuck and a bell speaker on top. Lamps go to c.lamps (alternate flashing).
+function warningPost(B, c, x, y, z, { H = 3.45, lampY = 2.3, span = 0.6, faces = [0, Math.PI], k = 1, crossbuck = true } = {}) {
+  B.frame(x, y, z, 0);
+  B.bbox('concrete', 0, -0.4, 0, 0.62 * k, 0.45, 0.62 * k, 0.03, { color: CONC });
+  inFrameY(B, 0.05, () => basePlate(B, 0.4 * k, 0.4 * k));
+  B.cyl('steel', 0, 0.1, 0, 0.078 * k, 0.07 * k, H - 0.1, 14, { color: GALV });
+  B.cyl('steel', 0, H, 0, 0.09 * k, 0.05 * k, 0.05, 14, { color: GALV, cap: true });
+  B.bbox('metal', 0.13 * k, 1.05, 0, 0.18 * k, 0.28, 0.14 * k, 0.015, { color: [0.72, 0.73, 0.72] });                          // terminal box
+  B.cyl('dark', 0.13 * k, 0.12, 0.05 * k, 0.018, 0.018, 0.93, 8, { color: BLACK });                                         // its conduit
+  B.box('steel', 0, lampY - 0.04, 0, 2 * span + 0.5, 0.08, 0.08, { color: GALV });                                           // cross-arm
+  for (const face of faces) {
+    const fz = Math.cos(face), fx = Math.sin(face);
+    B.frame(x, y, z, face);
+    // target board: white rim behind a black board with rounded corners
+    B.bbox('plain', 0, lampY - 0.27, 0.07, 2 * span + 0.56, 0.54, 0.02, 0.06, { color: [0.93, 0.93, 0.9] });
+    B.bbox('dark', 0, lampY - 0.245, 0.085, 2 * span + 0.48, 0.49, 0.025, 0.06, { color: BLACK });
+    for (const lx of [-span, span]) {
+      // lamp drum, and a deep visor over the top half of the lens
+      B.sweep('dark', circ(0.13 * k, 14), [[lx, lampY, 0.1], [lx, lampY, 0.2]], { closed: true, caps: false, color: [0.08, 0.08, 0.09] });
+      const hood = circ(0.16 * k, 9, 0.05, Math.PI - 0.05); // (both windings: it is seen from inside and out)
+      for (const pr of [hood, [...hood].reverse()]) B.sweep('dark', pr, [[lx, lampY, 0.19], [lx, lampY, 0.42]], { color: [0.05, 0.05, 0.05] });
+      const l = new THREE.Mesh(new THREE.CircleGeometry(0.115 * k, 20), lampOff);
+      l.position.set(x + fx * 0.205 + Math.cos(face) * lx, y + lampY, z + fz * 0.205 - Math.sin(face) * lx); l.rotation.y = face; scene.add(l);
+      c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 });
+    }
+    // direction indicator under the target: a black box with arrow lamps
+    B.bbox('dark', 0, lampY - 0.66, 0.08, 0.56, 0.2, 0.1, 0.02, { color: BLACK });
+    for (const sx of [-1, 1]) B.poly('plain', [[sx * 0.2, lampY - 0.56, 0.131], [sx * 0.2, lampY - 0.64, 0.131], [sx * 0.08, lampY - 0.6, 0.131]], [0, 0, 1], { color: [0.55, 0.52, 0.5] });
+  }
+  B.frame(x, y, z, 0);
+  // bell speaker: a flared horn under a cap
+  B.cyl('plastic', 0, H + 0.05, 0, 0.05, 0.16 * k, 0.2, 16, { color: [0.3, 0.31, 0.33] }); B.cyl('plastic', 0, H + 0.25, 0, 0.17 * k, 0.1 * k, 0.07, 16, { color: [0.36, 0.37, 0.39], cap: true });
+  B.frame(0, 0, 0, 0);
+  if (crossbuck) for (const face of faces.length > 1 ? [faces[0]] : faces) {
+    const cb = new THREE.Mesh(new THREE.PlaneGeometry(1.05 * k, 1.05 * k), crossbuckMat); cb.position.set(x, y + H - 0.42 * k, z); cb.rotation.y = face; cb.castShadow = true; scene.add(cb);
+  }
+  addCircle(x, z, 0.2);
+}
+function inFrameY(B, dy, fn) { const F = B.F; B.frame(F.x, F.y + dy, F.z, F.r); fn(); B.F = F; }
+// Barrier machine (電動遮断機) at (x, y, z). The drive shaft points along +side (z) toward the approaching traffic, the
+// boom swings in the plane `reach` metres in front of the machine and lies toward -m (across the road). Static: concrete
+// foundation, bolted base plate, a graphite-grey steel housing with a hipped lid, a hinged service door with its lock
+// and louvres on the back, a maker's plate, the gearbox drum and shaft, a cable conduit into a pit at its foot. Moving
+// (returned pivot, rotated about z): the flanged hub, a galvanised channel holder clamping the boom root with U-bolts,
+// the counterweight arm with stacked cast weights, and the boom itself — tapered, banded red and white, with two small
+// red lamps along its top and a steady red lamp at the tip. A boom rest (fork on a post) stands on the far side.
+function barrierMachine(B, c, x, y, z, { side, m, armL, pivotY = 0.98, reach = 0.36, k = 1, restX = null, restY = null }) {
+  B.frame(x, y, z, 0);
+  B.bbox('concrete', 0, -0.36, 0, 0.78 * k, 0.44, 0.66 * k, 0.03, { color: CONC });
+  inFrameY(B, 0.08, () => basePlate(B, 0.56 * k, 0.46 * k));
+  const hw = 0.23 * k, hd = 0.19 * k, h0 = 0.1, h1 = pivotY + 0.14;
+  B.bbox('metal', 0, h0, 0, 2 * hw, h1 - h0, 2 * hd, 0.025, { color: GRAPHITE });
+  // hipped lid with a drip edge
+  B.bbox('metal', 0, h1, 0, 2 * hw + 0.05, 0.035, 2 * hd + 0.05, 0.01, { color: [0.19, 0.2, 0.21] });
+  const lt = h1 + 0.035, lh = 0.09;
+  B.poly('metal', [[-hw - 0.02, lt, -hd - 0.02], [hw + 0.02, lt, -hd - 0.02], [hw * 0.4, lt + lh, -hd * 0.3], [-hw * 0.4, lt + lh, -hd * 0.3]], [0, 0.6, -1], { color: [0.21, 0.22, 0.23] });
+  B.poly('metal', [[-hw - 0.02, lt, hd + 0.02], [hw + 0.02, lt, hd + 0.02], [hw * 0.4, lt + lh, hd * 0.3], [-hw * 0.4, lt + lh, hd * 0.3]], [0, 0.6, 1], { color: [0.23, 0.24, 0.25] });
+  for (const sx of [-1, 1]) B.poly('metal', [[sx * (hw + 0.02), lt, -hd - 0.02], [sx * (hw + 0.02), lt, hd + 0.02], [sx * hw * 0.4, lt + lh, hd * 0.3], [sx * hw * 0.4, lt + lh, -hd * 0.3]], [sx, 0.6, 0], { color: [0.2, 0.21, 0.22] });
+  B.poly('metal', [[-hw * 0.4, lt + lh, -hd * 0.3], [hw * 0.4, lt + lh, -hd * 0.3], [hw * 0.4, lt + lh, hd * 0.3], [-hw * 0.4, lt + lh, hd * 0.3]], [0, 1, 0], { color: [0.22, 0.23, 0.24] });
+  // service door on the back (away from the road), hinges, lock; louvres low on both sides; maker's plate
+  const bz = -side * (hd + 0.004);
+  B.frame(x, y, z + bz, side > 0 ? Math.PI : 0);
+  B.box('metal', 0, h0 + 0.08, 0.004, 2 * hw - 0.08, h1 - h0 - 0.2, 0.008, { color: [0.2, 0.215, 0.23] });
+  for (const hy of [h0 + 0.2, h1 - 0.22]) B.cyl('steel', -hw + 0.03, hy, 0.012, 0.012, 0.012, 0.08, 8, { color: [0.4, 0.42, 0.44] });
+  B.box('steel', hw - 0.07, (h0 + h1) / 2, 0.012, 0.03, 0.09, 0.012, { color: [0.62, 0.63, 0.64] });
+  B.box('plain', 0, h1 - 0.26, 0.012, 0.16, 0.07, 0.004, { color: [0.78, 0.78, 0.74] });
+  B.frame(x, y, z, 0);
+  for (const sx of [-1, 1]) for (let i = 0; i < 5; i++) B.box('dark', sx * (hw + 0.003), h0 + 0.12 + i * 0.045, 0, 0.006, 0.018, 2 * hd - 0.12, { color: [0.08, 0.08, 0.09] });
+  // gearbox drum on the road-facing side of the housing, and the shaft out to the hub
+  B.sweep('metal', circ(0.14 * k, 16), [[0, pivotY, side * hd], [0, pivotY, side * (hd + 0.09)]], { closed: true, caps: true, color: [0.24, 0.25, 0.27] });
+  B.sweep('steel', circ(0.045 * k, 10), [[0, pivotY, side * (hd + 0.09)], [0, pivotY, side * (reach - 0.03)]], { closed: true, caps: true, color: [0.6, 0.62, 0.64] });
+  // cable: a flexible conduit out of the housing's side, bending down into the foundation beside the base plate
+  B.sweep('dark', circ(0.026, 8), [[m * (hw - 0.01), 0.3, -side * 0.06], [m * (hw + 0.05), 0.285, -side * 0.06], [m * (hw + 0.095), 0.23, -side * 0.06], [m * (hw + 0.11), 0.15, -side * 0.06], [m * (hw + 0.11), 0.05, -side * 0.06]], { closed: true, color: BLACK });
+  B.cyl('steel', m * (hw + 0.11), 0.075, -side * 0.06, 0.04, 0.036, 0.03, 10, { color: GALV, cap: true });  // gland
+  B.frame(0, 0, 0, 0);
+  addBox(x, z, hw + 0.05, hd + 0.05, 0);
+  // ---- the moving part
+  const pv = new THREE.Group(); pv.position.set(x, y + pivotY, z + side * reach);
+  const G = [], W = [], D = [], BM = [];
+  const add = (list, g, px = 0, py = 0, pz = 0) => { g.translate(px, py, pz); list.push(g); };
+  add(G, new THREE.CylinderGeometry(0.15 * k, 0.15 * k, 0.05, 20).rotateX(Math.PI / 2), 0, 0, 0);                       // hub flange
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; add(G, new THREE.CylinderGeometry(0.016, 0.016, 0.03, 6).rotateX(Math.PI / 2), Math.cos(a) * 0.11 * k, Math.sin(a) * 0.11 * k, side * 0.035); }
+  add(G, new THREE.BoxGeometry(0.72 * k, 0.12 * k, 0.07), -m * 0.3 * k, 0, side * 0.03);                                // channel holder
+  for (const u of [0.42, 0.62]) add(G, new THREE.TorusGeometry(0.068 * k, 0.012, 6, 14).rotateY(Math.PI / 2), -m * u * k, 0, side * 0.03); // U-bolt clamps
+  add(G, new THREE.BoxGeometry(0.62 * k, 0.07, 0.05), m * 0.3 * k, 0, side * 0.03);                                     // counterweight arm
+  for (let i = 0; i < 3; i++) add(W, new THREE.BoxGeometry(0.1 * k, 0.32 * k, 0.16), m * (0.44 + i * 0.105) * k, -0.03, side * 0.03);
+  const L = armL - 0.3 * k, r0 = 0.055 * k, r1 = 0.033 * k;
+  const boom = new THREE.CylinderGeometry(m > 0 ? r1 : r0, m > 0 ? r0 : r1, L, 16).rotateZ(Math.PI / 2);
+  { const at = boom.attributes.uv; for (let i = 0; i < at.count; i++) { const u = at.getX(i), v = at.getY(i); at.setXY(i, v * L / 1.0, u); } }
+  add(BM, boom, -m * (0.3 * k + L / 2), 0, side * 0.03);
+  const tipX = -m * (0.3 * k + L);
+  add(D, new THREE.CylinderGeometry(r1 + 0.004, r1 + 0.004, 0.08, 12).rotateZ(Math.PI / 2), tipX + m * 0.04, 0, side * 0.03); // end cap
+  // boom lamps: small black heads on top of the boom, lens both ways
+  const lampAt = [0.36, 0.7, 0.985].map(f => -m * (0.3 * k + L * f));
+  for (const lx of lampAt) add(D, new THREE.BoxGeometry(0.075, 0.1, 0.09), lx, r0 + 0.05, side * 0.03);
+  const mk = (list, mat) => { if (!list.length) return; const g = mergeGeometries(list.map(q => q.index ? q.toNonIndexed() : q)); const me = new THREE.Mesh(g, mat); me.castShadow = true; pv.add(me); };
+  mk(G, galvMat); mk(W, castMat); mk(BM, boomMat); mk(D, castMat);
+  lampAt.forEach((lx, i) => { for (const f of [-1, 1]) { const l = new THREE.Mesh(new THREE.CircleGeometry(0.032, 12), lampOff); l.position.set(lx, r0 + 0.05, side * 0.03 + f * 0.047); l.rotation.y = f > 0 ? 0 : Math.PI; pv.add(l); c.lamps.push({ m: l, phase: i % 2, steady: i === 2, boom: true }); } });
+  scene.add(pv);
+  c.arms.push({ pivot: pv, side: m, len: armL, x0: x, z: z + side * reach });
+  // the boom rest on the far side: a galvanised post with a rubber-lined fork at boom height
+  if (restX !== null) {
+    const ry = restY ?? y;
+    B.frame(restX, ry, z + side * reach, 0);
+    B.bbox('concrete', 0, -0.3, 0, 0.36, 0.36, 0.36, 0.02, { color: CONC });
+    B.cyl('steel', 0, 0.06, 0, 0.045, 0.04, pivotY + (y - ry) - 0.2, 10, { color: GALV });
+    const fy = pivotY + (y - ry) - 0.14;
+    B.box('steel', 0, fy - 0.02, 0.03 * side, 0.1, 0.04, 0.2, { color: GALV });
+    for (const e of [-1, 1]) B.box('dark', 0, fy, 0.03 * side + e * 0.085, 0.08, 0.12, 0.02, { color: BLACK });
+    B.frame(0, 0, 0, 0); addCircle(restX, z + side * reach, 0.08);
+  }
+  return pv;
+}
 // Level crossing (踏切). The road runs on across the tracks at rail-head level: precast crossing panels inside and
 // beside each track with flangeways left open along every rail, asphalt between the tracks, footways carried over as
 // lighter concrete panels with warning tiles at both ends, a concrete edge beam where the crossing meets the ballast,
 // and the road's edge lines painted on. The approach roads ramp up to it (town.js). Each approach has its warning
 // machine on the driver's left (keep-left): striped mast, crossbuck, twin red lamps with hoods for both directions, a
 // bell speaker and a direction indicator; and a barrier machine whose striped boom swings down across the road.
-export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0, side = null, lines = null, uSign = 1, sAt = null, hwAge = null, machineSide = 0, ped = false, age = 0.5 } = {}) {
+export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0, side = null, lines = null, uSign = 1, sAt = null, hwAge = null, machineSide = 0, ped = false, age = 0.5, groundAt = null } = {}) {
   const rt = railTop(y0), zN = -86.9, zS = -73.1, zA = -86.6, zB = -73.4, g = RAIL.gauge;
   const top = rt - 0.003, base = y0 + 0.2;
   // the deck carries the approach's own cross-section: carriageway, and beside it the footways (walk) or the concrete
@@ -497,58 +621,16 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0,
   B.frame(0, 0, 0, 0);
   const c = { x, active: false, t: 0, arms: [], lamps: [], bell: new Emitter('bell'), roadW };
   c.bell.set(x, y0 + 3, -80);
-  const STRIPE = i => i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.75, 0.05];
+  // each approach: on the driver's left (keep-left) the warning post, and just before it, facing the traffic, the
+  // barrier machine whose boom closes the whole road; its rest stands beyond the far kerb
   for (const [z, side] of [[zN, -1], [zS, 1]]) {
-    // keep-left: traffic entering from the south (heading -z) has -x on its left, from the north +x
-    const m = machineSide || -side, mx = x + m * (roadW / 2 + 0.75), mz = z + side * 0.35, gy = y0 + 0.45;
-    B.frame(mx, gy, mz, 0);
-    B.bbox('concrete', 0, -0.35, 0, 0.7, 0.45, 0.7, 0.02, { color: [0.7, 0.7, 0.68] });                       // footing
-    for (let i = 0; i < 13; i++) B.cyl('plain', 0, 0.1 + i * 0.26, 0, 0.075, 0.075, 0.26, 12, { color: STRIPE(i) }); // striped mast
-    B.cyl('steel', 0, 3.48, 0, 0.09, 0.05, 0.1, 12, { color: [0.2, 0.2, 0.2], cap: true });
-    B.box('dark', 0, 2.45, 0, 1.36, 0.08, 0.08, { color: [0.12, 0.12, 0.12] });                              // lamp bar
-    for (const lx of [-0.6, 0.6]) B.bbox('dark', lx, 2.08, 0, 0.36, 0.4, 0.14, 0.03, { color: [0.1, 0.1, 0.1] }); // lamp housings
-    B.bbox('plastic', 0, 3.58, 0, 0.3, 0.24, 0.24, 0.03, { color: [0.18, 0.18, 0.2] });                      // bell speaker
-    B.bbox('dark', 0, 1.72, 0, 0.62, 0.22, 0.12, 0.02, { color: [0.1, 0.1, 0.1] });                           // direction indicator
-    const cb = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), crossbuckMat); cb.position.set(mx, gy + 3.05, mz); cb.castShadow = true; scene.add(cb);
-    // barrier machine (電動遮断機): a tall cabinet on a concrete base, diagonal yellow-and-black cover panels front and
-    // back, a domed cap, a service door and louvres on the side, and the drive shaft coming out of the face toward
-    // the road approach, where the boom hub turns
-    B.frame(mx, gy, mz + side * 0.55, 0);
-    B.bbox('concrete', 0, -0.3, 0, 0.66, 0.36, 0.58, 0.02, { color: [0.7, 0.7, 0.68] });
-    B.bbox('dark', 0, 0.06, 0, 0.5, 1.16, 0.42, 0.03, { color: [0.13, 0.13, 0.14] });
-    B.bbox('dark', 0, 1.22, 0, 0.56, 0.05, 0.48, 0.015, { color: [0.18, 0.18, 0.19] });
-    B.cyl('dark', 0, 1.27, 0, 0.2, 0.12, 0.09, 16, { color: [0.18, 0.18, 0.19], cap: true });
-    B.detail(1, () => { for (const sx of [-1, 1]) { B.box('dark', sx * 0.251, 0.2, 0, 0.004, 0.9, 0.34, { color: [0.2, 0.2, 0.21] });
-      for (let k = 0; k < 5; k++) B.box('dark', sx * 0.254, 0.85 + k * 0.05, 0, 0.004, 0.02, 0.24, { color: [0.08, 0.08, 0.08] }); } });
-    B.cyl('steel', 0, 0.9, side * 0.21, 0.055, 0.055, 0.001, 12, { color: [0.5, 0.52, 0.54] });
-    B.beam('steel', [0, 0.95, side * 0.21], [0, 0.95, side * 0.33], 0.07, 0.07, { color: [0.45, 0.47, 0.5] });    // drive shaft
-    addCircle(mx, mz, 0.3); addBox(mx, mz + side * 0.55, 0.3, 0.26, 0);
-    B.frame(0, 0, 0, 0);
-    for (const sgn of [-1, 1]) { const pn = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 1.08), coverMat);
-      pn.position.set(mx, gy + 0.64, mz + side * 0.55 + sgn * 0.212); pn.rotation.y = sgn > 0 ? 0 : Math.PI; scene.add(pn); }
-    for (const face of [0, Math.PI]) for (const lx of [-0.6, 0.6]) {
-      const l = new THREE.Mesh(new THREE.CircleGeometry(0.15, 20), lampOff);
-      const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.22, 20, 1, true, -Math.PI / 2, Math.PI), hoodMat);
-      const grp = new THREE.Group(); grp.position.set(mx, gy + 2.28, mz); grp.rotation.y = face;
-      l.position.set(lx, 0, 0.075); hood.rotation.x = Math.PI / 2; hood.position.set(lx, 0.0, 0.18); grp.add(l, hood); scene.add(grp);
-      c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 });
-    }
-    // boom: hub on the shaft, a square steel holder clamping the root, a tapered striped fibreglass bar with a red
-    // reflector tip, and a counterweight arm with stacked plates on the far side of the pivot
-    const pivot = new THREE.Group(); pivot.position.set(mx, gy + 0.95, mz + side * 0.9);
-    const armL = roadW + 0.2;
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(m > 0 ? 0.034 : 0.05, m > 0 ? 0.05 : 0.034, armL - 0.4, 14).rotateZ(Math.PI / 2), armMat);
-    arm.geometry.translate(-m * (armL / 2 + 0.2), 0, 0); arm.castShadow = true;
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.1, 20).rotateX(Math.PI / 2), gateMetal);
-    const holder = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.13, 0.12).translate(-m * 0.28, 0, 0), gateMetal);
-    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.1, 12).rotateZ(Math.PI / 2).translate(-m * (armL - 0.02), 0, 0), tipMat);
-    const cwArm = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.07, 0.06).translate(m * 0.3, 0, 0), gateMetal);
-    const cw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.3, 0.16).translate(m * 0.55, -0.02, 0), hoodMat);
-    for (const o of [arm, hub, holder, cw, cwArm]) o.castShadow = true;
-    // stripes run along the boom: texture u follows its length (1.6 m per repeat), v goes round it
-    const at = arm.geometry.attributes.uv; for (let i = 0; i < at.count; i++) { const u = at.getX(i), v = at.getY(i); at.setXY(i, v * armL / 1.6, u); }
-    pivot.add(arm, hub, holder, tip, cwArm, cw); scene.add(pivot);
-    c.arms.push({ pivot, side: m, len: armL, x0: mx, z: mz + side * 0.9 });
+    const m = machineSide || -side, mx = x + m * (roadW / 2 + 0.75), mz = z + side * 0.35, gy = (groundAt ? groundAt(mx, mz) : y0 + 0.4) + 0.02;
+    warningPost(B, c, mx, gy, mz, {});
+    const bz = mz + side * 0.62, rx = x - m * (roadW / 2 + 0.42);
+    barrierMachine(B, c, mx, (groundAt ? groundAt(mx, bz) : gy) + 0.02, bz, { side, m, armL: roadW + 0.2 - 0.02, restX: rx, restY: (groundAt ? groundAt(rx, bz + side * 0.36) : gy) + 0.02 });
+    // cable trough (concrete, lidded) from the post's pit back toward the relay cabinet by the track
+    B.frame(mx, gy, mz - side * 0.9, 0); B.bbox('concrete', 0, -0.12, 0, 0.32, 0.16, 1.2, 0.015, { color: [0.66, 0.66, 0.64] });
+    for (let i = 0; i < 3; i++) B.box('concrete', 0, 0.04, -0.4 + i * 0.4, 0.3, 0.012, 0.38, { color: [0.72, 0.72, 0.7] }); B.frame(0, 0, 0, 0);
   }
   crossings.push(c);
   return c;
@@ -559,7 +641,7 @@ export function updateCrossings(dt, t) {
     const down = smoothstep(4.5, 10.5, c.t); // arms start lowering ~5 s after the bells start
     for (const a of c.arms) a.pivot.rotation.z = a.side * (Math.PI / 2) * (1 - down) * -1;
     const flash = Math.floor(t / 0.5) % 2;
-    for (const l of c.lamps) l.m.material = c.active && flash === l.phase ? lampOn : lampOff;
+    for (const l of c.lamps) l.m.material = c.active && (l.steady ? down > 0.05 : l.boom ? down > 0.05 && flash === l.phase : flash === l.phase) ? lampOn : lampOff;
     c.bell.on = c.active;
     c.down = down;
   }
@@ -657,52 +739,23 @@ export function pedCrossing(B, { cx, sd, y0, hw = 1.5, name = '桜川河畔踏�
   // ---- warning equipment at the top of each ramp, on the land side of the path
   const c = { x: cx((zA + zB) / 2), active: false, t: 0, arms: [], lamps: [], bell: new Emitter('bell'), roadW: 2 * hw + 0.4, ped: true };
   c.bell.set(c.x, y0 + 2.6, (zA + zB) / 2);
-  const STRIPE = i => i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.75, 0.05];
   for (const [zc, e] of [[zA, -1], [zB, 1]]) {
     const mz = zc + e * 0.55, mx = cx(mz) + sd * (hw + 0.55), gy = pathY + (top - pathY) * (1 - 0.55 / ramp) - 0.05, face = e;
-    // warning post: footing, striped mast, lamp bar with two hooded lamps facing the approach, crossbuck, bell
+    // warning post (the road crossings' post at a smaller scale, lamps toward the walker only) and an emergency button
+    warningPost(B, c, mx, gy, mz, { H: 2.75, lampY: 1.85, span: 0.34, faces: [face > 0 ? 0 : Math.PI], k: 0.8 });
     B.frame(mx, gy, mz, 0);
-    B.bbox('concrete', 0, -0.4, 0, 0.5, 0.45, 0.5, 0.02, { color: [0.7, 0.7, 0.68] });
-    for (let i = 0; i < 10; i++) B.cyl('plain', 0, 0.05 + i * 0.25, 0, 0.06, 0.06, 0.25, 12, { color: STRIPE(i) });
-    B.cyl('steel', 0, 2.55, 0, 0.07, 0.04, 0.08, 12, { color: [0.2, 0.2, 0.2], cap: true });
-    B.box('dark', 0, 1.95, 0, 0.9, 0.06, 0.06, { color: [0.12, 0.12, 0.12] });                                               // lamp bar
-    for (const lx of [-0.32, 0.32]) B.bbox('dark', lx, 1.62, 0, 0.3, 0.34, 0.12, 0.025, { color: [0.1, 0.1, 0.1] });
-    B.bbox('plastic', 0, 2.62, 0, 0.24, 0.2, 0.2, 0.03, { color: [0.18, 0.18, 0.2] });                                        // bell speaker
     B.bbox('plastic', sd * 0.1, 0.95, e * 0.1, 0.2, 0.26, 0.12, 0.02, { color: [0.85, 0.12, 0.1] });                        // emergency button box
     B.box('plastic', sd * 0.1, 1.04, e * 0.165, 0.08, 0.08, 0.01, { color: [0.95, 0.9, 0.3] });
     B.frame(0, 0, 0, 0);
-    const cb = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), crossbuckMat); cb.position.set(mx, gy + 2.3, mz); cb.rotation.y = face > 0 ? 0 : Math.PI; cb.castShadow = true; scene.add(cb);
-    for (const lx of [-0.32, 0.32]) {
-      const l = new THREE.Mesh(new THREE.CircleGeometry(0.12, 18), lampOff), hood = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.18, 18, 1, true, -Math.PI / 2, Math.PI), hoodMat);
-      const grp = new THREE.Group(); grp.position.set(mx + lx, gy + 1.79, mz); grp.rotation.y = face > 0 ? 0 : Math.PI;
-      l.position.set(0, 0, 0.065); hood.rotation.x = Math.PI / 2; hood.position.set(0, 0, 0.15); grp.add(l, hood); scene.add(grp);
-      c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 });
-    }
     // plates: name, and a stop / look-out sign facing the walker
     { const np = signMesh(0.5, 0.16, (gg, W2, H2) => { gg.fillStyle = '#f4f4ee'; gg.fillRect(0, 0, W2, H2); gg.fillStyle = '#222'; gg.font = `bold ${H2 * 0.62}px ${JP_FONT}`; gg.textAlign = 'center'; gg.textBaseline = 'middle'; gg.fillText(name, W2 / 2, H2 * 0.54); }, 0.2, 64);
       np.position.set(mx, gy + 1.28, mz + e * 0.065); np.rotation.y = face > 0 ? 0 : Math.PI; scene.add(np);
       const st = signMesh(0.5, 0.62, (gg, W2, H2) => { gg.fillStyle = '#fff'; gg.fillRect(0, 0, W2, H2); gg.fillStyle = '#d42020'; gg.beginPath(); gg.moveTo(W2 / 2, H2 * 0.05); gg.lineTo(W2 * 0.95, H2 * 0.55); gg.lineTo(W2 * 0.05, H2 * 0.55); gg.closePath(); gg.fill();
         gg.fillStyle = '#fff'; gg.font = `bold ${H2 * 0.15}px ${JP_FONT}`; gg.textAlign = 'center'; gg.fillText('止まれ', W2 / 2, H2 * 0.46); gg.fillStyle = '#111'; gg.font = `bold ${H2 * 0.12}px ${JP_FONT}`; gg.fillText('踏切注意', W2 / 2, H2 * 0.72); gg.fillText('左右確認', W2 / 2, H2 * 0.9); }, 0.25, 128);
       st.position.set(mx, gy + 0.62, mz + e * 0.065); st.rotation.y = face > 0 ? 0 : Math.PI; scene.add(st); }
-    addCircle(mx, mz, 0.22);
     // pedestrian barrier machine beside the post, a short boom across the path
     const bz = mz - e * 0.45, bx = cx(bz) + sd * (hw + 0.45), by = pathY + (top - pathY) * (1 - Math.abs(bz - zc) / ramp) - 0.03;
-    B.frame(bx, by, bz, 0);
-    B.bbox('concrete', 0, -0.3, 0, 0.5, 0.33, 0.44, 0.02, { color: [0.7, 0.7, 0.68] });
-    B.bbox('dark', 0, 0.03, 0, 0.34, 0.86, 0.3, 0.03, { color: [0.13, 0.13, 0.14] }); B.cyl('dark', 0, 0.89, 0, 0.15, 0.09, 0.07, 14, { color: [0.18, 0.18, 0.19], cap: true });
-    B.frame(0, 0, 0, 0);
-    for (const s2 of [-1, 1]) { const pn = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.8), coverMat); pn.position.set(bx, by + 0.45, bz + s2 * 0.152); pn.rotation.y = s2 > 0 ? 0 : Math.PI; scene.add(pn); }
-    addBox(bx, bz, 0.2, 0.18, 0);
-    const pivot = new THREE.Group(); pivot.position.set(bx - sd * 0.02, by + 0.72, bz + e * 0.2);
-    const armL = 2 * hw + 0.25, m = sd;
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.038, armL - 0.25, 12).rotateZ(Math.PI / 2), armMat); arm.geometry.translate(-m * (armL / 2 + 0.12), 0, 0); arm.castShadow = true;
-    { const at = arm.geometry.attributes.uv; for (let i = 0; i < at.count; i++) { const u = at.getX(i), v = at.getY(i); at.setXY(i, v * armL / 1.0, u); } }
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.07, 16).rotateX(Math.PI / 2), gateMetal);
-    const holder = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.08).translate(-m * 0.15, 0, 0), gateMetal);
-    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.07, 10).rotateZ(Math.PI / 2).translate(-m * (armL - 0.01), 0, 0), tipMat);
-    const cw = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 0.12).translate(m * 0.3, -0.02, 0), hoodMat);
-    pivot.add(arm, hub, holder, tip, cw); scene.add(pivot);
-    c.arms.push({ pivot, side: m, len: armL, x0: bx, z: bz });
+    barrierMachine(B, c, bx, by, bz, { side: e, m: sd, armL: 2 * hw + 0.25, pivotY: 0.78, reach: 0.27, k: 0.74 });
   }
   crossings.push(c);
   return c;

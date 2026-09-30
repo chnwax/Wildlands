@@ -494,7 +494,7 @@ export async function build(progress) {
     // approach has them, and the asphalt's lane coordinates (so its wear, patches and cracks run on across)
     const sideW = R.walk || 0.4, lines = RN.marks(n).filter(([c]) => c !== 0).map(([c, w]) => [c * -dz, w]);
     buildCrossing(Bx, x, Y0, R.w + 2 * sideW + 0.4, { hw: R.w / 2, walk: R.walk || 0, side: { w: sideW, kind: R.walk ? 'walk' : 'gutter' }, lines,
-      uSign: -dz, sAt: z => sC + (z + 80) * dz, hwAge: RN.hwAge(n), machineSide: R.id === 'R' ? -1 : 0, age: Math.min(0.99, R.age ?? (R.kind === 'main' ? 0.12 : R.kind === 'road' ? 0.4 : 0.72)) });
+      uSign: -dz, sAt: z => sC + (z + 80) * dz, hwAge: RN.hwAge(n), machineSide: R.id === 'R' ? -1 : 0, groundAt: (gx, gz) => hf.groundAt(gx, gz), age: Math.min(0.99, R.age ?? (R.kind === 'main' ? 0.12 : R.kind === 'road' ? 0.4 : 0.72)) });
     // kerbs and gutters ease down over 3 m onto the landing and lie flush with it, so footway and shoulder run level onto the deck
     for (const side of [-1, 1]) { const sa = sOf(R.id, x, -80 - XD - XL), sb = sOf(R.id, x, -80 + XD + XL); RN.cuts.push({ id: R.id, side, s0: Math.min(sa, sb), s1: Math.max(sa, sb), flush: true, ramp: 3.0 }); }
     for (const dir of [-1, 1]) addStop(R.id, sOf(R.id, x, -80 - dir * 8.6), dir, false);
