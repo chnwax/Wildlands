@@ -1302,7 +1302,6 @@ export async function build(progress) {
   // the floor of every bamboo stand is its own fallen leaves: forest-floor litter in the middle (the lawn and most of the
   // grass give way), grass creeping back in toward the rim
   const litter = (x, z, R) => hf.paint2(2, x - R, z - R, x + R, z + R, (px, pz) => 0.45 * smoothstep(R * 0.85, R * 0.45, Math.hypot(px - x, pz - z)));
-  globalThis.__groves = green.groves.map(g => [Math.round(g.x), Math.round(g.z), Math.round(g.R), g.n]);
   for (const g of green.groves) {
     litter(g.x, g.z, g.R);
     const { HN, HALF, CELL } = hf, i0 = Math.floor((g.x - g.R + HALF) / CELL), i1 = Math.ceil((g.x + g.R + HALF) / CELL), j0 = Math.floor((g.z - g.R + HALF) / CELL), j1 = Math.ceil((g.z + g.R + HALF) / CELL);

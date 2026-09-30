@@ -181,7 +181,7 @@ export function buildDanchi(ctx) {
   // with a blue line dividing cyclists (kerb side) from walkers, pictograms painted every ~40 m in each direction of
   // travel and blue round 自転車及び歩行者専用 signs where the route enters each stretch
   { let signProto = null, signBack = null;
-    const cycleSign = (x, z, yaw) => { const y = gy(x, z) + 0.12; B.frame(x, y, z, yaw);
+    const cycleSign = (x, z, yaw) => { const y = RN.walkY(x, z) ?? gy(x, z) + 0.15; B.frame(x, y, z, yaw);
       B.cyl('steel', 0, -0.1, 0, 0.035, 0.035, 2.75, 8, { color: [0.75, 0.77, 0.78] }); B.box('metal', 0, 2.2, 0.02, 0.12, 0.5, 0.04, { color: [0.6, 0.62, 0.64] });
       B.frame(0, 0, 0, 0);
       if (!signProto) signProto = signMesh(0.6, 0.6, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#fff'; g.beginPath(); g.arc(W2 / 2, H2 / 2, W2 * 0.49, 0, 7); g.fill();

@@ -688,7 +688,6 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
     const lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
     if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) });
     new Scatter(list, lods, sp.tiny ? 128 : cell);
-    (globalThis.__treeDbg ||= {})[kind] = ((globalThis.__treeDbg || {})[kind] || []).concat(list.map(t => [Math.round(t.x), Math.round(t.z), +t.s.toFixed(1), t.town ? 1 : 0]));
     if (colliders && sp.trunk) for (const t of list) { const r = sp.trunk * t.s * (t.sx || 1); if (r > 0.07) addCircle(t.x, t.z, r + 0.05); }
   }
 }
