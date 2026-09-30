@@ -103,6 +103,7 @@ const PARKING = [
 export function buildDanchi(ctx) {
   const { B, Y0, gy, RN, occRect, extras, hf } = ctx, rng = mulberry32(19740), out = { trees: [], hedges: [], bushes: [], carSpots: [], bikes: [], walkPaths: [], lamps: [], benches: [], groves: [] };
   const P2 = (x, z) => [x, gy(x, z), z];
+  const BUS = [[492, 194.8, Math.PI], [420, 205.2, 0]];                               // F's bus stops at the centre, both ways
   const paint = (c, x0, z0, x1, z1, fn) => hf.paint2(c, Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1), fn);
   const inRect = (x, z, cx, cz, r, hw, hd, m = 0) => { const c = Math.cos(r), s = Math.sin(r), dx = x - cx, dz = z - cz; return Math.abs(dx * c - dz * s) < hw + m && Math.abs(dx * s + dz * c) < hd + m; };
   // the whole district is mown lawn unless something else is laid there
@@ -136,15 +137,17 @@ export function buildDanchi(ctx) {
         if (edge) for (const e of [-1, 1]) B.detail(1, () => { const a = q(t0, e * (w / 2 + 0.05)), b = q(t1, e * (w / 2 + 0.05)); B.beam('concrete', [a[0], a[1] - 0.04, a[2]], [b[0], b[1] - 0.04, b[2]], 0.1, 0.12, { color: [0.74, 0.74, 0.72] }); });
       }
       paint(2, Math.min(ax, bx) - w, Math.min(az, bz) - w, Math.max(ax, bx) + w, Math.max(az, bz) + w, (px, pz) => { const t = (px - ax) * ux + (pz - az) * uz, e = Math.abs((px - ax) * nx + (pz - az) * nz); return t > -0.5 && t < L + 0.5 && e < w / 2 + 0.4 ? 1 : 0; });
+      occRect((ax + bx) / 2, (az + bz) / 2, w / 2 + 0.3, L / 2 + 0.3, Math.atan2(bx - ax, bz - az), 1);
       if (lamps) for (let t = 6; t < L - 2; t += 16) { const x = ax + ux * t + nx * (w / 2 + 0.6), z = az + uz * t + nz * (w / 2 + 0.6); if (clear(x, z, 0.3)) pathLamp(x, z); }
     }
     out.walkPaths.push({ pts: pts.map(p => [p[0], p[1]]), off: 0, lift: null });
   };
-  const pathLamp = (x, z) => { const y = gy(x, z); B.frame(x, y, z, 0);
+  const poles = [];
+  const pathLamp = (x, z) => { const y = gy(x, z); B.frame(x, y, z, 0); poles.push([x, z]);
     B.cyl('steel', 0, 0, 0, 0.06, 0.05, 3.2, 10, { color: [0.3, 0.32, 0.34] }); B.cyl('metal', 0, 3.2, 0, 0.16, 0.2, 0.08, 14, { color: [0.28, 0.3, 0.32], cap: true });
     B.cyl('lamp', 0, 3.02, 0, 0.14, 0.14, 0.18, 12, {}); B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, y + 2.9, z], s: 0.45 }); addCircle(x, z, 0.1); };
   // street lamp: a tapered galvanised pole with an LED head on a short arm over the carriageway
-  const streetLamp = (x, z, yaw) => { const y = gy(x, z); B.frame(x, y, z, yaw);
+  const streetLamp = (x, z, yaw) => { const y = gy(x, z); B.frame(x, y, z, yaw); poles.push([x, z]);
     B.bbox('concrete', 0, -0.25, 0, 0.36, 0.3, 0.36, 0.02, { color: [0.7, 0.7, 0.68] });
     B.cyl('steel', 0, 0, 0, 0.1, 0.06, 7.6, 12, { color: [0.72, 0.74, 0.76] });
     B.sweep('steel', [[-0.03, -0.03], [0.03, -0.03], [0.03, 0.03], [-0.03, 0.03]], [[0, 7.5, 0], [0, 7.75, 0.4], [0, 7.8, 1.4]], { closed: true, caps: true, color: [0.72, 0.74, 0.76] });
@@ -161,8 +164,9 @@ export function buildDanchi(ctx) {
       if (RN.clipDist(n, s) < 3 || !clear(e.x, e.z, 0.5)) continue;
       streetLamp(e.x, e.z, Math.atan2(-e.l[0] * side, -e.l[1] * side));
     }
-    // avenue: zelkovas both sides in tree pits; the south street: cherries along the park; F: maples
-    const kind = id === 'DA' ? 'zelkova' : id === 'DS' ? 'sakura' : id === 'F' ? 'maple' : null; if (!kind) continue;
+    // the south street: cherries in tree pits along the park (the avenue's and F's trees stand in the verge behind their
+    // shared footways — planted below, once the courts and paths that cross the verge are laid)
+    const kind = id === 'DS' ? 'sakura' : null; if (!kind) continue;
     for (let s = 8; s < n.PL.len - 6; s += id === 'DA' ? 11 : 12) for (const side of id === 'DS' ? [-1] : [1, -1]) {
       const e = edgePt(n, s, side, W - 0.9); if (id === 'F' && e.x < 350) continue;
       if (RN.clipDist(n, s) < 4 || !clear(e.x, e.z, 0.5) || RN.walkAt(n, side, s) < 1.5) continue;
@@ -173,6 +177,46 @@ export function buildDanchi(ctx) {
       B.frame(0, 0, 0, 0);
     }
   }
+  // cycle route: F (from the town across the Funabashi bridge) and the avenue carry 自転車歩行者道 — shared footways
+  // with a blue line dividing cyclists (kerb side) from walkers, pictograms painted every ~40 m in each direction of
+  // travel and blue round 自転車及び歩行者専用 signs where the route enters each stretch
+  { let signProto = null, signBack = null;
+    const cycleSign = (x, z, yaw) => { const y = gy(x, z) + 0.12; B.frame(x, y, z, yaw);
+      B.cyl('steel', 0, -0.1, 0, 0.035, 0.035, 2.75, 8, { color: [0.75, 0.77, 0.78] }); B.box('metal', 0, 2.2, 0.02, 0.12, 0.5, 0.04, { color: [0.6, 0.62, 0.64] });
+      B.frame(0, 0, 0, 0);
+      if (!signProto) signProto = signMesh(0.6, 0.6, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#fff'; g.beginPath(); g.arc(W2 / 2, H2 / 2, W2 * 0.49, 0, 7); g.fill();
+        g.fillStyle = '#1d55b0'; g.beginPath(); g.arc(W2 / 2, H2 / 2, W2 * 0.45, 0, 7); g.fill(); g.strokeStyle = g.fillStyle = '#fff'; g.lineCap = g.lineJoin = 'round'; const k = W2 / 256;
+        g.lineWidth = 7 * k; for (const hx of [70, 132]) { g.beginPath(); g.arc(hx * k, 158 * k, 21 * k, 0, 7); g.stroke(); }
+        g.beginPath(); g.moveTo(70 * k, 158 * k); g.lineTo(100 * k, 158 * k); g.lineTo(92 * k, 124 * k); g.lineTo(70 * k, 158 * k); g.moveTo(100 * k, 158 * k); g.lineTo(124 * k, 124 * k); g.lineTo(92 * k, 124 * k); g.moveTo(124 * k, 124 * k); g.lineTo(132 * k, 158 * k); g.moveTo(124 * k, 124 * k); g.lineTo(120 * k, 112 * k); g.stroke();
+        g.lineWidth = 11 * k; g.beginPath(); g.arc(178 * k, 86 * k, 13 * k, 0, 7); g.fill(); g.beginPath(); g.moveTo(178 * k, 106 * k); g.lineTo(178 * k, 150 * k); g.moveTo(178 * k, 116 * k); g.lineTo(160 * k, 140 * k); g.moveTo(178 * k, 116 * k); g.lineTo(196 * k, 140 * k);
+        g.moveTo(178 * k, 150 * k); g.lineTo(164 * k, 190 * k); g.moveTo(178 * k, 150 * k); g.lineTo(192 * k, 190 * k); g.stroke(); }, 0.2, 256);
+      if (!signBack) signBack = new THREE.MeshStandardMaterial({ color: 0x9ea2a6, roughness: 0.5, metalness: 0.3, alphaMap: signProto.material.map, alphaTest: 0.5 });
+      for (const face of [0, Math.PI]) { const m = face ? new THREE.Mesh(signProto.geometry, signBack) : signProto.parent ? signProto.clone() : signProto;
+        const p = B.frame(x, y, z, yaw).P([0, 2.45, face ? 0.045 : 0.06]); B.frame(0, 0, 0, 0); m.position.set(...p); m.rotation.y = yaw + face; scene.add(m); }
+      addCircle(x, z, 0.08); };
+    const bridge = (x, z) => ctx.riverX && Math.abs(x - ctx.riverX(z)) < 19.5;
+    for (const id of ['F', 'DA']) {
+      const n = RN.byId.get(id), W = n.walk || 2, len = n.PL.len;
+      for (const side of [1, -1]) {
+        const ok = s => { const e = edgePt(n, s, side, W / 2); return RN.clipDist(n, s) > 3.5 && RN.walkAt(n, side, s) > W - 0.3 && !bridge(e.x, e.z) && RN.walkY(e.x, e.z) !== null
+          && !BUS.some(b => Math.hypot(e.x - b[0], e.z - b[1]) < 7.5); };
+        const yW = (x, z) => RN.walkY(x, z) ?? gy(x, z) + 0.15;
+        // the dividing line, in 3 m pieces laid only where the footway runs full width
+        for (let s = 0; s + 3 <= len; s += 3) { if (!ok(s) || !ok(s + 3)) continue;
+          const a = edgePt(n, s, side, W * 0.5), b = edgePt(n, s + 3, side, W * 0.5), L = Math.hypot(b.x - a.x, b.z - a.z);
+          RN.decal(B, 'paint', [(a.x + b.x) / 2, (a.z + b.z) / 2], [(b.x - a.x) / L, (b.z - a.z) / L], L / 2, 0.06, { y: yW, road: false, cell: 1.5, color: [0.2, 0.36, 0.66] }); }
+        // pictograms: facing the direction of travel on that side (keep left)
+        for (let s = 18; s < len - 6; s += 40) { if (!ok(s - 1.2) || !ok(s + 1.2)) continue;
+          const c = edgePt(n, s, side, W * 0.5), f = side > 0 ? [-c.d[0], -c.d[1]] : [c.d[0], c.d[1]];
+          RN.decal(B, 'cycleLegend', [c.x, c.z], f, 0.8, W / 2 - 0.2, { y: yW, road: false, uv01: true, cell: 0.8 }); }
+        // signs at each stretch's start in the direction of travel, and about every 180 m
+        const s0s = []; for (let s = 6; s < len - 6; s += 1) if (ok(s) && !ok(s + side)) s0s.push(s);
+        for (let s = 6; s < len - 6; s += 180) if (ok(s)) s0s.push(s);
+        for (const s of s0s) { const e = edgePt(n, s, side, W - 0.3); if (!clear(e.x, e.z, 0.3)) continue;
+          if (poles.some(q => Math.hypot(q[0] - e.x, q[1] - e.z) < 1.4) || out.trees.some(t => Math.hypot(t.x - e.x, t.z - e.z) < 1.2)) continue;
+          cycleSign(e.x, e.z, Math.atan2(e.d[0], e.d[1]) + (side > 0 ? 0 : Math.PI)); }
+      }
+    } }
   // district name at its two main gateways: low stone walls with the name, planted in front
   for (const [x, z, yaw] of [[431.5, -13, 0], [356.5, 190, -Math.PI / 2]]) {
     const y = gy(x, z); B.frame(x, y, z, yaw);
@@ -248,12 +292,13 @@ export function buildDanchi(ctx) {
   }
 
   // ---- courtyards, each of its own kind
-  const benchAt = (x, z, yaw) => { if (!clear(x, z, 0.4)) return; ctx.bench(ctx.LB, x, gy(x, z), z, yaw); };
+  const benchAt = (x, z, yaw) => { if (!clear(x, z, 0.4)) return; ctx.bench(ctx.LB, x, gy(x, z), z, yaw); occRect(x, z, 1.0, 0.6, yaw, 1); };
   const tree = (kind, x, z, scale = 1) => { if (clear(x, z, 1.2)) out.trees.push({ kind, x, z, scale }); };
   const plaza = (x0, z0, x1, z1, color = [0.82, 0.8, 0.76]) => { B.frame(0, 0, 0, 0);
     for (let x = x0; x < x1 - 1e-3; x += 4) for (let z = z0; z < z1 - 1e-3; z += 4) { const xa = x, xb = Math.min(x1, x + 4), za = z, zb = Math.min(z1, z + 4), q = (px, pz) => [px, gy(px, pz) + 0.05, pz];
       B.poly('pavement', [q(xa, za), q(xb, za), q(xb, zb), q(xa, zb)], [0, 1, 0], { color, uvs: [[xa / 1.2, za / 1.2], [xb / 1.2, za / 1.2], [xb / 1.2, zb / 1.2], [xa / 1.2, zb / 1.2]], attr: { aPave: [[xa, za - z0 + 0.5], [xb, za - z0 + 0.5], [xb, zb - z0 + 0.5], [xa, zb - z0 + 0.5]] } }); }
-    paint(2, x0 - 1, z0 - 1, x1 + 1, z1 + 1, (px, pz) => px > x0 - 0.3 && px < x1 + 0.3 && pz > z0 - 0.3 && pz < z1 + 0.3 ? 1 : 0); };
+    paint(2, x0 - 1, z0 - 1, x1 + 1, z1 + 1, (px, pz) => px > x0 - 0.3 && px < x1 + 0.3 && pz > z0 - 0.3 && pz < z1 + 0.3 ? 1 : 0);
+    occRect((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2, 0, 1); };
   // C1 south-west: a lawn court under a group of big zelkovas, a curving path between the two slabs, a wisteria pergola
   { const pts = []; for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push([lerp(366, 410, t), lerp(96, 114, t) + Math.sin(t * Math.PI * 2) * 3.5]); } pathLine(pts, 2.0);
     for (const [x, z, s] of [[375, 106, 1.0], [392, 99, 0.9], [404, 110, 0.85], [383, 113, 0.75]]) tree('zelkova', x, z, s);
@@ -279,9 +324,13 @@ export function buildDanchi(ctx) {
     for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) tree(j % 2 ? 'oak' : 'zelkova', x0 + i * 6 + (rng() - 0.5), z0 + j * 6.5 + (rng() - 0.5), 0.6);
     for (const [x, z, r] of [[443, 244, 0], [455, 250, Math.PI], [449, 258, Math.PI / 2]]) benchAt(x, z, r);
     out.groves.push({ x: 428, z: 296, R: 11 }); }
-  // C5 north-east: a hill-view garden — maples, a pergola, a path loop
-  { pathLine([[520, 246], [528, 252], [536, 262], [528, 270]], 1.8); pergola(516, 254, 0.3, 4.8, 2.8);
-    for (const [x, z] of [[510, 243], [533, 247], [522, 262]]) tree('maple', x, z, 0.7); benchAt(514, 250, 0.3); }
+  // C5 north-east: a hill-view garden on the strip between the north-east parking court and the loop road's north
+  // arc — a path from the avenue's footway to the loop road's, a wisteria pergola with benches looking out to the hill,
+  // maples and low planting
+  { pathLine([[499.6, 277], [507, 280.5], [516, 279.5], [525, 276], [536.2, 271.4]], 1.8);
+    pergola(510.5, 285.2, 0.496, 4.8, 2.8); for (const dx of [-1.1, 1.1]) benchAt(510.5 + Math.cos(0.496) * dx - Math.sin(0.496) * 0.2, 285.2 - Math.sin(0.496) * dx - Math.cos(0.496) * 0.2, 0.496);
+    for (const [x, z, s] of [[503, 281.8, 0.6], [518, 283.4, 0.65]]) tree('maple', x, z, s);
+    for (let k = 0; k < 9; k++) { const x = 504 + k * 2.6 + (rng() - 0.5), z = 281.4 + k * -0.35 + 1.2 + rng() * 0.6; out.bushes.push({ x, y: gy(x, z) - 0.05, z, s: 0.5 + rng() * 0.2, sx: 1.2, r: rng() * 6, c: new THREE.Color().setHSL(0.24 + rng() * 0.08, 0.5, 0.3 + rng() * 0.08) }); } }
   // C6 the central park on the green belt: a lawn with a pond, loop paths, big trees, a play corner, a toilet block
   { const px = 476, pz = 18;
     const loop = []; for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI * 2; loop.push([px + Math.cos(a) * 34, pz + Math.sin(a) * 18]); } pathLine(loop, 2.6);
@@ -294,6 +343,7 @@ export function buildDanchi(ctx) {
   // C7 sports ground: a clay field with a baseball backstop, a fence, benches and floodlights
   { const x0 = 530, x1 = 604, z0 = -10, z1 = 44;
     paint(0, x0, z0, x1, z1, () => 1); paint(2, x0, z0, x1, z1, (x, z) => x > x0 + 2 && x < x1 - 2 && z > z0 + 2 && z < z1 - 2 ? 1 : 0);
+    occRect((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2 + 0.5, (z1 - z0) / 2 + 0.5, 0, 1);
     B.frame(0, 0, 0, 0);
     for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) { const L = Math.hypot(bx - ax, bz - az), n = Math.ceil(L / 3);
       for (let k = 0; k < n; k++) { const t = k / n, x = lerp(ax, bx, t), z = lerp(az, bz, t), y = gy(x, z); B.cyl('steel', x, y, z, 0.04, 0.04, 2.4, 6, { color: [0.3, 0.46, 0.38] }); }
@@ -319,7 +369,7 @@ export function buildDanchi(ctx) {
     addCircle(452, 158, 0.15);
     for (const [x, z, r] of [[451, 172, Math.PI / 2], [451, 144, Math.PI / 2], [453, 187, Math.PI / 2]]) benchAt(x, z, r); }
   // bus stops on F at the centre, both directions
-  ctx.busStop(B, 492, gy(492, 194.8), 194.8, Math.PI); ctx.busStop(B, 420, gy(420, 205.2), 205.2, 0); B.frame(0, 0, 0, 0);
+  for (const [x, z, yaw] of BUS) ctx.busStop(B, x, gy(x, z), z, yaw); B.frame(0, 0, 0, 0);
   // garbage stations beside the parking courts
   for (const pk of out.parkings) { const x = pk.cx + Math.cos(pk.yaw) * (pk.D / 2 + 2.2) - Math.sin(pk.yaw) * (pk.len / 2 - 3), z = pk.cz - Math.sin(pk.yaw) * (pk.D / 2 + 2.2) - Math.cos(pk.yaw) * (pk.len / 2 - 3);
     if (clear(x, z, 1.2)) { ctx.garbagePoint(B, x, gy(x, z), z, pk.yaw, rng); B.frame(0, 0, 0, 0); } }
@@ -332,6 +382,13 @@ export function buildDanchi(ctx) {
   for (let z = 70; z < 300; z += 9 + rng() * 5) { const x = 341.5 - rng() * 1.5; if (clear(x, z, 1)) out.trees.push({ kind: rng() < 0.6 ? 'leaf' : 'zelkova', x, z, scale: 0.7 + rng() * 0.2 }); }
   for (let t = 0; t < 1; t += 0.05) { const a = lerp(-0.3, 2.3, t), x = 476 + Math.cos(a) * 158, z = 170 + Math.sin(a) * 158; if (inDanchi(x, z, 14) && !inDanchi(x, z, 3) && clear(x, z, 2)) out.trees.push({ kind: rng() < 0.5 ? 'oak' : 'leaf', x, z, scale: 0.9 }); }
 
+  // avenue (zelkovas) and F (maples): a verge row just behind the footway, both sides, clear of paths, courts and shelters
+  for (const id of ['DA', 'F']) { const n = RN.byId.get(id), W = n.walk || 2;
+    for (let s = 8; s < n.PL.len - 6; s += id === 'DA' ? 11 : 12) for (const side of [1, -1]) {
+      const e = edgePt(n, s, side, W + 1.3); if (id === 'F' && e.x < 350) continue;
+      if (RN.clipDist(n, s) < 5 || !inDanchi(e.x, e.z, 2) || !clear(e.x, e.z, 1.0) || (ctx.occAt && ctx.occAt(e.x, e.z, 1.4))) continue;
+      out.trees.push({ kind: id === 'DA' ? 'zelkova' : 'maple', x: e.x, z: e.z, scale: id === 'DA' ? 0.64 : 0.7 }); occRect(e.x, e.z, 0.8, 0.8, 0, 1);
+    } }
   // mature trees through the open lawns between the buildings, in loose groups (never on paths, parking or doors)
   { const occAt = ctx.occAt;
     for (let z = -10; z < 350; z += 6.5) for (let x = 344; x < 656; x += 6.5) {
@@ -350,7 +407,8 @@ export function buildDanchi(ctx) {
     for (let k = 0; k <= Math.round(L / 0.5); k++) B.box('wood', -L / 2 + k * L / Math.round(L / 0.5), 2.68, 0, 0.08, 0.1, D + 0.5, { color: [0.54, 0.4, 0.28] });
     B.frame(0, 0, 0, 0);
     for (let k = 0; k < 6; k++) out.bushes.push({ x: x + (rng() - 0.5) * L, y: y + 2.55, z: z + (rng() - 0.5) * D, s: 0.8, sx: 1.4, r: rng() * 6, c: new THREE.Color().setHSL(0.72 + rng() * 0.04, 0.45, 0.62) }); // wisteria
-    for (const ex of [-L / 2, L / 2]) for (const ez of [-D / 2, D / 2]) { const p = [x + Math.cos(yaw) * ex + Math.sin(yaw) * ez, z - Math.sin(yaw) * ex + Math.cos(yaw) * ez]; addCircle(p[0], p[1], 0.12); } }
+    for (const ex of [-L / 2, L / 2]) for (const ez of [-D / 2, D / 2]) { const p = [x + Math.cos(yaw) * ex + Math.sin(yaw) * ez, z - Math.sin(yaw) * ex + Math.cos(yaw) * ez]; addCircle(p[0], p[1], 0.12); }
+    occRect(x, z, L / 2 + 0.4, D / 2 + 0.4, yaw, 1); }
   function playSet(x, z, yaw) { const y = gy(x, z) + 0.05; B.frame(x, y, z, yaw);
     for (const [px, pz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) B.cyl('steel', px * 1.2, 0, pz * 1.2, 0.07, 0.07, 3.4, 10, { color: [0.2, 0.52, 0.72] });
     B.bbox('plastic', 0, 1.5, 0, 2.6, 0.1, 2.6, 0.02, { color: [0.95, 0.76, 0.2] });
@@ -362,12 +420,12 @@ export function buildDanchi(ctx) {
     for (const e of [0.45, 1.35]) B.beam('plastic', [1.3, 1.9, e], [4.6, 0.55, e], 0.05, 0.3, { color: [0.2, 0.7, 0.4] });
     for (let k = 0; k < 5; k++) B.box('steel', -1.6 - k * 0.12, 0.3 + k * 0.3, 0, 0.05, 0.05, 0.9, { color: [0.7, 0.7, 0.72] });
     for (const e of [-0.45, 0.45]) B.beam('steel', [-2.2, 0, e], [-1.25, 1.6, e], 0.06, 0.06, { color: [0.7, 0.7, 0.72] });
-    B.frame(0, 0, 0, 0); addBox(x, z, 1.4, 1.4, yaw, y - 1, y + 4); }
+    B.frame(0, 0, 0, 0); addBox(x, z, 1.4, 1.4, yaw, y - 1, y + 4); occRect(x + Math.cos(yaw) * 1.2, z - Math.sin(yaw) * 1.2, 4, 2.2, yaw, 1); }
   function swings(x, z, yaw) { const y = gy(x, z) + 0.05; B.frame(x, y, z, yaw);
     for (const sx of [-2.1, 2.1]) for (const sz of [-0.9, 0.9]) B.beam('steel', [sx, 0, sz * 1.3], [sx, 2.5, 0], 0.08, 0.08, { color: [0.86, 0.3, 0.24] });
     B.beam('steel', [-2.2, 2.5, 0], [2.2, 2.5, 0], 0.09, 0.09, { color: [0.86, 0.3, 0.24] });
     for (const sx of [-1, 1]) { for (const e of [-0.22, 0.22]) B.beam('steel', [sx + e, 2.48, 0], [sx + e, 0.55, 0], 0.012, 0.012, { color: [0.6, 0.6, 0.6] }); B.bbox('plastic', sx, 0.5, 0, 0.5, 0.05, 0.22, 0.01, { color: [0.2, 0.3, 0.62] }); }
-    B.frame(0, 0, 0, 0); addBox(x, z, 2.2, 0.5, yaw, y - 1, y + 2.6); }
+    B.frame(0, 0, 0, 0); addBox(x, z, 2.2, 0.5, yaw, y - 1, y + 2.6); occRect(x, z, 2.8, 2.4, yaw, 1); }
   function sandPit(x, z) { const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('wood', 0, -0.05, 0, 4.2, 0.3, 3.4, 0.02, { color: [0.58, 0.44, 0.3] }); B.box('ballast', 0, 0.2, 0, 3.8, 0.01, 3.0, { color: [1.0, 0.9, 0.72], uv: 2 });
     for (const [sx, sz] of [[-2, -1.6], [2, -1.6], [2, 1.6], [-2, 1.6]]) B.cyl('steel', sx, 0, sz, 0.05, 0.05, 2.6, 8, { color: [0.7, 0.7, 0.72] });
     B.poly('plastic', [[-2.1, 2.6, -1.7], [2.1, 2.3, -1.7], [2.1, 2.6, 1.7], [-2.1, 2.3, 1.7]], [0, 1, 0], { color: [0.96, 0.9, 0.78] }); B.poly('plastic', [[2.1, 2.3, -1.7], [-2.1, 2.6, -1.7], [-2.1, 2.3, 1.7], [2.1, 2.6, 1.7]], [0, -1, 0], { color: [0.9, 0.84, 0.72] });
@@ -376,11 +434,13 @@ export function buildDanchi(ctx) {
   function fountain(x, z) { const y = gy(x, z) + 0.05; B.frame(x, y, z, 0);
     B.cyl('stone', 0, 0, 0, 3.1, 3.0, 0.45, 32, { color: [0.72, 0.7, 0.66] }); B.cyl('concrete', 0, 0.44, 0, 3.1, 3.1, 0.06, 32, { color: [0.78, 0.77, 0.74], cap: true });
     B.cyl('glass', 0, 0.3, 0, 2.8, 2.8, 0.18, 32, { color: [0.3, 0.5, 0.6], cap: true }); B.cyl('stone', 0, 0.3, 0, 0.5, 0.35, 1.1, 16, { color: [0.7, 0.68, 0.64], cap: true });
-    B.frame(0, 0, 0, 0); addCircle(x, z, 3.1); }
+    B.frame(0, 0, 0, 0); addCircle(x, z, 3.1); occRect(x, z, 3.3, 3.3, 0, 1); }
   function pond(x, z, a, b) { const y = gy(x, z); B.frame(0, 0, 0, 0); const n = 36, pts = [];
     for (let k = 0; k < n; k++) { const t = k / n * Math.PI * 2, rr = 1 + 0.12 * Math.sin(t * 3 + 1) + 0.06 * Math.sin(t * 5); pts.push([x + Math.cos(t) * a * rr, z + Math.sin(t) * b * rr]); }
-    for (let k = 0; k < n; k++) { const p = pts[k], q = pts[(k + 1) % n];
-      B.poly('glass', [[x, y + 0.06, z], [p[0], gy(p[0], p[1]) + 0.06, p[1]], [q[0], gy(q[0], q[1]) + 0.06, q[1]]], [0, 1, 0], { color: [0.28, 0.46, 0.5] });
+    const deep = [0.1, 0.26, 0.3], midC = [0.17, 0.36, 0.37], shal = [0.3, 0.44, 0.36], wy = y + 0.06, ring = (p, f) => [x + (p[0] - x) * f, wy, z + (p[1] - z) * f];
+    for (let k = 0; k < n; k++) { const p = pts[k], q = pts[(k + 1) % n], a1 = ring(p, 0.55), b1 = ring(q, 0.55), a2 = ring(p, 1), b2 = ring(q, 1);
+      B.tri('pondWater', [x, wy, z], b1, a1, { colors: [deep, midC, midC] });
+      B.tri('pondWater', a1, b1, b2, { colors: [midC, midC, shal] }); B.tri('pondWater', a1, b2, a2, { colors: [midC, shal, shal] });
       B.beam('stone', [p[0], gy(p[0], p[1]) - 0.1, p[1]], [q[0], gy(q[0], q[1]) - 0.1, q[1]], 0.55, 0.32, { color: [0.62, 0.6, 0.56] }); }
     paint(2, x - a - 2, z - b - 2, x + a + 2, z + b + 2, (px, pz) => ((px - x) / (a + 0.8)) ** 2 + ((pz - z) / (b + 0.8)) ** 2 < 1 ? 1 : 0);
     for (let k = 0; k < 8; k++) { const t = rng() * Math.PI * 2; out.bushes.push({ x: x + Math.cos(t) * (a + 1.2), y: y - 0.05, z: z + Math.sin(t) * (b + 1.2), s: 0.7 + rng() * 0.4, sx: 1, r: rng() * 6, c: new THREE.Color().setHSL(0.27, 0.45, 0.3) }); }
@@ -389,7 +449,7 @@ export function buildDanchi(ctx) {
     B.bbox('concrete', 0, -0.2, 0, 5.2, 0.3, 3.4, 0.02, { color: [0.7, 0.7, 0.68] }); B.bbox('tiles', 0, 0.1, 0, 4.8, 2.8, 3.0, 0.02, { color: [0.78, 0.7, 0.62], uv: 2 });
     B.bbox('roofMetal', 0, 2.9, 0, 5.6, 0.18, 3.8, 0.02, { color: [0.36, 0.42, 0.46] });
     for (const sx of [-1.3, 1.3]) { B.quad('dark', [sx - 0.5, 0.15, 1.51], [sx + 0.5, 0.15, 1.51], [sx + 0.5, 2.2, 1.51], [sx - 0.5, 2.2, 1.51], { color: [0.15, 0.15, 0.15] }); }
-    B.box('lamp', 0, 2.6, 1.55, 0.4, 0.1, 0.06); B.frame(0, 0, 0, 0); addBox(x, z, 2.5, 1.6, yaw); lampPoints.push({ p: B.frame(x, y, z, yaw).P([0, 2.5, 1.8]), s: 0.4 }); B.frame(0, 0, 0, 0); }
+    B.box('lamp', 0, 2.6, 1.55, 0.4, 0.1, 0.06); B.frame(0, 0, 0, 0); addBox(x, z, 2.5, 1.6, yaw); occRect(x, z, 3.2, 2.4, yaw, 1); lampPoints.push({ p: B.frame(x, y, z, yaw).P([0, 2.5, 1.8]), s: 0.4 }); B.frame(0, 0, 0, 0); }
   B.frame(0, 0, 0, 0);
   out.buildings = blds;
   return out;

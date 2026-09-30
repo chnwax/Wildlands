@@ -310,6 +310,14 @@ function buildGrades() {
   }
   GRADE = { grid, CS, key };
 }
+// within pad metres of a road's formation (carriageway + footways + 0.8 m): paddies keep off roads that cross them —
+// the road rides on its embankment and the fields start past its toe and a levee
+function roadNear(x, z, pad) {
+  if (!GRADE) buildGrades();
+  const list = GRADE.grid.get(GRADE.key(Math.floor(x / GRADE.CS), Math.floor(z / GRADE.CS))); if (!list) return false;
+  for (const g of list) { const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L); if (Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t) < g.C + pad) return true; }
+  return false;
+}
 function graded(x, z, h) {
   if (Math.abs(x) > 1150 || Math.abs(z) > 420) return h;
   if (!GRADE) buildGrades();
@@ -340,6 +348,8 @@ export async function build(progress) {
   const reflected = new Set(scene.children); // sky, clouds, lights... (terrain + forest are added below)
   const MT = materials();
   MT.paddyWater = new THREE.MeshStandardMaterial({ color: 0x3b3a2a, roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.72, depthWrite: false, envMapIntensity: 1.3 });
+  // still garden-pond water (the district park): tinted per vertex from a green shallow margin to a deep teal middle
+  MT.pondWater = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.05, metalness: 0.25, envMapIntensity: 1.5 });
 
   const hf = new Heightfield({ world: 2048, grid: 1024, height });
   const { HN, HALF, CELL } = hf;
@@ -758,7 +768,7 @@ export async function build(progress) {
   // ---------------------------------------------------------------- 桜川ニュータウン: the apartment district (danchi.js)
   // east of the river, beyond the paddy belt: its buildings, parking courts, courtyards, paths, park and sports ground
   const LBd = new LGeo(64), estateTrees = [], estateSak = [];
-  const danchi = buildDanchi({ B, Y0, gy: (x, z) => hf.groundAt(x, z), RN, occRect, extras, hf, bench, LB: LBd, busStop, garbagePoint, occAt: (x, z, r) => occRect(x, z, r, r, 0, 0, true) });
+  const danchi = buildDanchi({ B, Y0, gy: (x, z) => hf.groundAt(x, z), RN, riverX, occRect, extras, hf, bench, LB: LBd, busStop, garbagePoint, occAt: (x, z, r) => occRect(x, z, r, r, 0, 0, true) });
   for (const sp of danchi.carSpots) carSpots.push(sp);
   for (const b of danchi.bikes) bikeList.push(b);
   for (const g of danchi.groves) BAMBOO_SITES.push({ ...g, H: [9, 13] });
@@ -1207,9 +1217,15 @@ export async function build(progress) {
       if (!paddyOK(cx + 15, cz + 10)) continue;
       B.frame(0, 0, 0, 0);
       const y = Y0 - 0.3, a = [cx + 1.3, y, cz + 1.3], b = [cx + 28.7, y, cz + 18.7];
+      // a road across the cell: the water stops at the levee beyond its embankment
+      const rowFree = (zz) => { for (let xx = a[0]; xx <= b[0] + 0.01; xx += (b[0] - a[0]) / 8) if (roadNear(xx, zz, 4.5)) return false; return true; };
+      const colFree = (xx) => { for (let zz = a[2]; zz <= b[2] + 0.01; zz += (b[2] - a[2]) / 6) if (roadNear(xx, zz, 4.5)) return false; return true; };
+      while (a[2] < b[2] - 2 && !rowFree(a[2])) a[2] += 0.5; while (b[2] > a[2] + 2 && !rowFree(b[2])) b[2] -= 0.5;
+      while (a[0] < b[0] - 2 && !colFree(a[0])) a[0] += 0.5; while (b[0] > a[0] + 2 && !colFree(b[0])) b[0] -= 0.5;
+      if (b[2] - a[2] < 3 || b[0] - a[0] < 3) continue;
       B.quad('paddyWater', [a[0], y, b[2]], [b[0], y, b[2]], [b[0], y, a[2]], [a[0], y, a[2]], { uv: 10 });
     }
-    hf.paint2(1, x0, z0, x1, z1, (x, z) => inPaddyZone(x, z) && paddyOK(x, z) && paddyCell(x, z) > 1.4 ? 1 : 0);
+    hf.paint2(1, x0, z0, x1, z1, (x, z) => inPaddyZone(x, z) && paddyOK(x, z) && paddyCell(x, z) > 1.4 && !roadNear(x, z, 4.8) ? 1 : 0);
   }
   // town lawns are mowed; yards are gravel
   hf.paint2(3, -460, -345, 205, 345, (x, z) => !inPaddyZone(x, z) && hf.groundAt(x, z) < Y0 + 1.5 && Math.abs(x - riverX(z)) > 16 ? 1 : 0);
@@ -1324,7 +1340,7 @@ export async function build(progress) {
 
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
-  B.flush(MT, { paint: false, stopLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, lamp: false, chain: false, poly: false });
+  B.flush(MT, { paint: false, stopLegend: false, cycleLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, pondWater: false, lamp: false, chain: false, poly: false });
   Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
   const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg), danchiBenches = flushLandmarks(LBd);
 

@@ -63,7 +63,7 @@ export class GeoBuilder {
     const uvs = opt.uvs;
     for (const [i, p] of [a, b, c].entries()) { const w = this.P(p), d = sub(p, a); B.pos.push(w[0], w[1], w[2]); B.nor.push(n[0], n[1], n[2]);
       if (uvs) B.uv.push(uvs[i][0], uvs[i][1]); else B.uv.push((d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2]) / s, -(d[0] * ay[0] + d[1] * ay[1] + d[2] * ay[2]) / s);
-      B.col.push(col[0], col[1], col[2]); }
+      const cc = opt.colors ? opt.colors[i] : col; B.col.push(cc[0], cc[1], cc[2]); }
     this._extra(B, 3, opt.attr);
     B.idx.push(base, base + 1, base + 2);
   }
@@ -328,7 +328,7 @@ export function materials() {
   };
   M.asphaltMain = M.asphaltRoad = M.asphaltLane = M.asphaltLane2 = M.asphalt;
   M.gravelPath = pbrX('bicolour_gravel', 0.02, null, { color: 0xf2e6cf });
-  M.stopLegend = stopMat;
+  M.stopLegend = stopMat; M.cycleLegend = cycleMat;
   M.tactileL = tactileMat(false); M.tactileD = tactileMat(true); M.manhole = manholeMat();
   // painted brightness per surface (toon.js): light pastel walls, pale concrete and gravel, warm wood
   for (const [k, v] of Object.entries({ siding: 0.58, stucco: 0.6, plaster: 0.6, tiles: 0.56, concrete: 0.64, block: 0.6, pavement: 0.66, ballast: 0.5, wood: 0.46, stone: 0.56, roofTile: 0.62, gravelPath: 0.66, soil: 0.52 }))
@@ -685,6 +685,24 @@ export const stopTex = canvasTex(256, 512, (g, W, H) => {
   ['止', 'ま', 'れ'].forEach((c, i) => g.fillText(c, W / 2, 58 + i * 116)); g.restore();
 });
 export const stopMat = new THREE.MeshStandardMaterial({ map: stopTex, alphaToCoverage: true, alphaTest: 0.4, roughness: 0.62, color: 0xe8e8e2 });
+// 自転車歩行者道: the pictograms painted on a shared footway — a walker on the outer half, a bicycle (front wheel ahead)
+// on the kerb-side half (the canvas' right, with the top of the canvas the direction of travel: traffic keeps left)
+const cycleTex = canvasTex(256, 256, (g, W, H) => {
+  g.clearRect(0, 0, W, H); g.lineCap = g.lineJoin = 'round';
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+  // kerb side: a white bicycle on a blue panel
+  g.fillStyle = '#2d5fa8'; rr(136, 34, 110, 188, 16); g.fill();
+  g.strokeStyle = g.fillStyle = '#f4f4f0';
+  g.save(); g.translate(191, 128); g.rotate(-Math.PI / 2); g.lineWidth = 7;
+  for (const hx of [-36, 36]) { g.beginPath(); g.arc(hx, 16, 23, 0, Math.PI * 2); g.stroke(); }
+  g.lineWidth = 8; g.beginPath(); g.moveTo(-36, 16); g.lineTo(0, 16); g.lineTo(-8, -22); g.lineTo(-36, 16); g.moveTo(0, 16); g.lineTo(27, -18); g.lineTo(-8, -22);
+  g.moveTo(27, -18); g.lineTo(36, 16); g.moveTo(27, -18); g.lineTo(23, -31); g.lineTo(34, -33); g.moveTo(-18, -27); g.lineTo(0, -27); g.stroke(); g.restore();
+  // outer side: a walker in dark grey paint
+  g.strokeStyle = g.fillStyle = '#4a4d52'; g.lineWidth = 10; g.beginPath(); g.arc(66, 66, 14, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.moveTo(66, 88); g.lineTo(66, 144); g.moveTo(66, 100); g.lineTo(46, 128); g.moveTo(66, 100); g.lineTo(86, 128);
+  g.moveTo(66, 144); g.lineTo(51, 192); g.moveTo(66, 144); g.lineTo(81, 192); g.stroke();
+});
+export const cycleMat = new THREE.MeshStandardMaterial({ map: cycleTex, alphaToCoverage: true, alphaTest: 0.4, roughness: 0.62 });
 
 // ---------------------------------------------------------------- buildings
 // anime palettes: clean pastel walls and saturated roofs (Shinkai / Ghibli town streets)

@@ -205,12 +205,12 @@ export function pointTower(B, s, rng, ex) {
   inFrame(B, [0, 0, -d / 2], Math.PI, () => {
     for (const h of back) windowUnit(B, h, { rng, frame: [0.8, 0.82, 0.84], frosted: true, type: 'slide' });
     B.bbox('tiles', 0, 0, cd / 2, cw, ctop, cd, 0.03, { color: mul(wall, 0.97), uv: 2.5, skip: 'ny' });
-    for (let f = 1; f < floors; f++) { const fy = y0 + f * fh; B.quad('glass', [-0.7, fy + 0.4, cd + 0.005], [0.7, fy + 0.4, cd + 0.005], [0.7, fy + 2.3, cd + 0.005], [-0.7, fy + 2.3, cd + 0.005], { color: [0.55, 0.62, 0.66] });
+    for (let f = 1; f < floors; f++) { const fy = y0 + f * fh; B.quad('shopWindow', [-0.7, fy + 0.4, cd + 0.005], [0.7, fy + 0.4, cd + 0.005], [0.7, fy + 2.3, cd + 0.005], [-0.7, fy + 2.3, cd + 0.005], { color: [0.9, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
       B.box('alu', 0, fy + 0.35, cd + 0.02, 1.5, 0.06, 0.06, { color: pal.trim }); B.box('alu', 0, fy + 2.3, cd + 0.02, 1.5, 0.06, 0.06, { color: pal.trim }); }
     B.bbox('concrete', 0, ctop, cd / 2, cw + 0.2, 0.18, cd + 0.2, 0.02, { color: pal.trim });
     // lobby: a glass front with a pair of sliding doors in the base of the core, a canopy on two columns
     B.quad('dark', [-2.6, 0.1, cd + 0.01], [2.6, 0.1, cd + 0.01], [2.6, 2.9, cd + 0.01], [-2.6, 2.9, cd + 0.01], { color: [0.1, 0.1, 0.1] });
-    B.quad('glassLit', [-2.5, 0.12, cd + 0.03], [2.5, 0.12, cd + 0.03], [2.5, 2.85, cd + 0.03], [-2.5, 2.85, cd + 0.03], { color: [1, 1, 1] });
+    B.quad('shopWindow', [-2.5, 0.12, cd + 0.03], [2.5, 0.12, cd + 0.03], [2.5, 2.85, cd + 0.03], [-2.5, 2.85, cd + 0.03], { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
     for (const xx of [-2.55, -1.3, 0, 1.3, 2.55]) B.box('alu', xx, 0.1, cd + 0.05, 0.08, 2.8, 0.08, { color: [0.3, 0.3, 0.32] });
     B.box('alu', 0, 2.85, cd + 0.05, 5.2, 0.08, 0.08, { color: [0.3, 0.3, 0.32] });
     B.frame(...B.P([0, 0, cd]), B.F.r);
@@ -278,18 +278,27 @@ export function mansion(B, s, rng, ex) {
       for (let u = 0; u < nU; u++) meterBox(B, -w / 2 + (u + 0.5) * uw - 1.0, fy + 1.3, 'power');
     }
     // lift tower in the middle of the corridor side, glazed at each landing; lobby at its foot
-    const X = -liftX, lt = H + 3.2;
-    B.bbox('tiles', X, 0, 2.8, 3.0, lt, 2.4, 0.03, { color: mul(wall, 0.92), uv: 2.5, skip: 'ny' });
-    for (let f = 1; f < floors; f++) B.quad('glass', [X - 0.6, y0 + f * fh + 0.2, 4.01], [X + 0.6, y0 + f * fh + 0.2, 4.01], [X + 0.6, y0 + f * fh + 2.4, 4.01], [X - 0.6, y0 + f * fh + 2.4, 4.01], { color: [0.5, 0.58, 0.62] });
+    // (without a podium the shaft stands on the lobby: a glazed box out past the corridor line at its foot)
+    const X = -liftX, lt = H + 3.2, LW = 7.2, LD = 4.2, LH = y0 + fh - 0.2, sb = podium ? 0 : LH + 0.6;
+    B.bbox('tiles', X, sb, 2.8, 3.0, lt - sb, 2.4, 0.03, { color: mul(wall, 0.92), uv: 2.5, skip: 'ny' });
+    const hall = { color: [0.9, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] };
+    for (let f = 1; f < floors; f++) { const gy0 = y0 + f * fh + 0.2; B.quad('shopWindow', [X - 0.6, gy0, 4.01], [X + 0.6, gy0, 4.01], [X + 0.6, gy0 + 2.2, 4.01], [X - 0.6, gy0 + 2.2, 4.01], hall);
+      for (const yy of [gy0 - 0.04, gy0 + 2.2]) B.box('alu', X, yy, 4.03, 1.3, 0.05, 0.05, { color: [0.3, 0.3, 0.32] }); }
     B.bbox('concrete', X, lt, 2.8, 3.2, 0.16, 2.6, 0.02, { color: pal.trim });
     if (!podium) {
-      B.quad('glassLit', [X - 3.6, 0.45, 1.6], [X + 3.6, 0.45, 1.6], [X + 3.6, 3.0, 1.6], [X - 3.6, 3.0, 1.6], { color: [1, 1, 1] });
-      for (const xx of [-3.6, -1.8, 0, 1.8, 3.6]) B.box('alu', X + xx, 0.4, 1.62, 0.08, 2.65, 0.08, { color: [0.3, 0.3, 0.32] });
-      B.box('alu', X, 3.0, 1.62, 7.3, 0.1, 0.1, { color: [0.3, 0.3, 0.32] });
-      B.frame(...B.P([X, 0, 1.6]), B.F.r);
-      entranceCanopy(B, 0, 0.4, 7.8, 3.2, { cols: true, color: [0.28, 0.28, 0.3], lampAt: out.lamps, h: 3.2 });
-      plate(B, 0, 3.55, 0.02, 0, 4.4, 0.5, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name || `パークハイツ桜川 ${no}`, W2 / 2, H2 * 0.55); }, 0.5, 256);
-      out.entrances.push({ p: B.P([0, 0, 4.4]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby' });
+      const lob = { color: [1.25, 1, 3.5 / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] }, mul3 = { color: [0.3, 0.3, 0.32] };
+      B.bbox('concrete', X, -0.45, LD / 2, LW + 0.2, y0 + 0.45, LD + 0.1, 0.02, { color: pal.base });
+      B.quad('shopWindow', [X - LW / 2, y0 + 0.02, LD], [X + LW / 2, y0 + 0.02, LD], [X + LW / 2, LH, LD], [X - LW / 2, LH, LD], lob);
+      for (const e of [-1, 1]) B.poly('shopWindow', [[X + e * LW / 2, y0 + 0.02, 0.05], [X + e * LW / 2, y0 + 0.02, LD], [X + e * LW / 2, LH, LD], [X + e * LW / 2, LH, 0.05]], [e, 0, 0], lob);
+      for (const xx of [-3.6, -1.8, 0, 1.8, 3.6]) B.box('alu', X + xx, y0, LD + 0.02, 0.08, LH - y0, 0.08, mul3);
+      for (const e of [-1, 1]) for (const zz of [0.1, LD / 2]) B.box('alu', X + e * LW / 2, y0, zz, 0.08, LH - y0, 0.08, mul3);
+      B.box('alu', X, LH - 0.8, LD + 0.02, LW, 0.06, 0.06, mul3);
+      B.bbox('tiles', X, LH, (1.6 + LD + 0.2) / 2, LW + 0.3, 0.6, LD + 0.2 - 1.6, 0.02, { color: mul(wall, 0.92), uv: 2.5 });
+      ex.push({ t: 'box', p: B.P([X, 0, LD / 2]), hx: LW / 2 + 0.1, hz: LD / 2, r, h: LH + 0.6 });
+      B.frame(...B.P([X, 0, LD + 0.2]), B.F.r);
+      entranceCanopy(B, 0, y0, 3.8, 2.2, { cols: true, color: [0.28, 0.28, 0.3], lampAt: out.lamps, h: 2.55 });
+      plate(B, 0, LH + 0.3, 0.02, 0, 4.4, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name || `パークハイツ桜川 ${no}`, W2 / 2, H2 * 0.55); }, 0.5, 256);
+      out.entrances.push({ p: B.P([0, 0, 2.4]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby' });
     }
   });
   B.frame(x, y, z, r);
@@ -310,7 +319,7 @@ export function mansion(B, s, rng, ex) {
   const roofY = flatRoof(B, { w, d, y: H, para: 0.9, color: wall, wallMat: 'tiles', coping: pal.trim });
   for (let i = 0; i < 3; i++) acUnit(B, -w / 3 + i * 2.2, roofY, rng, { pipeTo: roofY + 0.4 });
   ex.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2 + 0.2, hz: d / 2 + 1.8, r, h: H + 1 });
-  out.footprint = [[-w / 2 - 3, -d / 2 - 4.2], [w / 2 + 0.3, d / 2 + 2]]; out.H = H;
+  out.footprint = [[-w / 2 - 3, -d / 2 - 4.6], [w / 2 + 0.3, d / 2 + 2]]; out.H = H;
   for (const e of out.lamps) lampPoints.push(e);
   B.frame(0, 0, 0, 0);
   return out;
@@ -320,8 +329,8 @@ export function mansion(B, s, rng, ex) {
 // An L of two legs meeting at the corner (x, z): leg A runs along +local x (length wa), leg B along -local z (length
 // wb); the street faces (+z for A, -x for B) carry glazed shopfronts under a continuous canopy with fascia signs; two
 // mansion wings stand back on the podium roof, whose open parts are a planted terrace.
-const SHOPS = [['スーパーさくら', '#c8342c', '#fff'], ['ドラッグ桜川', '#1f5fa8', '#fff'], ['桜川クリニック', '#2a8a6a', '#fff'], ['ベーカリー こむぎ', '#8a5a30', '#fff3dc'],
-  ['郵便局', '#d8302a', '#fff'], ['書店', '#333', '#f2e6c8'], ['カフェ はなみずき', '#5b7f3a', '#fff'], ['クリーニング', '#2f6ea6', '#fff']];
+const SHOPS = [['スーパーさくら', '#c8342c', '#fff', 0], ['ドラッグ桜川', '#1f5fa8', '#fff', 0], ['桜川クリニック', '#2a8a6a', '#fff', 3], ['ベーカリー こむぎ', '#8a5a30', '#fff3dc', 7],
+  ['郵便局', '#d8302a', '#fff', 4], ['書店', '#333', '#f2e6c8', 6], ['カフェ はなみずき', '#5b7f3a', '#fff', 1], ['クリーニング', '#2f6ea6', '#fff', 3]];
 export function centreBlock(B, s, rng, ex) {
   const { x, y, z, r, wa = 58, wb = 40, dp = 17, pal = PALETTES.brick } = s, PH = 4.6, out = { entrances: [], lamps: [], shopFronts: [] };
   B.frame(x, y, z, r);
@@ -341,7 +350,7 @@ export function centreBlock(B, s, rng, ex) {
     for (let i = 0; i < n; i++) {
       const x0 = -len / 2 + i * sw + 0.25, x1 = x0 + sw - 0.5, sh = SHOPS[((s.shopOffset || 0) + out.shopFronts.length) % SHOPS.length];
       B.quad('dark', [x0, 0.15, 0.02], [x1, 0.15, 0.02], [x1, 3.35, 0.02], [x0, 3.35, 0.02], { color: [0.12, 0.12, 0.12] });
-      B.quad('shopWindow', [x0 + 0.05, 0.2, 0.05], [x1 - 0.05, 0.2, 0.05], [x1 - 0.05, 3.3, 0.05], [x0 + 0.05, 3.3, 0.05], { color: [1, 1, 1], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+      B.quad('shopWindow', [x0 + 0.05, 0.2, 0.05], [x1 - 0.05, 0.2, 0.05], [x1 - 0.05, 3.3, 0.05], [x0 + 0.05, 3.3, 0.05], { color: [1.1, 1, (sh[3] + 0.5) / 8], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
       for (let k = 0; k <= 4; k++) B.box('alu', x0 + (x1 - x0) * k / 4, 0.15, 0.08, 0.07, 3.2, 0.07, { color: [0.62, 0.64, 0.66] });
       B.box('alu', (x0 + x1) / 2, 2.5, 0.08, x1 - x0, 0.06, 0.07, { color: [0.62, 0.64, 0.66] });
       plate(B, (x0 + x1) / 2, 3.65, 0.62, 0, Math.min(sw - 1.2, 6.5), 0.62, (g, W2, H2) => { g.fillStyle = sh[1]; g.fillRect(0, 0, W2, H2); g.fillStyle = sh[2]; g.font = `bold ${H2 * 0.56}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(sh[0], W2 / 2, H2 * 0.55); }, 0.9, 512);
