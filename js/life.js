@@ -2,7 +2,7 @@
 // flower blossoms in colourful patches, butterflies, sakura petals, and a flock of birds wheeling over the valley.
 // Everything is GPU-animated from a handful of uniforms.
 import { THREE, scene, camera, renderer, S, fogU, clamp, smoothstep, mulberry32 } from './core.js';
-import { GLSL_HEIGHT, GLSL_PAVE, FLOWER_GLSL } from './terrain.js';
+import { GLSL_HEIGHT, GLSL_PAVE, FLOWER_GLSL, turfU } from './terrain.js';
 import { env } from './sky.js';
 
 const U = { uPx: { value: 1 }, uPR: { value: 1 }, uFire: { value: 0 }, uMote: { value: 0 } };
@@ -109,7 +109,7 @@ function flowers(world) {
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
     vertexShader: /* glsl */`
       attribute vec4 aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uPx, uPR, uWaterLv, uTime, uWind;
-      uniform sampler2D tMask, tMask2, tNoise;
+      uniform sampler2D tMask, tMask2, tNoise; uniform vec4 uTurf0;
       varying vec3 vCol; varying float vAng;
       ${GLSL_HEIGHT}
       ${GLSL_PAVE}
@@ -134,6 +134,7 @@ function flowers(world) {
         float flD = flowerDensity(flowerPatch(z1, z2, z3, m.r), alpine) * sward * step(0.35, sward) * (1.0 - 0.6 * m2.a);
         // strictly off roads, lots, paddies and water (the masks are bilinear at metre scale)
         float ok = step(aRnd.w * ${(COUNT / (4 * R * R)).toFixed(3)}, flD) * step(uWaterLv + 1.0, g) * step(0.86, flat_) * step(m2.r, 0.05) * step(m2.b, 0.05) * step(m2.g, 0.3) * step(paveAt(wp), 0.03);
+        ok *= 1.0 - step(uTurf0.x, wp.x) * step(wp.x, uTurf0.z) * step(uTurf0.y, wp.y) * step(wp.y, uTurf0.w);                                  // none on sports turf
         float d = length(wp - uCam.xz);
         float fade = 1.0 - smoothstep(${(R * 0.7).toFixed(1)}, ${R.toFixed(1)}, d);
         float sway = sin(uTime * (1.5 + aRnd.z) + aRnd.x * 30.0) * 0.04 * uWind;
@@ -165,7 +166,7 @@ function flowers(world) {
         #include <fog_fragment>
       }`,
   });
-  Object.assign(mat.uniforms, world.hf.U, U, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind, tNoise: S.tNoise, uWaterLv: { value: world.waterLevel ?? 0 } });
+  Object.assign(mat.uniforms, world.hf.U, U, turfU, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind, tNoise: S.tNoise, uWaterLv: { value: world.waterLevel ?? 0 } });
   return wrappedPoints(COUNT, 29, mat);
 }
 

@@ -144,6 +144,9 @@ export const PAINT = {
   rockL: '#a3978d', rockD: '#5f5d72', sand: '#ead7a2', sandWet: '#a98f66', snow: '#f5f8ff', bed: '#2a6d66',
 };
 export const paintU = {};
+// sports turf (up to two rectangles x0, z0, x1, z1): the grass there is a dense, short, even sward of one lush green
+// with the mower's stripes, no flowers, seed heads or weeds (the ground under it is the pitch's own turf surface)
+export const turfU = { uTurf0: { value: new THREE.Vector4(0, 0, 0, 0) }, uTurf1: { value: new THREE.Vector4(0, 0, 0, 0) }, uTurfStripe: { value: new THREE.Vector4(1, 0, 5.25, 0) } };
 for (const k in PAINT) paintU['uP_' + k] = { value: new THREE.Color(PAINT[k]) };
 // Flowers per square metre in a meadow, shared by the grass blades / clump cards and the close-up blossom sprites
 // (life.js), so a patch looks equally rich at every distance. z1/z2/z3: tNoise at world * 0.0021 / 0.013 / 0.06;
@@ -710,13 +713,14 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, alphaTest: card ? 0.5 : 0, alphaToCoverage: card && Q.msaa > 0 });
   mat.defines = card ? { CLOUD_SHADE_VARYING: '', GRASS_CARD: '' } : { CLOUD_SHADE_VARYING: '' };
   mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, gu, ru, hf.U, paintU, { tNoise: S.tNoise, tGrassD: { value: grassTex },
+    Object.assign(sh.uniforms, gu, ru, hf.U, paintU, turfU, { tNoise: S.tNoise, tGrassD: { value: grassTex },
       uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         attribute vec2 bladeUV; attribute vec2 iOffset; attribute vec4 iRand;
         uniform sampler2D tMask, tMask2, tNoise, tGrassD;
         uniform vec3 uCam, uPlayer; uniform float uTime, uCellSize, uR, uLod, uTuft, uWind, uWaterLv, uSnow, uShore, uReeds, uDens; uniform vec2 uIn, uCard;
+        uniform vec4 uTurf0, uTurf1, uTurfStripe;
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
         varying vec2 vCardUv; varying vec3 vFlCol; varying float vFl;
         ${GLSL_HEIGHT}
@@ -763,6 +767,8 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         // nothing grows on paving; along its edge the sward thins and stays low, so no blade stands through a kerb
         float pv = inMap ? paveAt(wp2) : 0.0;
         dens *= 1.0 - smoothstep(0.04, 0.3, pv);
+        bool turf = (wp2.x > uTurf0.x && wp2.x < uTurf0.z && wp2.y > uTurf0.y && wp2.y < uTurf0.w) || (wp2.x > uTurf1.x && wp2.x < uTurf1.z && wp2.y > uTurf1.y && wp2.y < uTurf1.w);
+        if (turf) dens = 0.92 * (1.0 - smoothstep(0.04, 0.3, pv));
         float keep = step(iRand.w + 0.002, dens); // strict: dens 0 keeps nothing
         if (keep < 0.5) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
         float gs = keep;
@@ -782,7 +788,8 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         // woodland herbs
         float sp = fract(iRand.x * 7.13 + iRand.z * 3.71 + iRand.y * 1.37);
         float dryness = smoothstep(0.5, 0.85, gz1.b + (gz3.g - 0.5) * 0.3);
-        bool plain = !rice && !reed && !flower;
+        if (turf) flower = false;
+        bool plain = !rice && !reed && !flower && !turf;
         bool seedG = plain && sp < (0.05 + 0.07 * dryness) * (1.0 - forestF) && gm2.a < 0.5;
         bool dryB = plain && !seedG && sp < (0.12 + 0.2 * dryness) * (1.0 - forestF * 0.7);
         bool broadB = plain && !seedG && !dryB && sp > 0.91 - 0.5 * forestF && gm2.a < 0.5;
@@ -797,7 +804,9 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         if (flower) Hh = (0.28 + 0.32 * iRand.y) * mix(0.4, 1.0, fade);
         if (rice) Hh = (0.38 + 0.22 * iRand.y) * fade;
         if (reed) Hh = (1.0 + 1.1 * iRand.y * iRand.y + max(-hw, 0.0)) * mix(0.3, 1.0, fade);
+        if (turf) Hh = (0.045 + 0.035 * iRand.y) * mix(0.6, 1.0, fade) * keep;
         float Wd = (0.02 + 0.022 * iRand.z) * (1.0 + gdist * 0.06) * uTuft * step(0.001, gs);   // far rings: wider tufts
+        if (turf) Wd *= 0.6;
         if (rice) Wd *= 0.8;
         if (reed) Wd *= 0.75;
         if (seedG) Wd *= 0.75;
@@ -823,6 +832,9 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         #ifdef GRASS_CARD
           lean = windDir * (gust * gust * 1.2 + 0.1) * uWind * 0.45;
         #endif
+        // turf: the blades lie the way the mower last passed, alternate bands in opposite directions
+        float stripe = turf ? step(0.5, fract((wp2.x - uTurfStripe.y) / uTurfStripe.z * 0.5)) : 0.0;
+        if (turf) lean = vec2(0.0, stripe > 0.5 ? 0.5 : -0.5) + bside * flutter * 0.03 * uWind;
         vec2 away = wp2 - uPlayer.xz; float pd = length(away);
         lean += away / (pd + 0.001) * (1.0 - smoothstep(0.25, 1.1, pd)) * 1.8 * step(abs(uPlayer.y - gh), 2.2);
         float ll = length(lean); if (ll > 1.3) { lean *= 1.3 / ll; ll = 1.3; }
@@ -859,6 +871,7 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         float wave = smoothstep(0.52, 0.85, gust) * (0.6 + 0.5 * roll);
         tip += vec3(0.07, 0.09, 0.02) * wave;
         if (rice) { c = mix(vec3(0.12, 0.36, 0.05), vec3(0.28, 0.5, 0.08), iRand.y) * (0.8 + 0.3 * gz3.r); tip = c * 1.2; }
+        if (turf) { c = mix(vec3(0.16, 0.36, 0.08), vec3(0.2, 0.42, 0.1), iRand.y) * (stripe > 0.5 ? 0.88 : 1.06); tip = c * (stripe > 0.5 ? 1.12 : 1.3); }
         if (reed) {
           c = mix(vec3(0.1, 0.3, 0.08), vec3(0.36, 0.42, 0.14), iRand.y * 0.75 + gz3.r * 0.25) * (0.8 + 0.3 * iRand.z);
           tip = c * 1.15;
@@ -1016,6 +1029,142 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
   water.userData.hide = hide;
   scene.add(water);
   return water;
+}
+
+// ---------------------------------------------------------------- still water: ponds, the lake, fountain basins
+// Water standing in a dug basin (or a built one). Its mirror image is the river's: that pass renders sky, clouds and
+// hills for the plane y = 0 (buildWater), and a higher surface finds its reflection in the same texture at the point
+// mirrored through that plane — right for everything far away, which is all that pass draws. Three drifting normal
+// layers ripple it; Fresnel blends that image over a body whose colour, clarity and opacity follow the real depth to the
+// ground under it (or a fixed depth for built basins, fixedDepth); the vertex colour tints the body; the sun or moon
+// glitters on the ripples; a pale lapping line runs where it meets the bank.
+export function pondWaterMaterial(hf, normals, { deep = '#173f49', mid = '#2b6a6a', shallow = '#7aa383', fixedDepth = 0 } = {}) {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, fog: true, depthWrite: true, vertexColors: true,
+    defines: fixedDepth > 0 ? { FIXED_DEPTH: fixedDepth.toFixed(3) } : {},
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tRefl: { value: null }, tNormal: { value: null }, textureMatrix: { value: new THREE.Matrix4() }, uReflOn: { value: 0 },
+      uDeep: { value: new THREE.Color(deep) }, uMid: { value: new THREE.Color(mid) }, uShallow: { value: new THREE.Color(shallow) } }]),
+    vertexShader: /* glsl */`
+      uniform mat4 textureMatrix; varying vec4 vMirror; varying vec3 vW; varying vec3 vTint;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main(){
+        vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vTint = color;
+        vMirror = textureMatrix * vec4(wp.x, -wp.y, wp.z, 1.0);
+        vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      uniform sampler2D tRefl, tNormal; uniform float uTime, uReflOn; uniform vec3 uLightDir, uSunCol, uAmb, uDeep, uMid, uShallow;
+      varying vec4 vMirror; varying vec3 vW; varying vec3 vTint;
+      #include <common>
+      #include <fog_pars_fragment>
+      ${GLSL_HEIGHT}
+      void main(){
+        vec3 eyeVec = cameraPosition - vW; float dist = length(eyeVec); vec3 eyeDir = eyeVec / dist;
+        vec2 p = vW.xz;
+        vec3 n1 = texture2D(tNormal, p * 0.19 + vec2(uTime * 0.011, uTime * 0.007)).rgb * 2.0 - 1.0;
+        vec3 n2 = texture2D(tNormal, p * 0.47 - vec2(uTime * 0.017, -uTime * 0.013)).rgb * 2.0 - 1.0;
+        vec3 n3 = texture2D(tNormal, p * 1.6 + vec2(-uTime * 0.031, uTime * 0.024)).rgb * 2.0 - 1.0;
+        vec2 slope = (n1.xy * 0.5 + n2.xy * 0.35 + n3.xy * 0.22) * 0.2 * (1.0 - smoothstep(25.0, 260.0, dist) * 0.7);
+        vec3 sn = normalize(vec3(slope.x, 1.0, slope.y));
+      #ifdef FIXED_DEPTH
+        float depth = FIXED_DEPTH;
+      #else
+        float depth = max(0.0, vW.y - hAt(p));
+      #endif
+        vec3 R = reflect(-eyeDir, sn);
+        vec3 sky = mix(uAmb * 1.5 + 0.04, uAmb * 0.85 + vec3(0.02, 0.05, 0.12), clamp(R.y * 1.6, 0.0, 1.0));
+        vec3 refl = sky;
+        if (uReflOn > 0.5) { vec2 ruv = vMirror.xy / vMirror.w + sn.xz * 0.05;
+          float inR = step(0.001, ruv.x) * step(ruv.x, 0.999) * step(0.001, ruv.y) * step(ruv.y, 0.999); refl = mix(sky, texture2D(tRefl, ruv).rgb, inR); }
+        float cosT = max(dot(eyeDir, sn), 0.0), fres = 0.025 + 0.975 * pow(1.0 - cosT, 5.0);
+        float dd = 1.0 - exp(-depth * 1.7);
+        vec3 body = mix(uShallow, uMid, smoothstep(0.0, 0.55, dd)); body = mix(body, uDeep, smoothstep(0.45, 1.0, dd));
+        body *= vTint * (uAmb * 0.85 + uSunCol * max(uLightDir.y, 0.0) * 0.32 + 0.03);
+        vec3 hv = normalize(uLightDir + eyeDir); float sp = pow(max(dot(sn, hv), 0.0), 260.0);
+        float glint = smoothstep(0.9975, 0.9992, max(dot(sn, hv), 0.0)) * (0.5 + 0.5 * sin(uTime * 6.0 + p.x * 4.1 + p.y * 3.3));
+        vec3 spec = uSunCol * (sp * 2.2 + glint * 1.6) * step(0.0, uLightDir.y);
+        vec3 col = mix(body, refl, clamp(fres * 0.9 + 0.1, 0.0, 1.0)) + spec;
+        float alpha = clamp(0.12 + dd * 0.92, 0.0, 0.94); alpha = max(alpha, fres * 0.92);
+      #ifndef FIXED_DEPTH
+        float lap = 1.0 - smoothstep(0.0, 0.045 + 0.025 * sin(uTime * 0.9 + p.x * 1.3 + p.y * 0.7), depth);
+        col = mix(col, vec3(0.92, 0.94, 0.9) * (uAmb * 0.9 + uSunCol * max(uLightDir.y, 0.0) * 0.3 + 0.05), lap * 0.4);
+        alpha = mix(alpha, 0.55, lap * 0.5);
+      #endif
+        gl_FragColor = vec4(col, alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }`,
+  });
+  Object.assign(mat.uniforms, hf.U, { uTime: S.uTime, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
+  mat.uniforms.tNormal.value = normals;
+  // take the river's mirror image once it exists
+  mat.userData.linkReflection = water => { mat.uniforms.tRefl.value = water.material.uniforms.tRefl.value; mat.uniforms.textureMatrix.value = water.material.uniforms.textureMatrix.value; mat.uniforms.uReflOn.value = 1; };
+  return mat;
+}
+
+// running water on built features (a fountain's jets, spouts and falling sheets): streaks drift along the flow (uv.y
+// runs with the water, uv.x across it), bright where the water breaks white, clear between; lit by the day and, at
+// night, by the fixture lights under it (uGlow)
+export function flowWaterMaterial() {
+  const mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uGlow: { value: 0 }, uSpeed: { value: 1.6 } }]),
+    vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vW;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main(){ vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`uniform sampler2D tNoise; uniform float uTime, uGlow, uSpeed; uniform vec3 uLightDir, uSunCol, uAmb;
+      varying vec2 vUv; varying vec3 vW;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main(){
+        float s1 = texture2D(tNoise, vec2(vUv.x * 2.3, vUv.y * 0.7 - uTime * uSpeed * 0.9)).g;
+        float s2 = texture2D(tNoise, vec2(vUv.x * 5.1 + 0.37, vUv.y * 1.9 - uTime * uSpeed * 1.4)).b;
+        float streak = smoothstep(0.38, 0.82, s1 * 0.6 + s2 * 0.55);
+        vec3 eye = normalize(cameraPosition - vW);
+        vec3 lit = uAmb * 1.05 + uSunCol * max(uLightDir.y, 0.0) * 0.5 + 0.05 + vec3(0.9, 0.95, 1.0) * uGlow;
+        vec3 col = mix(vec3(0.6, 0.8, 0.88), vec3(0.97, 0.99, 1.0), streak) * lit;
+        float alpha = 0.26 + streak * 0.5;
+        gl_FragColor = vec4(col, alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }` });
+  Object.assign(mat.uniforms, { tNoise: S.tNoise, uTime: S.uTime, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
+  return mat;
+}
+// white water where falling water hits a surface: a churning ring (uv 0..1 across the patch), flickering
+export function foamMaterial() {
+  const mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uGlow: { value: 0 } }]),
+    vertexShader: /* glsl */`varying vec2 vUv; varying vec3 vW;
+      #include <common>
+      #include <fog_pars_vertex>
+      void main(){ vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`uniform sampler2D tNoise; uniform float uTime, uGlow; uniform vec3 uLightDir, uSunCol, uAmb;
+      varying vec2 vUv; varying vec3 vW;
+      #include <common>
+      #include <fog_pars_fragment>
+      void main(){
+        vec2 q = vUv * 2.0 - 1.0; float d = length(q), a = atan(q.y, q.x);
+        float n = texture2D(tNoise, vec2(a * 0.5 + uTime * 0.07, d * 0.9 - uTime * 0.6) + vW.xz * 0.05).g;
+        float n2 = texture2D(tNoise, vW.xz * 0.9 + vec2(uTime * 0.21, -uTime * 0.17)).b;
+        float ring = smoothstep(1.0, 0.55, d) * smoothstep(0.0, 0.25, d + 0.1);
+        float f = ring * smoothstep(0.35, 0.75, n * 0.7 + n2 * 0.5);
+        vec3 lit = uAmb * 1.1 + uSunCol * max(uLightDir.y, 0.0) * 0.5 + 0.06 + vec3(0.9, 0.95, 1.0) * uGlow;
+        gl_FragColor = vec4(vec3(0.96, 0.98, 1.0) * lit, f * 0.85);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }` });
+  Object.assign(mat.uniforms, { tNoise: S.tNoise, uTime: S.uTime, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
+  return mat;
 }
 
 // ---------------------------------------------------------------- streams

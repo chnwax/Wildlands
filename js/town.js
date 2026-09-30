@@ -2,7 +2,7 @@
 // houses and shops, utility poles, a river with concrete banks, rice paddies and cedar-covered hills.
 import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts,
   Scatter, addBox, addCircle, addPlatform, colliders, decimate } from './core.js';
-import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt } from './terrain.js';
+import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt, pondWaterMaterial, flowWaterMaterial, foamMaterial } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js';
 import { plantTown } from './towngreen.js';
@@ -16,7 +16,7 @@ import { buildCrops, updateCrops } from './crops.js';
 import { loadCrowd } from './crowd.js';
 import { setTownGlow } from './sky.js';
 import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
-  vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin } from './townkit.js';
+  vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin, canvasTex } from './townkit.js';
 import { RAIL, buildRailway, railFences, trackside, buildCrossing, pedCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads } from './roads.js';
@@ -348,10 +348,25 @@ export async function build(progress) {
   const reflected = new Set(scene.children); // sky, clouds, lights... (terrain + forest are added below)
   const MT = materials();
   MT.paddyWater = new THREE.MeshStandardMaterial({ color: 0x3b3a2a, roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.72, depthWrite: false, envMapIntensity: 1.3 });
-  // still garden-pond water (the district park): tinted per vertex from a green shallow margin to a deep teal middle
-  MT.pondWater = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.05, metalness: 0.25, envMapIntensity: 1.5 });
-
   const hf = new Heightfield({ world: 2048, grid: 1024, height });
+  // still water in the district park (the lake, its spring and inlet) and in the fountain's basins (terrain.js)
+  const waterNormals = loadTex('tex/waternormals.jpg', false, NFLAT);
+  MT.pondWater = pondWaterMaterial(hf, waterNormals);
+  MT.fountainWater = pondWaterMaterial(hf, waterNormals, { deep: '#2b6d82', mid: '#4a9aac', shallow: '#8cc8cc', fixedDepth: 0.32 });
+  MT.waterFlow = flowWaterMaterial(); MT.waterFoam = foamMaterial();
+  // mown turf (the district's football ground): short blades drawn in along the mowing direction over a green ground,
+  // the vertex colour carrying the stripes and the wear; goal and ball-stop netting
+  MT.turf = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, map: canvasTex(256, 256, (g, W, H) => {
+    const r = mulberry32(515); g.fillStyle = '#4f7d33'; g.fillRect(0, 0, W, H);
+    for (let k = 0; k < 9000; k++) { const x = r() * W, y = r() * H, l = 3 + r() * 6, a = -Math.PI / 2 + (r() - 0.5) * 0.5, s = r();
+      g.strokeStyle = `rgb(${Math.round(55 + s * 55)},${Math.round(95 + s * 70)},${Math.round(30 + s * 30)})`; g.lineWidth = 0.8 + r() * 1.1;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+    g.globalAlpha = 0.18; for (let k = 0; k < 400; k++) { g.fillStyle = r() < 0.5 ? '#3e6428' : '#6f9848'; g.beginPath(); g.arc(r() * W, r() * H, 3 + r() * 9, 0, 7); g.fill(); } g.globalAlpha = 1; }) });
+  MT.turf.map.wrapS = MT.turf.map.wrapT = THREE.RepeatWrapping;
+  MT.net = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, alphaTest: 0.35, roughness: 0.8, map: canvasTex(64, 64, (g, W, H) => { g.clearRect(0, 0, W, H); g.strokeStyle = '#f4f4f2'; g.lineWidth = 5;
+    g.beginPath(); for (const t of [0, W]) { g.moveTo(t, 0); g.lineTo(t, H); g.moveTo(0, t); g.lineTo(W, t); } g.stroke(); }) });
+  MT.net.map.wrapS = MT.net.map.wrapT = THREE.RepeatWrapping;
+  MT.waterFlow.uniforms.uGlow = MT.waterFoam.uniforms.uGlow = { get value() { return night.value * 0.35; } };
   const { HN, HALF, CELL } = hf;
   const layers = {
     grass: { d: phTex('aerial_grass_rock', 'diff', '2k', true), n: phTex('aerial_grass_rock', 'nor_gl', '2k', false, NFLAT), s: 6, tint: [0.95, 1.1, 0.8] },
@@ -361,6 +376,7 @@ export async function build(progress) {
     urban: { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.1, 1.03, 0.9], norm: 0.44 },
   };
   const modelsP = Promise.all(['shrub_02', 'potted_plant_04', 'planter_box_01', 'plastic_crate_01', 'utility_box_02', 'weed_plant_02', 'water_manhole_cover'].map(loadModel));
+  const rockModelsP = Promise.all(['rock_moss_set_01', 'boulder_01'].map(loadModel));
   await hf.generate(p => progress('Shaping the valley', p * 0.3));
 
   // ---------------------------------------------------------------- occupancy grid (1 m) for lots
@@ -1335,13 +1351,14 @@ export async function build(progress) {
   buildTrees(floor.twigs, { colliders: false });
   buildLogs(floor.logs);
   const grass = buildGrass(hf, layers.grass.d, { water: 0, snow: 900, reeds: true, shore: 0.9 });
-  const water = buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], waves: 6, strength: 0.3, deep: '#1d5a78', mid: '#2e8f9a', shallow: '#5cc4b0',
+  const water = buildWater(hf, { level: 0, normals: waterNormals, hide: [grass], waves: 6, strength: 0.3, deep: '#1d5a78', mid: '#2e8f9a', shallow: '#5cc4b0',
     active: c => Math.abs(c.x - riverX(c.z)) < 380 });
   reflected.add(water);
+  for (const m of [MT.pondWater, MT.fountainWater]) m.userData.linkReflection(water);
 
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
-  B.flush(MT, { paint: false, stopLegend: false, cycleLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, pondWater: false, lamp: false, chain: false, poly: false });
+  B.flush(MT, { paint: false, stopLegend: false, cycleLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, pondWater: false, fountainWater: false, waterFlow: false, waterFoam: false, turf: false, net: false, lamp: false, chain: false, poly: false });
   Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
   const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg), danchiBenches = flushLandmarks(LBd);
 
@@ -1357,6 +1374,21 @@ export async function build(progress) {
     // asset sheets with several plants side by side: every plant becomes its own instanced model
     parts.forEach((p, i) => { normalizeParts([p], byHeight); const mine = items.filter((_, k) => k % parts.length === i); if (mine.length) new Scatter(mine, lods([p]), 128); });
   };
+  // the district's rocks (danchi.js, danchipark.js): each stone of the scanned rock set is its own instanced model,
+  // the boulder another; every stone sits on the lowest ground under it, sunk by the fraction its record asks
+  { const [rockSet, boulderM] = await rockModelsP, stones = [];
+    if (rockSet) for (const p of extractParts(rockSet)) stones.push({ parts: [p], dim: normalizeParts([p], false) });
+    const bould = boulderM ? (() => { const parts = extractParts(boulderM); return { parts, dim: normalizeParts(parts, false) }; })() : null;
+    const low = (x, z, r) => Math.min(hf.groundAt(x, z), hf.groundAt(x - r, z), hf.groundAt(x + r, z), hf.groundAt(x, z - r), hf.groundAt(x, z + r)), groups = new Map();
+    for (const q of danchi.rocks || []) { const M = q.kind === 'b' && bould ? bould : stones.length ? stones[q.part % stones.length] : bould; if (!M) continue;
+      const h = q.s * M.dim.h * (q.sy || 1), y = low(q.x, q.z, q.s * M.dim.w * 0.3) - h * q.sink;
+      if (!groups.has(M)) groups.set(M, []); groups.get(M).push({ x: q.x, y, z: q.z, s: q.s, sx: q.sx, sy: q.sy, r: q.r, tilt: q.tilt, tilt2: q.tilt2, c: q.c });
+      if (h * (1 - q.sink) > 0.4) addCircle(q.x, q.z, q.s * M.dim.w * 0.36); }
+    // painted like the town's other stone (toon.js): the scan's brightness evened out, its hue kept a little, the
+    // instance tint deciding the colour of each stone
+    for (const M of [...stones, bould]) if (M) for (const p of M.parts) { p.material = p.material.clone(); p.material.userData.toonNorm = 0.5; }
+    for (const [M, items] of groups) new Scatter(items, [{ dist: () => 110, parts: M.parts.map(p => ({ ...p, castShadow: true, tint: true })) },
+      { dist: () => 360, parts: M.parts.map(p => ({ ...p, geometry: decimate(p.geometry, 10), castShadow: true, tint: true })) }], 96); }
   const shrubs = [], pots = [], weeds = [], crates = [], boxes = [];
   for (const lot of lots) {
     const c = Math.cos(lot.r), s = Math.sin(lot.r), W = (lx, lz) => [lot.x + lx * c + lz * s, lot.z - lx * s + lz * c];

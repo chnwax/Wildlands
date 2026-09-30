@@ -257,37 +257,99 @@ function entrancePorch(B, rng, { w, y0, yh, depth, wall, frame = [0.3, 0.31, 0.3
     if (lampAt) lampAt.push({ p: B.P([e * (hw + 0.28), y0 + 2.1, 0.4]), s: 0.3 }); }
   if (noticeOut) wallPanel(B, 'notice', -(hw + 0.95), y0 + 1.15, 0.6, 0.45, 0.04, { color: [0.4, 0.34, 0.26], mat: 'wood' });
 }
-// Approach to an entrance at sill height y0 (current frame on the facade, +z out, door centred at x = 0): a landing
-// the entrance's width, steps down to the ground found at its foot (risers near 15 cm, 30 cm treads) with handrails
-// where there are three or more, a barrier-free ramp (1:12) along the facade to one side with a cheek wall and rails
-// where the rise needs it, and a paved forecourt laid on the ground in front of it all. Returns the forecourt's front
-// centre (where the path takes over) and its outline, in the current frame. gy: world ground height.
-function approach(B, gy, { w, y0, land = 1.3, ramp = 0, rail = [0.55, 0.57, 0.6], court = 2.4, extraW = 0 }) {
+// Approach to an entrance at sill height y0 (current frame on the facade, +z out, door centred at x = 0), built to the
+// ground actually found in front of it:
+//   under 14 cm: a level approach — the landing's paving falls gently (1:14 or flatter) to the forecourt, no step at all
+//   more: a landing the entrance's width, then steps (risers near 15.5 cm, 32 cm treads with a lighter tread plate, a
+//         dark anti-slip nosing and a set-back riser), a tactile warning strip across the landing before the first
+//         step, cheek walls either side following the flight (coped, sunk below the ground), and handrails on posts
+//         both sides at 85 cm over the nosings, run on 30 cm past the bottom step and turned down at the end
+//   ramp (±1): a barrier-free ramp (1:12) along the facade from the landing's side, cheek walls and rails both sides;
+//         on that side the landing is left open onto it
+// style 'concrete' (walk-ups: board-marked concrete, galvanised pipe rails) or 'granite' (flame-finished granite,
+// stainless rails). Returns the forecourt's front centre (where the path takes over), its outline, and the footprint
+// the paths must keep off.
+function approach(B, gy, { w, y0, land = 1.3, ramp = 0, court = 2.4, extraW = 0, style = 'concrete' }) {
   const F = B.F, gl = (lx, lz) => { const p = B.P([lx, 0, lz]); return gy(p[0], p[2]) - F.y; };
-  const g0 = Math.min(gl(0, land + 0.9), gl(-w / 2, land + 0.9), gl(w / 2, land + 0.9)), rise = Math.max(0, y0 - g0);
-  const n = Math.max(1, Math.round(rise / 0.15)), rs = rise / n, SC = [0.76, 0.75, 0.72], ST = [0.7, 0.69, 0.66];
-  B.bbox('concrete', 0, g0 - 0.3, land / 2, w, y0 - g0 + 0.3, land, 0.012, { color: SC });                            // landing
-  B.box('tiles', 0, y0 + 0.001, land / 2 - 0.02, w - 0.1, 0.01, land - 0.1, { color: [0.56, 0.54, 0.52], uv: 0.9 });
-  for (let k = 1; k < n; k++) B.bbox('concrete', 0, g0 - 0.3, land + (k - 0.5) * 0.3, w, y0 - k * rs - g0 + 0.3, 0.3, 0.012, { color: k % 2 ? ST : SC });
-  const foot = land + (n - 1) * 0.3;
-  if (n >= 3) for (const e of [-1, 1]) B.detail(1, () => { const x = e * (w / 2 - 0.12); B.beam('steel', [x, y0 + 0.85, land - 0.1], [x, g0 + rs + 0.85, foot], 0.04, 0.04, { color: rail });
-    B.box('steel', x, y0, land - 0.1, 0.04, 0.85, 0.04, { color: rail }); B.box('steel', x, g0 + rs, foot, 0.04, 0.85, 0.04, { color: rail }); });
+  const probe = z => Math.min(gl(0, z), gl(-w / 2, z), gl(w / 2, z));
+  const G = style === 'granite', BODY = G ? [0.5, 0.49, 0.47] : [0.74, 0.73, 0.7], TREAD = G ? [0.68, 0.66, 0.62] : [0.8, 0.79, 0.76],
+    NOSE = [0.28, 0.28, 0.29], CHEEK = G ? [0.42, 0.41, 0.4] : [0.7, 0.69, 0.66], RAIL = G ? [0.82, 0.84, 0.86] : [0.62, 0.64, 0.66];
+  let g0 = probe(land + 0.9), rise = Math.max(0, y0 - g0);
+  const T = 0.32, level = rise < 0.14;
+  const n = level ? 0 : Math.max(2, Math.round(rise / 0.155)), rs = level ? 0 : rise / n;
+  if (level) land = Math.max(land, rise * 14 + 0.4);
+  const foot = level ? land : land + (n - 1) * T;
+  g0 = Math.min(g0, probe(foot + 0.3));
+  // the landing (sloping to the ground when level) with its finish
+  if (level) {
+    const yA = y0, yB = g0 + 0.03;
+    B.poly('concrete', [[-w / 2, yA, 0.02], [w / 2, yA, 0.02], [w / 2, yB, land], [-w / 2, yB, land]], [0, 1, 0], { color: TREAD, uv: 0.9 });
+    for (const e of [-1, 1]) B.poly('concrete', [[e * w / 2, g0 - 0.3, 0.02], [e * w / 2, g0 - 0.3, land], [e * w / 2, yB, land], [e * w / 2, yA, 0.02]], [e, 0, 0], { color: BODY });
+    B.poly('concrete', [[-w / 2, g0 - 0.3, land], [w / 2, g0 - 0.3, land], [w / 2, yB, land], [-w / 2, yB, land]], [0, 0, 1], { color: BODY });
+  } else {
+    B.bbox('concrete', 0, g0 - 0.35, land / 2, w, y0 - g0 + 0.35 - 0.03, land, 0.015, { color: BODY });
+    B.bbox(G ? 'stone' : 'concrete', 0, y0 - 0.03, land / 2 - 0.01, w + 0.02, 0.03, land + 0.02, 0.006, { color: TREAD, uv: 0.8 });
+    B.box('tactileD', 0, y0 + 0.001, land - 0.45, Math.min(w - 0.4, 1.8), 0.006, 0.3, { uv: 0.3 });              // 点状ブロック before the flight
+    B.box('plain', 0, y0 - 0.025, land + 0.005, w, 0.028, 0.03, { color: NOSE });
+    // the flight: each step a solid block down into the ground, a tread plate with its nosing, the riser set back
+    for (let k = 1; k < n; k++) { const top = y0 - k * rs, z0 = land + (k - 1) * T;
+      B.box('concrete', 0, g0 - 0.35, z0 + 0.02 + (T - 0.02) / 2, w, top - 0.03 - (g0 - 0.35), T - 0.02, { color: mul(BODY, 0.94) });
+      B.box(G ? 'stone' : 'concrete', 0, top - 0.03, z0 + T / 2, w, 0.03, T + 0.02, { color: TREAD, uv: 0.8 });
+      B.box('plain', 0, top - 0.025, z0 + T + 0.005, w, 0.028, 0.03, { color: NOSE }); }
+  }
+  // cheek walls and rails, both sides (the ramp's side open along the landing)
+  const cheekTop = z => z <= land ? y0 + 0.14 : lerp(y0, g0, clamp((z - land) / Math.max(0.01, foot - land + T), 0, 1)) + 0.14 - (level ? 0 : 0);
+  const railY = z => level ? lerp(y0, g0, clamp(z / land, 0, 1)) + 0.85 : z <= land ? y0 + 0.85 : lerp(y0, g0 + rs, clamp((z - land) / Math.max(0.01, foot - land), 0, 1)) + 0.85;
+  const zEnd = foot + (level ? 0 : T);
+  for (const e of [-1, 1]) {
+    const open = ramp === e, zs = open ? land : 0.03, x = e * (w / 2 + 0.08);
+    if (!level || rise > 0.05) {
+      const pts = []; for (let z = zs; z <= zEnd + 1e-3; z += 0.16) pts.push(z); if (pts[pts.length - 1] < zEnd - 0.01) pts.push(zEnd);
+      for (let i = 0; i + 1 < pts.length; i++) { const za = pts[i], zb = pts[i + 1], ta = level ? lerp(y0, g0, za / land) + 0.1 : cheekTop(za), tb = level ? lerp(y0, g0, zb / land) + 0.1 : cheekTop(zb);
+        B.poly(G ? 'stone' : 'concrete', [[x, g0 - 0.3, za], [x, g0 - 0.3, zb], [x, tb, zb], [x, ta, za]], [e, 0, 0], { color: CHEEK, uv: 1.2 });
+        B.poly(G ? 'stone' : 'concrete', [[x - e * 0.16, g0 - 0.3, zb], [x - e * 0.16, g0 - 0.3, za], [x - e * 0.16, ta, za], [x - e * 0.16, tb, zb]], [-e, 0, 0], { color: mul(CHEEK, 0.9), uv: 1.2 });
+        B.poly('concrete', [[x - e * 0.16, ta, za], [x, ta, za], [x, tb, zb], [x - e * 0.16, tb, zb]], [0, 1, 0], { color: mul(CHEEK, 1.12) }); }
+      B.poly(G ? 'stone' : 'concrete', [[x - e * 0.16, g0 - 0.3, zEnd], [x, g0 - 0.3, zEnd], [x, cheekTop(zEnd) + (level ? -0.04 : 0), zEnd], [x - e * 0.16, cheekTop(zEnd) + (level ? -0.04 : 0), zEnd]], [0, 0, 1], { color: CHEEK });
+    }
+    if (level && rise < 0.08) continue;                                                                               // nothing to hold on to
+    B.detail(1, () => { const xr = x - e * 0.08, zr0 = zs + 0.15, zr1 = zEnd + 0.3, m = 6;
+      for (let i = 0; i < m; i++) { const za = lerp(zr0, zr1, i / m), zb = lerp(zr0, zr1, (i + 1) / m); B.beam('steel', [xr, railY(za), za], [xr, railY(zb), zb], 0.045, 0.045, { color: RAIL }); }
+      B.box('steel', xr, railY(zr1) - 0.12, zr1, 0.045, 0.12, 0.045, { color: RAIL });                                // end turned down
+      for (const zp of [zr0, open ? zr0 : land, zr1 - 0.3]) B.box('steel', xr, cheekTop(zp) - 0.02, zp, 0.05, railY(zp) - cheekTop(zp) + 0.02, 0.05, { color: RAIL }); });
+  }
   let rampEnd = null;
   if (ramp && rise > 0.06) {
-    const L = Math.max(1.2, rise * 12), x0 = ramp * w / 2, x1 = ramp * (w / 2 + L), rw = 1.3, zi = 0.08, zo = zi + rw, zc = (zi + zo) / 2;
-    B.poly('concrete', [[x0, y0, zi], [x1, g0 + 0.02, zi], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 1, 0], { color: SC, uv: 1.5 });
-    // cheek walls both sides (the inner one stands against the facade where there is one) with handrails on posts
-    B.poly('concrete', [[x0, g0 - 0.2, zo], [x1, g0 - 0.2, zo], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 0, 1], { color: ST, uv: 1.5 });
-    for (const zz of [zi - 0.06, zo + 0.06]) { B.beam('concrete', [x0, y0 - 0.03, zz], [x1, g0 - 0.03, zz], 0.12, 0.34, { color: SC });
-      B.detail(1, () => { B.beam('steel', [x0, y0 + 0.9, zz], [x1, g0 + 0.92, zz], 0.045, 0.045, { color: rail });
-        const m = Math.max(1, Math.round(L / 1.5)); for (let k = 0; k <= m; k++) { const t = k / m; B.box('steel', x0 + (x1 - x0) * t, y0 + (g0 - y0) * t + 0.14, zz, 0.045, 0.76, 0.045, { color: rail }); } }); }
+    const L = Math.max(1.2, rise * 12), x0 = ramp * (w / 2 + 0.16), x1 = ramp * (w / 2 + 0.16 + L), rw = 1.3, zi = 0.08, zo = zi + rw, zc = (zi + zo) / 2;
+    B.poly('concrete', [[x0, y0, zi], [x1, g0 + 0.02, zi], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 1, 0], { color: TREAD, uv: 1.5 });
+    B.poly('concrete', [[x0, g0 - 0.2, zo], [x1, g0 - 0.2, zo], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 0, 1], { color: BODY, uv: 1.5 });
+    for (const zz of [zi - 0.06, zo + 0.06]) { B.beam(G ? 'stone' : 'concrete', [x0, y0 - 0.03, zz], [x1, g0 - 0.03, zz], 0.12, 0.34, { color: CHEEK });
+      B.detail(1, () => { B.beam('steel', [x0, y0 + 0.9, zz], [x1, g0 + 0.92, zz], 0.045, 0.045, { color: RAIL }); B.beam('steel', [x1, g0 + 0.92, zz], [x1 + ramp * 0.3, g0 + 0.92, zz], 0.045, 0.045, { color: RAIL });
+        B.box('steel', x1 + ramp * 0.3, g0 + 0.8, zz, 0.045, 0.12, 0.045, { color: RAIL });
+        const m = Math.max(1, Math.round(L / 1.5)); for (let k = 0; k <= m; k++) { const t = k / m; B.box('steel', x0 + (x1 - x0) * t, y0 + (g0 - y0) * t + 0.14, zz, 0.045, 0.76, 0.045, { color: RAIL }); } }); }
     rampEnd = [x1 + ramp * 0.5, zc];
   }
   const xa = -w / 2 - 0.6 - (ramp < 0 && rampEnd ? -rampEnd[0] - w / 2 : 0) - extraW, xb = w / 2 + 0.6 + (ramp > 0 && rampEnd ? rampEnd[0] - w / 2 : 0) + extraW;
-  const block = [[-w / 2 - 0.1, 0, w / 2 + 0.1, foot + 0.1]]; if (rampEnd) block.push([Math.min(ramp * w / 2, rampEnd[0] - ramp * 0.5), 0, Math.max(ramp * w / 2, rampEnd[0] - ramp * 0.5), 1.6]);
-  return { foot: [0, foot + court], court: [xa, rampEnd ? 0.05 : land - 0.1, xb, foot + court], rampEnd, g0, rise, block };
+  const block = [[-w / 2 - 0.3, 0, w / 2 + 0.3, zEnd + 0.1]]; if (rampEnd) block.push([Math.min(ramp * w / 2, rampEnd[0] - ramp * 0.5), 0, Math.max(ramp * w / 2, rampEnd[0] - ramp * 0.5), 1.6]);
+  return { foot: [0, zEnd + court], court: [xa, rampEnd ? 0.05 : land - 0.1, xb, zEnd + court], rampEnd, g0, rise, block };
 }
 
+// the ground a building of family fam will take, in its own frame, as rectangles [[x0, z0], [x1, z1]]: walls, balconies,
+// garden fences, stair towers, lobbies with their landings, steps, ramps and forecourts (the layout rules in the families
+// below). The district's placement keeps these clear of carriageways, footways and each other.
+export function envelope(fam, o) {
+  const w = o.w, M = (w, d, lift) => { const nU = Math.max(3, Math.round(w / 6.6)), uw = w / nU, lx = -w / 2 + ((lift ?? Math.round(nU / 2) - 1) + 1) * uw;
+    return [[[-w / 2 - 2.9, -d / 2 - 2.0], [w / 2 + 0.4, d / 2 + 3.1]], [[lx - 6.5, -d / 2 - 9.2], [lx + 6.5, -d / 2]]]; };
+  if (fam === 'S') { const d = o.d || 9.6; return [[[-w / 2 - 0.35, -d / 2 - 6.2], [w / 2 + 0.35, d / 2 + 2.6]]]; }
+  if (fam === 'T') { const W = o.w || 18, d = o.d || 16; return [[[-W / 2 - 2.9, -d / 2 - 7.6], [W / 2 + 2.9, d / 2 + 2.8]]]; }
+  if (fam === 'M') return M(w, o.d || 11.5, o.lift);
+  if (fam === 'R') { const d = o.d || 8.2; return [[[-w / 2 - 1.4, -d / 2 - 2.3], [w / 2 + 1.9, d / 2 + 1.6]]]; }
+  if (fam === 'L') { const wa = o.wa || 58, wb = o.wb || 40, dp = o.dp || 17; return [[[-3.0, -dp - 0.3], [wa, 3.0]], [[-3.0, -wb - 0.3], [dp + 2.6, -dp]]]; }
+  if (fam === 'K') { const wa = o.wa || 30, wb = o.wb || 26, C = 6, cxA = C + wa / 2 - 0.3, czB = C + wb / 2 - 0.3, R = [[[-C - 0.5, -C - 0.5], [C + 0.5, C + 0.5]]];
+    for (const [[a0, b0], [a1, b1]] of M(wa, 11.5, 0)) R.push([[cxA - a1, -b1], [cxA - a0, -b0]]);
+    for (const [[a0, b0], [a1, b1]] of M(wb, 11.5, 2)) R.push([[-b1, czB + a0], [-b0, czB + a1]]);
+    return R; }
+  return [[[-15, -8], [15, 8]]];
+}
 // a forecourt rectangle [x0, z0, x1, z1] of the current frame as world corners
 const courtW = (B, [x0, z0, x1, z1]) => [B.P([x0, 0, z0]), B.P([x1, 0, z0]), B.P([x1, 0, z1]), B.P([x0, 0, z1])].map(p => [p[0], p[2]]);
 
@@ -447,7 +509,7 @@ export function pointTower(B, s, rng, ex) {
     entrancePorch(B, rng, { w: 2.8, y0, yh: 3.0, depth: 2.2, wall: [0.86, 0.85, 0.82], auto: true, mail: [4, 5], lockers: true, lampAt: out.lamps, floorC: [0.42, 0.4, 0.39] });
     entranceCanopy(B, 0, y0, 5.6, 3.0, { cols: true, color: [0.9, 0.9, 0.88], lampAt: out.lamps, h: 3.0, steps: false });
     plate(B, 0, 3.86, 0.02, 0, 3.2, 0.4, (g, W2, H2) => { g.fillStyle = '#2f3438'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e8e4d8'; g.font = `bold ${H2 * 0.55}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s.name || `サクラタワー ${no}`, W2 / 2, H2 * 0.55); }, 0.4, 256);
-    const ap = s.gy ? approach(B, s.gy, { w: 3.6, y0, land: 1.8, ramp: rng() < 0.5 ? -1 : 1, court: 2.6 }) : { foot: [0, 4.2], court: [-2.4, 1.6, 2.4, 4.4] };
+    const ap = s.gy ? approach(B, s.gy, { w: 3.6, y0, land: 1.8, ramp: rng() < 0.5 ? -1 : 1, court: 2.6, style: 'granite' }) : { foot: [0, 4.2], court: [-2.4, 1.6, 2.4, 4.4] };
     out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)) });
   });
   B.frame(x, y, z, r);
@@ -553,7 +615,7 @@ export function mansion(B, s, rng, ex) {
       entrancePorch(B, rng, { w: 2.8, y0, yh: LH - 0.35, depth: 2.2, wall: mix3(wall, [0.9, 0.88, 0.84], 0.5), auto: true, mail: [4, 5], lockers: true, lampAt: out.lamps, floorC: [0.4, 0.38, 0.37] });
       entranceCanopy(B, 0, y0, 3.8, 2.3, { cols: true, color: [0.28, 0.28, 0.3], lampAt: out.lamps, h: LH - y0 - 0.22, steps: false });
       plate(B, 0, LH + 0.3, 0.22, 0, 4.4, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name || `パークハイツ桜川 ${no}`, W2 / 2, H2 * 0.55); }, 0.5, 256);
-      const ap = s.gy ? approach(B, s.gy, { w: 3.0, y0, land: 1.6, ramp: rng() < 0.5 ? -1 : 1, court: 2.6 }) : { foot: [0, 2.4], court: [-2, 1.4, 2, 3.4] };
+      const ap = s.gy ? approach(B, s.gy, { w: 3.0, y0, land: 1.6, ramp: rng() < 0.5 ? -1 : 1, court: 2.6, style: 'granite' }) : { foot: [0, 2.4], court: [-2, 1.4, 2, 3.4] };
       out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)) });
       // walks from the ground-floor doors under the corridor, round the lobby's glazed sides, into the apron's side
       { const [xa, za, xb, zb] = ap.court, zm = (za + zb) / 2 + 0.3; out.walkways = [];
@@ -712,7 +774,7 @@ export function centreBlock(B, s, rng, ex) {
     entrancePorch(B, rng, { w: 2 * hw, y0: 0.1, yh, depth: D, wall: [0.8, 0.78, 0.74], auto: true, mail: [4, 5], lockers: true, lampAt: out.lamps, floorC: [0.38, 0.36, 0.35] });
     entranceCanopy(B, 0, 0.1, 4.2, 2.0, { cols: true, color: [0.3, 0.31, 0.33], lampAt: out.lamps, h: 3.1, steps: false });
     plate(B, 0, 3.72, -DP + 0.03, 0, 3.8, 0.42, (g, W2, H2) => { g.fillStyle = '#26282b'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#e9dcc0'; g.font = `${H2 * 0.48}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, W2 / 2, H2 * 0.55); }, 0.5, 256);
-    const ap = s.gy ? approach(B, s.gy, { w: 3.2, y0: 0.1, land: 1.2, ramp: 0, court: 2.4 }) : { foot: [0, 3.2], court: [-2, 1, 2, 3.4] };
+    const ap = s.gy ? approach(B, s.gy, { w: 3.2, y0: 0.1, land: 1.2, ramp: 0, court: 2.4, style: 'granite' }) : { foot: [0, 3.2], court: [-2, 1, 2, 3.4] };
     out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)) });
   });
   lobby([wa / 2 + 5, 0, -dp], Math.PI, 'センタービル桜川 東館');

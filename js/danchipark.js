@@ -11,11 +11,27 @@
 import { THREE, addPlatform } from './core.js';
 import { lampPoints } from './townkit.js';
 
+// the lake's outline (a lobed ellipse round LAKE_C), its inlet channel and the spring pool; the ground under them is
+// dug out (danchiGround) so the water lies in a real basin: shelving gently at the beach, steeper under the deck
+export const LAKE_C = [482, 15];
+export const lakeR = a => { const e = 1 / Math.hypot(Math.cos(a) / 23, Math.sin(a) / 10.5); return e * (1 + 0.1 * Math.sin(a * 3 + 0.7) + 0.06 * Math.sin(a * 5 + 2.1) - 0.08 * Math.exp(-((a - 0.9) ** 2) / 0.05)); };
+export const LAKE_CH = { x0: 448.6, x1: LAKE_C[0] - lakeR(Math.PI) + 1.2, z: 13, w: 2.8 }, SPRING = [446, 13, 3.2];
+const sst = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+export function lakeDepth(x, z) {
+  if (x < 438 || x > 512 || z < -2 || z > 32) return 0;
+  const dx = x - LAKE_C[0], dz = z - LAKE_C[1], a = Math.atan2(dz, dx), t = Math.hypot(dx, dz) / lakeR(a);
+  const beach = Math.exp(-(Math.atan2(Math.sin(a - 0.05), Math.cos(a - 0.05)) ** 2) / 0.25), deck = Math.exp(-((a - Math.PI / 2) ** 2) / 0.2);
+  let d = 1.25 * sst(0, 0.42 + 0.3 * beach - 0.12 * deck, 1.06 - t);
+  const c = LAKE_CH; if (x > c.x0 - 2 && x < c.x1 + 1) d = Math.max(d, 0.75 * sst(0, 1.4, c.w / 2 + 0.9 - Math.abs(z - c.z)) * sst(c.x0 - 2, c.x0, x));
+  d = Math.max(d, 0.95 * sst(0, 2.0, SPRING[2] + 0.9 - Math.hypot(x - SPRING[0], z - SPRING[1])));
+  return d;
+}
+
 export function buildParks(K) {
   const { B, gy, rng, out, pathLine, pave, paint, occRect, navRect, tree, benchAt, addBox, addCircle } = K;
   const V = (x, z, yo = 0) => [x, gy(x, z) + yo, z];
   const col = (h, s, l) => new THREE.Color().setHSL(h, s, l);
-  const lerp = (a, b, t) => a + (b - a) * t;
+  const lerp = (a, b, t) => a + (b - a) * t, mul = (c, k) => c.map(v => v * k);
   // ---------------------------------------------------------------- small kit
   // draped rectangle of surfacing in ~1 m cells (mat, colour, height over the ground); pavement gets slab joints
   const surf = (x0, z0, x1, z1, mat, color, yo, { cell = 1, uv = 1.2 } = {}) => {
@@ -42,7 +58,7 @@ export function buildParks(K) {
   const AZALEA = [col(0.93, 0.62, 0.62), col(0.97, 0.7, 0.72), col(0.0, 0.0, 0.93), col(0.88, 0.55, 0.58)], HYDRANGEA = [col(0.62, 0.45, 0.6), col(0.72, 0.4, 0.62), col(0.58, 0.5, 0.66)];
   const GREEN = () => col(0.26 + rng() * 0.06, 0.45, 0.3 + rng() * 0.08);
   // ornamental lamp: a fluted post with a lantern head (formal spaces), or the plain park lamp
-  const lamp = (x, z, ornate = true) => { const y = gy(x, z); B.frame(x, y, z, 0);
+  const lamp = (x0, z0, ornate = true) => { const q = K.freeSpot(x0, z0, 0.3); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0);
     if (ornate) { B.cyl('metal', 0, 0, 0, 0.16, 0.13, 0.5, 12, { color: [0.18, 0.2, 0.2] }); B.cyl('metal', 0, 0.5, 0, 0.07, 0.055, 3.4, 12, { color: [0.18, 0.2, 0.2] });
       B.cyl('metal', 0, 3.9, 0, 0.1, 0.18, 0.12, 12, { color: [0.18, 0.2, 0.2], cap: true }); B.cyl('lamp', 0, 4.02, 0, 0.2, 0.2, 0.42, 12, {}); B.cyl('metal', 0, 4.44, 0, 0.26, 0.04, 0.2, 12, { color: [0.18, 0.2, 0.2], cap: true });
       lampPoints.push({ p: [x, y + 4.2, z], s: 0.7 }); }
@@ -51,19 +67,41 @@ export function buildParks(K) {
   const bollard = (x, z, lit = true) => { const y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.1, 0.1, 0.8, 12, { color: [0.2, 0.22, 0.22], cap: !lit });
     if (lit) { B.cyl('lamp', 0, 0.62, 0, 0.1, 0.1, 0.12, 12, {}); B.cyl('metal', 0, 0.74, 0, 0.12, 0.12, 0.06, 12, { color: [0.2, 0.22, 0.22], cap: true }); lampPoints.push({ p: [x, y + 0.7, z], s: 0.15 }); }
     B.frame(0, 0, 0, 0); addCircle(x, z, 0.1); };
-  const bin = (x, z, c = [0.26, 0.42, 0.34]) => { const y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.26, 0.24, 0.85, 14, { color: c }); B.cyl('metal', 0, 0.85, 0, 0.28, 0.2, 0.1, 14, { color: [0.3, 0.32, 0.33], cap: true }); B.cyl('dark', 0, 0.9, 0, 0.1, 0.1, 0.06, 10, { color: [0.1, 0.1, 0.1], cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.28); navRect(x, z, 0.35, 0.35, 0, 2); };
+  const bin = (x0, z0, c = [0.26, 0.42, 0.34]) => { const q = K.freeSpot(x0, z0, 0.32); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.26, 0.24, 0.85, 14, { color: c }); B.cyl('metal', 0, 0.85, 0, 0.28, 0.2, 0.1, 14, { color: [0.3, 0.32, 0.33], cap: true }); B.cyl('dark', 0, 0.9, 0, 0.1, 0.1, 0.06, 10, { color: [0.1, 0.1, 0.1], cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.28); navRect(x, z, 0.35, 0.35, 0, 2); };
   // a bench with a bin at one end, the pair set back from a path edge (yaw: the way the seat faces)
-  const seat = (x, z, yaw, withBin = false) => { benchAt(x, z, yaw); if (withBin) bin(x + Math.cos(yaw) * 1.25, z - Math.sin(yaw) * 1.25); };
-  const boulder = (x, z, s, c = [0.6, 0.58, 0.54]) => { const y = gy(x, z); B.frame(x, y, z, rng() * 6.28); const h = s * (0.5 + rng() * 0.4);
-    B.bbox('stone', 0, -0.2, 0, s * (1 + rng() * 0.5), h + 0.2, s * (0.8 + rng() * 0.4), s * 0.22, { color: c.map(v => v * (0.9 + rng() * 0.15)) });
-    B.bbox('stone', s * 0.1, h - 0.05, -s * 0.05, s * 0.8, s * 0.2, s * 0.6, s * 0.12, { color: c.map(v => v * 0.95) }); B.frame(0, 0, 0, 0); addCircle(x, z, s * 0.6); };
+  const seat = (x, z, yaw, withBin = false) => { const q = benchAt(x, z, yaw); if (q && withBin) bin(q[0] + Math.cos(yaw) * 1.3, q[1] - Math.sin(yaw) * 1.3); };
+  // rocks: scanned stones and boulders (instanced in town.js) placed by the rules of a real outcrop — never on paving,
+  // sunk by part of their height into the ground (more for small stones), turned to lie on their broad side, tinted a
+  // little apart. A group reads big → medium → small: one or two big stones, medium ones leaning on them, a spill of
+  // small stones and gravel, soil and low planting round the foot. kind 'b' boulder, 's' one of the rock set's stones.
+  out.rocks = out.rocks || [];
+  const TINT = [[1.06, 1.02, 0.95], [0.96, 0.97, 0.99], [1.1, 1.05, 0.97], [0.9, 0.92, 0.95], [1.0, 0.97, 0.9], [0.86, 0.85, 0.82]].map(c => new THREE.Color(...c));
+  const rockOk = (x, z, r) => { for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) if (K.paved(x + dx, z + dz)) return false; return true; };
+  const rock = (x, z, s, { kind = 's', sink = s < 0.6 ? 0.3 : s < 1.3 ? 0.2 : 0.14, tilt = s < 0.6 ? 0.45 : 0.2, sy = 0.85 + rng() * 0.5, force = false, part = Math.floor(rng() * 64) } = {}) => {
+    if (!force && !rockOk(x, z, s * 0.45)) return false;
+    out.rocks.push({ x, z, s, kind, sink, part, r: rng() * 6.283, tilt: (rng() - 0.5) * tilt, tilt2: (rng() - 0.5) * tilt, sx: 0.85 + rng() * 0.35, sy, c: TINT[Math.floor(rng() * TINT.length)].clone().offsetHSL(0, 0, (rng() - 0.5) * 0.06) });
+    if (s > 0.6) navRect(x, z, s * 0.45, s * 0.45, 0, 2);
+    if (s > 0.35) { const R = s * 0.34; pave(x - R, z - R, x + R, z + R, (px, pz) => Math.hypot(px - x, pz - z) < R ? 1 : 0); }                  // no grass blades through the stone
+    return true; };
+  const rockGroup = (x, z, S, { dir = rng() * 6.283, spread = 1, soil = true, plants = true, water = null } = {}) => {
+    rock(x, z, S, { kind: rng() < 0.4 ? 'b' : 's', sy: 1.0 + rng() * 0.5 });
+    const nm = 2 + Math.floor(rng() * 3), ns = 6 + Math.floor(rng() * 6);
+    for (let k = 0; k < nm; k++) { const a = dir + (k - (nm - 1) / 2) * 0.9 + (rng() - 0.5) * 0.4, d = S * (0.5 + rng() * 0.25) * spread; rock(x + Math.cos(a) * d, z + Math.sin(a) * d, S * (0.4 + rng() * 0.2)); }
+    for (let k = 0; k < ns; k++) { const a = dir + (rng() - 0.5) * 3.6, d = S * (0.8 + rng() * 0.8) * spread; rock(x + Math.cos(a) * d, z + Math.sin(a) * d, 0.22 + rng() * 0.28); }
+    if (soil) paint(0, x - S * 2, z - S * 2, x + S * 2, z + S * 2, (px, pz) => Math.max(0, 0.55 - Math.hypot(px - x, pz - z) / (S * 2.2)) * (water && water(px, pz) ? 0 : 1));
+    if (plants) for (let k = 0; k < 3 + Math.floor(S * 2); k++) { const a = dir + Math.PI + (rng() - 0.5) * 2.6, d = S * (0.8 + rng() * 0.6), px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+      if (!K.paved(px, pz) && !(water && water(px, pz))) bush(px, pz, 0.35 + rng() * 0.3, rng() < 0.3 ? col(0.22, 0.4, 0.28) : GREEN(), 1.3); }
+  };
   // water: a star-shaped outline round (cx, cz) filled as a fan, deep in the middle; y: water level over the ground there
-  const water = (cx, cz, P, yo = 0.06, deep = [0.1, 0.26, 0.3], shal = [0.3, 0.44, 0.36]) => {
-    const wy = gy(cx, cz) + yo, mid = deep.map((v, i) => (v + shal[i]) / 2), ring2 = (p, f) => [cx + (p[0] - cx) * f, wy, cz + (p[1] - cz) * f];
+  // water surface (pond water shader, terrain.js): a fan over outline P round (cx, cz) at level wy; the vertex colour
+  // tints the water body (deep → shallow toward the rim), the shader does depth, reflection, ripples and the shoreline
+  const water = (cx, cz, P, wy, deep = [0.86, 0.95, 0.98], shal = [1.0, 1.0, 0.94], mat = 'pondWater') => {
+    const mid = deep.map((v, i) => (v + shal[i]) / 2), ring2 = (p, f) => [cx + (p[0] - cx) * f, wy, cz + (p[1] - cz) * f];
     B.frame(0, 0, 0, 0);
     for (let k = 0; k < P.length; k++) { const p = P[k], q = P[(k + 1) % P.length], a1 = ring2(p, 0.6), b1 = ring2(q, 0.6), a2 = ring2(p, 1), b2 = ring2(q, 1);
-      B.tri('pondWater', [cx, wy, cz], b1, a1, { colors: [deep, mid, mid] }); B.tri('pondWater', a1, b1, b2, { colors: [mid, mid, shal] }); B.tri('pondWater', a1, b2, a2, { colors: [mid, shal, shal] }); }
+      B.tri(mat, [cx, wy, cz], b1, a1, { colors: [deep, mid, mid] }); B.tri(mat, a1, b1, b2, { colors: [mid, mid, shal] }); B.tri(mat, a1, b2, a2, { colors: [mid, shal, shal] }); }
     return wy; };
+  const q2 = (q, p, P, k) => P[(k + 1) % P.length];
   const inPolyW = (P, x, z) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, zi] = P[i], [xj, zj] = P[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; };
   const blockPoly = (P, m = 0) => { const xs = P.map(p => p[0]), zs = P.map(p => p[1]);
     for (let z = Math.floor(Math.min(...zs)) - 1; z <= Math.max(...zs) + 1; z++) for (let x = Math.floor(Math.min(...xs)) - 1; x <= Math.max(...xs) + 1; x++) if (inPolyW(P, x + 0.5, z + 0.5)) navRect(x + 0.5, z + 0.5, 0.5 + m, 0.5 + m, 0, 2); };
@@ -87,37 +125,93 @@ export function buildParks(K) {
     // the long axis: a promenade from the west street's footway to the east's, through the plaza (the plaza lies over it)
     pathLine([[533.2, cz], [609.8, cz]], 4.0, { lamps: false, color: [0.82, 0.8, 0.76] });
     // the plaza: granite bands and light pavers in rings round the basin, the outer band darker
-    ring(cx, cz, 5.4, 6.6, 'stone', [0.5, 0.49, 0.47], 0.056, { rad: 0.6, seg: 40 });
-    ring(cx, cz, 6.6, R - 1.1, 'pavement', [0.86, 0.84, 0.8], 0.056, { rad: 1.0, seg: 56 });
+    ring(cx, cz, 5.3, 6.9, 'stone', [0.44, 0.43, 0.42], 0.056, { rad: 0.8, seg: 64 });
+    ring(cx, cz, 6.9, R - 1.1, 'pavement', [0.86, 0.84, 0.8], 0.056, { rad: 1.0, seg: 56 });
     ring(cx, cz, R - 1.1, R - 0.5, 'stone', [0.46, 0.45, 0.43], 0.056, { rad: 0.6, seg: 64 });
     ring(cx, cz, R - 0.5, R, 'pavement', [0.74, 0.72, 0.68], 0.056, { rad: 0.5, seg: 64 });
     // the minor axis: north to a seat-wall exedra, south to a sculpture in a flower bed; paved in the band stone
     surf(cx - 1.6, cz + R - 0.3, cx + 1.6, z1 - 1.2, 'pavement', [0.76, 0.74, 0.7], 0.054);
     surf(cx - 1.6, z0 + 1.6, cx + 1.6, cz - R + 0.3, 'pavement', [0.76, 0.74, 0.7], 0.054);
     occRect(cx, cz, R, R, 0, 1, 1); occRect(cx, (cz + R + z1) / 2, 1.7, (z1 - cz - R) / 2, 0, 1, 1); occRect(cx, (z0 + cz - R) / 2 + 0.8, 1.7, (cz - R - z0) / 2, 0, 1, 1);
-    // the fountain: a low stone basin to sit on, a pedestal carrying a bowl, a smaller bowl above; jets and a curtain
-    { const y = gy(cx, cz); B.frame(cx, y, cz, 0);
-      B.cyl('stone', 0, 0, 0, 5.4, 5.3, 0.46, 48, { color: [0.7, 0.68, 0.64] }); B.cyl('stone', 0, 0.46, 0, 5.45, 5.45, 0.07, 48, { color: [0.78, 0.76, 0.72] });
-      for (let k = 0; k < 48; k++) { const a0 = k / 48 * Math.PI * 2, a1 = (k + 1) / 48 * Math.PI * 2, am = (a0 + a1) / 2;                  // the rim's inner face
-        B.poly('stone', [[Math.cos(a0) * 4.9, 0.3, Math.sin(a0) * 4.9], [Math.cos(a1) * 4.9, 0.3, Math.sin(a1) * 4.9], [Math.cos(a1) * 4.9, 0.53, Math.sin(a1) * 4.9], [Math.cos(a0) * 4.9, 0.53, Math.sin(a0) * 4.9]], [-Math.cos(am), 0, -Math.sin(am)], { color: [0.55, 0.54, 0.52] }); }
-      for (let k = 0; k < 48; k++) { const a0 = k / 48 * Math.PI * 2, a1 = (k + 1) / 48 * Math.PI * 2; B.poly('stone', [[Math.cos(a0) * 4.9, 0.53, Math.sin(a0) * 4.9], [Math.cos(a1) * 4.9, 0.53, Math.sin(a1) * 4.9], [Math.cos(a1) * 5.45, 0.53, Math.sin(a1) * 5.45], [Math.cos(a0) * 5.45, 0.53, Math.sin(a0) * 5.45]], [0, 1, 0], { color: [0.8, 0.78, 0.74] }); }
-      B.frame(0, 0, 0, 0); const wy = water(cx, cz, Array.from({ length: 40 }, (_, k) => [cx + Math.cos(k / 40 * 6.283) * 4.9, cz + Math.sin(k / 40 * 6.283) * 4.9]), 0.4, [0.12, 0.34, 0.4], [0.3, 0.52, 0.56]);
+    // the fountain: an eight-lobed granite basin with a seat-high coping, a mosaic floor under 32 cm of water; on an island
+    // in the middle a fluted column carries a scalloped lower bowl and a small upper bowl with a bronze lotus finial. The
+    // water: a plume from the finial falling back in a crown onto the upper bowl, a sheet off its lip into the lower bowl,
+    // eight spouts from the lower bowl's scallops arching into the basin, sixteen jets from the basin's rim arching in to
+    // meet them; white water where every fall lands; lights set in the basin floor and under the bowls
+    { const y = gy(cx, cz), N = 96, RB = a => 5.15 + 0.32 * Math.cos(8 * a), GR = [0.66, 0.64, 0.61], GRD = [0.5, 0.49, 0.47], CAP = [0.78, 0.76, 0.72], CS = [0.84, 0.82, 0.77];
+      const P = (a, r, h) => [Math.cos(a) * r, h, Math.sin(a) * r];
       B.frame(cx, y, cz, 0);
-      B.cyl('stone', 0, 0.3, 0, 0.75, 0.55, 1.0, 20, { color: [0.72, 0.7, 0.66] }); B.cyl('stone', 0, 1.25, 0, 0.5, 2.0, 0.28, 32, { color: [0.74, 0.72, 0.68] });
-      B.cyl('stone', 0, 1.53, 0, 2.0, 2.0, 0.08, 32, { color: [0.8, 0.78, 0.74] }); B.cyl('pondWater', 0, 1.5, 0, 1.85, 1.85, 0.04, 32, { color: [0.3, 0.5, 0.56], cap: true });
-      B.cyl('stone', 0, 1.55, 0, 0.3, 0.22, 0.75, 14, { color: [0.72, 0.7, 0.66] }); B.cyl('stone', 0, 2.3, 0, 0.22, 0.85, 0.2, 20, { color: [0.74, 0.72, 0.68] }); B.cyl('pondWater', 0, 2.47, 0, 0.75, 0.75, 0.03, 20, { color: [0.3, 0.5, 0.56], cap: true });
-      // water: the plume from the top, the curtain off the big bowl's lip, eight arcs from the rim into the basin
-      B.cyl('poly', 0, 2.5, 0, 0.1, 0.03, 1.4, 10, {}); B.cyl('poly', 0, 2.5, 0, 0.3, 0.12, 0.5, 12, {});
-      B.cyl('poly', 0, 0.42, 0, 1.98, 1.95, 1.12, 32, {}); B.cyl('poly', 0, 0.42, 0, 0.8, 0.8, 1.9, 16, {});
-      for (let k = 0; k < 8; k++) { const a = (k + 0.5) / 8 * Math.PI * 2, c = Math.cos(a), s = Math.sin(a); let p = [c * 4.8, 0.6, s * 4.8];
-        for (let q = 1; q <= 6; q++) { const t = q / 6, r = lerp(4.8, 3.0, t), h = 0.6 + Math.sin(t * Math.PI) * 1.1 - t * 0.25, n = [c * r, h, s * r]; B.beam('poly', p, n, 0.05, 0.05, {}); p = n; } }
-      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; B.cyl('lamp', Math.cos(a) * 4.5, 0.36, Math.sin(a) * 4.5, 0.08, 0.08, 0.02, 8, { cap: true }); }
-      for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; lampPoints.push({ p: [cx + Math.cos(a) * 3.2, wy + 0.6, cz + Math.sin(a) * 3.2], s: 0.5 }); }
-      B.frame(0, 0, 0, 0); addCircle(cx, cz, 5.45); navRect(cx, cz, 5.6, 5.6, 0, 2); }
+      for (let k = 0; k < N; k++) { const a0 = k / N * Math.PI * 2, a1 = (k + 1) / N * Math.PI * 2, am = (a0 + a1) / 2, r0 = RB(a0), r1 = RB(a1), o = [Math.cos(am), 0, Math.sin(am)];
+        // plinth step, outer wall, coping (top, overhanging edge, inner lip), inner wall down to the floor
+        B.poly('stone', [P(a0, r0 + 0.35, 0.12), P(a1, r1 + 0.35, 0.12), P(a1, r1, 0.12), P(a0, r0, 0.12)], [0, 1, 0], { color: GRD });
+        B.poly('stone', [P(a0, r0 + 0.35, -0.1), P(a1, r1 + 0.35, -0.1), P(a1, r1 + 0.35, 0.12), P(a0, r0 + 0.35, 0.12)], o, { color: GRD });
+        B.poly('stone', [P(a0, r0, 0.12), P(a1, r1, 0.12), P(a1, r1, 0.5), P(a0, r0, 0.5)], o, { color: GR, uv: 1.2 });
+        B.poly('stone', [P(a0, r0 + 0.07, 0.5), P(a1, r1 + 0.07, 0.5), P(a1, r1 + 0.07, 0.6), P(a0, r0 + 0.07, 0.6)], o, { color: CAP });
+        B.poly('stone', [P(a0, r0 + 0.07, 0.5), P(a1, r1 + 0.07, 0.5), P(a1, r1, 0.5), P(a0, r0, 0.5)], [0, -1, 0], { color: GRD });
+        B.poly('stone', [P(a0, r0 - 0.55, 0.62), P(a1, r1 - 0.55, 0.62), P(a1, r1 + 0.07, 0.6), P(a0, r0 + 0.07, 0.6)], [0, 1, 0], { color: CAP });
+        B.poly('stone', [P(a0, r0 - 0.55, 0.3), P(a1, r1 - 0.55, 0.3), P(a1, r1 - 0.55, 0.62), P(a0, r0 - 0.55, 0.62)], [-o[0], 0, -o[2]], { color: GR });
+        // mosaic floor: dark blue-grey tiles in rings (seen through the water)
+        B.poly('tiles', [[0, 0.06, 0], P(a0, r0 - 0.55, 0.06), P(a1, r1 - 0.55, 0.06)], [0, 1, 0], { color: (k % 12 < 6) ? [0.3, 0.42, 0.5] : [0.36, 0.48, 0.55], uv: 0.35 }); }
+      B.frame(0, 0, 0, 0);
+      const WL = y + 0.42;
+      water(cx, cz, Array.from({ length: N }, (_, k) => { const a = k / N * 6.2832; return [cx + Math.cos(a) * (RB(a) - 0.5), cz + Math.sin(a) * (RB(a) - 0.5)]; }), WL, [0.9, 1.0, 1.04], [1, 1, 1], 'fountainWater');
+      B.frame(cx, y, cz, 0);
+      // the island and column
+      B.cyl('stone', 0, 0.06, 0, 1.25, 1.1, 0.5, 32, { color: GR }); B.cyl('stone', 0, 0.56, 0, 1.18, 1.18, 0.06, 32, { color: CAP, cap: true });
+      B.cyl('stone', 0, 0.62, 0, 0.62, 0.5, 0.14, 24, { color: CS }); B.cyl('stone', 0, 0.76, 0, 0.42, 0.36, 0.32, 16, { color: CS });
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; B.box('stone', Math.cos(a) * 0.37, 0.76, Math.sin(a) * 0.37, 0.07, 0.3, 0.07, { color: mul(CS, 0.9) }); }
+      // the lower bowl: scalloped lip, the underside flaring from the column, water in it
+      const RL = a => 2.2 + 0.13 * Math.cos(8 * a), n2 = 64;
+      for (let k = 0; k < n2; k++) { const a0 = k / n2 * Math.PI * 2, a1 = (k + 1) / n2 * Math.PI * 2, am = (a0 + a1) / 2, o = [Math.cos(am), 0, Math.sin(am)];
+        B.poly('stone', [P(a0, 0.45, 1.06), P(a1, 0.45, 1.06), P(a1, RL(a1), 1.36), P(a0, RL(a0), 1.36)], [o[0], -0.8, o[2]], { color: mul(CS, 0.92) });
+        B.poly('stone', [P(a0, RL(a0), 1.36), P(a1, RL(a1), 1.36), P(a1, RL(a1), 1.48), P(a0, RL(a0), 1.48)], o, { color: CS });
+        B.poly('stone', [P(a0, RL(a0) - 0.14, 1.48), P(a1, RL(a1) - 0.14, 1.48), P(a1, RL(a1), 1.48), P(a0, RL(a0), 1.48)], [0, 1, 0], { color: CAP });
+        B.poly('stone', [P(a0, RL(a0) - 0.14, 1.3), P(a1, RL(a1) - 0.14, 1.3), P(a1, RL(a1) - 0.14, 1.48), P(a0, RL(a0) - 0.14, 1.48)], [-o[0], 0, -o[2]], { color: mul(CS, 0.85) }); }
+      B.frame(0, 0, 0, 0); water(cx, cz, Array.from({ length: n2 }, (_, k) => { const a = k / n2 * 6.2832; return [cx + Math.cos(a) * (RL(a) - 0.1), cz + Math.sin(a) * (RL(a) - 0.1)]; }), y + 1.44, [0.9, 1, 1.04], [1, 1, 1], 'fountainWater');
+      B.frame(cx, y, cz, 0);
+      // stem, knot, upper bowl, lotus finial in bronze
+      B.cyl('stone', 0, 1.3, 0, 0.3, 0.24, 0.6, 16, { color: CS }); B.cyl('stone', 0, 1.78, 0, 0.34, 0.34, 0.1, 16, { color: CAP }); B.cyl('stone', 0, 1.88, 0, 0.24, 0.3, 0.32, 16, { color: CS });
+      for (let k = 0; k < 40; k++) { const a0 = k / 40 * Math.PI * 2, a1 = (k + 1) / 40 * Math.PI * 2, am = (a0 + a1) / 2, o = [Math.cos(am), 0, Math.sin(am)];
+        B.poly('stone', [P(a0, 0.28, 2.18), P(a1, 0.28, 2.18), P(a1, 1.1, 2.38), P(a0, 1.1, 2.38)], [o[0], -0.9, o[2]], { color: mul(CS, 0.92) });
+        B.poly('stone', [P(a0, 1.1, 2.38), P(a1, 1.1, 2.38), P(a1, 1.1, 2.46), P(a0, 1.1, 2.46)], o, { color: CS });
+        B.poly('stone', [P(a0, 1.0, 2.46), P(a1, 1.0, 2.46), P(a1, 1.1, 2.46), P(a0, 1.1, 2.46)], [0, 1, 0], { color: CAP }); }
+      B.cyl('fountainWater', 0, 2.4, 0, 1.0, 1.0, 0.03, 40, { color: [1, 1, 1], cap: true });
+      const BRZ = [0.46, 0.36, 0.22];
+      B.cyl('metal', 0, 2.42, 0, 0.18, 0.14, 0.12, 12, { color: BRZ });
+      for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; B.poly('metal', [P(a - 0.28, 0.12, 2.52), P(a + 0.28, 0.12, 2.52), P(a, 0.3, 2.86)], [Math.cos(a), 0.4, Math.sin(a)], { color: BRZ }); }
+      B.cyl('metal', 0, 2.52, 0, 0.1, 0.03, 0.42, 10, { color: BRZ, cap: true });
+      // water: ribbon along a parabola from p to q rising h over the chord (w wide), a vertical and a flat strip crossed
+      const arc = (p, q, h, w, n = 10) => { for (let i = 0; i < n; i++) { const t0 = i / n, t1 = (i + 1) / n, pt = t => [lerp(p[0], q[0], t), lerp(p[1], q[1], t) + 4 * h * t * (1 - t), lerp(p[2], q[2], t)];
+        const A = pt(t0), Bp = pt(t1), dx = q[0] - p[0], dz = q[2] - p[2], L = Math.hypot(dx, dz) || 1, sx = -dz / L * w / 2, sz = dx / L * w / 2;
+        B.quad('waterFlow', [A[0] - sx, A[1], A[2] - sz], [A[0] + sx, A[1], A[2] + sz], [Bp[0] + sx, Bp[1], Bp[2] + sz], [Bp[0] - sx, Bp[1], Bp[2] - sz], { uvs: [[0, t0 * 3], [1, t0 * 3], [1, t1 * 3], [0, t1 * 3]] });
+        B.quad('waterFlow', [A[0], A[1] - w / 2, A[2]], [A[0], A[1] + w / 2, A[2]], [Bp[0], Bp[1] + w / 2, Bp[2]], [Bp[0], Bp[1] - w / 2, Bp[2]], { uvs: [[0, t0 * 3], [1, t0 * 3], [1, t1 * 3], [0, t1 * 3]] }); } };
+      const foam = (x, z, yy, r) => B.quad('waterFoam', [x - r, yy, z - r], [x + r, yy, z - r], [x + r, yy, z + r], [x - r, yy, z + r], { uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+      // the plume and its crown
+      { const n = 12; for (let k = 0; k < n; k++) { const a0 = k / n * Math.PI * 2, a1 = (k + 1) / n * Math.PI * 2, r0 = 0.07, r1 = 0.03;
+          B.quad('waterFlow', P(a0, r0, 2.85), P(a1, r0, 2.85), P(a1, r1, 3.95), P(a0, r1, 3.95), { uvs: [[k / n, 0], [(k + 1) / n, 0], [(k + 1) / n, 2], [k / n, 2]] }); }
+        for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; arc(P(a, 0.05, 3.95), P(a, 0.85, 2.42), 0.2, 0.05, 8); } foam(0, 0, 2.43, 0.95); }
+      // the sheet off the upper bowl's lip, falling into the lower bowl
+      { const n = 40; for (let k = 0; k < n; k++) { const a0 = k / n * Math.PI * 2, a1 = (k + 1) / n * Math.PI * 2;
+          B.quad('waterFlow', P(a0, 1.13, 2.44), P(a1, 1.13, 2.44), P(a1, 1.24, 1.46), P(a0, 1.24, 1.46), { uvs: [[k / n * 6, 0], [(k + 1) / n * 6, 0], [(k + 1) / n * 6, 1.6], [k / n * 6, 1.6]] }); }
+        for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; foam(Math.cos(a) * 1.22, Math.sin(a) * 1.22, 1.45, 0.42); } }
+      // spouts from the lower bowl's scallops, jets from the basin's rim
+      for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; arc(P(a, RL(a) + 0.02, 1.44), P(a, 3.25, 0.43), 0.18, 0.1, 10); foam(Math.cos(a) * 3.25, Math.sin(a) * 3.25, 0.435, 0.34); }
+      for (let k = 0; k < 16; k++) { const a = (k + 0.5) / 16 * Math.PI * 2, rr = RB(a) - 0.62; B.cyl('metal', Math.cos(a) * rr, 0.36, Math.sin(a) * rr, 0.04, 0.04, 0.1, 8, { color: [0.4, 0.4, 0.4], cap: true });
+        arc(P(a, rr, 0.46), P(a, 3.7, 0.43), 0.75, 0.035, 10); foam(Math.cos(a) * 3.7, Math.sin(a) * 3.7, 0.437, 0.22); }
+      // light: a ring of lamps in the basin floor, uplights under the lower bowl
+      for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, rr = RB(a) - 1.1; B.cyl('lamp', Math.cos(a) * rr, 0.065, Math.sin(a) * rr, 0.1, 0.1, 0.02, 10, { cap: true }); }
+      for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; B.cyl('lamp', Math.cos(a) * 1.0, 0.62, Math.sin(a) * 1.0, 0.08, 0.08, 0.02, 8, { cap: true }); lampPoints.push({ p: [cx + Math.cos(a) * 3.6, WL + 0.5, cz + Math.sin(a) * 3.6], s: 0.6 }); lampPoints.push({ p: [cx + Math.cos(a) * 0.9, y + 1.2, cz + Math.sin(a) * 0.9], s: 0.35 }); }
+      B.frame(0, 0, 0, 0); addCircle(cx, cz, 5.6); navRect(cx, cz, 5.8, 5.8, 0, 2); }
+    // four round granite planters on the diagonals, clipped box balls and seasonal flowers in them
+    for (const a of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4]) { const px = cx + Math.cos(a) * 7.2, pz = cz + Math.sin(a) * 7.2, py = gy(px, pz); B.frame(px, py, pz, 0);
+      B.cyl('stone', 0, 0, 0, 0.85, 0.78, 0.55, 24, { color: [0.62, 0.6, 0.57] }); B.cyl('stone', 0, 0.55, 0, 0.9, 0.9, 0.06, 24, { color: [0.72, 0.7, 0.66] }); B.cyl('plain', 0, 0.56, 0, 0.74, 0.74, 0.02, 24, { color: [0.3, 0.24, 0.18], cap: true });
+      B.frame(0, 0, 0, 0); out.bushes.push({ x: px, y: py + 0.55, z: pz, s: 0.9, sx: 1, r: 0, c: col(0.3, 0.45, 0.24), keep: true });
+      for (let k = 0; k < 7; k++) { const t = k / 7 * Math.PI * 2; out.bushes.push({ x: px + Math.cos(t) * 0.56, y: py + 0.55, z: pz + Math.sin(t) * 0.56, s: 0.3, sx: 1.2, r: t, c: AZALEA[k % 2].clone(), keep: true }); }
+      addCircle(px, pz, 0.9); navRect(px, pz, 1.0, 1.0, 0, 2); }
     // benches round the plaza facing the water, between the axes, each with a lamp behind and bins at the quarters
     for (let k = 0; k < 8; k++) { const a = Math.PI / 2 * Math.floor(k / 2) + (k % 2 ? Math.PI / 3 : Math.PI / 6), c = Math.cos(a), s = Math.sin(a);
       seat(cx + c * 8.6, cz + s * 8.6, Math.atan2(-c, -s), false); if (k % 2) lamp(cx + Math.cos(a + 0.13) * (R - 0.45), cz + Math.sin(a + 0.13) * (R - 0.45)); }
-    for (const a of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4]) bin(cx + Math.cos(a) * 9.2, cz + Math.sin(a) * 9.2);
+    for (const a of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4]) bin(cx + Math.cos(a) * 9.4, cz + Math.sin(a) * 9.4);
     // parterres in the four quarters: box hedge frames round flower carpets, a specimen tree in the outer corner;
     // an allée of zelkovas in grates along the promenade outside the plaza
     const Q = [[x0 + 0.8, cz + 3.2, cx - 2.6, z1 - 0.8], [cx + 2.6, cz + 3.2, x1 - 0.8, z1 - 0.8], [x0 + 0.8, z0 + 0.8, cx - 2.6, cz - 3.2], [cx + 2.6, z0 + 0.8, x1 - 0.8, cz - 3.2]];
@@ -165,43 +259,33 @@ export function buildParks(K) {
   // ================================================================ 池の公園: the lake park on the green belt
   function lakePark() {
     const cx = 482, cz = 15;
-    const rOf = a => { const e = 1 / Math.hypot(Math.cos(a) / 23, Math.sin(a) / 10.5); return e * (1 + 0.1 * Math.sin(a * 3 + 0.7) + 0.06 * Math.sin(a * 5 + 2.1) - 0.08 * Math.exp(-((a - 0.9) ** 2) / 0.05)); };
+    const rOf = lakeR;
     const N = 72, LAKE = Array.from({ length: N }, (_, k) => { const a = k / N * Math.PI * 2, r = rOf(a); return [cx + Math.cos(a) * r, cz + Math.sin(a) * r]; });
-    const wy = water(cx, cz, LAKE, 0.06, [0.08, 0.24, 0.27], [0.28, 0.42, 0.34]);
+    // the water stands 10 cm under the lawn at the shore; its sheet runs on under the banks, so the shoreline is where
+    // the dug ground climbs out of it
+    let wy = LAKE.reduce((a, p) => a + gy(cx + (p[0] - cx) * 1.14, cz + (p[1] - cz) * 1.14), 0) / N - 0.1;
+
     // the inlet: a narrow channel from the spring pool west of the path into the lake's west end
-    const CH = { x0: 448.6, x1: cx - rOf(Math.PI) + 1.2, z: 13, w: 2.8 };
+    const CH = LAKE_CH;
     B.frame(0, 0, 0, 0);
-    for (let x = CH.x0; x < CH.x1; x += 1) { const xa = x, xb = Math.min(CH.x1, x + 1), p4 = [[xa, wy - 0.004, CH.z - CH.w / 2], [xb, wy - 0.004, CH.z - CH.w / 2], [xb, wy - 0.004, CH.z + CH.w / 2], [xa, wy - 0.004, CH.z + CH.w / 2]];
-      B.poly('pondWater', p4, [0, 1, 0], { color: [0.26, 0.4, 0.34] });
-      for (const e of [-1, 1]) B.beam('stone', [xa, gy(xa, CH.z + e * CH.w / 2) - 0.05, CH.z + e * (CH.w / 2 + 0.15)], [xb, gy(xb, CH.z + e * CH.w / 2) - 0.05, CH.z + e * (CH.w / 2 + 0.15)], 0.4, 0.3, { color: [0.58, 0.56, 0.52] }); }
+    // the channel's and the spring's water: exactly over their dug beds, never higher than the ground at their banks
+    let cwy = wy; for (let x = CH.x0 + 3; x <= CH.x1 - 4; x += 0.5) for (const e of [-1, 1]) cwy = Math.min(cwy, gy(x, CH.z + e * (CH.w / 2 + 2.6)) - 0.1);
+    for (let a = 0.9; a < 5.4; a += 0.3) cwy = Math.min(cwy, gy(446 + Math.cos(a) * 6.4, 13 + Math.sin(a) * 6.4) - 0.1);
+    // one sheet of water at one level over the whole dug basin (lake, inlet and spring together, so nothing overlaps);
+    // laid in 1 m cells wherever the ground is dug, running on under the banks, so the shoreline is where they climb out
+    { const lv = Math.min(wy, cwy); B.frame(0, 0, 0, 0);
+      for (let x = 438; x < 512; x += 1) for (let z = -2; z < 32; z += 1) { let dug = 0; for (const [ax, az] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]]) dug = Math.max(dug, lakeDepth(x + ax, z + az)); if (dug < 0.002) continue;
+        const tint = [0.97 + 0.03 * Math.sin(x * 0.3), 1, 0.97], p4 = [[x, lv, z], [x + 1, lv, z], [x + 1, lv, z + 1], [x, lv, z + 1]];
+        B.poly('pondWater', p4, [0, 1, 0], { color: tint }); }
+      wy = lv; }
+    for (let x = CH.x0; x < CH.x1; x += 1) { const xa = x;
+      // its banks: stones set along the water's edge at irregular spacing, grass and ferns between (none under the bridge)
+      if (Math.abs(xa + 0.5 - 455.5) > 2.2) for (const e of [-1, 1]) { if (rng() < 0.6) rock(xa + rng(), CH.z + e * (CH.w / 2 + 0.05 + rng() * 0.25), 0.4 + rng() * 0.45);
+        if (rng() < 0.5) bush(xa + rng(), CH.z + e * (CH.w / 2 + 0.7 + rng() * 0.5), 0.35 + rng() * 0.2, GREEN(), 1.3); } }
     const SP = Array.from({ length: 20 }, (_, k) => { const a = k / 20 * Math.PI * 2, r = 3.2 * (1 + 0.12 * Math.sin(a * 3)); return [446 + Math.cos(a) * r, 13 + Math.sin(a) * r]; });
-    water(446, 13, SP, 0.07, [0.1, 0.26, 0.28], [0.26, 0.4, 0.34]);
-    for (let k = 0; k < 20; k++) { const a = k / 20 * Math.PI * 2; if (Math.abs(a) < 0.5) continue; boulder(446 + Math.cos(a) * 3.7, 13 + Math.sin(a) * 3.7, 0.5 + rng() * 0.4); }
-    boulder(444.5, 14.2, 1.1, [0.5, 0.49, 0.46]);                                                                        // the spring's standing stone
-    // shore by zone: cut stone kerb at the deck (north), a pebble beach (east), reeds and irises (south), rocks under
-    // pines (west), natural stones elsewhere
-    const zone = a => { const d = (x, y) => Math.abs(Math.atan2(Math.sin(x - y), Math.cos(x - y))); return d(a, Math.PI / 2) < 0.55 ? 'deck' : d(a, 0.05) < 0.62 ? 'beach' : d(a, -Math.PI / 2) < 0.8 ? 'reed' : d(a, Math.PI) < 0.75 ? 'rock' : 'stone'; };
-    for (let k = 0; k < N; k++) { const a = (k + 0.5) / N * Math.PI * 2, p = LAKE[k], q = LAKE[(k + 1) % N], Z = zone(a);
-      if (Z === 'deck') B.beam('stone', [p[0], gy(p[0], p[1]) - 0.02, p[1]], [q[0], gy(q[0], q[1]) - 0.02, q[1]], 0.4, 0.2, { color: [0.7, 0.68, 0.64] });
-      else if (Z === 'beach') { const o = (P, f) => [cx + (P[0] - cx) * f, cz + (P[1] - cz) * f]; const a1 = o(p, 0.92), b1 = o(q, 0.92), a2 = o(p, 1.14), b2 = o(q, 1.14);
-        B.poly('ballast', [[a1[0], wy + 0.012, a1[1]], [b1[0], wy + 0.012, b1[1]], [b2[0], gy(b2[0], b2[1]) + 0.03, b2[1]], [a2[0], gy(a2[0], a2[1]) + 0.03, a2[1]]], [0, 1, 0], { color: [0.86, 0.82, 0.74], uv: 1.5 });
-        if (rng() < 0.3) boulder(lerp(p[0], a2[0], 0.5), lerp(p[1], a2[1], 0.5), 0.35 + rng() * 0.3); }
-      else if (Z === 'rock') { if (k % 2 === 0) boulder(p[0] + (p[0] - cx) * 0.02, p[1] + (p[1] - cz) * 0.02, 0.8 + rng() * 0.6, [0.52, 0.51, 0.48]); }
-      else B.beam('stone', [p[0], gy(p[0], p[1]) - 0.1, p[1]], [q[0], gy(q[0], q[1]) - 0.1, q[1]], 0.55, 0.3, { color: [0.62, 0.6, 0.56] });
-      if (Z === 'reed' || (Z === 'stone' && rng() < 0.3)) { // reed clumps standing in the shallows, irises on the bank
-        const f = 0.9 + rng() * 0.06, rx = cx + (p[0] - cx) * f, rz = cz + (p[1] - cz) * f; reeds(rx, rz, wy, 10 + Math.floor(rng() * 10));
-        if (rng() < 0.6) { const bx = cx + (p[0] - cx) * 1.08, bz = cz + (p[1] - cz) * 1.08; bush(bx, bz, 0.4, rng() < 0.5 ? col(0.74, 0.55, 0.5) : col(0.26, 0.5, 0.3), 1.2); } } }
-    pave(cx - 30, cz - 16, cx + 30, cz + 16, (x, z) => { const a = Math.atan2(z - cz, x - cx), r = Math.hypot(x - cx, z - cz), R0 = rOf(a); return r < R0 * (zone(a) === 'beach' ? 1.16 : 1.04) ? 1 : 0; });
-    pave(CH.x0 - 1, CH.z - 2.5, CH.x1, CH.z + 2.5, (x, z) => Math.abs(z - CH.z) < CH.w / 2 + 0.4 ? 1 : 0);
-    pave(441, 8, 451, 18, (x, z) => Math.hypot(x - 446, z - 13) < 4 ? 1 : 0);
-    blockPoly(LAKE); blockPoly(SP); navRect((CH.x0 + CH.x1) / 2, CH.z, (CH.x1 - CH.x0) / 2, CH.w / 2 + 0.2, Math.PI / 2, 2);
-    addCircle(cx, cz, 9); for (const dx of [-14, 14]) addCircle(cx + dx, cz, 6);
-    // water lilies in the quiet corners
-    B.frame(0, 0, 0, 0);
-    for (const [lx, lz, n] of [[467, 11, 9], [470, 20, 6], [496, 21, 7], [490, 7, 5]]) for (let k = 0; k < n; k++) { const x = lx + (rng() - 0.5) * 4, z = lz + (rng() - 0.5) * 2.4, r = 0.25 + rng() * 0.2, a0 = rng() * 6.28;
-      for (let q = 0; q < 8; q++) { if (q === 0) continue; const b0 = a0 + q / 8 * 6.283, b1 = a0 + (q + 1) / 8 * 6.283; B.tri('plain', [x, wy + 0.008, z], [x + Math.cos(b1) * r, wy + 0.008, z + Math.sin(b1) * r], [x + Math.cos(b0) * r, wy + 0.008, z + Math.sin(b0) * r], { color: [0.24, 0.42, 0.2] }); }
-      if (rng() < 0.3) B.cyl('plastic', x, wy + 0.01, z, 0.06, 0.09, 0.07, 8, { color: [0.98, 0.84, 0.9], cap: true }); }
-    // the gravel loop round the water (a closed spline), branches to every edge of the park
+
+    // the gravel loop round the water (a closed spline) and branches to every edge of the park, laid first so that
+    // nothing placed after them can stand on them
     const CP = [[482, 31], [499, 30.5], [511, 24], [515.5, 12], [508, 0], [494, -5.5], [478, -6.5], [464, -3.5], [455.5, 3.5], [455.5, 21.5], [464, 29.5]];
     const spline = (P, step = 2.5) => { const o = []; for (let i = 0; i < P.length; i++) { const p0 = P[(i - 1 + P.length) % P.length], p1 = P[i], p2 = P[(i + 1) % P.length], p3 = P[(i + 2) % P.length], L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), n = Math.max(2, Math.ceil(L / step));
       for (let k = 0; k < n; k++) { const t = k / n, t2 = t * t, t3 = t2 * t; o.push([0, 1].map(j => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3))); } } return o; };
@@ -216,6 +300,44 @@ export function buildParks(K) {
       [[511, 24], [521, 30], [526.5, 40], [526.5, 46.4], [545.6, 46.4]], [[482, 30.8], [482, 26.1]], [[494.5, -5.4], [494.5, -1.1]], [[524.6, 36], [516.5, 36]]]) {
       const spur = P.length === 2 && Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) < 9;                              // spurs end at a feature: never run on
       pathLine(P, spur ? 2.0 : 2.4, { ...GRV, lamps: P.length > 2 || Math.abs(P[1][1] - P[0][1]) > 10, link: spur }); }
+    // the spring: a tall standing stone at its head, big stones round the west half, a spill of small stones into the
+    // water, reeds and ferns in the gaps; the east side opens into the channel
+    rock(442.9, 14.4, 1.9, { part: 3, sink: 0.1, sy: 1.55, tilt: 0.1, force: true }); rock(441.8, 11.9, 1.7, { kind: 'b', sink: 0.16, force: true }); rock(444.2, 16.6, 1.2, { force: true });
+    for (const [a, sz] of [[1.2, 1.2], [2.1, 1.0], [3.7, 1.3], [4.4, 0.9], [5.2, 1.1]]) rock(446 + Math.cos(a) * 3.5, 13 + Math.sin(a) * 3.3, sz, { sink: 0.26, force: true });
+    for (let k = 0; k < 16; k++) { const a = 0.7 + rng() * 4.9, r = 2.8 + rng() * 1.6; rock(446 + Math.cos(a) * r, 13 + Math.sin(a) * r, 0.25 + rng() * 0.3, { force: true }); }
+    for (const a of [1.65, 2.9, 4.8]) reeds(446 + Math.cos(a) * 2.9, 13 + Math.sin(a) * 2.9, gy(446, 13) + 0.07, 12);
+    // shore by zone: cut stone kerb at the deck (north), a pebble beach (east), reeds and irises (south), rocks under
+    // pines (west), natural stones elsewhere
+    const zone = a => { const d = (x, y) => Math.abs(Math.atan2(Math.sin(x - y), Math.cos(x - y))); return d(a, Math.PI / 2) < 0.55 ? 'deck' : d(a, 0.05) < 0.62 ? 'beach' : d(a, -Math.PI / 2) < 0.8 ? 'reed' : d(a, Math.PI) < 0.75 ? 'rock' : 'stone'; };
+    for (let k = 0; k < N; k++) { const a = (k + 0.5) / N * Math.PI * 2, p = LAKE[k], q = LAKE[(k + 1) % N], Z = zone(a);
+      if (Z === 'deck') { const o = (P, f) => [cx + (P[0] - cx) * f, cz + (P[1] - cz) * f], a = o(p, 1.0), b = o(q, 1.0);             // dressed stone kerb at the waterline
+        B.beam('stone', [a[0], wy - 0.02, a[1]], [b[0], wy - 0.02, b[1]], 0.45, 0.34, { color: [0.7, 0.68, 0.64] }); }
+      else if (Z === 'beach') {
+        for (let q = 0; q < 3; q++) { const t = rng(), u = 0.95 + rng() * 0.17; rock(cx + (lerp(p[0], q2(q, p, LAKE, k)[0], t) - cx) * u, cz + (lerp(p[1], q2(q, p, LAKE, k)[1], t) - cz) * u, 0.2 + rng() * 0.25, { sink: 0.35 }); } }
+      else if (Z === 'rock') { if (k % 3 === 0) rockGroup(p[0] + (p[0] - cx) * 0.03, p[1] + (p[1] - cz) * 0.03, 1.6 + rng() * 0.9, { dir: Math.atan2(p[1] - cz, p[0] - cx), water: (x, z) => inPolyW(LAKE, x, z) }); }
+      else { if (k % 2 === 0 || rng() < 0.3) rock(p[0] + (p[0] - cx) * 0.01, p[1] + (p[1] - cz) * 0.01, 0.45 + rng() * 0.5);
+        if (rng() < 0.5) bush(cx + (p[0] - cx) * 1.07, cz + (p[1] - cz) * 1.07, 0.4 + rng() * 0.2, GREEN(), 1.3); }
+      if (Z === 'reed' || (Z === 'stone' && rng() < 0.3)) { // reed clumps standing in the shallows, irises on the bank
+        const f = 0.9 + rng() * 0.06, rx = cx + (p[0] - cx) * f, rz = cz + (p[1] - cz) * f; reeds(rx, rz, wy, 10 + Math.floor(rng() * 10));
+        if (rng() < 0.6) { const bx = cx + (p[0] - cx) * 1.08, bz = cz + (p[1] - cz) * 1.08; bush(bx, bz, 0.4, rng() < 0.5 ? col(0.74, 0.55, 0.5) : col(0.26, 0.5, 0.3), 1.2); } } }
+    pave(cx - 30, cz - 16, cx + 30, cz + 16, (x, z) => { const a = Math.atan2(z - cz, x - cx), r = Math.hypot(x - cx, z - cz), R0 = rOf(a); return r < R0 * (zone(a) === 'beach' ? 1.16 : 1.04) ? 1 : 0; });
+    // the bank: the beach's sand shelving into the water; elsewhere a band of damp earth at the waterline under the grass
+    paint(1, cx - 30, cz - 16, cx + 30, cz + 16, (x, z) => { const a = Math.atan2(z - cz, x - cx), t = Math.hypot(x - cx, z - cz) / rOf(a);
+      return zone(a) === 'beach' ? (t < 1.14 ? 1 : Math.max(0, 0.55 - (t - 1.14) * 6)) : Math.max(0, 0.55 - Math.abs(t - 1.02) * 7); });
+    paint(1, CH.x0 - 3, CH.z - 4, CH.x1, CH.z + 4, (x, z) => lakeDepth(x, z) > 0.12 ? 0.9 : lakeDepth(x, z) > 0.01 ? 0.5 : 0);
+    paint(1, 439, 6, 453, 20, (x, z) => lakeDepth(x, z) > 0.12 ? 0.9 : lakeDepth(x, z) > 0.01 ? 0.5 : 0);
+    paint(1, cx - 26, cz - 13, cx + 26, cz + 13, (x, z) => Math.hypot(x - cx, z - cz) < rOf(Math.atan2(z - cz, x - cx)) * 0.97 ? 0.9 : 0);    // the lake bed: wet sand and silt
+    // no grass on the dug beds: over the channel and the spring out to where their banks climb out of the water
+    const underCh = (x, z) => lakeDepth(x, z) > 0.04 && x < CH.x1 + 0.5;
+    pave(CH.x0 - 3, CH.z - 4, CH.x1, CH.z + 4, (x, z) => underCh(x, z) ? 1 : 0);
+    pave(439, 6, 453, 20, (x, z) => underCh(x, z) ? 1 : 0);
+    blockPoly(LAKE); blockPoly(SP); navRect((CH.x0 + CH.x1) / 2, CH.z, (CH.x1 - CH.x0) / 2, CH.w / 2 + 0.2, Math.PI / 2, 2);
+    addCircle(cx, cz, 9); for (const dx of [-14, 14]) addCircle(cx + dx, cz, 6);
+    // water lilies in the quiet corners
+    B.frame(0, 0, 0, 0);
+    for (const [lx, lz, n] of [[467, 11, 9], [470, 20, 6], [496, 21, 7], [490, 7, 5]]) for (let k = 0; k < n; k++) { const x = lx + (rng() - 0.5) * 4, z = lz + (rng() - 0.5) * 2.4, r = 0.25 + rng() * 0.2, a0 = rng() * 6.28;
+      for (let q = 0; q < 8; q++) { if (q === 0) continue; const b0 = a0 + q / 8 * 6.283, b1 = a0 + (q + 1) / 8 * 6.283; B.tri('plain', [x, wy + 0.008, z], [x + Math.cos(b1) * r, wy + 0.008, z + Math.sin(b1) * r], [x + Math.cos(b0) * r, wy + 0.008, z + Math.sin(b0) * r], { color: [0.24, 0.42, 0.2] }); }
+      if (rng() < 0.3) B.cyl('plastic', x, wy + 0.01, z, 0.06, 0.09, 0.07, 8, { color: [0.98, 0.84, 0.9], cap: true }); }
     // the viewing deck out over the water, north shore
     { const dz0 = cz + rOf(Math.PI / 2) + 1.6, dz1 = dz0 - 5.2, y = Math.max(gy(482, dz0) + 0.12, wy + 0.16); B.frame(0, 0, 0, 0);
       for (let x = 477.6; x < 486.4; x += 0.3) B.box('wood', x + 0.15, y - 0.08, (dz0 + dz1) / 2, 0.27, 0.06, dz0 - dz1, { color: [0.62, 0.48, 0.34] });
@@ -253,7 +375,7 @@ export function buildParks(K) {
     for (let k = 0; k < 14; k++) { const a = rng() * 6.28, r = rOf(a) + 3 + rng() * 2.5, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; if (zone(a) === 'beach') continue; bush(x, z, 0.6 + rng() * 0.3, GREEN(), 1.1); }
     // seats: facing the water along the loop, the picnic lawn's tables under the trees
     for (const [x, z, yaw] of [[468, 30.2, Math.PI * 0.95], [497, 29.8, Math.PI * 1.08], [512.5, 5.5, -Math.PI * 0.62], [470, -5, 0.08], [458, 18, Math.PI / 2 + 0.1]]) seat(x, z, yaw, rng() < 0.5);
-    for (const [x, z] of [[440, 32], [446, 39]]) { const y = gy(x, z); B.frame(x, y, z, 0.3); B.bbox('wood', 0, 0.72, 0, 1.8, 0.06, 0.8, 0.01, { color: [0.6, 0.46, 0.32] }); for (const e of [-0.7, 0.7]) B.box('wood', e, 0, 0, 0.08, 0.72, 0.6, { color: [0.45, 0.34, 0.24] });
+    for (const [tx, tz] of [[440, 32], [446, 39]]) { const q = K.freeSpot(tx, tz, 1.3); if (!q) continue; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0.3); B.bbox('wood', 0, 0.72, 0, 1.8, 0.06, 0.8, 0.01, { color: [0.6, 0.46, 0.32] }); for (const e of [-0.7, 0.7]) B.box('wood', e, 0, 0, 0.08, 0.72, 0.6, { color: [0.45, 0.34, 0.24] });
       for (const e of [-0.75, 0.75]) { B.bbox('wood', 0, 0.44, e, 1.8, 0.05, 0.3, 0.01, { color: [0.6, 0.46, 0.32] }); for (const f of [-0.7, 0.7]) B.box('wood', f, 0, e, 0.06, 0.44, 0.25, { color: [0.45, 0.34, 0.24] }); }
       B.frame(0, 0, 0, 0); addBox(x, z, 0.95, 0.95, 0.3, y - 1, y + 0.8); navRect(x, z, 1.1, 1.1, 0.3, 2); }
     K.toilet(515, 36, Math.PI / 2);
@@ -381,8 +503,18 @@ export function buildParks(K) {
     B.poly('plastic', [[-1.0, 1.3, -0.9], [1.0, 1.3, -0.9], [1.0, 1.85, 0], [-1.0, 1.85, 0]], [0, 1, -1], { color: [0.86, 0.3, 0.24] }); B.poly('plastic', [[1.0, 1.3, 0.9], [-1.0, 1.3, 0.9], [-1.0, 1.85, 0], [1.0, 1.85, 0]], [0, 1, 1], { color: [0.86, 0.3, 0.24] });
     B.bbox('wood', 0, 0.45, 0, 0.8, 0.05, 0.5, 0.01, { color: [0.6, 0.44, 0.3] });
     B.frame(0, 0, 0, 0); addBox(x, z, 0.9, 0.8, yaw, y - 1, y + 1.9); }
-  function fountainTap(x, z) { const y = gy(x, z); B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 0.4, 0.8, 0.4, 0.03, { color: [0.72, 0.72, 0.7] }); B.cyl('steel', 0, 0.8, 0, 0.22, 0.16, 0.08, 14, { color: [0.78, 0.8, 0.82], cap: true });
+  function fountainTap(x0, z0) { const q = K.freeSpot(x0, z0, 0.45); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 0.4, 0.8, 0.4, 0.03, { color: [0.72, 0.72, 0.7] }); B.cyl('steel', 0, 0.8, 0, 0.22, 0.16, 0.08, 14, { color: [0.78, 0.8, 0.82], cap: true });
     B.cyl('steel', 0.05, 0.86, 0, 0.02, 0.02, 0.12, 6, { color: [0.8, 0.8, 0.82], cap: true }); B.bbox('concrete', 0.35, 0, 0, 0.3, 0.45, 0.3, 0.02, { color: [0.72, 0.72, 0.7] }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.3); navRect(x, z, 0.5, 0.4, 0, 2); }
 
-  fountainPark(); lakePark(); playground();
+  // the hill foot: where the district's platform is let into the valley side, the steeper spots of the bank carry a few
+  // stone groups (big stone downhill-leaning, the spill of small stones below it), never on a road, path or field edge
+  function hillFoot() {
+    const hr = [], grad = (x, z) => Math.hypot(gy(x + 1, z) - gy(x - 1, z), gy(x, z + 1) - gy(x, z - 1)) / 2;
+    for (let k = 0; k < 3000 && hr.length < 11; k++) {
+      const x = 330 + rng() * 340, z = -20 + rng() * 380, d = K.sd(x, z); if (d < 5 || d > 24) continue;
+      const g = grad(x, z); if (g < 0.09 || K.paved(x, z) || K.nearRoad(x, z, 6) || hr.some(q => Math.hypot(q[0] - x, q[1] - z) < 30)) continue;
+      const dx = gy(x + 1, z) - gy(x - 1, z), dz = gy(x, z + 1) - gy(x, z - 1); hr.push([x, z]);
+      rockGroup(x, z, 2.2 + rng() * 1.1, { dir: Math.atan2(-dz, -dx), spread: 1.1 }); }
+  }
+  fountainPark(); lakePark(); playground(); hillFoot();
 }
