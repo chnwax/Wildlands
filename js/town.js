@@ -435,6 +435,14 @@ export async function build(progress) {
     }
   }
   for (const I of inters) for (const cr of I.corners) hf.paint2(2, cr.O[0] - cr.rF, cr.O[1] - cr.rF, cr.O[0] + cr.rF, cr.O[1] + cr.rF, () => 1);
+  // footways the pedestrian network carries on round corners onto lanes: lots keep off them, nothing grows through
+  for (const n of RN.net) if (!n.walk) for (const side of [1, -1]) for (const [s0, s1, w] of n.ws[side]) for (let s = s0; s <= s1 + 0.5; s += 0.8) {
+    const q = RN.sampleAt(n, Math.min(s, s1)), l = [-q.d[1], q.d[0]], off = side * (n.hw + w / 2), x = q.x + l[0] * off, z = q.z + l[1] * off;
+    occRect(x, z, w / 2 + 0.05, 0.5, Math.atan2(q.d[0], q.d[1]), 1);
+    hf.paint2(2, x - w, z - w, x + w, z + w, (px, pz) => Math.hypot(px - x, pz - z) < w * 0.75 + 0.3 ? 1 : 0);
+  }
+  // footway width in front of a stretch [s0, s1] of road R on one side (0 where there is none)
+  const walkAlong = (R, side, s0, s1) => { const n = RN.byId.get(R.id); let w = 0; for (let k = 0; k <= 4; k++) w = Math.max(w, RN.walkAt(n, side, lerp(s0, s1, k / 4))); return w; };
   progress('Laying roads', 0.36); await tick();
   // railway and main road leave the valley through tunnels at both ends. Each headwall sits between the last cut
   // heightfield vertex and the first natural one, so it hides the step between them
@@ -917,7 +925,9 @@ export async function build(progress) {
   for (const R of [...ROADS].sort((a2, b2) => (b2.noMarks ? 1 : 0) - (a2.noMarks ? 1 : 0))) {
     if (R.kind === 'path') continue;
     const alley = !!R.noMarks;
+    let segS = 0;
     for (const [a, b] of roadSegs(R)) {
+      const s00 = segS; segS += Math.hypot(b[0] - a[0], b[1] - a[1]);
       const ind = R.id === 'F';
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
       for (const side of [-1, 1]) {
@@ -931,7 +941,7 @@ export async function build(progress) {
           const dist = ind ? 'yard' : district(mx, mz), D = DIST[dist] || DIST.mid, shopZone = R.id === 'A' && mx > -272 && mx < 200;
           const w = ind ? 18 + rng() * 6 : alley ? 8 + rng() * 2 : rr(...D.w);
           const d0 = ind ? 17 + rng() * 4 : shopZone ? 12 : alley ? 11.5 + rng() * 2 : rr(...D.d);
-          const set = R.w / 2 + (R.walk || 0) + (shopZone ? 0.12 : ind ? 1.05 : rr(...D.set));
+          const set = R.w / 2 + Math.max(R.walk || 0, walkAlong(R, side, s00 + t - 1, s00 + t + w + 1)) + (shopZone ? 0.12 : ind ? 1.05 : rr(...D.set));
           const gap = dist === 'farm' ? rr(...D.gap) : ind ? 0.6 : rr(...D.gap);
           const flag = !ind && !alley && !shopZone && rng() < D.flag, poleW = 2.6;
           const span = w + (flag ? gap + poleW : 0);
@@ -968,7 +978,7 @@ export async function build(progress) {
     B.bbox('concrete', 0, -0.05, 0, 2.4, 0.09, P.len, 0.01, { color: [0.73, 0.73, 0.71], skip: 'ny', uv: 2 });
     for (let k = -P.len / 2 + 2.5; k < P.len / 2 - 0.5; k += 2.5) B.box('dark', 0, 0.035, k, 2.3, 0.004, 0.02, { color: [0.45, 0.45, 0.44] });
     hf.paint2(2, P.x - 12, P.z - 12, P.x + 12, P.z + 12, (x2, z2) => { const cc = Math.cos(P.r), ss = Math.sin(P.r), ddx = x2 - P.x, ddz = z2 - P.z; return Math.abs(ddx * cc - ddz * ss) < 1.4 && Math.abs(ddx * ss + ddz * cc) < P.len / 2 ? 1 : 0; });
-    if (P.road.walk) RN.cuts.push({ id: P.road.id, side: P.side, s0: P.s - 1.6, s1: P.s + 1.6 });
+    if (RN.walkAt(RN.byId.get(P.road.id), P.side, P.s)) RN.cuts.push({ id: P.road.id, side: P.side, s0: P.s - 1.6, s1: P.s + 1.6 });
   }
   // corners of the main junctions that no lot could take (the curb returns eat into them) become small coin car parks,
   // the way Japanese street corners usually end up
@@ -1030,10 +1040,10 @@ export async function build(progress) {
       const info = house(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d, district: lot.district, front: lot.front, fence: lot.fence, era: lot.era, back: lot.back }, rng, extras);
       lot.info = info; // gardens, hedges and garden trees are planted from this layout (towngreen.js)
       if (info.carSpot) carSpots.push(info.carSpot);
-      if (info.carSpot && lot.road.walk && !lot.back) { // lowered kerb in front of the parking space
+      if (info.carSpot && !lot.back) { // lowered kerb in front of the parking space, wherever a footway runs past it
         const n = RN.byId.get(lot.road.id), cp = info.carSpot.p, sc = sOf(lot.road.id, cp[0], cp[2]), q = RN.sampleAt(n, sc);
         const side = Math.sign((cp[0] - q.x) * -q.d[1] + (cp[2] - q.z) * q.d[0]);
-        RN.cuts.push({ id: lot.road.id, side, s0: sc - 1.5, s1: sc + 1.5 });
+        if (RN.walkAt(n, side, sc)) RN.cuts.push({ id: lot.road.id, side, s0: sc - 1.5, s1: sc + 1.5 });
       }
       // yard life: laundry in the side yard, a mailbox by the gate, bicycles beside the car
       const gapL = info.hx - info.W / 2 + lot.w / 2, gapR = lot.w / 2 - info.hx - info.W / 2;
