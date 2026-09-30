@@ -50,11 +50,16 @@ function segInter(a, b, c, d) {
 }
 // kerb + sidewalk profile [outward q, up v] from the carriageway edge: 30 cm gutter apron, 15 cm kerb with a chamfered
 // arris, then the footway rising 1.2 % away from the road. drop (0..1) lowers it for driveways and crossings.
+// drop 1..2 goes on from the lowered kerb to flush: kerb, footway and apron all at road level (the landing of a level
+// crossing, where the footway runs level onto the deck's footway panels)
 function kerbProfile(walk, drop) {
-  const kh = lerp(0.15, 0.025, drop), top = kh + 0.01;
-  return [[0, 0], [0.3, 0.004], [0.3, kh - 0.02], [0.325, kh], [0.45, kh], [0.46, top], [walk, top + walk * 0.012 * (1 - drop)], [walk, -0.12]];
+  const f = clamp(drop - 1, 0, 1), d = Math.min(drop, 1);
+  const kh = f > 0 ? lerp(0.025, 0, f) : lerp(0.15, 0.025, d), top = kh + 0.01 * (1 - f), ap = 0.004 * (1 - f);
+  return [[0, 0], [0.3, ap], [0.3, Math.max(kh - 0.02, ap)], [0.325, kh], [0.45, kh], [0.46, top], [walk, top + walk * 0.012 * (1 - d)], [walk, -0.12]];
 }
+// concrete L-gutter; drop above 1 flattens it into a flush concrete shoulder
 const GUTTER = [[0, 0], [0.06, -0.018], [0.26, -0.018], [0.3, 0.0], [0.3, 0.05], [0.4, 0.05], [0.4, -0.1]];
+const gutterProfile = drop => { const f = clamp(drop - 1, 0, 1); return f <= 0 ? GUTTER : GUTTER.map(([q, v], i) => [q, i === GUTTER.length - 1 ? v : v * (1 - f)]); };
 const SKIRT = [[0, 0], [0, -0.14]];
 const profileY = (pr, q) => { for (let k = 0; k + 1 < pr.length - 1; k++) { const a = pr[k], b = pr[k + 1]; if (q <= b[0] + 1e-6 && b[0] > a[0]) return lerp(a[1], b[1], clamp((q - a[0]) / (b[0] - a[0]), 0, 1)); } return pr[pr.length - 2][1]; };
 
@@ -113,7 +118,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     }
   }
   const inClip = (n, s) => n.clips.some(([a, b]) => s > a + 1e-3 && s < b - 1e-3);
-  const clipDist = (n, s) => { let m = 1e9; for (const [a, b] of n.clips) m = Math.min(m, s < a ? a - s : s > b ? s - b : 0); return m; };
+  const clipDist = (n, s) => { let m = 1e9; for (const [a, b] of n.clips) m = Math.min(m, s < a ? a - s : s > b ? s - b : 0); for (const [a, b] of n.flats || []) m = Math.min(m, s < a ? a - s : s > b ? s - b : 0); return m; };
   const crown = (n, s, u) => (CROWN[n.R.kind] || 0) * smoothstep(0, FADE, clipDist(n, s)) * (1 - (clamp(u, -n.hw, n.hw) / n.hw) ** 2);
   // world point on road n at arclength s, lateral u (left positive), lifted by `lift`
   const P = (n, s, u, lift = 0) => { const q = sampleAt(n.PL, s), l = rot(q.d), x = q.x + l[0] * u, z = q.z + l[1] * u; return V(x, baseY(x, z) + crown(n, s, u) + lift, z); };
@@ -153,6 +158,14 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     { const sk = s => { const q = sampleAt(n.PL, s); return skip(q.x, q.z, n.R); };
       let prev = sk(0);
       for (let s = 0.25; s <= n.PL.len; s += 0.25) { const cur = sk(s); if (cur !== prev) { let a = s - 0.25, b = s; for (let k = 0; k < 12; k++) { const m = (a + b) / 2; if (sk(m) === prev) a = m; else b = m; } cuts.add((a + b) / 2); } prev = cur; } }
+    // the skipped stretches (level-crossing decks) are flat: the crown fades out toward them like toward a junction
+    n.flats = [];
+    { let a0 = null; const sk = s => { const q = sampleAt(n.PL, s); return skip(q.x, q.z, n.R); };
+      const edges = [...cuts].sort((a, b) => a - b);
+      for (let i = 0; i + 1 < edges.length; i++) { const m = (edges[i] + edges[i + 1]) / 2, on = sk(m);
+        if (on && a0 === null) a0 = edges[i]; if (!on && a0 !== null) { n.flats.push([a0, edges[i]]); a0 = null; } }
+      if (a0 !== null) n.flats.push([a0, n.PL.len]); }
+    for (const [a, b] of n.flats) for (let k = 0; k <= FADE; k++) { if (a - k > 0) cuts.add(a - k); if (b + k < n.PL.len) cuts.add(b + k); }
     const ss = [...cuts].sort((a, b) => a - b);
     n.pieces = [];
     for (let i = 0; i + 1 < ss.length; i++) {
@@ -186,7 +199,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
   const surfaceY = (x, z) => { const r = roadAt(x, z); return baseY(x, z) + (r ? crown(r.n, r.s, r.u) : 0); };
   const aRoadAt = (x, z) => { const r = roadAt(x, z); return r ? [r.u, hwAge(r.n)] : [0, 0]; };
 
-  const RN = { net, byId, inters, RANK, P, crown, clipDist, sampleAt: (n, s) => sampleAt(n.PL, s), offsets, roadAt, surfaceY, aRoadAt, hwAge, edgeKind, cuts: [], runs: null };
+  const RN = { net, byId, inters, RANK, P, crown, clipDist, sampleAt: (n, s) => sampleAt(n.PL, s), offsets, marks, roadAt, surfaceY, aRoadAt, hwAge, edgeKind, cuts: [], runs: null };
 
   // a flat marking laid on the road surface: rectangle centred at c, long axis f (unit), half extents hl (along f) and
   // hwid (across), cut into cells so it follows crown and grade; lifted 12 mm (reversed-Z keeps that stable)
@@ -311,7 +324,10 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     return out;
   };
   RN.runs = computeRuns();
-  const cutAt = (n, side, s) => { let h = 0; for (const c of RN.cuts) if (c.id === n.R.id && c.side === side) h = Math.max(h, smoothstep(c.s0 - 1.2, c.s0, s) * (1 - smoothstep(c.s1, c.s1 + 1.2, s))); return h; };
+  // kerb drop at s: 0 full kerb, 1 lowered (driveways, zebra crossings), 2 flush (level-crossing landings); each cut
+  // ramps in over `ramp` metres
+  const cutAt = (n, side, s) => { let h = 0; for (const c of RN.cuts) if (c.id === n.R.id && c.side === side) { const r = c.ramp || 1.2;
+    h = Math.max(h, (c.flush ? 2 : 1) * smoothstep(c.s0 - r, c.s0, s) * (1 - smoothstep(c.s1, c.s1 + r, s))); } return h; };
   // sidewalk / kerb top at a point (null when not on one)
   RN.walkY = (x, z) => {
     for (const it of near(x, z)) {
@@ -371,7 +387,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         B.poly(kind === 'walk' ? 'concrete' : kind === 'gutter' ? 'concrete' : 'asphalt', [f.at([a[0], base]), f.at([b[0], base]), f.at(b), f.at(a)], [dir[0], 0, dir[1]], { color: kind === 'skirt' ? [1, 1, 1] : [0.8, 0.8, 0.77] });
       }
     };
-    const profOf = (kind, walk, drop) => kind === 'walk' ? kerbProfile(walk, drop) : kind === 'gutter' ? GUTTER : SKIRT;
+    const profOf = (kind, walk, drop) => kind === 'walk' ? kerbProfile(walk, drop) : kind === 'gutter' ? gutterProfile(drop) : SKIRT;
     for (const [n, side, sa, sb, kind] of RN.runs) {
       const frame = s => {
         const q = sampleAt(n.PL, s), l = rot(q.d), o = [l[0] * side, l[1] * side];
@@ -391,7 +407,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
           B.box('metal', 0, 0.0, -0.315, 0.36, 0.005, 0.03, { color: [0.3, 0.29, 0.28] }); B.box('metal', 0, 0.0, 0.315, 0.36, 0.005, 0.03, { color: [0.3, 0.29, 0.28] });
           for (let k = -3; k <= 3; k++) B.box('metal', 0, 0.0, k * 0.085, 0.36, 0.005, 0.028, { color: [0.3, 0.29, 0.28] });
           B.frame(0, 0, 0, 0);
-        }); else if (kind === 'gutter' && Math.floor(s0 / 6) !== Math.floor(s1 / 6)) B.detail(2, () => {
+        }); else if (kind === 'gutter' && Math.floor(s0 / 6) !== Math.floor(s1 / 6) && cutAt(n, side, sm) < 1) B.detail(2, () => {
           const f = frame(sm), g = f.at([0.16, -0.018]);
           B.frame(g[0], g[1], g[2], Math.atan2(f.t[0], f.t[1]));
           B.box('dark', 0, -0.002, 0, 0.2, 0.004, 0.48, { color: [0.1, 0.1, 0.1] });

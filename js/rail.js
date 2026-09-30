@@ -445,9 +445,14 @@ const crossbuckMat = new THREE.MeshStandardMaterial({ map: crossbuckTex, transpa
 // and the road's edge lines painted on. The approach roads ramp up to it (town.js). Each approach has its warning
 // machine on the driver's left (keep-left): striped mast, crossbuck, twin red lamps with hoods for both directions, a
 // bell speaker and a direction indicator; and a barrier machine whose striped boom swings down across the road.
-export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0, machineSide = 0, ped = false, age = 0.5 } = {}) {
-  const rt = railTop(y0), zN = -86.9, zS = -73.1, zA = -86.6, zB = -73.4, W = roadW - 0.4, g = RAIL.gauge;
+export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0, side = null, lines = null, uSign = 1, sAt = null, hwAge = null, machineSide = 0, ped = false, age = 0.5 } = {}) {
+  const rt = railTop(y0), zN = -86.9, zS = -73.1, zA = -86.6, zB = -73.4, g = RAIL.gauge;
   const top = rt - 0.003, base = y0 + 0.2;
+  // the deck carries the approach's own cross-section: carriageway, and beside it the footways (walk) or the concrete
+  // shoulders that continue the L-gutters (gutter). The outermost 20 cm of each side is the edge beam holding back the
+  // ballast, inside the road's width, so the deck edge lines up with the back of the footway / gutter on the approach
+  const sw = side ? side.w : walk > 0 ? walk : roadW / 2 - 0.2 - hw, sk = side ? side.kind : walk > 0 ? 'walk' : 'gutter', BEAM = 0.2;
+  const W = ped ? roadW - 0.4 : 2 * (hw + sw);
   B.frame(x, 0, -80, 0);
   // z-intervals of the deck with the rails and their flangeways left open
   const holes = [];
@@ -457,30 +462,38 @@ export function buildCrossing(B, x, y0, roadW, { hw = roadW / 2 - 0.2, walk = 0,
   for (const [h0, h1] of holes) { spans.push([z0, h0 + 80]); z0 = h1 + 80; }
   spans.push([z0, zB + 80]);
   const inTrack = zc => RAIL.z.some(tz => Math.abs(zc - (tz + 80)) < g / 2 + 0.65);
-  const xs = ped ? [[-W / 2, W / 2, 'foot']] : walk > 0 ? [[-W / 2, -hw, 'foot'], [-hw, hw, 'road'], [hw, W / 2, 'foot']] : [[-W / 2, W / 2, 'road']];
+  const band = sk === 'walk' ? 'foot' : 'shoulder';
+  const xs = ped ? [[-W / 2, W / 2, 'foot']] : sw > BEAM + 0.05
+    ? [[-W / 2, -W / 2 + BEAM, 'beam'], [-W / 2 + BEAM, -hw, band], [-hw, hw, 'road'], [hw, W / 2 - BEAM, band], [W / 2 - BEAM, W / 2, 'beam']]
+    : [[-W / 2, -hw, 'beam'], [-hw, hw, 'road'], [hw, W / 2, 'beam']];
+  const ha = hwAge ?? Math.floor(hw * 10 + 1e-3) + Math.min(age, 0.99);
+  const aR = (xx, zz) => [uSign * xx, ha], aS = zz => [sAt ? sAt(zz - 80) : 0, 0];
   for (const [za, zb] of spans) {
     const zc = (za + zb) / 2, dz = zb - za, track = inTrack(zc);
     for (const [xa, xb, kind] of xs) {
       const xc = (xa + xb) / 2, dx = xb - xa;
       if (kind === 'foot') B.bbox('concrete', xc, base, zc, dx, top - base, dz, 0.01, { color: [0.8, 0.79, 0.76], skip: 'ny', uv: 1.2 });
+      else if (kind === 'shoulder') B.box('concrete', xc, base, zc, dx, top - base, dz, { color: [0.78, 0.78, 0.75], skip: 'ny', uv: 1.5 });
+      else if (kind === 'beam') B.box('concrete', xc, y0 - 0.1, zc, dx, top - y0 + 0.1, dz, { color: [0.7, 0.7, 0.68], skip: 'ny', uv: 1.5 });
       else if (track) { // precast panels, 1 m modules with joints
         const n = Math.max(1, Math.round(dx));
         for (let i = 0; i < n; i++) B.bbox('concrete', xa + (i + 0.5) * dx / n, base, zc, dx / n - 0.012, top - base, dz, 0.012, { color: [0.5, 0.5, 0.49], skip: 'ny', uv: 1 });
-      } else { B.box('asphalt', xc, base, zc, dx, top - base, dz, { skip: 'ny py', uv: 4 });
-        const at = [xa, xb].flatMap(xx => [za, zb].map(zz => [xx, zz]));
-        B.quad('asphalt', [xa, top, zb], [xb, top, zb], [xb, top, za], [xa, top, za], { uvs: [[(x + xa) / 4, (zb - 80) / 4], [(x + xb) / 4, (zb - 80) / 4], [(x + xb) / 4, (za - 80) / 4], [(x + xa) / 4, (za - 80) / 4]], attr: { aRoad: [[0, age], [0, age], [0, age], [0, age]] } }); void at; }
+      } else { // asphalt between and beside the tracks, laid in 1 m strips so it carries the approach's lane coordinates
+        B.box('asphalt', xc, base, zc, dx, top - base, dz, { skip: 'ny py', uv: 4, attr: undefined });
+        const nx = Math.max(1, Math.ceil(dx / 1.1));
+        for (let i = 0; i < nx; i++) { const x0 = xa + dx * i / nx, x1 = xa + dx * (i + 1) / nx;
+          B.quad('asphalt', [x0, top, zb], [x1, top, zb], [x1, top, za], [x0, top, za], { uvs: [[(x + x0) / 4, (zb - 80) / 4], [(x + x1) / 4, (zb - 80) / 4], [(x + x1) / 4, (za - 80) / 4], [(x + x0) / 4, (za - 80) / 4]],
+            attr: { aRoad: [aR(x0, zb), aR(x1, zb), aR(x1, za), aR(x0, za)], aRoadS: [aS(zb), aS(zb), aS(za), aS(za)] } }); }
+      }
     }
-    // edge lines painted over each piece (not across the flangeways)
-    if (!ped) for (const s2 of [-1, 1]) { const ex = s2 * (hw - 0.25); B.quad('paint', [ex - 0.075, top + 0.003, za + 0.01], [ex + 0.075, top + 0.003, za + 0.01], [ex + 0.075, top + 0.003, zb - 0.01], [ex - 0.075, top + 0.003, zb - 0.01], { color: [0.94, 0.94, 0.92] }); }
-    if (walk > 0) for (const s2 of [-1, 1]) B.quad('paint', [s2 * hw - 0.05, top + 0.003, za + 0.01], [s2 * hw + 0.05, top + 0.003, za + 0.01], [s2 * hw + 0.05, top + 0.003, zb - 0.01], [s2 * hw - 0.05, top + 0.003, zb - 0.01], { color: [0.94, 0.94, 0.92] });
+    // edge lines painted over each piece where the approach has them (not across the flangeways)
+    if (!ped) for (const [ex, lw] of lines || [-1, 1].map(s2 => [s2 * (hw - 0.25), 0.15])) B.quad('paint', [ex - lw / 2, top + 0.003, za + 0.01], [ex + lw / 2, top + 0.003, za + 0.01], [ex + lw / 2, top + 0.003, zb - 0.01], [ex - lw / 2, top + 0.003, zb - 0.01], { color: [0.94, 0.94, 0.92] });
+    if (sk === 'walk' && !ped) for (const s2 of [-1, 1]) B.quad('paint', [s2 * hw - 0.05, top + 0.003, za + 0.01], [s2 * hw + 0.05, top + 0.003, za + 0.01], [s2 * hw + 0.05, top + 0.003, zb - 0.01], [s2 * hw - 0.05, top + 0.003, zb - 0.01], { color: [0.94, 0.94, 0.92] });
   }
   // flangeway floors (dark, below the rail head) so the gaps read as slots, not holes into the ballast
   for (const [h0, h1] of holes) B.box('dark', 0, rt - 0.09, (h0 + h1) / 2 + 80, W, 0.02, h1 - h0, { color: [0.12, 0.12, 0.12] });
-  // concrete edge beams where the deck meets the ballast: flush with the deck and broken at every rail, so nothing
-  // stands proud across the line (the old full-length beams rose 2 cm above the deck and ran over the rails)
-  for (const [za, zb] of spans) for (const s2 of [-1, 1]) B.box('concrete', s2 * (W / 2 + 0.1), y0 - 0.1, (za + zb) / 2, 0.2, top - y0 + 0.1 - 0.004, zb - za, { color: [0.66, 0.66, 0.64], uv: 1.5 });
-  if (walk > 0) for (const zz of [zA + 80 + 0.45, zB + 80 - 0.45]) for (const s2 of [-1, 1]) // warning tiles where the footway meets the tracks
-    B.poly('tactileD', [[s2 * hw + s2 * 0.25, top + 0.004, zz - 0.3], [s2 * hw + s2 * 0.25, top + 0.004, zz + 0.3], [s2 * (W / 2 - 0.25), top + 0.004, zz + 0.3], [s2 * (W / 2 - 0.25), top + 0.004, zz - 0.3]], [0, 1, 0], { uvs: [[0, 0], [0, 2], [(W / 2 - hw - 0.5) / 0.3, 2], [(W / 2 - hw - 0.5) / 0.3, 0]] });
+  if (sk === 'walk' && !ped) for (const zz of [zA + 80 + 0.45, zB + 80 - 0.45]) for (const s2 of [-1, 1]) // warning tiles where the footway meets the tracks
+    B.poly('tactileD', [[s2 * hw + s2 * 0.25, top + 0.004, zz - 0.3], [s2 * hw + s2 * 0.25, top + 0.004, zz + 0.3], [s2 * (W / 2 - BEAM - 0.15), top + 0.004, zz + 0.3], [s2 * (W / 2 - BEAM - 0.15), top + 0.004, zz - 0.3]], [0, 1, 0], { uvs: [[0, 0], [0, 2], [(W / 2 - BEAM - hw - 0.4) / 0.3, 2], [(W / 2 - BEAM - hw - 0.4) / 0.3, 0]] });
   B.frame(0, 0, 0, 0);
   const c = { x, active: false, t: 0, arms: [], lamps: [], bell: new Emitter('bell'), roadW };
   c.bell.set(x, y0 + 3, -80);

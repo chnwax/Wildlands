@@ -684,7 +684,7 @@ export const stopTex = canvasTex(256, 512, (g, W, H) => {
   g.save(); g.scale(1, 1.45); g.font = `bold 112px ${JP_FONT}`; // glyphs stretched lengthwise like real road paint
   ['止', 'ま', 'れ'].forEach((c, i) => g.fillText(c, W / 2, 58 + i * 116)); g.restore();
 });
-export const stopMat = new THREE.MeshStandardMaterial({ map: stopTex, alphaToCoverage: true, roughness: 0.62, color: 0xe8e8e2 });
+export const stopMat = new THREE.MeshStandardMaterial({ map: stopTex, alphaToCoverage: true, alphaTest: 0.4, roughness: 0.62, color: 0xe8e8e2 });
 
 // ---------------------------------------------------------------- buildings
 // anime palettes: clean pastel walls and saturated roofs (Shinkai / Ghibli town streets)

@@ -31,7 +31,13 @@ const SHRINE = { x: -60, z: -300 };
 const RRD = 25.5, XR = riverX(-80) - RRD; // lane R: its distance from the river, and its level crossing
 // the bank walkways cross the line beside the rail bridge on pedestrian level crossings (x, half width)
 const WALK_XINGS = [-1, 1].map(sd => [riverX(-80) + sd * 16.1, 1.7]);
-const XINGS = [[110, 5.2], [-150, 2.7], [-400, 2.7], [XR, 2.55]];
+// Level-crossing geometry shared by the terrain, the roads and the deck (rail.js). The deck spans |z + 80| < XD and is
+// straight and square to the line. Each approach is an engineered transition XT long: the road is held straight on the
+// crossing's axis, its crown fades out, and its profile climbs on a vertical curve onto a flat landing (the last XL m)
+// at exactly the deck's top, so carriageway, kerbs, footways and gutters meet the deck edge without a step or a jog.
+const XD = 6.6, XT = 10.4, XL = 2.2, DECK_Y = Y0 + 0.447;
+const xingProfile = dz => lerp(Y0 + 0.05, DECK_Y, smoothstep(XD + XT, XD + XL, dz)); // road surface on an approach
+let XINGS = []; // [centre x, half width to the back of the footway / gutter] — filled from the roads that cross the line
 const LEVEL = [[-147, 190, -32.5, 256]]; // school block
 // road bridges over the river: [centre z, deck width between the parapets, road id, name plates]; the deck spans the
 // channel only (abutments on the two bank lines, 14.4 m either side of the river centre), road edge half width off it
@@ -87,11 +93,15 @@ function baseHeight(x, z) {
   // level crossings: the roads ramp up over ~10 m onto the deck at rail-top level, on a small embankment; under the deck
   // itself the ground is held at the deck's underside, so the approach meets the deck edge without a step (applied
   // after the valley floor is levelled, or the riverside crossing would lose its ramp)
+  // the ground under an approach follows the road's designed profile 5 cm below it (and falls away over 4 m beside it)
   for (const [cx, hwx] of XINGS) {
     if (Math.abs(x - riverX(z)) < 17.7) break;                                          // never inside the river channel / bank walkway
     const dx = Math.abs(x - cx) - hwx, dz = Math.abs(z + 80);
-    if (dx < 4 && dz < 18 && dz > 6.6) h = lerp(h, Math.max(h, Y0 + 0.4 * smoothstep(17, 6.6, dz)), smoothstep(4, 0, Math.max(dx, 0)));
-    else if (dz <= 6.6 && dx < 0) h = Math.max(h, Y0 + 0.3); // (below the flangeway floors)
+    if (dz <= XD && dx < 0) h = Math.max(h, Y0 + 0.3); // (below the flangeway floors)
+    // the approach embankment wraps round the deck's corners at landing level and only then falls to the ballast toe,
+    // so the ground never drops away under the end of a footway or gutter where it meets the deck
+    if (dx < 4 && dz < XD + XT + 1.5 && dz > XD - 2.2) { const w = smoothstep(4, 0.4, Math.max(dx, 0)) * smoothstep(XD + XT + 1.5, XD + XT - 1, dz) * smoothstep(XD - 2.2, XD - 0.6, dz);
+      h = lerp(h, xingProfile(Math.max(dz, XD)) - 0.05, w); }
   }
   // channel: bed, then a sloped concrete revetment from rd 12.2 (y 0.45) up to the walkway at rd 14.6; the ground
   // stays 1.3 m under the revetment slab (so the 2 m heightfield never pokes through it) and is level again under the
@@ -137,9 +147,9 @@ function height(x, z) {
 // kind: main > road > lane > path ; w = carriageway width
 const ROADS = [
   { id: 'A', kind: 'main', w: 7.0, walk: 2.5, center: 'yellow', pts: [[-PORTALS.roadW - 30, -25], [PORTALS.roadE + 30, -25]], mat: 'asphalt' },
-  { id: 'B', kind: 'road', w: 6.0, walk: 2.0, center: 'white', pts: [[110, -340], [110, 330]], mat: 'asphalt' },
-  { id: 'C', kind: 'lane', w: 5.0, pts: [[-150, -300], [-150, 300]], mat: 'asphalt', age: 0.55 },
-  { id: 'D', kind: 'lane', w: 5.0, pts: [[-400, -312], [-400, 322]], mat: 'asphalt', age: 0.8 },
+  { id: 'B', kind: 'road', w: 6.0, walk: 2.0, center: 'white', xing: true, pts: [[110, -340], [110, 330]], mat: 'asphalt' },
+  { id: 'C', kind: 'lane', w: 5.0, xing: true, pts: [[-150, -300], [-150, 300]], mat: 'asphalt', age: 0.55 },
+  { id: 'D', kind: 'lane', w: 5.0, xing: true, pts: [[-400, -312], [-400, 322]], mat: 'asphalt', age: 0.8 },
   // residential lanes: the ones the bus loops use run straight; the others bend gently with the old field boundaries
   ...[48, 118, 188, 258].map((z, i) => ({ id: 'S' + i, kind: 'lane', w: 4.2, mat: 'asphalt', age: [0.62, 0.85, 0.3, 0.5][i],
     pts: i === 1 ? [[-400, 118], [-340, 121], [-275, 116], [-210, 120], [-150, 118], [-95, 116], [-30, 118], [40, 121], [110, 118]] : [[-400, z], [110, z]] })),
@@ -153,10 +163,18 @@ const ROADS = [
   { id: 'Y1', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.97, pts: [[-210, -150], [-212, -170], [-209, -190]] },
   { id: 'Y3', kind: 'lane', w: 3.2, noMarks: true, mat: 'asphalt', age: 0.93, pts: [[40, -225], [42, -245], [39, -262]] },
   { id: 'F', kind: 'lane', w: 4.0, pts: [[110, 200], [640, 200]], mat: 'asphalt', age: 0.95 }, // service road out to the yards
-  { id: 'R', kind: 'lane', w: 4.5, mat: 'asphalt', age: 0.6, pts: (() => { // follows the river RRD out; square across the railway
-    const P = []; for (let i = 0; i < 34; i++) { const z = -335 + i * 20; if (z > -110 && z < -30) continue; P.push([riverX(z) - RRD, z]); }
-    P.push([riverX(-104) - RRD, -104], [XR, -92], [XR, -68], [XR + 2.2, -58], [XR + 6.0, -47], [riverX(-38) - RRD, -38]);
-    return P.sort((a, b) => a[1] - b[1]); })() },
+  { id: 'R', kind: 'lane', w: 4.5, mat: 'asphalt', age: 0.6, xing: true, pts: (() => { // follows the river RRD out; square across the railway
+    // river-following points away from the line; near it the lane leaves the river on smooth Hermite curves onto the
+    // crossing's straight (held square to the rails for XD + XT + 2 m either side of the track axis)
+    const P = [], SB = XD + XT + 2, zS = -80 - SB, zN = -80 + SB, za = -132, zb = -26;
+    for (let i = 0; i < 34; i++) { const z = -335 + i * 20; if (z > za - 8 && z < zb + 8) continue; P.push([riverX(z) - RRD, z]); }
+    const herm = (p0, t0, p1, t1, n) => { for (let k = 0; k <= n; k++) { const t = k / n, h00 = 2 * t ** 3 - 3 * t * t + 1, h10 = t ** 3 - 2 * t * t + t, h01 = -2 * t ** 3 + 3 * t * t, h11 = t ** 3 - t * t;
+      P.push([h00 * p0[0] + h10 * t0[0] + h01 * p1[0] + h11 * t1[0], h00 * p0[1] + h10 * t0[1] + h01 * p1[1] + h11 * t1[1]]); } };
+    const slope = z => (riverX(z + 0.5) - riverX(z - 0.5));
+    herm([riverX(za) - RRD, za], [slope(za) * (zS - za), zS - za], [XR, zS], [0, zS - za], 5);
+    herm([XR, zN], [0, zb - zN], [riverX(zb) - RRD, zb], [slope(zb) * (zb - zN), zb - zN], 5);
+    const out = P.sort((a, b) => a[1] - b[1]);
+    return out.filter((p, i) => i === 0 || Math.hypot(p[0] - out[i - 1][0], p[1] - out[i - 1][1]) > 0.5); })() },
   { id: 'P', kind: 'path', w: 3.0, pts: [[SHRINE.x, -225], [SHRINE.x, SHRINE.z + 4]], mat: 'gravelPath' },
   // the estate lane through the housing estate (団地) on the southern meadow, from road D to lane C
   { id: 'E0', kind: 'lane', w: 5.0, pts: [[-400, -282], [-150, -282]], mat: 'asphalt', age: 0.35 },
@@ -189,6 +207,19 @@ const ROADS = [
   ].map(([id, w, alley, age, pts]) => ({ id, kind: 'lane', w, noMarks: alley, mat: 'asphalt', age, pts })),
 ];
 const RANK = { main: 3, road: 2, lane: 1, path: 0 };
+// every road that meets the railway at grade crosses it on a straight held square to the rails: the vertices within
+// XD + XT + 2 m of the track axis are replaced by the two ends of that straight (the road bends, if at all, beyond the
+// transition), so the deck is never skewed or shifted to suit the road
+const xAtRail = R => { for (let i = 0; i + 1 < R.pts.length; i++) { const [ax, az] = R.pts[i], [bx, bz] = R.pts[i + 1]; if ((az + 80) * (bz + 80) <= 0 && az !== bz) return ax + (bx - ax) * (-80 - az) / (bz - az); } return R.pts[0][0]; };
+for (const R of ROADS) {
+  if (!R.xing) continue;
+  const x = xAtRail(R), SB = XD + XT + 2, up = R.pts[R.pts.length - 1][1] > R.pts[0][1];
+  const keep = R.pts.filter(p => Math.abs(p[1] + 80) >= SB + 0.5);
+  keep.push([x, -80 - SB], [x, -80 + SB]);
+  keep.sort((a, b) => up ? a[1] - b[1] : b[1] - a[1]);
+  R.pts = keep;
+  XINGS.push([x, R.w / 2 + (R.walk || 0.4)]);
+}
 // a lane that ends at another road is snapped onto that road's centreline, so the junction is found and built as a
 // clean T (an end that stops a metre short or runs a metre past leaves overlapping asphalt and broken kerbs)
 for (const R of ROADS) {
@@ -329,9 +360,10 @@ export async function build(progress) {
     if (rd < 17) return Y0 + 0.35;
     if (Math.abs(z + 25) < 6.5 && Math.abs(x) > 600) return roadGrade(x) + 0.05;
     let g = hf.groundAt(x, z) + 0.05;
-    // on a level-crossing approach the carriageway follows the ramp exactly, so it arrives at the deck's own height
+    // on a level-crossing approach the carriageway (and its kerbs and footways) follows the designed profile exactly,
+    // arriving at the deck's top on a flat landing; it blends back to the ground's grade at the start of the transition
     const dz = Math.abs(z + 80);
-    if (dz < 17) for (const [cx, hwx] of XINGS) if (Math.abs(x - cx) < hwx + 1) g = Math.max(g, Y0 + 0.05 + 0.355 * smoothstep(17, 6.6, dz)); // (+ the asphalt: flush with the deck)
+    if (dz < XD + XT + 1) for (const [cx, hwx] of XINGS) if (Math.abs(x - cx) < hwx + 1) g = lerp(g, xingProfile(dz), smoothstep(XD + XT + 1, XD + XT - 2, dz));
     return rd < 24.5 && (Math.abs(z + 25) < 9 || Math.abs(z - 200) < 5) ? lerp(g, Y0 + 0.35, smoothstep(24, 18, rd)) : g;
   };
 
@@ -448,14 +480,18 @@ export async function build(progress) {
     };
   }
   // level crossings on B, C, D and the riverside lane R (every road that meets the line at grade gets gates)
-  const crossingRoads = ROADS.filter(R => ['B', 'C', 'D', 'R'].includes(R.id));
-  const xAtRail = R => { for (let i = 0; i + 1 < R.pts.length; i++) { const [ax, az] = R.pts[i], [bx, bz] = R.pts[i + 1]; if ((az + 80) * (bz + 80) <= 0 && az !== bz) return ax + (bx - ax) * (-80 - az) / (bz - az); } return R.pts[0][0]; };
+  const crossingRoads = ROADS.filter(R => R.xing);
   const Bx = new GeoBuilder(192);
   const railInfo = buildRailway({ y0: Y0, riverX, B: Bx });
   for (const R of crossingRoads) {
-    const x = xAtRail(R);
-    buildCrossing(Bx, x, Y0, R.w + 2 * (R.walk || 0) + 0.4, { hw: R.w / 2, walk: R.walk || 0, machineSide: R.id === 'R' ? -1 : 0, age: Math.min(0.99, R.age ?? (R.kind === 'main' ? 0.12 : R.kind === 'road' ? 0.4 : 0.72)) });
-    if (R.walk) for (const side of [-1, 1]) for (const [za, zb] of [[-73.4, -70.6], [-89.4, -86.6]]) { const sa = sOf(R.id, x, za), sb = sOf(R.id, x, zb); RN.cuts.push({ id: R.id, side, s0: Math.min(sa, sb), s1: Math.max(sa, sb) }); } // footways step down to the crossing
+    const x = xAtRail(R), n = RN.byId.get(R.id), sC = sOf(R.id, x, -80), dz = Math.sign(RN.sampleAt(n, sC).d[1]) || 1;
+    // the deck takes the road's own cross-section: carriageway, footways or L-gutters, the edge lines where the
+    // approach has them, and the asphalt's lane coordinates (so its wear, patches and cracks run on across)
+    const sideW = R.walk || 0.4, lines = RN.marks(n).filter(([c]) => c !== 0).map(([c, w]) => [c * -dz, w]);
+    buildCrossing(Bx, x, Y0, R.w + 2 * sideW + 0.4, { hw: R.w / 2, walk: R.walk || 0, side: { w: sideW, kind: R.walk ? 'walk' : 'gutter' }, lines,
+      uSign: -dz, sAt: z => sC + (z + 80) * dz, hwAge: RN.hwAge(n), machineSide: R.id === 'R' ? -1 : 0, age: Math.min(0.99, R.age ?? (R.kind === 'main' ? 0.12 : R.kind === 'road' ? 0.4 : 0.72)) });
+    // kerbs and gutters ease down over 3 m onto the landing and lie flush with it, so footway and shoulder run level onto the deck
+    for (const side of [-1, 1]) { const sa = sOf(R.id, x, -80 - XD - XL), sb = sOf(R.id, x, -80 + XD + XL); RN.cuts.push({ id: R.id, side, s0: Math.min(sa, sb), s1: Math.max(sa, sb), flush: true, ramp: 3.0 }); }
     for (const dir of [-1, 1]) addStop(R.id, sOf(R.id, x, -80 - dir * 8.6), dir, false);
     const sgn = [[-1, -89.5], [1, -70.5]];
     for (const [sd, z] of sgn) { const sx = x + sd * (R.w / 2 + (R.walk ? R.walk - 0.5 : 1.4)); roadSign(B, sx, topY(sx, z + sd * 2), z + sd * 2, sd > 0 ? 0 : Math.PI, 'crossing'); }
