@@ -161,6 +161,6 @@ export function buildClouds() {
   });
   const m = new THREE.Mesh(new THREE.SphereGeometry(9000, 32, 16), mat);
   m.frustumCulled = false; m.renderOrder = 1;
-  scene.add(m);
+  m.userData.dynamic = true; scene.add(m);
   return m;
 }

@@ -2,7 +2,7 @@
 // Everything is driven by an art-directed palette keyed on the time of day (vivid noon blue, peach sunrise, orange and
 // pink sunset, violet dusk, deep blue night): the sky gradient, sunlight, coloured shadow fill, haze, clouds and exposure
 // are all interpolated from the same keyframes, so every hour looks like one painting.
-import { THREE, renderer, scene, camera, S, sunDir, fogU, Q, clamp, lerp, smoothstep, mulberry32, withStandardDepth } from './core.js';
+import { THREE, renderer, scene, camera, S, sunDir, fogU, Q, clamp, lerp, smoothstep, mulberry32, withStandardDepth, geometryView } from './core.js';
 import { buildClouds, cloudShadow, cloudU, cloudPal } from './clouds.js';
 
 export const time = { hour: 16.4, running: true, speed: 1 / 60 }; // game hours per real second (1 day = 24 min)
@@ -128,10 +128,33 @@ const skyMat = new THREE.ShaderMaterial({
 export const sky = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), skyMat);
 sky.scale.setScalar(20000); sky.frustumCulled = false;
 sky.renderOrder = 1e6; // last opaque: only shades sky pixels that nothing covers
-scene.add(sky);
-const skyScene = new THREE.Scene(); const skyClone = new THREE.Mesh(sky.geometry, skyMat); skyClone.scale.setScalar(100); skyScene.add(skyClone);
+sky.userData.dynamic = true; scene.add(sky);
+// the environment capture renders the sky with standard depth (PMREM): its own material (same uniforms and shaders), so
+// neither pass ever switches the other's program — a shared material would relink both every time the ambient updates
+const skyEnvMat = new THREE.ShaderMaterial({ uniforms: skyU, vertexShader: skyMat.vertexShader, fragmentShader: skyMat.fragmentShader, side: THREE.BackSide, depthWrite: false, fog: false });
+const skyScene = new THREE.Scene(); const skyClone = new THREE.Mesh(sky.geometry, skyEnvMat); skyClone.scale.setScalar(100); skyScene.add(skyClone);
 const pmrem = new THREE.PMREMGenerator(renderer);
 let envRT = null;
+// PMREM of the sky into one persistent target: fromScene allocates a new target (a new texture) every call, which makes
+// every lit material look its program up again and churns GPU memory; re-filtering in place keeps the texture
+// PMREM also draws a solid-colour backdrop box with a MeshBasicMaterial it creates and disposes on every call; disposing
+// it releases the last user of that program, so three deleted it and compiled it again each update (~28 ms). A permanent
+// twin of that material, drawn once the same way, keeps the program alive.
+const pmremKeep = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({ side: THREE.BackSide, depthWrite: false, depthTest: false }));
+const pmremCam = new THREE.PerspectiveCamera(90, 1, 0.1, 100), keepRT = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
+function regenEnv() {
+  if (!envRT) {
+    const rt0 = renderer.getRenderTarget(); renderer.setRenderTarget(keepRT); renderer.render(pmremKeep, pmremCam); renderer.setRenderTarget(rt0);
+    envRT = pmrem.fromScene(skyScene, 0.04); return;
+  }
+  const rt0 = renderer.getRenderTarget();
+  pmrem._setSize(256);
+  pmrem._sceneToCubeUV(skyScene, 0.1, 100, envRT);
+  pmrem._blur(envRT, 0, 0, 0.04);
+  pmrem._applyPMREM(envRT);
+  pmrem._cleanup(envRT);
+  renderer.setRenderTarget(rt0);
+}
 
 // ---------------------------------------------------------------- clouds (volumetric, anime-shaded, see clouds.js)
 export const clouds = buildClouds();
@@ -182,7 +205,7 @@ const starMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4(vCol * (core + spark), 1.0);
     }`,
 });
-export const stars = new THREE.Points(starGeo, starMat); stars.frustumCulled = false; stars.layers.set(1); scene.add(stars);
+export const stars = new THREE.Points(starGeo, starMat); stars.frustumCulled = false; stars.layers.set(1); stars.userData.dynamic = true; scene.add(stars);
 
 // ---------------------------------------------------------------- moon
 function makeMoonTexture() {
@@ -197,7 +220,7 @@ function makeMoonTexture() {
 }
 const moonMat = new THREE.MeshBasicMaterial({ map: makeMoonTexture(), transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1, 1, 1) });
 const moon = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), moonMat);
-moon.scale.setScalar(260); moon.frustumCulled = false; scene.add(moon);
+moon.scale.setScalar(260); moon.frustumCulled = false; moon.userData.dynamic = true; scene.add(moon);
 
 // ---------------------------------------------------------------- lights
 // ---------------------------------------------------------------- sun + cascaded shadow maps
@@ -256,7 +279,197 @@ export function applyShadowQuality() {
     l.shadow.needsUpdate = true;
     if (l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; }
   });
+  resetShadowCache();
 }
+
+// ---------------------------------------------------------------- cached cascades
+// Every cascade keeps its static casters — terrain, buildings, props, rocks — in a map of its own. That map is rebuilt
+// only when the cascade has to move (the camera travelled 8 % of the cascade's half width, the sun or moon turned a
+// fifth of a degree) and then over several frames: the static casters are split into SLICES lists, a share of them is
+// drawn per frame into a back map, which is swapped in when complete (no frame redraws a whole cascade). Each update of a
+// cascade copies its static map into the shadow map and draws only what moves on top: cars, people, trains, crossing
+// booms (userData.dynamicCaster) and, in the two near cascades, the trees and shrubs that sway in the wind (their
+// shadows keep moving with them). In the far cascades the sway is below a shadow texel, so trees count as static there.
+const NEAR_CASCADES = 2, SLICES = 6, SLICE_FRAMES = [2, 3, 6, 6]; // frames a refresh takes, per cascade
+const shadowCache = [];
+let cacheReady = false;
+function resetShadowCache() {
+  for (const C of shadowCache) if (C) { C.front && C.front.dispose(); C.back && C.back.dispose(); }
+  shadowCache.length = 0;
+}
+// The casts walk short flat lists instead of the whole scene graph: a stand-in root per list whose children are just
+// its casters (three's shadow pass only reads visible, layers and children while it descends; the casters keep their
+// real parents and world matrices). A caster under a group is listed with that group's visibility.
+const list = () => ({ visible: true, layers: { test: () => true }, children: [] });
+const casts = { dyn: list(), sway: list(), statics: [], sways: [] };
+export function prepareShadowCache(root) {
+  casts.dyn = list(); casts.sway = list(); casts.statics = Array.from({ length: SLICES }, list); casts.sways = Array.from({ length: SLICES }, list);
+  let k = 0, j = 0;
+  root.traverse(o => { if (o.userData.shadowOnly) o.layers.set(7); }); // casters drawn only into shadow maps (no camera renders layer 7)
+  root.traverse(o => {
+    if (!(o.isMesh || o.isPoints || o.isLine) || !o.castShadow) return;
+    let dyn = false; for (let p = o; p && !dyn; p = p.parent) dyn = !!p.userData.dynamicCaster;
+    const hide = []; for (let p = o.parent; p && p !== root; p = p.parent) hide.push(p);
+    const entry = hide.length ? { get visible() { if (!o.visible) return false; for (const p of hide) if (!p.visible) return false; return true; }, layers: o.layers, children: [o] } : o;
+    if (dyn) casts.dyn.children.push(entry);
+    else if (o.userData.sways) { casts.sway.children.push(entry); casts.sways[j++ % SLICES].children.push(entry); }
+    else casts.statics[k++ % SLICES].children.push(entry);
+  });
+  cacheReady = true;
+}
+// (three r170 filters shadow casters by the layers of the camera handed to the shadow render: a stand-in that accepts
+// every layer, since the lists already select the casters)
+const smRender = renderer.shadowMap.render, noClear = () => {}, castCam = { layers: new THREE.Layers() };
+castCam.layers.enableAll();
+function cast(l, root, clear) {
+  const clr = renderer.clear;
+  if (!clear) renderer.clear = noClear;
+  l.shadow.needsUpdate = true;
+  smRender.call(renderer.shadowMap, [l], root, castCam);
+  renderer.clear = clr;
+}
+// Per-instance culling. three culls a caster by the bounds of its whole set, and an instanced set (every far car, the
+// crowd, a forest cell) mostly overlaps the long light-space box of a near cascade while only a few of its instances fall
+// inside it: of the ~8 M triangles drawn into the two near cascades every frame, under 1 M were inside them. Before such
+// a set is drawn into a cascade, the instances inside the box are copied into a stand-in set of its own (same geometry
+// buffers, material and depth material, so the same shader), rebuilt only when the set or the cascade placement changes.
+const CULL_PAD = 1.0; // metres: wind sway and vertex animation reach past the geometry's rest bounds
+const cullRoot = list(), stands = new Map(), _cw = new THREE.Matrix4();
+let keep = new Int32Array(4096);
+function makeStand(o, cap) {
+  const g = geometryView(o.geometry), inst = [];
+  for (const k in o.geometry.attributes) {
+    const a = o.geometry.attributes[k];
+    if (a.isInstancedBufferAttribute) { const c = new THREE.InstancedBufferAttribute(new a.array.constructor(cap * a.itemSize), a.itemSize, a.normalized); c.setUsage(THREE.DynamicDrawUsage); g.attributes[k] = c; inst.push(k); }
+  }
+  const m = new THREE.InstancedMesh(g, o.material, cap);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  if (o.instanceColor) { m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3); m.instanceColor.setUsage(THREE.DynamicDrawUsage); }
+  m.castShadow = true; m.receiveShadow = o.receiveShadow; m.customDepthMaterial = o.customDepthMaterial; m.customDistanceMaterial = o.customDistanceMaterial;
+  m.frustumCulled = false; m.matrixAutoUpdate = false; m.matrixWorldAutoUpdate = false; m.layers.mask = o.layers.mask; m.renderOrder = o.renderOrder;
+  return { m, inst, cap, key: -1, n: -1, place: null, k: 0, used: 0, mw: new Float32Array(16) };
+}
+function freeStand(st) { // its own buffers only: the geometry view shares the source's
+  st.m.dispose();
+  const g = st.m.geometry, own = {}; for (const k of st.inst) own[k] = g.attributes[k];
+  g.index = null; g.attributes = own; g.morphAttributes = {}; g.dispose();
+}
+const instKey = o => { let v = o.instanceMatrix.version + (o.instanceColor ? o.instanceColor.version * 7 : 0); const A = o.geometry.attributes; for (const k in A) if (A[k].isInstancedBufferAttribute) v += A[k].version * 13; return v; };
+// the set to draw into cascade i at placement P: o itself (all inside), a stand-in, or null (none inside)
+function cullSet(o, i, P, sc) {
+  const hx = sc.right, hy = sc.top, g = o.geometry;
+  if (!g.boundingSphere) g.computeBoundingSphere();
+  const W = _cw.multiplyMatrices(sc.matrixWorldInverse, o.matrixWorld).elements;
+  const ws = Math.sqrt(Math.max(W[0] * W[0] + W[1] * W[1] + W[2] * W[2], W[4] * W[4] + W[5] * W[5] + W[6] * W[6], W[8] * W[8] + W[9] * W[9] + W[10] * W[10]));
+  if (o.frustumCulled && o.boundingSphere) { // the whole set's bounds first
+    const c = o.boundingSphere.center, R = o.boundingSphere.radius * ws + CULL_PAD;
+    const X = W[0] * c.x + W[4] * c.y + W[8] * c.z + W[12], Y = W[1] * c.x + W[5] * c.y + W[9] * c.z + W[13];
+    if (Math.abs(X) - R > hx || Math.abs(Y) - R > hy) return null;
+    if (Math.abs(X) + R <= hx && Math.abs(Y) + R <= hy) return o;
+  }
+  let a = stands.get(o); if (!a) stands.set(o, a = []);
+  let st = a[i];
+  const key = instKey(o), mw = o.matrixWorld.elements;
+  if (st && st.key === key && st.n === o.count && st.place === P) {
+    let same = true; for (let q = 0; q < 16 && same; q++) same = st.mw[q] === mw[q];
+    if (same) { st.used = csmFrame; return st.k === o.count ? o : st.k ? st.m : null; }
+  }
+  const A = o.instanceMatrix.array, n = o.count, bs = g.boundingSphere, cx = bs.center.x, cy = bs.center.y, cz = bs.center.z, br = bs.radius * ws;
+  if (keep.length < n) keep = new Int32Array(n * 2);
+  let k = 0;
+  for (let j = 0; j < n; j++) {
+    const b = j * 16, a0 = A[b], a1 = A[b + 1], a2 = A[b + 2], a4 = A[b + 4], a5 = A[b + 5], a6 = A[b + 6], a8 = A[b + 8], a9 = A[b + 9], a10 = A[b + 10];
+    const s2 = Math.max(a0 * a0 + a1 * a1 + a2 * a2, a4 * a4 + a5 * a5 + a6 * a6, a8 * a8 + a9 * a9 + a10 * a10);
+    if (s2 === 0) continue; // a zero-scaled (hidden) instance
+    const x = a0 * cx + a4 * cy + a8 * cz + A[b + 12], y = a1 * cx + a5 * cy + a9 * cz + A[b + 13], z = a2 * cx + a6 * cy + a10 * cz + A[b + 14];
+    const R = br * Math.sqrt(s2) + CULL_PAD, X = W[0] * x + W[4] * y + W[8] * z + W[12], Y = W[1] * x + W[5] * y + W[9] * z + W[13];
+    if (X - R > hx || -X - R > hx || Y - R > hy || -Y - R > hy) continue;
+    keep[k++] = j;
+  }
+  if (k && k < n) {
+    if (!st || !st.m || st.cap < k) { if (st && st.m) freeStand(st); st = a[i] = makeStand(o, Math.max(32, Math.ceil(k * 1.5))); }
+    const m = st.m, B = m.instanceMatrix.array;
+    for (let q = 0; q < k; q++) { const s0 = keep[q] * 16, d0 = q * 16; for (let e = 0; e < 16; e++) B[d0 + e] = A[s0 + e]; }
+    m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, k * 16); m.instanceMatrix.needsUpdate = true;
+    const cols = [];
+    if (o.instanceColor) cols.push([o.instanceColor, m.instanceColor]);
+    for (const name of st.inst) cols.push([g.attributes[name], m.geometry.attributes[name]]);
+    for (const [src, dst] of cols) {
+      const S0 = src.array, D0 = dst.array, w = src.itemSize;
+      for (let q = 0; q < k; q++) { const s0 = keep[q] * w, d0 = q * w; for (let e = 0; e < w; e++) D0[d0 + e] = S0[s0 + e]; }
+      dst.clearUpdateRanges(); dst.addUpdateRange(0, k * w); dst.needsUpdate = true;
+    }
+    m.count = k; m.matrixWorld.copy(o.matrixWorld);
+  } else if (!st) st = a[i] = { m: null, inst: [], cap: 0, key: -1, n: -1, place: null, k: 0, used: 0, mw: new Float32Array(16) };
+  st.key = key; st.n = n; st.place = P; st.k = k; st.used = csmFrame; st.mw.set(mw);
+  return k === n ? o : k ? st.m : null;
+}
+// stand-ins unused for a while (their set left the cascades, or was never seen again) are freed
+function evictStands() {
+  for (const [o, a] of stands) {
+    let live = false;
+    for (let i = 0; i < a.length; i++) { const st = a[i]; if (!st) continue; if (csmFrame - st.used > 900) { if (st.m) freeStand(st); a[i] = null; } else live = true; }
+    if (!live) stands.delete(o);
+  }
+}
+const cullable = o => o.isInstancedMesh && !o.geometry.isInstancedBufferGeometry && o.count > 4 && !Object.values(o.geometry.attributes).some(a => a.isInterleavedBufferAttribute);
+function castCulled(l, i, root, P, clear) {
+  l.shadow.updateMatrices(l);
+  const sc = l.shadow.camera, out = cullRoot.children; out.length = 0;
+  for (const e of root.children) {
+    if (!e.visible) continue;
+    const o = e.isObject3D ? e : e.children[0];
+    if (!cullable(o)) { out.push(e); continue; }
+    const r = cullSet(o, i, P, sc);
+    if (r === o) out.push(e); else if (r) out.push(r);
+  }
+  cast(l, cullRoot, clear);
+  out.length = 0;
+}
+function placeLight(l, P) {
+  l.target.position.copy(P.center); l.position.copy(P.center).addScaledVector(P.dir, CSM_D);
+  l.target.updateMatrixWorld(); l.updateMatrixWorld();
+}
+function blitMap(src, dst) { // colour (packed depth) and depth buffer, same size and formats
+  const gl = renderer.getContext(), st = renderer.state, P = renderer.properties, w = dst.width, h = dst.height;
+  st.bindFramebuffer(gl.READ_FRAMEBUFFER, P.get(src).__webglFramebuffer); st.bindFramebuffer(gl.DRAW_FRAMEBUFFER, P.get(dst).__webglFramebuffer);
+  gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT, gl.NEAREST);
+  st.bindFramebuffer(gl.READ_FRAMEBUFFER, null); st.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+}
+function cacheRT(l) { return new THREE.WebGLRenderTarget(l.shadow.mapSize.x, l.shadow.mapSize.y, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter }); }
+// draw static lists [s0, s1) at placement C.next into the map `into` (the first list clears it)
+function renderStatic(i, l, C, s0, s1, into) {
+  placeLight(l, C.next);
+  const map = l.shadow.map; l.shadow.map = into;
+  for (let s = s0; s < s1; s++) { if (i < NEAR_CASCADES) castCulled(l, i, casts.statics[s], C.next, s === 0); else { cast(l, casts.statics[s], s === 0); cast(l, casts.sways[s], false); } }
+  l.shadow.map = map;
+}
+function updateCachedCascade(i) {
+  const l = cascades[i], C = shadowCache[i]; if (!C) return;
+  if (!C.front) { if (!C.next) return; C.front = cacheRT(l); C.back = cacheRT(l); renderStatic(i, l, C, 0, SLICES, C.front); C.cur = C.next; C.next = null; C.slice = -1; C.show = true; }
+  else if (C.slice >= 0) {
+    const per = Math.ceil(SLICES / (SLICE_FRAMES[i] || SLICES)), s0 = C.slice * per, s1 = Math.min(SLICES, s0 + per);
+    renderStatic(i, l, C, s0, s1, C.back);
+    if (s1 >= SLICES) { const t = C.front; C.front = C.back; C.back = t; C.cur = C.next; C.next = null; C.slice = -1; C.show = true; }
+    else { C.slice++; if (!C.show) { placeLight(l, C.cur); l.shadow.updateMatrices(l); } } // the shadow matrix must keep matching the shown map
+  }
+  if (!C.show) return;
+  placeLight(l, C.cur);
+  if (!l.shadow.map) cast(l, casts.dyn, true); // (three allocates the shadow map on its first render)
+  blitMap(C.front, l.shadow.map);
+  castCulled(l, i, casts.dyn, C.cur, false);
+  if (i < NEAR_CASCADES) castCulled(l, i, casts.sway, C.cur, false);
+  C.show = false;
+}
+// wrapped: once a frame, with the scene render that updates shadows (not the mirror pass or the environment capture)
+let cacheFrame = -1;
+renderer.shadowMap.render = function (lights, scn, cam) {
+  if (!cacheReady) return smRender.call(this, lights, scn, cam);
+  if (!this.enabled || scn !== scene || !(this.autoUpdate || this.needsUpdate) || cacheFrame === csmFrame) return;
+  cacheFrame = csmFrame;
+  for (let i = 0; i < cascades.length; i++) updateCachedCascade(i);
+  if (csmFrame % 300 === 0) evictStands();
+};
 applyShadowQuality();
 
 // ---------------------------------------------------------------- update
@@ -293,9 +506,8 @@ export function updateSky(force) {
   envTimer -= 1;
   if (force || Math.abs(time.hour - lastEnvHour) > 0.05 || envTimer <= 0) {
     lastEnvHour = time.hour; envTimer = 180;
-    if (envRT) envRT.dispose();
     const tw = skyU.uTown.value.w; skyU.uTown.value.w = 0; // the glow is local: keep it out of the global ambient
-    envRT = withStandardDepth(() => pmrem.fromScene(skyScene, 0.04));
+    withStandardDepth(regenEnv);
     skyU.uTown.value.w = tw;
     scene.environment = envRT.texture;
   }
@@ -311,8 +523,9 @@ export function updateSky(force) {
   env.exposure = p.exp;
 }
 
-const lsInv = new THREE.Matrix4(), lsMat = new THREE.Matrix4(), snapV = new THREE.Vector3(), origin = new THREE.Vector3();
+const lsInv = new THREE.Matrix4(), lsMat = new THREE.Matrix4(), snapV = new THREE.Vector3(), origin = new THREE.Vector3(), _negL = new THREE.Vector3();
 let csmFrame = 0;
+const aim = [0, 1, 2, 3, 4, 5].map(() => ({ x: 0, z: -1, set: false }));
 export function followCamera(groundAt, yaw) {
   const c = camera.position;
   skyU.uTown.value.set(townGlow.x - c.x, townGlow.z - c.z, townGlow.r, townGlow.s * env.night);
@@ -324,23 +537,40 @@ export function followCamera(groundAt, yaw) {
   // every cascade box sits a little ahead of the camera, snapped to its shadow texels so edges never crawl; far
   // cascades re-render every few frames (staggered), which the eye cannot tell at their distance
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-  lsMat.lookAt(origin, env.lightDir.clone().negate(), up);
+  lsMat.lookAt(origin, _negL.copy(env.lightDir).negate(), up);
   lsInv.copy(lsMat).invert();
   csmFrame++;
-  cascades.forEach((l, i) => {
-    const [half, size] = Q.csm[i], rate = Q.csmRate[i] || 1;
-    if (csmFrame % rate !== i % rate && l.shadow.map) return;
-    const center = snapV.set(c.x + fx * half * 0.5, 0, c.z + fz * half * 0.5);
+  for (let i = 0; i < cascades.length; i++) {
+    const l = cascades[i], half = Q.csm[i][0], size = Q.csm[i][1], rate = Q.csmRate[i] || 1, cached = cacheReady;
+    if (!cached && csmFrame % rate !== i % rate && l.shadow.map) continue;
+    // cached cascades keep the direction they were aimed in until the view turns 25 degrees away from it: aimed anew on
+    // every turn, all four boxes moved with each frame of a fast turn and were redrawn continuously; the forward reach
+    // given up is under 5 % of a box
+    let ax = fx, az = fz;
+    if (cached) { const A = aim[i]; if (!A.set || A.x * fx + A.z * fz < 0.906) { A.x = fx; A.z = fz; A.set = true; } ax = A.x; az = A.z; }
+    const center = snapV.set(c.x + ax * half * 0.5, 0, c.z + az * half * 0.5);
     center.y = groundAt(center.x, center.z);
     center.applyMatrix4(lsInv);
     const texel = (half * 2) / size;
     center.x = Math.round(center.x / texel) * texel; center.y = Math.round(center.y / texel) * texel;
     center.applyMatrix4(lsMat);
+    if (cached) { // keep the cached placement until the cascade has to move; the moving casters update at the cascade's rate
+      const C = shadowCache[i] || (shadowCache[i] = { cur: null, next: null, slice: -1, show: false, front: null, back: null });
+      const ref = C.next || C.cur;
+      if (!ref || (C.slice < 0 && !C.next && (ref.center.distanceTo(center) > half * 0.08 || ref.dir.dot(env.lightDir) < 0.999994))) {
+        C.next = { center: center.clone(), dir: env.lightDir.clone() }; if (C.front) C.slice = 0;
+      }
+      if (csmFrame % rate === i % rate || C.late) { C.late = false;
+        // two far cascades never redraw their moving casters in the same frame (every 2nd and every 3rd frame met every
+        // 6th): the later one waits a frame
+        if (i >= NEAR_CASCADES && i > 0 && shadowCache[i - 1] && shadowCache[i - 1].show && i - 1 >= NEAR_CASCADES) C.late = true; else C.show = true; }
+      continue;
+    }
     l.target.position.copy(center);
     l.position.copy(center).addScaledVector(env.lightDir, CSM_D);
     l.target.updateMatrixWorld(); l.updateMatrixWorld();
     l.shadow.needsUpdate = true;
-  });
+  }
   for (let i = 1; i < cascades.length; i++) cascades[i].color.setRGB(0, 0, 0);
   fogU.fogParams.value.x = c.y;
   // aerial perspective: terrain and forests now reach the horizon, so the haze no longer hides a draw distance; it only

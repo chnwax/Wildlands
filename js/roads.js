@@ -52,11 +52,16 @@ function segInter(a, b, c, d) {
 // arris, then the footway rising 1.2 % away from the road. drop (0..1) lowers it for driveways and crossings.
 // drop 1..2 goes on from the lowered kerb to flush: kerb, footway and apron all at road level (the landing of a level
 // crossing, where the footway runs level onto the deck's footway panels)
-function kerbProfile(walk, drop) {
+function kerbProfile(walk, drop, out) {
   const f = clamp(drop - 1, 0, 1), d = Math.min(drop, 1);
   const kh = f > 0 ? lerp(0.025, 0, f) : lerp(0.15, 0.025, d), top = kh + 0.01 * (1 - f), ap = 0.004 * (1 - f);
-  return [[0, 0], [0.3, ap], [0.3, Math.max(kh - 0.02, ap)], [0.325, kh], [0.45, kh], [0.46, top], [walk, top + walk * 0.012 * (1 - d)], [walk, -0.12]];
+  if (!out) return [[0, 0], [0.3, ap], [0.3, Math.max(kh - 0.02, ap)], [0.325, kh], [0.45, kh], [0.46, top], [walk, top + walk * 0.012 * (1 - d)], [walk, -0.12]];
+  // the same profile written into a reused array (height queries run every frame for walkers and cars)
+  const P = out; P[0][0] = 0; P[0][1] = 0; P[1][0] = 0.3; P[1][1] = ap; P[2][0] = 0.3; P[2][1] = Math.max(kh - 0.02, ap); P[3][0] = 0.325; P[3][1] = kh;
+  P[4][0] = 0.45; P[4][1] = kh; P[5][0] = 0.46; P[5][1] = top; P[6][0] = walk; P[6][1] = top + walk * 0.012 * (1 - d); P[7][0] = walk; P[7][1] = -0.12;
+  return P;
 }
+const _kp = Array.from({ length: 8 }, () => [0, 0]);
 // concrete L-gutter; drop above 1 flattens it into a flush concrete shoulder
 const GUTTER = [[0, 0], [0.06, -0.018], [0.26, -0.018], [0.3, 0.0], [0.3, 0.05], [0.4, 0.05], [0.4, -0.1]];
 const gutterProfile = drop => { const f = clamp(drop - 1, 0, 1); return f <= 0 ? GUTTER : GUTTER.map(([q, v], i) => [q, i === GUTTER.length - 1 ? v : v * (1 - f)]); };
@@ -127,7 +132,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
   const CONT = 9;
   const baseKind = n => n.R.kind === 'lane' || n.R.kind === 'road' ? 'gutter' : 'skirt';
   for (const n of net) { n.ws = { 1: n.walk ? [[0, n.PL.len, n.walk]] : [], [-1]: n.walk ? [[0, n.PL.len, n.walk]] : [] }; n.ends = []; }
-  const wsAt = (n, side, s) => { let w = 0; for (const [a, b, ww] of n.ws[side] || []) if (s >= a - 1e-6 && s <= b + 1e-6) w = Math.max(w, ww); return w; };
+  const wsAt = (n, side, s) => { let w = 0; const L = n.ws[side]; if (L) for (const q of L) if (s >= q[0] - 1e-6 && s <= q[1] + 1e-6) w = Math.max(w, q[2]); return w; };
   for (const I of inters) for (const cr of I.corners) {
     const sides = [[cr.a, cr.a.dir], [cr.b, -cr.b.dir]], wMax = Math.max(cr.a.n.walk, cr.b.n.walk);
     if (!wMax) continue;
@@ -161,7 +166,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     else { cr.dropA = cr.dropB = false; }
   }
   const inClip = (n, s) => n.clips.some(([a, b]) => s > a + 1e-3 && s < b - 1e-3);
-  const clipDist = (n, s) => { let m = 1e9; for (const [a, b] of n.clips) m = Math.min(m, s < a ? a - s : s > b ? s - b : 0); for (const [a, b] of n.flats || []) m = Math.min(m, s < a ? a - s : s > b ? s - b : 0); return m; };
+  const clipDist = (n, s) => { let m = 1e9; for (const c of n.clips) m = Math.min(m, s < c[0] ? c[0] - s : s > c[1] ? s - c[1] : 0); if (n.flats) for (const c of n.flats) m = Math.min(m, s < c[0] ? c[0] - s : s > c[1] ? s - c[1] : 0); return m; };
   const crown = (n, s, u) => (CROWN[n.R.kind] || 0) * smoothstep(0, FADE, clipDist(n, s)) * (1 - (clamp(u, -n.hw, n.hw) / n.hw) ** 2);
   // world point on road n at arclength s, lateral u (left positive), lifted by `lift`
   const P = (n, s, u, lift = 0) => { const q = sampleAt(n.PL, s), l = rot(q.d), x = q.x + l[0] * u, z = q.z + l[1] * u; return V(x, baseY(x, z) + crown(n, s, u) + lift, z); };
@@ -229,14 +234,15 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
   };
   for (const n of net) for (const g of n.PL.segs) { const e = n.hw + Math.max(n.walk, ...n.ws[1].map(q => q[2]), ...n.ws[-1].map(q => q[2]), 0) + 0.5; addBox(Math.min(g.a[0], g.b[0]) - e, Math.min(g.a[1], g.b[1]) - e, Math.max(g.a[0], g.b[0]) + e, Math.max(g.a[1], g.b[1]) + e, { n, g }); }
   for (const I of inters) for (const cr of I.corners) addBox(cr.O[0] - cr.rF, cr.O[1] - cr.rF, cr.O[0] + cr.rF, cr.O[1] + cr.rF, { cr });
-  const near = (x, z) => grid.get(key(Math.floor(x / CELLSZ), Math.floor(z / CELLSZ))) || [];
-  // nearest road (within its carriageway) at a point: {n, s, u}
+  const NONE = [], near = (x, z) => grid.get(key(Math.floor(x / CELLSZ), Math.floor(z / CELLSZ))) || NONE;
+  // nearest road (within its carriageway) at a point: {n, s, u} — one reused result, valid until the next call
+  const _ra = { d: 0, n: null, s: 0, u: 0 };
   const roadAt = (x, z) => {
     let best = null;
     for (const it of near(x, z)) {
       if (!it.g) continue;
-      const { n, g } = it, t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), px = g.a[0] + g.d[0] * t, pz = g.a[1] + g.d[1] * t, d = Math.hypot(x - px, z - pz);
-      if (d < n.hw + 1e-3 && (!best || d < best.d)) { const l = rot(g.d); best = { d, n, s: g.s0 + t, u: (x - px) * l[0] + (z - pz) * l[1] }; }
+      const { n, g } = it, t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), px = g.a[0] + g.d[0] * t, pz = g.a[1] + g.d[1] * t, ex = x - px, ez = z - pz, d = Math.sqrt(ex * ex + ez * ez);
+      if (d < n.hw + 1e-3 && (!best || d < best.d)) { best = _ra; best.d = d; best.n = n; best.s = g.s0 + t; best.u = ex * -g.d[1] + ez * g.d[0]; }
     }
     return best;
   };
@@ -384,17 +390,18 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         let span = a2 - a1; while (span > Math.PI) span -= 2 * Math.PI; while (span < -Math.PI) span += 2 * Math.PI;
         let rel = aa - a1; while (rel > Math.PI) rel -= 2 * Math.PI; while (rel < -Math.PI) rel += 2 * Math.PI;
         if (rel * Math.sign(span) < 0 || Math.abs(rel) > Math.abs(span)) continue;
-        const e = [cr.O[0] + (x - cr.O[0]) / r * cr.rF, cr.O[1] + (z - cr.O[1]) / r * cr.rF];
+        const ex = cr.O[0] + (x - cr.O[0]) / r * cr.rF, ez = cr.O[1] + (z - cr.O[1]) / r * cr.rF;
         const arcL = Math.abs(span) * cr.rF, sa = Math.abs(rel) * cr.rF;
         const drop = Math.max(cr.dropA ? 1 - smoothstep(0.6, 2.2, sa) : 0, cr.dropB ? smoothstep(arcL - 2.2, arcL - 0.6, sa) : 0);
-        return baseY(e[0], e[1]) + profileY(kerbProfile(cr.walk, drop), cr.rF - r);
+        return baseY(ex, ez) + profileY(kerbProfile(cr.walk, drop, _kp), cr.rF - r);
       }
       const { n, g } = it; if (!n.ws[1].length && !n.ws[-1].length) continue;
-      const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), l = rot(g.d), u = (x - g.a[0] - g.d[0] * t) * l[0] + (z - g.a[1] - g.d[1] * t) * l[1];
+      const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), u = (x - g.a[0] - g.d[0] * t) * -g.d[1] + (z - g.a[1] - g.d[1] * t) * g.d[0];
       const au = Math.abs(u), side = Math.sign(u), s = g.s0 + t, w = wsAt(n, side, s);
       if (!w || au < n.hw || au > n.hw + w) continue;
-      if (!RN.runs.some(r => r[0] === n && r[1] === side && r[4] === 'walk' && s >= r[2] && s <= r[3])) continue;
-      return baseY(x, z) + profileY(kerbProfile(w, cutAt(n, side, s)), au - n.hw);
+      let run = false; for (const r of RN.runs) if (r[0] === n && r[1] === side && r[4] === 'walk' && s >= r[2] && s <= r[3]) { run = true; break; }
+      if (!run) continue;
+      return baseY(x, z) + profileY(kerbProfile(w, cutAt(n, side, s), _kp), au - n.hw);
     }
     return null;
   };

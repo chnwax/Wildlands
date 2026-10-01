@@ -1,5 +1,5 @@
 // Railway: double track (1067 mm gauge), catenary, tunnels, girder bridge, station, level crossings, EMU trains.
-import { THREE, scene, S, clamp, lerp, smoothstep, mulberry32, addBox, addCircle, addPlatform } from './core.js';
+import { THREE, scene, S, clamp, lerp, smoothstep, mulberry32, addBox, addCircle, addPlatform, swapsTo } from './core.js';
 import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints, glowMats, wireMat } from './townkit.js';
 import { Emitter, audio } from './audio.js';
 import { stationBuilding } from './station.js';
@@ -473,7 +473,7 @@ function warningPost(B, c, x, y, z, { H = 3.45, lampY = 2.3, span = 0.6, faces =
       for (const pr of [hood, [...hood].reverse()]) B.sweep('dark', pr, [[lx, lampY, 0.19], [lx, lampY, 0.42]], { color: [0.05, 0.05, 0.05] });
       const l = new THREE.Mesh(new THREE.CircleGeometry(0.115 * k, 20), lampOff);
       l.position.set(x + fx * 0.205 + Math.cos(face) * lx, y + lampY, z + fz * 0.205 - Math.sin(face) * lx); l.rotation.y = face; scene.add(l);
-      c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 });
+      swapsTo(l, lampOn, lampOff); c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 });
     }
     // direction indicator under the target: a black box with arrow lamps
     B.bbox('dark', 0, lampY - 0.66, 0.08, 0.56, 0.2, 0.1, 0.02, { color: BLACK });
@@ -547,8 +547,8 @@ function barrierMachine(B, c, x, y, z, { side, m, armL, pivotY = 0.98, reach = 0
   for (const lx of lampAt) add(D, new THREE.BoxGeometry(0.075, 0.1, 0.09), lx, r0 + 0.05, side * 0.03);
   const mk = (list, mat) => { if (!list.length) return; const g = mergeGeometries(list.map(q => q.index ? q.toNonIndexed() : q)); const me = new THREE.Mesh(g, mat); me.castShadow = true; pv.add(me); };
   mk(G, galvMat); mk(W, castMat); mk(BM, boomMat); mk(D, castMat);
-  lampAt.forEach((lx, i) => { for (const f of [-1, 1]) { const l = new THREE.Mesh(new THREE.CircleGeometry(0.032, 12), lampOff); l.position.set(lx, r0 + 0.05, side * 0.03 + f * 0.047); l.rotation.y = f > 0 ? 0 : Math.PI; pv.add(l); c.lamps.push({ m: l, phase: i % 2, steady: i === 2, boom: true }); } });
-  scene.add(pv);
+  lampAt.forEach((lx, i) => { for (const f of [-1, 1]) { const l = new THREE.Mesh(new THREE.CircleGeometry(0.032, 12), lampOff); l.position.set(lx, r0 + 0.05, side * 0.03 + f * 0.047); l.rotation.y = f > 0 ? 0 : Math.PI; pv.add(l); swapsTo(l, lampOn, lampOff); c.lamps.push({ m: l, phase: i % 2, steady: i === 2, boom: true }); } });
+  pv.userData.dynamicCaster = true; scene.add(pv);
   c.arms.push({ pivot: pv, side: m, len: armL, x0: x, z: z + side * reach });
   // the boom rest on the far side: a galvanised post with a rubber-lined fork at boom height
   if (restX !== null) {
@@ -828,6 +828,7 @@ function makeCar(cab, panto) {
     for (const z of [-1.05, 1.05]) {
       lights.head.push(box(g, T.off, x + cab * 0.72, 1.55, z * 0.95, 0.03, 0.18, 0.35));
       lights.tail.push(box(g, T.off, x + cab * 0.72, 1.55, z * 0.62, 0.03, 0.14, 0.2));
+      swapsTo(lights.head.at(-1), T.head, T.off, T.tail);
     }
     box(g, T.under, x + cab * 0.5, 0.7, 0, 0.35, 0.6, 2.4); // skirt
   }
@@ -856,6 +857,7 @@ export class Train {
       c.g.position.x = (i - (cars - 1) / 2) * 20;
       this.group.add(c.g); this.cars.push(c);
     }
+    this.group.userData.dynamicCaster = true; // (moving: its shadow is redrawn in every cascade update, sky.js)
     scene.add(this.group);
     this.sound = new Emitter('train');
     this.state = 'hidden'; this.wait = 0; this.v = 0; this.acc = 0; this.x = 0; this.dir = 1; this.track = 0; this.horn = 0;

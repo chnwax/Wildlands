@@ -136,6 +136,19 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(pixelRatio());
 renderer.toneMapping = THREE.NeutralToneMapping; // keeps hues and saturation intact (the look is painted, not filmic)
 renderer.toneMappingExposure = 1.0; // the real exposure is applied when the scene is resolved (post.js)
+// Opaque draw order: solid surfaces, then alpha-tested foliage, then grass, then the terrain (the sky comes after all, by
+// its renderOrder). Drawn last, the terrain's layered shader is depth-rejected wherever something stands on it, and the
+// foliage wherever a wall hides it; within a class three's order (by material, then front to back) keeps state changes
+// few. Measured: 0.7-1 ms of GPU time where the ground is mostly covered (park, aerial view), the image unchanged.
+// (the class is kept on the material: the sort runs a few hundred thousand comparisons a second)
+const drawClass = m => { let c = m._drawClass; if (c === undefined) c = m._drawClass = m.userData.drawClass ?? (m.alphaTest > 0 ? 1 : 0); return c; };
+renderer.setOpaqueSort((a, b) => {
+  if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder;
+  if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
+  const ma = a.material, mb = b.material;
+  if (ma !== mb) { const ca = drawClass(ma), cb = drawClass(mb); if (ca !== cb) return ca - cb; return ma.id - mb.id; }
+  return a.z !== b.z ? a.z - b.z : a.id - b.id;
+});
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 export const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -326,57 +339,320 @@ export function addPlatform(x, z, hx, hz, a, top) {
   colAdd({ t: 1, walk: true, x, z, hx, hz, c: Math.cos(a), s: Math.sin(a), y0: -1e9, y1: top }, x - R, z - R, x + R, z + R);
 }
 
-// ---------------------------------------------------------------- cell-based instancing with LOD + distance culling
+// ---------------------------------------------------------------- cell-based instancing with per-item LOD + culling
 export const scatters = [];
+const _white = new THREE.Color(1, 1, 1);
+const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _ss = new THREE.Vector3(), _sp = new THREE.Vector3(), _se = new THREE.Euler();
+const SC_MOVE = 2, SC_BUDGET = 60000; // re-evaluate a straddling cell after the camera moved this far; items per frame
+// Scenery repeated many times (trees, bushes, rocks, props, bicycles), drawn as instanced meshes per spatial cell.
+// Every item keeps its index in scatter.items as its identity; its transform and colour live in scatter.mat / scatter.col
+// and the renderer shows it wherever its level of detail currently puts it (locate(i), setItemMatrix(i, m)).
+// With several levels of detail each item picks its level from its own distance to the camera (with a little hysteresis),
+// so a level switches at the same distance for every item instead of a whole cell at once:
+//   level 0 (full detail, near) is bounded tightly round the items currently at it, so what is behind the camera is
+//   culled; the far levels keep their cell's bounds (cells widened for sparse or light far levels, see below).
+// Each cell and level draws a compact list of the items at that level; an item changing level is appended to one list
+// and swap-removed from the other, so only a couple of instance slots are rewritten and uploaded per change.
+// A single-level scatter keeps whole-cell visibility (cells within the level's distance are drawn).
+const cp16 = (d, dk, s, si) => { for (let j = 0; j < 16; j++) d[dk + j] = s[si + j]; }, cp3 = (d, dk, s, si) => { d[dk] = s[si]; d[dk + 1] = s[si + 1]; d[dk + 2] = s[si + 2]; };
 export class Scatter {
-  // items: {x,y,z,s,sx?,sy?,r?,tilt?,tilt2?,c?}; lods: [{dist: () => metres, parts: [{geometry, material, tint?, castShadow?, depth?}]}]
+  // items: {x,y,z,s,sx?,sy?,r?,tilt?,tilt2?,c?}; lods: [{dist: () => metres, parts: [{geometry, material, tint?, castShadow?, depth?, receiveShadow?}]}]
   constructor(items, lods, cellSize, origin = 4096) {
-    this.cells = []; this.lods = lods;
-    const map = new Map();
-    for (const it of items) {
-      const k = Math.floor((it.x + origin) / cellSize) + ',' + Math.floor((it.z + origin) / cellSize);
-      if (!map.has(k)) map.set(k, []); map.get(k).push(it);
+    this.items = items; this.lods = lods; this.id = scatters.length; this.multi = lods.length > 1;
+    const N = items.length;
+    this.mat = new Float32Array(N * 16); this.scale = new Float32Array(N);
+    items.forEach((it, i) => {
+      _se.set(it.tilt || 0, it.r || 0, it.tilt2 || 0); _sq.setFromEuler(_se);
+      _ss.set(it.s * (it.sx || 1), it.s * (it.sy || 1), it.s * (it.sz || it.sx || 1)); _sp.set(it.x, it.y, it.z);
+      _sm.compose(_sp, _sq, _ss).toArray(this.mat, i * 16);
+      this.scale[i] = it.s * Math.max(it.sx || 1, it.sy || 1, it.sz || it.sx || 1);
+    });
+    // instance colours per tint key (tint: true = it.c, or another item key); a tinted part always carries them (white
+    // where an item has none), so every mesh sharing a material has the same shader variant
+    this.col = new Map();
+    for (const lod of lods) for (const part of lod.parts) if (part.tint && !this.col.has(part.tint)) {
+      const a = new Float32Array(N * 3);
+      items.forEach((it, i) => { const c = (part.tint === true ? it.c : it[part.tint]) || _white; a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; });
+      this.col.set(part.tint, a);
     }
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
-    for (const [k, list] of map) {
-      const [ci, cj] = k.split(',').map(Number);
-      const cell = { minX: -origin + ci * cellSize, maxX: -origin + (ci + 1) * cellSize, minZ: -origin + cj * cellSize, maxZ: -origin + (cj + 1) * cellSize, lods: [], cur: -2 };
-      for (const lod of lods) {
-        const meshes = [];
-        for (const part of lod.parts) {
-          const im = new THREE.InstancedMesh(part.geometry, part.material, list.length);
-          list.forEach((it, i) => {
-            e.set(it.tilt || 0, it.r || 0, it.tilt2 || 0); q.setFromEuler(e);
-            s.set(it.s * (it.sx || 1), it.s * (it.sy || 1), it.s * (it.sz || it.sx || 1)); p.set(it.x, it.y, it.z);
-            im.setMatrixAt(i, m.compose(p, q, s));
-            const tc = part.tint === true ? it.c : part.tint ? it[part.tint] : null; // tint: true = it.c, or another key
-            if (tc) im.setColorAt(i, tc);
-          });
-          im.castShadow = !!part.castShadow; im.receiveShadow = part.receiveShadow !== false; im.visible = false;
-          // small things (crates, pots, weeds, bikes) cast shadows only into the near cascades (layer 3, see sky.js)
-          if (!part.geometry.boundingSphere) part.geometry.computeBoundingSphere();
-          const smax = list.reduce((m, it) => Math.max(m, it.s * Math.max(it.sx || 1, it.sy || 1, it.sz || it.sx || 1)), 0);
-          if (part.geometry.boundingSphere.radius * smax < 1.2) im.layers.set(3);
-          im.matrixAutoUpdate = false; im.matrixWorldAutoUpdate = false; // static at the origin: skip the per-frame matrix walk
-          if (part.depth) im.customDepthMaterial = part.depth;
-          im.computeBoundingSphere();
-          meshes.push(im); scene.add(im);
-        }
-        cell.lods.push(meshes);
-      }
-      this.cells.push(cell);
+    const group = size => { const m = new Map(); items.forEach((it, i) => { const k = Math.floor((it.x + origin) / size) + ',' + Math.floor((it.z + origin) / size); if (!m.has(k)) m.set(k, []); m.get(k).push(i); });
+      return [...m].map(([k, list]) => { const [ci, cj] = k.split(',').map(Number); return { minX: -origin + ci * size, maxX: -origin + (ci + 1) * size, minZ: -origin + cj * size, maxZ: -origin + (cj + 1) * size, idx: Int32Array.from(list) }; }); };
+    if (!this.multi) {
+      this.cells = group(cellSize);
+      for (const c of this.cells) { c.box = this._box(0, c.idx, true); c.cur = -2; }
+      scatters.push(this);
+      return;
     }
+    this.fine = group(cellSize);
+    // the far levels' cells are widened until a cell holds about 12k triangles: a draw call costs about as much GPU time
+    // as that many off-screen triangles (measured), so sparse species and card levels share few wide cells while dense
+    // stands keep the fine ones
+    let farTris = 0; for (let l = 1; l < lods.length; l++) for (const p of lods[l].parts) farTris += (p.geometry.index ? p.geometry.index.count : p.geometry.attributes.position.count) / 3;
+    const perCell = N * farTris / Math.max(1, this.fine.length), grow = Math.min(8, 2 ** Math.max(0, Math.floor(Math.log2(Math.sqrt(12000 / Math.max(perCell, 1))))));
+    this.coarse = grow > 1 ? group(cellSize * grow) : this.fine.map(c => ({ ...c })); this.cells = this.coarse;
+    this.lod = new Int8Array(N).fill(-2); this.slot = new Int32Array(N); this.fineOf = new Int32Array(N); this.coarseOf = new Int32Array(N);
+    this.fine.forEach((c, ci) => { for (const i of c.idx) this.fineOf[i] = ci; c.box = this._box(0, c.idx, false); c.box.tight = true; });
+    this.coarse.forEach((c, ci) => { for (const i of c.idx) this.coarseOf[i] = ci; c.boxes = lods.map((lod, l) => l === 0 ? null : this._box(l, c.idx, false)); c.uniform = -3; c.ex = c.ez = 1e9; });
+    this.boxes = []; for (const c of this.fine) this.boxes.push(c.box); for (const c of this.coarse) for (const b of c.boxes) if (b) this.boxes.push(b);
+    this.D = new Float64Array(lods.length); this.Dkey = ''; this.primed = false;
     scatters.push(this);
   }
-  update(x, z) {
-    for (const c of this.cells) {
-      const dx = Math.max(c.minX - x, 0, x - c.maxX), dz = Math.max(c.minZ - z, 0, z - c.maxZ), d = Math.hypot(dx, dz);
-      let sel = -1;
-      for (let i = 0; i < this.lods.length; i++) if (d < this.lods[i].dist()) { sel = i; break; }
-      if (sel !== c.cur) { c.lods.forEach((ms, i) => ms.forEach(mm => mm.visible = i === sel)); c.cur = sel; }
+  // a cell's draw list for one level: one instanced mesh per part over (at most) the items idx
+  _box(l, idx, full) {
+    const parts = this.lods[l].parts, n = idx.length;
+    const box = { l, parts, list: full ? idx : new Int32Array(n), n: full ? n : 0, dirty: [], tight: false, meshes: [] };
+    for (const part of parts) {
+      const im = new THREE.InstancedMesh(part.geometry, part.material, n);
+      if (part.tint) im.setColorAt(0, _white);
+      im.castShadow = !!part.castShadow; im.receiveShadow = part.receiveShadow !== false; im.visible = false;
+      // small things (crates, pots, weeds, bikes) cast shadows only into the near cascades (layer 3, see sky.js)
+      if (!part.geometry.boundingSphere) part.geometry.computeBoundingSphere();
+      let smax = 0; for (const i of idx) smax = Math.max(smax, this.scale[i]);
+      if (part.geometry.boundingSphere.radius * smax < 1.2) im.layers.set(3);
+      im.matrixAutoUpdate = false; im.matrixWorldAutoUpdate = false; // static at the origin: skip the per-frame matrix walk
+      if (part.depth) im.customDepthMaterial = part.depth;
+      im.userData.scatter = this; im.userData.sways = !!part.sway; im.boundingSphere = this._bounds(idx, n, part.geometry, new THREE.Sphere()); // (sways: its shadow moves, sky.js)
+      im.count = box.n;
+      scene.add(im); box.meshes.push(im);
+    }
+    if (full) for (let k = 0; k < n; k++) this._write(box, k, idx[k]);
+    return box;
+  }
+  _write(box, k, i) {
+    for (let p = 0; p < box.meshes.length; p++) {
+      const m = box.meshes[p]; cp16(m.instanceMatrix.array, k * 16, this.mat, i * 16);
+      if (m.instanceColor) cp3(m.instanceColor.array, k * 3, this.col.get(box.parts[p].tint), i * 3);
     }
   }
+  _add(box, i) { const k = box.n++; box.list[k] = i; this.slot[i] = k; this._write(box, k, i); box.dirty.push(k); }
+  _remove(box, i) {
+    const k = this.slot[i], last = --box.n;
+    if (k !== last) { const j = box.list[last]; box.list[k] = j; this.slot[j] = k; this._write(box, k, j); box.dirty.push(k); }
+    box.dirty.push(-1); // (the count changed)
+  }
+  _flush(box) {
+    const D = box.dirty; if (!D.length) return;
+    D.sort((a, b) => a - b);
+    for (const m of box.meshes) {
+      m.count = box.n; m.visible = box.n > 0;
+      const a = m.instanceMatrix, c = m.instanceColor; a.clearUpdateRanges(); if (c) c.clearUpdateRanges();
+      let any = false;
+      for (let j = 0; j < D.length;) {
+        if (D[j] < 0 || D[j] >= box.n) { j++; continue; }
+        let e = j; while (e + 1 < D.length && D[e + 1] - D[e] <= 24 && D[e + 1] < box.n) e++;
+        a.addUpdateRange(D[j] * 16, (D[e] - D[j] + 1) * 16); if (c) c.addUpdateRange(D[j] * 3, (D[e] - D[j] + 1) * 3);
+        any = true; j = e + 1;
+      }
+      if (any) { a.needsUpdate = true; if (c) c.needsUpdate = true; }
+    }
+    if (box.tight && box.n) for (let p = 0; p < box.meshes.length; p++) this._bounds(box.list, box.n, box.parts[p].geometry, box.meshes[p].boundingSphere);
+    D.length = 0;
+  }
+  // bounds of the first n items of idx (positions, plus the part's reach at the largest scale)
+  _bounds(idx, n, geo, sphere) {
+    let x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9, smax = 0;
+    for (let k = 0; k < n; k++) { const i = idx[k], o = i * 16, x = this.mat[o + 12], y = this.mat[o + 13], z = this.mat[o + 14];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z; if (this.scale[i] > smax) smax = this.scale[i]; }
+    const bs = geo.boundingSphere, reach = (bs.center.length() + bs.radius) * smax;
+    sphere.center.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    sphere.radius = Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2) / 2 + reach;
+    return sphere;
+  }
+  _lodOf(d) { const D = this.D; for (let l = 0; l < D.length; l++) if (d < D[l]) return l; return -1; }
+  _boxOf(i, l) { return l === 0 ? this.fine[this.fineOf[i]].box : this.coarse[this.coarseOf[i]].boxes[l]; }
+  update(x, z) {
+    if (!this.multi) {
+      for (const c of this.cells) {
+        const dx = Math.max(c.minX - x, 0, x - c.maxX), dz = Math.max(c.minZ - z, 0, z - c.maxZ), d = Math.sqrt(dx * dx + dz * dz);
+        const sel = d < this.lods[0].dist() ? 0 : -1;
+        if (sel !== c.cur) { for (const m of c.box.meshes) m.visible = sel === 0; c.cur = sel; }
+      }
+      return;
+    }
+    let key = '';
+    for (let l = 0; l < this.lods.length; l++) { this.D[l] = this.lods[l].dist(); key += this.D[l] + ','; }
+    const force = key !== this.Dkey; this.Dkey = key;
+    let budget = this.primed && !force ? SC_BUDGET : Infinity;
+    for (const c of this.coarse) {
+      const dx = Math.max(c.minX - x, 0, x - c.maxX), dz = Math.max(c.minZ - z, 0, z - c.maxZ);
+      const fx = Math.max(Math.abs(c.minX - x), Math.abs(c.maxX - x)), fz = Math.max(Math.abs(c.minZ - z), Math.abs(c.maxZ - z));
+      const l0 = this._lodOf(Math.sqrt(dx * dx + dz * dz)), l1 = this._lodOf(Math.sqrt(fx * fx + fz * fz)), uni = l0 === l1 ? l0 : -3;
+      if (!force && uni !== -3 && c.uniform === uni) continue;
+      if (!force && uni === -3 && c.uniform === -3 && (c.ex - x) ** 2 + (c.ez - z) ** 2 < SC_MOVE * SC_MOVE) continue;
+      if (budget <= 0) break;
+      budget -= c.idx.length;
+      this._evaluate(c, x, z, uni);
+    }
+    this.primed = true;
+    for (const b of this.boxes) if (b.dirty.length) this._flush(b);
+  }
+  _evaluate(c, x, z, uni) {
+    const D = this.D, L = D.length;
+    for (let k = 0; k < c.idx.length; k++) {
+      const i = c.idx[k], lo = this.lod[i];
+      let ln = uni;
+      if (uni === -3) {
+        const o = i * 16, dx = this.mat[o + 12] - x, dz = this.mat[o + 14] - z, d = Math.sqrt(dx * dx + dz * dz);
+        ln = this._lodOf(d);
+        if (ln !== lo && lo >= -1) { // hysteresis: stay at the old level within a metre or two of the boundary between them
+          const b = D[Math.min(lo < 0 ? L - 1 : lo, ln < 0 ? L - 1 : ln)];
+          if (Math.abs(d - b) < 1.5 + 0.004 * d) ln = lo;
+        }
+      }
+      if (ln === lo) continue;
+      if (lo >= 0 && this.lods[lo].parts.length) this._remove(this._boxOf(i, lo), i);
+      if (ln >= 0 && this.lods[ln].parts.length) this._add(this._boxOf(i, ln), i);
+      this.lod[i] = ln;
+    }
+    c.uniform = uni; c.ex = x; c.ez = z;
+  }
+  // where item i is drawn now: [{mesh, instance}] per part (empty when it is out of range)
+  locate(i) {
+    if (!this.multi) { for (const c of this.cells) { const k = c.idx.indexOf(i); if (k >= 0) return c.cur === 0 ? c.box.meshes.map(mesh => ({ mesh, instance: k })) : []; } return []; }
+    const l = this.lod[i]; if (l < 0 || !this.lods[l].parts.length) return [];
+    return this._boxOf(i, l).meshes.map(mesh => ({ mesh, instance: this.slot[i] }));
+  }
+  // move / rotate / scale item i (an editor's handle): its stored transform and wherever it is drawn (an item keeps the
+  // cells it was built in; bounds of the coarse levels are fixed, so large moves belong in a rebuild)
+  setItemMatrix(i, m) {
+    m.toArray(this.mat, i * 16);
+    if (!this.multi) { for (const c of this.cells) { const k = c.idx.indexOf(i); if (k >= 0) { this._write(c.box, k, i); c.box.dirty.push(k); this._flush(c.box); } } return; }
+    const l = this.lod[i]; if (l < 0 || !this.lods[l].parts.length) return;
+    const box = this._boxOf(i, l); this._write(box, this.slot[i], i); box.dirty.push(this.slot[i]);
+  }
 }
+
+// ---------------------------------------------------------------- instanced props
+// Small props that used to be a mesh (or several) each — curve mirrors, vending machine bodies, road sign plates, pole
+// adverts — are collected while the map is built and drawn as one instanced mesh per part, material and 512 m cell
+// (flushProps). Each placed prop keeps an id: props.items[id] = {kind, parts: [{mesh, instance}]} once flushed, with its
+// world matrix per part, so it can still be picked and edited (setPropMatrix).
+export const props = { groups: new Map(), items: [], flushed: false };
+const PROP_CELL = 512;
+export function addProp(kind, parts) { // parts: [{geometry, material, matrix (world), castShadow?, receiveShadow?}]
+  const id = props.items.length, item = { id, kind, parts: [] };
+  props.items.push(item);
+  for (const p of parts) {
+    const e = p.matrix.elements, cx = Math.floor((e[12] + 4096) / PROP_CELL), cz = Math.floor((e[14] + 4096) / PROP_CELL);
+    const key = p.geometry.uuid + '|' + p.material.uuid + '|' + (p.castShadow ? 1 : 0) + (p.receiveShadow === false ? 0 : 1) + '|' + cx + ',' + cz;
+    let g = props.groups.get(key);
+    if (!g) props.groups.set(key, g = { geometry: p.geometry, material: p.material, castShadow: !!p.castShadow, receiveShadow: p.receiveShadow !== false, matrices: [], ids: [], mesh: null });
+    item.parts.push({ group: g, instance: g.matrices.length, matrix: p.matrix.clone() });
+    g.matrices.push(p.matrix.clone()); g.ids.push(id);
+  }
+  return id;
+}
+export function flushProps() {
+  for (const g of props.groups.values()) {
+    if (g.mesh) continue;
+    const im = new THREE.InstancedMesh(g.geometry, g.material, g.matrices.length);
+    g.matrices.forEach((m, i) => im.setMatrixAt(i, m));
+    im.castShadow = g.castShadow; im.receiveShadow = g.receiveShadow; im.matrixAutoUpdate = false; im.matrixWorldAutoUpdate = false;
+    im.computeBoundingSphere(); im.userData.props = g.ids;
+    scene.add(im); g.mesh = im;
+  }
+  for (const it of props.items) for (const p of it.parts) p.mesh = p.group.mesh;
+  props.flushed = true;
+}
+export function setPropMatrix(id, part, matrix) {
+  const p = props.items[id].parts[part]; p.matrix.copy(matrix); p.group.matrices[p.instance].copy(matrix);
+  if (p.mesh) { p.mesh.setMatrixAt(p.instance, matrix); p.mesh.instanceMatrix.needsUpdate = true; p.mesh.computeBoundingSphere(); }
+}
+
+// ---------------------------------------------------------------- shadow depth materials
+// three renders every shadow caster without a depth material of its own with one shared MeshDepthMaterial. Plain meshes,
+// instanced meshes and instanced meshes with colours need different shader variants of it, and the casters come in
+// scene order, so that one material switched program on nearly every draw (a program lookup that allocates each time).
+// One shared depth material per variant keeps each on its own program. Casters that need a depth material of their own
+// (alpha-tested maps, displacement) keep three's per-material copies.
+const depthShare = new Map();
+export function shareShadowDepth(root) {
+  root.traverse(o => {
+    if (!o.isMesh || !o.castShadow || o.customDepthMaterial || !o.material || Array.isArray(o.material)) return;
+    const m = o.material;
+    if ((m.displacementMap && m.displacementScale !== 0) || ((m.alphaMap || m.map) && m.alphaTest > 0) || (m.clipShadows && m.clippingPlanes && m.clippingPlanes.length)) return;
+    const side = m.shadowSide ?? (m.side === THREE.FrontSide ? THREE.BackSide : m.side === THREE.BackSide ? THREE.FrontSide : THREE.DoubleSide);
+    const key = (o.isInstancedMesh ? 1 : 0) + (o.isInstancedMesh && o.instanceColor ? 2 : 0) + (m.map ? 4 : 0) + side * 8; // (three copies map and side onto it per draw)
+    let d = depthShare.get(key);
+    if (!d) { d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); d.side = side; depthShare.set(key, d); }
+    o.customDepthMaterial = d;
+  });
+}
+
+// InstancedMeshes that share one geometry also share its vertex-array object in three (VAOs are keyed by geometry and
+// program), so every draw of the next cell re-specified all vertex attributes of the last. A view of the geometry — the
+// same attribute and index buffers, a geometry object of its own — gives each instanced mesh its own VAO.
+export function geometryView(src) {
+  const g = new THREE.BufferGeometry();
+  g.index = src.index; for (const k in src.attributes) g.attributes[k] = src.attributes[k];
+  g.morphAttributes = src.morphAttributes; g.morphTargetsRelative = src.morphTargetsRelative; g.groups = src.groups; g.drawRange = src.drawRange;
+  g.boundingSphere = src.boundingSphere; g.boundingBox = src.boundingBox; g.userData = src.userData;
+  return g;
+}
+export function ownInstanceGeometry(root) {
+  const seen = new Set();
+  root.traverse(o => { if (!o.isInstancedMesh || o.geometry.isInstancedBufferGeometry) return; if (seen.has(o.geometry)) o.geometry = geometryView(o.geometry); else seen.add(o.geometry); });
+}
+// Instanced geometry built non-indexed (merged crowns, cards, scanned props) runs the vertex shader three times per
+// triangle; GPUs reuse a vertex shared by several triangles only through an index. Vertices whose every attribute is
+// bit-identical are merged into one indexed vertex: the same triangles in the same order with the same values, drawn
+// with a fraction of the vertex work.
+export function indexInstanced(root) {
+  const done = new Set(), f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+  root.traverse(o => {
+    if (!o.isInstancedMesh) return;
+    const g = o.geometry;
+    if (done.has(g) || g.index || g.isInstancedBufferGeometry || Object.keys(g.morphAttributes).length) return;
+    done.add(g);
+    const names = Object.keys(g.attributes), attrs = names.map(k => g.attributes[k]), n = g.attributes.position.count;
+    if (attrs.some(a => a.isInterleavedBufferAttribute || a.isInstancedBufferAttribute)) return; // (per-instance data, not per-vertex)
+    const map = new Map(), remap = new Uint32Array(n), first = [];
+    for (let i = 0; i < n; i++) {
+      let key = '';
+      for (const a of attrs) for (let c = 0; c < a.itemSize; c++) { const v = a.array[i * a.itemSize + c]; if (a.array instanceof Float32Array) { f32[0] = v; key += u32[0].toString(36) + ','; } else key += v + ','; }
+      let id = map.get(key); if (id === undefined) { id = first.length; map.set(key, id); first.push(i); }
+      remap[i] = id;
+    }
+    if (first.length > n * 0.75) return; // (little shared: leave it)
+    for (let k = 0; k < names.length; k++) {
+      const a = attrs[k], arr = new a.array.constructor(first.length * a.itemSize);
+      for (let j = 0; j < first.length; j++) for (let c = 0; c < a.itemSize; c++) arr[j * a.itemSize + c] = a.array[first[j] * a.itemSize + c];
+      const na = new THREE.BufferAttribute(arr, a.itemSize, a.normalized); na.name = a.name; na.usage = a.usage; g.attributes[names[k]] = na;
+    }
+    g.setIndex(new THREE.BufferAttribute(first.length > 65535 ? remap : new Uint16Array(remap), 1));
+  });
+}
+// three draws a transparent double-sided material in two passes (back faces, then front faces) and flags the material
+// for a program change before each, so every such draw also re-resolves its shader twice. A flat mesh can only show one
+// side at any pixel, so one pass gives the same image: materials whose every user is planar draw in a single pass.
+const _pn = new THREE.Vector3(), _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3();
+function planar(g) {
+  const p = g.attributes.position; if (!p || p.count < 3) return false;
+  const idx = g.index, at = i => idx ? idx.getX(i) : i;
+  _pa.fromBufferAttribute(p, at(0)); _pb.fromBufferAttribute(p, at(1)); _pc.fromBufferAttribute(p, at(2));
+  _pn.subVectors(_pb, _pa).cross(_pc.sub(_pa)); const l = _pn.length(); if (l < 1e-12) return false; _pn.divideScalar(l);
+  const d = _pn.dot(_pa), eps = 1e-4 * (g.boundingSphere || (g.computeBoundingSphere(), g.boundingSphere)).radius + 1e-6;
+  for (let i = 0; i < p.count; i++) if (Math.abs(_pn.dot(_pb.fromBufferAttribute(p, i)) - d) > eps) return false;
+  return true;
+}
+export function singlePassFlat(root) {
+  const users = new Map();
+  root.traverse(o => { const m = o.material; if (!o.isMesh || !m || Array.isArray(m) || !m.transparent || m.side !== THREE.DoubleSide || m.forceSinglePass) return; if (!users.has(m)) users.set(m, []); users.get(m).push(o); });
+  for (const [m, list] of users) if (list.every(o => planar(o.geometry))) m.forceSinglePass = true;
+}
+// Scenery transforms never change after the build: the scene's matrices are brought up to date once a frame (main.js)
+// instead of once per render call, and root-level scenery stops recomposing its matrix every frame. Objects that move
+// by setting position/rotation carry userData.dynamic (or have children: groups such as trains keep updating).
+export function freezeStatic(root) {
+  root.matrixWorldAutoUpdate = false;
+  root.updateMatrixWorld(true);
+  for (const o of root.children) if (o.matrixAutoUpdate && !o.userData.dynamic && !o.isLight && !o.isCamera && o.children.length === 0 && (o.isMesh || o.isPoints || o.isLine)) o.matrixAutoUpdate = false;
+}
+
+// materials objects switch to at runtime (flashing crossing lamps, train head/tail lights): never on any object while
+// the game loads, so the load-time warm-up (main.js) draws each of them once on a stand-in of the object that uses it
+export const swapMaterials = [];
+export function swapsTo(mesh, ...mats) { swapMaterials.push([mesh, mats]); }
 
 // ---------------------------------------------------------------- glTF helpers
 export function extractParts(root) {

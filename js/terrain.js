@@ -1,8 +1,12 @@
 // Reusable outdoor systems: heightfield terrain with painted splat shading, GPU grass (and rice, reeds, flowers),
 // planar-reflection water, conifer forests (trees.js). Maps configure these and add their own content.
-import { THREE, scene, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt } from './core.js';
+import { THREE, scene, renderer, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt, onResize } from './core.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
 import { buildConiferForest, buildFarForest, firColor, coniferColor, broadColor } from './trees.js';
+import { perf } from './perf.js';
+import { post } from './post.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+const P_REFL = perf.id('water reflection', 1);
 
 // ---------------------------------------------------------------- heightfield
 export class Heightfield {
@@ -117,6 +121,20 @@ float hAt(vec2 p){
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
+// height at p and its central differences one cell either way (h(p+x) - h(p-x), h(p+z) - h(p-z)): the five bilinear
+// lookups share their texels, twelve reads instead of twenty (p at least two cells inside the map)
+void hAt5(vec2 p, out float h, out float hx, out float hz){
+  vec2 g = (p + uHalf) / uCell; ivec2 i = ivec2(floor(g)); vec2 f = g - vec2(i);
+  #define HT(a, b) texelFetch(tHeight, i + ivec2(a, b), 0).r
+  float m0 = HT(-1, 0), a = HT(0, 0), b = HT(1, 0), p0 = HT(2, 0), m1 = HT(-1, 1), c = HT(0, 1), d = HT(1, 1), p1 = HT(2, 1);
+  float s0 = HT(0, -1), s1 = HT(1, -1), n0 = HT(0, 2), n1 = HT(1, 2);
+  #undef HT
+  #define BIL(a, b, c, d) mix(mix(a, b, f.x), mix(c, d, f.x), f.y)
+  h = BIL(a, b, c, d);
+  hx = BIL(b, p0, d, p1) - BIL(m0, a, m1, c);
+  hz = BIL(c, d, n0, n1) - BIL(s0, s1, a, b);
+  #undef BIL
+}
 `;
 // paved ground (roads, footways, paths, plazas) from the fine pavement mask: 1 on paving, 0 off it
 export const GLSL_PAVE = /* glsl */`
@@ -136,6 +154,104 @@ float hOut(vec2 p){
 }
 float gAt(vec2 p){ return (abs(p.x) <= uHalf && abs(p.y) <= uHalf) ? hAt(p) : hOut(p); }
 `;
+
+// Everything about a blade that depends only on where it grows: ground, masks, noise, density, species, base colour.
+// The blade rings bake it once per chunk placement into textures (buildGrass); the card rings compute it in place.
+//   bA: ground height, ground normal      bB: base colour, height before the ring fade
+//   bC: paving factor on the height, density, flower density, code: 0 = nothing grows here, else 1 + 2 rice + 4 reed
+//       + 8 turf + 16 x species unless it turns out a flower (1 seed head, 2 dry blade, 3 broad leaf) + 64 x flower
+//       colour (0-4) + 512 card flower
+export const GLSL_BLADE_STATIC = /* glsl */`
+void bladeStatic(vec2 wp2, vec4 iRand, out vec4 bA, out vec4 bB, out vec4 bC) {
+  bA = vec4(0.0); bB = vec4(0.0); bC = vec4(0.0);
+  bool inMap = abs(wp2.x) < uHalf - 1.0 && abs(wp2.y) < uHalf - 1.0;
+  vec4 gm2 = inMap ? textureLod(tMask2, maskUV(wp2), 0.0) : vec4(0.0);
+  bool rice = gm2.g > 0.6;
+  if (rice) wp2 = (floor(wp2 / vec2(0.32, 0.26)) + 0.5) * vec2(0.32, 0.26) + (iRand.zx - 0.5) * 0.05; // transplanted rows
+  // nothing grows on paving (below, every kind of blade's density is scaled to zero there): leave before the ground
+  // and noise reads
+  float pv = inMap ? paveAt(wp2) : 0.0;
+  if (pv >= 0.3) return;
+  float gh, ghx, ghz;
+  if (abs(wp2.x) < uHalf - 3.0 * uCell && abs(wp2.y) < uHalf - 3.0 * uCell) hAt5(wp2, gh, ghx, ghz);
+  else { gh = gAt(wp2); ghx = gAt(wp2 + vec2(uCell, 0.0)) - gAt(wp2 - vec2(uCell, 0.0)); ghz = gAt(wp2 + vec2(0.0, uCell)) - gAt(wp2 - vec2(0.0, uCell)); }
+  vec3 gN = normalize(vec3(-ghx, 2.0 * uCell, -ghz));
+  vec4 gz0 = textureLod(tNoise, wp2 * 0.00041 + 0.37, 0.0);
+  vec4 gz1 = textureLod(tNoise, wp2 * 0.0021, 0.0);
+  vec4 gz2 = textureLod(tNoise, wp2 * 0.013, 0.0);
+  vec4 gz3 = textureLod(tNoise, wp2 * 0.06, 0.0);
+  // outside the map the forests follow the far-forest mask (as the ground shader and the far trees do)
+  vec4 gm = inMap ? textureLod(tMask, maskUV(wp2), 0.0)
+    : vec4(smoothstep(0.47, 0.6, gz1.r + (gz2.g - 0.5) * 0.12 + (gz0.b - 0.5) * 0.2) * smoothstep(0.2, 0.12, 1.0 - gN.y)
+        * (1.0 - smoothstep(uSnow - 45.0, uSnow + 5.0, gh)) * step(uWaterLv + 3.0, gh), 1.0, 0.0, 0.5);
+  float dens = smoothstep(uShore * 0.35, uShore * 1.2, gh - uWaterLv + (gz2.r - 0.5) * 1.2)
+    * (1.0 - smoothstep(0.26, 0.40, 1.0 - gN.y + (gz2.b - 0.5) * 0.14))
+    * (1.0 - smoothstep(uSnow - 25.0, uSnow + 3.0, gh))
+    * (1.0 - gm.b * 0.92)
+    * (1.0 - smoothstep(0.2, 0.75, gm.r + (gz3.r - 0.5) * 0.35) * 0.88);
+  dens *= smoothstep(0.1, 0.45, gz2.g + gz3.g * 0.35);
+  dens *= (1.0 - gm2.b) * (1.0 - smoothstep(0.2, 0.7, gm2.r) * 0.85);
+  dens *= 1.0 - 0.45 * gm2.a; // mowed town lawns are sparser...
+  if (rice) dens = 1.0;
+  // reed beds in clumps along the waterline (standing in the shallows and on the wet margin)
+  float hw = gh - uWaterLv, reedN = gz3.b * 0.55 + gz2.g * 0.65 + gz1.r * 0.2;
+  bool reed = !rice && uReeds > 0.5 && uLod < 0.9 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
+  if (reed) dens = 1.0;
+  // nothing grows on paving; along its edge the sward thins and stays low, so no blade stands through a kerb
+  dens *= 1.0 - smoothstep(0.04, 0.3, pv);
+  bool turf = (wp2.x > uTurf0.x && wp2.x < uTurf0.z && wp2.y > uTurf0.y && wp2.y < uTurf0.w) || (wp2.x > uTurf1.x && wp2.x < uTurf1.z && wp2.y > uTurf1.y && wp2.y < uTurf1.w);
+  if (turf) dens = 0.92 * (1.0 - smoothstep(0.04, 0.3, pv));
+  float keep = step(iRand.w + 0.002, dens); // strict: dens 0 keeps nothing
+  if (keep < 0.5) return;
+  // meadow zones: whole flower meadows in some valleys, short wiry alpine turf high up; woodland flowers along the
+  // forest edges (flowerPatch, shared with life.js)
+  float alpine = smoothstep(85.0, 150.0, gh - uWaterLv);
+  float forestF = smoothstep(0.25, 0.8, gm.r);
+  float fPatch = flowerPatch(gz1, gz2, gz3, gm.r);
+  // flowers per square metre: one budget shared with the close-up blossom sprites (life.js FLOWER_GLSL), so a patch
+  // keeps the same density from your feet to the far meadow; the per-blade chance divides it by this ring's blade
+  // density (a finer random than the 8-bit iRand.w, so thin backgrounds stay thin)
+  float flD = flowerDensity(clamp(fPatch, 0.0, 1.0), alpine) * dens * (1.0 - 0.6 * gm2.a);
+  // species: most blades are meadow grass; a share are seed-head grasses (more in drier patches), sun-dried straw
+  // blades, and broad low weed leaves (plantain / dock) in the unmown grass — under the trees mostly broad-leaved
+  // woodland herbs (for a blade that is not a flower: whether it is one depends on the camera, decided per frame)
+  float sp = fract(iRand.x * 7.13 + iRand.z * 3.71 + iRand.y * 1.37);
+  float dryness = smoothstep(0.5, 0.85, gz1.b + (gz3.g - 0.5) * 0.3);
+  bool plain = !rice && !reed && !turf;
+  bool seedG = plain && sp < (0.05 + 0.07 * dryness) * (1.0 - forestF) && gm2.a < 0.5;
+  bool dryB = plain && !seedG && sp < (0.12 + 0.2 * dryness) * (1.0 - forestF * 0.7);
+  bool broadB = plain && !seedG && !dryB && sp > 0.91 - 0.5 * forestF && gm2.a < 0.5;
+  #ifdef GRASS_CARD
+    float Hs = uCard.y * (0.7 + 0.6 * iRand.y) * (0.55 + 0.65 * gz2.g) * keep * (1.0 - 0.6 * gm2.a) * (rice ? 0.75 : 1.0);
+    float pick = fract(gz2.g * 5.3 + gz3.b * 0.6);
+    float flR = iRand.w + fract(iRand.z * 61.7 + iRand.x * 13.1) / 255.0;
+    float extra = step(flR, clamp(flD * 0.22, 0.0, 0.75)) * (rice ? 0.0 : 512.0);
+  #else
+    // tall-grass patches stand out of the shorter sward
+    float tallP = smoothstep(0.55, 0.8, gz2.a * 0.7 + gz3.r * 0.5);
+    float Hs = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * (1.0 + 0.45 * tallP) * keep;
+    Hs *= 1.0 - 0.68 * gm2.a;   // ...and short
+    Hs *= 1.0 - 0.5 * alpine;
+    Hs *= 1.0 - 0.35 * forestF; // low woodland herbs under the trees
+    float pick = fract(gz2.g * 5.3 + gz3.b * 0.6 + step(0.9, iRand.x) * 0.37);
+    float extra = 0.0;
+  #endif
+  // the blade takes the painted colour of the ground it grows from (rice, mown turf and reeds have their own)
+  vec3 c = meadowColor(gz0, gz1, gz2, gz3);
+  c = mix(c, uP_forest * 1.25, smoothstep(0.2, 0.75, gm.r) * 0.6);
+  c *= 0.9 + 0.22 * iRand.y;
+  if (rice) c = mix(vec3(0.12, 0.36, 0.05), vec3(0.28, 0.5, 0.08), iRand.y) * (0.8 + 0.3 * gz3.r);
+  if (turf) c = mix(vec3(0.16, 0.36, 0.08), vec3(0.2, 0.42, 0.1), iRand.y) * (step(0.5, fract((wp2.x - uTurfStripe.y) / uTurfStripe.z * 0.5)) > 0.5 ? 0.88 : 1.06);
+  if (reed) c = mix(vec3(0.1, 0.3, 0.08), vec3(0.36, 0.42, 0.14), iRand.y * 0.75 + gz3.r * 0.25) * (0.8 + 0.3 * iRand.z);
+  // each flower patch has its own colour: white daisies, buttercups, pink clover, violets, poppies
+  float cat = pick < 0.26 ? 0.0 : pick < 0.5 ? 1.0 : pick < 0.7 ? 2.0 : pick < 0.88 ? 3.0 : 4.0;
+  bA = vec4(gh, gN);
+  bB = vec4(c, Hs);
+  bC = vec4(1.0 - 0.75 * smoothstep(0.0, 0.3, pv), dens, flD,
+    1.0 + (rice ? 2.0 : 0.0) + (reed ? 4.0 : 0.0) + (turf ? 8.0 : 0.0) + (seedG ? 16.0 : dryB ? 32.0 : broadB ? 48.0 : 0.0) + cat * 64.0 + extra);
+}`;
+// baked blade data layout: per ring, chunk k owns rows [k R, (k + 1) R) of BAKE_W texels
+const BAKE_W = 1024;
 
 // ---------------------------------------------------------------- painted palette (anime look)
 // Terrain and grass share these colours and the meadow function, so every blade matches the ground it grows from.
@@ -243,6 +359,10 @@ export function terrainMaterial(hf, L, opt = {}) {
           vec3 layN(vec2 uv, float l){ return vec3(0.0, 0.0, 1.0); }
           vec4 layDA(vec2 uv, float l, float b){ return vec4(0.32); }
           vec3 layNA(vec2 uv, float l, float b){ return vec3(0.0, 0.0, 1.0); }
+          vec4 layDG(vec2 uv, float l, vec2 dx, vec2 dy){ return vec4(0.32); }
+          vec3 layNG(vec2 uv, float l, vec2 dx, vec2 dy){ return vec3(0.0, 0.0, 1.0); }
+          vec4 layDAG(vec2 uv, float l, float b, vec2 dx, vec2 dy){ return vec4(0.32); }
+          vec3 layNAG(vec2 uv, float l, float b, vec2 dx, vec2 dy){ return vec3(0.0, 0.0, 1.0); }
         #else
           uniform highp sampler2DArray tLayD, tLayN;
           vec4 layD(vec2 uv, float l){ return texture(tLayD, vec3(uv, l)); }
@@ -258,13 +378,29 @@ export function terrainMaterial(hf, L, opt = {}) {
             n1.xy = transpose(ROT) * n1.xy; // back into the unrotated frame
             return mix(n0, n1, b);
           }
+          // the same lookups with explicit gradients (taken from the texture coordinates outside any branch): a layer
+          // whose weight is zero at a pixel is then skipped without changing the mip level picked anywhere else
+          vec4 layDG(vec2 uv, float l, vec2 dx, vec2 dy){ return textureGrad(tLayD, vec3(uv, l), dx, dy); }
+          vec3 layNG(vec2 uv, float l, vec2 dx, vec2 dy){ return unpackN(textureGrad(tLayN, vec3(uv, l), dx, dy)); }
+          vec4 layDAG(vec2 uv, float l, float b, vec2 dx, vec2 dy){ return mix(textureGrad(tLayD, vec3(uv, l), dx, dy), textureGrad(tLayD, vec3(uvB(uv), l), ROT * dx * 0.73, ROT * dy * 0.73), b); }
+          vec3 layNAG(vec2 uv, float l, float b, vec2 dx, vec2 dy){
+            vec3 n0 = unpackN(textureGrad(tLayN, vec3(uv, l), dx, dy)), n1 = unpackN(textureGrad(tLayN, vec3(uvB(uv), l), ROT * dx * 0.73, ROT * dy * 0.73));
+            n1.xy = transpose(ROT) * n1.xy;
+            return mix(n0, n1, b);
+          }
         #endif
         vec2 maskUV(vec2 p){ return ((p + uHalf) / uCell + 0.5) / uHN; }
         float lum3(vec3 c){ return dot(c, vec3(0.3, 0.55, 0.15)); }
+        #ifdef TERRAIN_ALL_LAYERS
+          #define LAYER_ON(w) true
+        #else
+          #define LAYER_ON(w) (w > 0.0)
+        #endif
         ${MEADOW_GLSL}`)
       .replace('#include <map_fragment>', /* glsl */`
         vec3 wN = normalize(vWNorm);
         vec2 wuv = vWPos.xz;
+        vec2 wdx = dFdx(wuv), wdy = dFdy(wuv); vec3 pdx = dFdx(vWPos), pdy = dFdy(vWPos);
         float camDist = length(vWPos - cameraPosition);
         vec4 nz0 = texture2D(tNoise, wuv * 0.00041 + 0.37);   // regional (km scale) variation
         vec4 nz1 = texture2D(tNoise, wuv * 0.0021);
@@ -288,35 +424,11 @@ export function terrainMaterial(hf, L, opt = {}) {
         // between lush valley green and drier, warmer uplands keep large views from reading as one flat colour
         vec3 cGrass = meadowColor(nz0, nz1, nz2, nz3);
         float region = smoothstep(0.35, 0.75, nz0.r + (nz1.a - 0.5) * 0.3);
-        cGrass *= mix(1.0, clamp(lum3(layDA(wuv / uScales.x, 0.0, tileB).rgb) * 3.6, 0.6, 1.4), 0.2 * nearT);
-        vec3 nGrass = layNA(wuv / uScales.x, 0.0, tileB) * 0.35;
-        // forest floor: warm needle litter on the dry stands, deep green moss where it is damp, patches of bare dark soil
-        // (mask A carries the ground moisture the map painted: 0 dry .. 1 wet)
-        float moist = inside > 0.5 ? msk.a : 0.5;
-        float mossW = smoothstep(0.38, 0.82, moist + (nz2.a - 0.5) * 0.45 + (nz3.g - 0.5) * 0.25);
-        float soilW = smoothstep(0.68, 0.84, nz3.b * 0.65 + nz2.g * 0.45) * (1.0 - mossW * 0.7) * 0.7;
-        vec3 cForest = mix(mix(uP_forest, uP_sandWet * 0.3, 0.5), uP_forest * vec3(0.8, 1.25, 0.74), mossW);
-        cForest = mix(cForest, uP_sandWet * vec3(0.2, 0.19, 0.18), soilW);
-        cForest *= mix(0.84, 1.1, nz2.r) * mix(1.0, clamp(lum3(layDA(wuv / uScales.y, 1.0, tileB).rgb) * 3.2, 0.6, 1.4), 0.3 * nearT);
-        vec3 nForest = layNA(wuv / uScales.y, 1.0, tileB) * 0.55;
-        vec3 cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(layDA(wuv / uScales.z, 3.0, tileB).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
-        vec3 nSand = layNA(wuv / uScales.z, 3.0, tileB) * 0.5;
-        vec3 uTex = layDA(wuv / uScales.w, 4.0, tileB).rgb, uAvg = layDL(wuv / uScales.w, 4.0, 7.0).rgb;
-        vec3 cUrban = mix(uAvg, uTex, 0.35) * uTintU * (uUrbanNorm > 0.0 ? uUrbanNorm / max(lum3(uAvg), 0.04) : 1.0); // optional painted brightness
-        vec3 nUrban = layNA(wuv / uScales.w, 4.0, tileB) * 0.6;
-        // rock: tri-planar, each axis with the rock layer's own normal map; the scale widens with distance
-        vec3 bw = pow(max(abs(wN), vec3(1e-4)), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
-        // two fixed scales cross-faded by distance (a scale that changed with distance would make the rock swim)
-        float rs = 1.0 / uRockS, rs2 = 1.0 / (uRockS * 3.4), rw = farT * 0.7;
-        vec3 cRockT = layD(vWPos.zy * rs, 2.0).rgb * bw.x + layD(vWPos.xz * rs, 2.0).rgb * bw.y + layD(vWPos.xy * rs, 2.0).rgb * bw.z;
-        vec3 cRockF = layD(vWPos.zy * rs2, 2.0).rgb * bw.x + layD(vWPos.xz * rs2, 2.0).rgb * bw.y + layD(vWPos.xy * rs2, 2.0).rgb * bw.z;
-        cRockT = mix(cRockT, cRockF, rw);
-        vec3 rnx = layN(vWPos.zy * rs, 2.0), rny = layN(vWPos.xz * rs, 2.0), rnz = layN(vWPos.xy * rs, 2.0);
-        vec3 nRock = normalize(wN + (vec3(0.0, rnx.y, rnx.x) * bw.x + vec3(rny.x, 0.0, rny.y) * bw.y + vec3(rnz.x, rnz.y, 0.0) * bw.z) * (1.0 - rw * 0.6));
-        // rock: two painted tones picked by the photo's light/dark strata, plus horizontal bedding bands on cliffs
-        float strata = sin(vWPos.y * 0.9 + nz2.g * 6.0 + nz3.r * 2.0) * 0.5 + 0.5;
-        vec3 cRock = mix(uP_rockD, uP_rockL, smoothstep(0.18, 0.42, lum3(cRockT) + (nz2.b - 0.5) * 0.12 + (strata - 0.5) * 0.08 * smoothstep(0.35, 0.7, slope)));
-        cRock *= mix(0.92, 1.06, nz0.b);
+        cGrass *= mix(1.0, clamp(lum3(layDAG(wuv / uScales.x, 0.0, tileB, wdx / uScales.x, wdy / uScales.x).rgb) * 3.6, 0.6, 1.4), 0.2 * nearT);
+        vec3 nGrass = layNAG(wuv / uScales.x, 0.0, tileB, wdx / uScales.x, wdy / uScales.x) * 0.35;
+        // the weights of the other layers first (noise and masks only); each layer's textures are then read only where
+        // its weight is above zero — rock (tri-planar, fifteen lookups) on slopes and scree, sand on shores, urban ground
+        // in the town, forest floor in the woods (a zero weight leaves the result exactly as if it had been read)
         float shoreN = (nz2.r - 0.5) * 1.1 + (nz3.b - 0.5) * 0.6;
         float wSand = max(1.0 - smoothstep(uShore * 0.2, uShore, h + shoreN * uShore * 0.9), msk2.g);
         float wRock = smoothstep(0.30, 0.46, slope + (nz2.b - 0.5) * 0.14);
@@ -330,21 +442,61 @@ export function terrainMaterial(hf, L, opt = {}) {
         // where the map removed the grass (yards, verges, pitches) the ground is gravel / packed soil, never bare meadow
         // paint (a flat green patch with no blades on it)
         float wUrban = max(smoothstep(0.15, 0.6, msk2.r + (nz3.g - 0.5) * 0.25), smoothstep(0.35, 0.8, msk2.b));
-        // where no trees stand any more (past the outermost far-forest ring) the forest reads as a painted canopy with
-        // soft crown relief; under drawn trees the floor stays the darker forest ground
-        float noTrees = (1.0 - inside) * step(uFarTrees, max(abs(vWPos.x), abs(vWPos.z)));
-        float crownW = noTrees * smoothstep(0.3, 0.8, forest);
-        vec2 cuv = wuv * 0.0045;
-        float cr0 = texture2D(tNoise, cuv).a, crx = texture2D(tNoise, cuv + vec2(0.0035, 0.0)).a, crz = texture2D(tNoise, cuv + vec2(0.0, 0.0035)).a;
-        vec3 crownN = normalize(vec3(-(crx - cr0) * 3.0, 1.0, -(crz - cr0) * 3.0));
-        // canopy tone sits between the forest shade and the lit far-tree cards, so distant woods read as one mass
-        vec3 cCanopy = mix(uP_canopy, vec3(0.19, 0.44, 0.31), 0.45) * (0.78 + 0.4 * cr0) * mix(0.9, 1.1, nz2.r) * mix(vec3(1.0), vec3(1.08, 1.02, 0.86), region * 0.5);
-        // outside the map the ground under the far trees takes the canopy colour too, so the gaps between distant tree
-        // cards read as more forest rather than bright speckle
-        float ringOut = step(uHalf + 1024.0, max(abs(vWPos.x), abs(vWPos.z)));
-        // (by distance, not by map edge: near woods keep their floor on both sides of the boundary)
-        cForest = mix(cForest, cCanopy, max(crownW, smoothstep(650.0, 1500.0, camDist) * mix(smoothstep(0.25, 0.6, forest), smoothstep(0.42, 0.52, forest), ringOut) * 0.9));
-        nForest = mix(nForest, vec3(crownN.x, crownN.z, 0.0), crownW);
+        // forest floor: warm needle litter on the dry stands, deep green moss where it is damp, patches of bare dark soil
+        // (mask A carries the ground moisture the map painted: 0 dry .. 1 wet)
+        vec3 cForest = vec3(0.0), nForest = vec3(0.0);
+        if (LAYER_ON(wForest)) {
+          float moist = inside > 0.5 ? msk.a : 0.5;
+          float mossW = smoothstep(0.38, 0.82, moist + (nz2.a - 0.5) * 0.45 + (nz3.g - 0.5) * 0.25);
+          float soilW = smoothstep(0.68, 0.84, nz3.b * 0.65 + nz2.g * 0.45) * (1.0 - mossW * 0.7) * 0.7;
+          cForest = mix(mix(uP_forest, uP_sandWet * 0.3, 0.5), uP_forest * vec3(0.8, 1.25, 0.74), mossW);
+          cForest = mix(cForest, uP_sandWet * vec3(0.2, 0.19, 0.18), soilW);
+          cForest *= mix(0.84, 1.1, nz2.r) * mix(1.0, clamp(lum3(layDAG(wuv / uScales.y, 1.0, tileB, wdx / uScales.y, wdy / uScales.y).rgb) * 3.2, 0.6, 1.4), 0.3 * nearT);
+          nForest = layNAG(wuv / uScales.y, 1.0, tileB, wdx / uScales.y, wdy / uScales.y) * 0.55;
+          // where no trees stand any more (past the outermost far-forest ring) the forest reads as a painted canopy with
+          // soft crown relief; under drawn trees the floor stays the darker forest ground
+          float noTrees = (1.0 - inside) * step(uFarTrees, max(abs(vWPos.x), abs(vWPos.z)));
+          float crownW = noTrees * smoothstep(0.3, 0.8, forest);
+          vec2 cuv = wuv * 0.0045;
+          float cr0 = texture2D(tNoise, cuv).a, crx = texture2D(tNoise, cuv + vec2(0.0035, 0.0)).a, crz = texture2D(tNoise, cuv + vec2(0.0, 0.0035)).a;
+          vec3 crownN = normalize(vec3(-(crx - cr0) * 3.0, 1.0, -(crz - cr0) * 3.0));
+          // canopy tone sits between the forest shade and the lit far-tree cards, so distant woods read as one mass
+          vec3 cCanopy = mix(uP_canopy, vec3(0.19, 0.44, 0.31), 0.45) * (0.78 + 0.4 * cr0) * mix(0.9, 1.1, nz2.r) * mix(vec3(1.0), vec3(1.08, 1.02, 0.86), region * 0.5);
+          // outside the map the ground under the far trees takes the canopy colour too, so the gaps between distant tree
+          // cards read as more forest rather than bright speckle
+          float ringOut = step(uHalf + 1024.0, max(abs(vWPos.x), abs(vWPos.z)));
+          // (by distance, not by map edge: near woods keep their floor on both sides of the boundary)
+          cForest = mix(cForest, cCanopy, max(crownW, smoothstep(650.0, 1500.0, camDist) * mix(smoothstep(0.25, 0.6, forest), smoothstep(0.42, 0.52, forest), ringOut) * 0.9));
+          nForest = mix(nForest, vec3(crownN.x, crownN.z, 0.0), crownW);
+        }
+        vec3 cSand = vec3(0.0), nSand = vec3(0.0);
+        if (LAYER_ON(wSand) || LAYER_ON(scree)) {
+          cSand = mix(uP_sand, uP_sand * vec3(0.92, 0.9, 0.84), nz3.r) * mix(1.0, clamp(lum3(layDAG(wuv / uScales.z, 3.0, tileB, wdx / uScales.z, wdy / uScales.z).rgb) * 2.2, 0.7, 1.3), 0.25 * nearT);
+          nSand = layNAG(wuv / uScales.z, 3.0, tileB, wdx / uScales.z, wdy / uScales.z) * 0.5;
+        }
+        vec3 cUrban = vec3(0.0), nUrban = vec3(0.0);
+        if (LAYER_ON(wUrban)) {
+          vec3 uTex = layDAG(wuv / uScales.w, 4.0, tileB, wdx / uScales.w, wdy / uScales.w).rgb, uAvg = layDL(wuv / uScales.w, 4.0, 7.0).rgb;
+          cUrban = mix(uAvg, uTex, 0.35) * uTintU * (uUrbanNorm > 0.0 ? uUrbanNorm / max(lum3(uAvg), 0.04) : 1.0); // optional painted brightness
+          nUrban = layNAG(wuv / uScales.w, 4.0, tileB, wdx / uScales.w, wdy / uScales.w) * 0.6;
+        }
+        // rock: tri-planar, each axis with the rock layer's own normal map; the scale widens with distance
+        vec3 cRock = vec3(0.0), nRock = wN, rny = vec3(0.0);
+        if (LAYER_ON(wRock) || LAYER_ON(scree)) {
+          vec3 bw = pow(max(abs(wN), vec3(1e-4)), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
+          // two fixed scales cross-faded by distance (a scale that changed with distance would make the rock swim)
+          float rs = 1.0 / uRockS, rs2 = 1.0 / (uRockS * 3.4), rw = farT * 0.7;
+          vec3 cRockT = layDG(vWPos.zy * rs, 2.0, pdx.zy * rs, pdy.zy * rs).rgb * bw.x + layDG(vWPos.xz * rs, 2.0, pdx.xz * rs, pdy.xz * rs).rgb * bw.y + layDG(vWPos.xy * rs, 2.0, pdx.xy * rs, pdy.xy * rs).rgb * bw.z;
+          vec3 cRockF = layDG(vWPos.zy * rs2, 2.0, pdx.zy * rs2, pdy.zy * rs2).rgb * bw.x + layDG(vWPos.xz * rs2, 2.0, pdx.xz * rs2, pdy.xz * rs2).rgb * bw.y + layDG(vWPos.xy * rs2, 2.0, pdx.xy * rs2, pdy.xy * rs2).rgb * bw.z;
+          cRockT = mix(cRockT, cRockF, rw);
+          vec3 rnx = layNG(vWPos.zy * rs, 2.0, pdx.zy * rs, pdy.zy * rs), rnz = layNG(vWPos.xy * rs, 2.0, pdx.xy * rs, pdy.xy * rs);
+          rny = layNG(vWPos.xz * rs, 2.0, pdx.xz * rs, pdy.xz * rs);
+          nRock = normalize(wN + (vec3(0.0, rnx.y, rnx.x) * bw.x + vec3(rny.x, 0.0, rny.y) * bw.y + vec3(rnz.x, rnz.y, 0.0) * bw.z) * (1.0 - rw * 0.6));
+          // rock: two painted tones picked by the photo's light/dark strata, plus horizontal bedding bands on cliffs
+          float strata = sin(vWPos.y * 0.9 + nz2.g * 6.0 + nz3.r * 2.0) * 0.5 + 0.5;
+          cRock = mix(uP_rockD, uP_rockL, smoothstep(0.18, 0.42, lum3(cRockT) + (nz2.b - 0.5) * 0.12 + (strata - 0.5) * 0.08 * smoothstep(0.35, 0.7, slope)));
+          cRock *= mix(0.92, 1.06, nz0.b);
+        }
         vec3 col = mix(cGrass, cForest, wForest);
         vec3 tn = mix(nGrass, nForest, wForest);
         col = mix(col, mix(cRock, cSand, 0.25) * 0.9, scree * 0.7); tn = mix(tn, vec3(rny.x, rny.y, 0.0) * 0.6, scree * 0.7);
@@ -397,6 +549,9 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(splatN, 0.0)).xyz);');
   };
   mat.customProgramCacheKey = () => opt.lite ? 'terrainLite' : 'terrain';
+  // drawn after everything standing on it (core.js draw order) with a strict depth test: it loses exact ties, as it did
+  // when it was drawn first, so coplanar surfaces keep showing over it
+  mat.userData.drawClass = 3; mat.depthFunc = THREE.LessDepth;
   return mat;
 }
 
@@ -515,7 +670,7 @@ export async function buildTerrainMeshes(hf, mat, { outer = true, farForest = tr
   if (ringData.length) {
     const R0 = ringData[0], t = new THREE.DataTexture(R0.hts, R0.N, R0.N, THREE.RedFormat, THREE.FloatType);
     t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true;
-    hf.outer = { E: R0.E, S: R0.step, N: R0.N, tex: t, at: (x, z) => groundOn(R0, x, z) };
+    hf.outer = { E: R0.E, S: R0.step, N: R0.N, tex: t, data: R0.hts, at: (x, z) => groundOn(R0, x, z) };
   }
   // ---- far forest: F-rings of trees, sparser and larger with distance, cross-faded at their borders
   const FR = [{ inner: HALF, outer: HALF + 1024, sp: 8, sc: 1, ring: 0 }, { inner: HALF + 1024, outer: HALF + 3072, sp: 13, sc: 1.2, ring: 1 },
@@ -632,7 +787,9 @@ function bladeGeometry(SEG) {
 export function buildGrass(hf, grassTex, opt = {}) {
   const group = new THREE.Group(), K2 = GRASS_K * GRASS_K, O = hf.outer;
   const gu = { uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uReeds: { value: opt.reeds ? 1 : 0 },
-    tOuterH: { value: O ? O.tex : null }, uOuterE: { value: O ? O.E : hf.HALF }, uOuterS: { value: O ? O.S : 1 }, uOuterN: { value: O ? O.N : 2 }, uGrassE: grassU.uGrassE };
+    tOuterH: { value: O ? O.tex : null }, uOuterE: { value: O ? O.E : hf.HALF }, uOuterS: { value: O ? O.S : 1 }, uOuterN: { value: O ? O.N : 2 }, uGrassE: grassU.uGrassE,
+    uGrassY: { value: new THREE.Vector2(-50, 3000) } };
+  { let lo = Infinity, hi = -Infinity; for (const h of hf.H) { if (h < lo) lo = h; if (h > hi) hi = h; } if (O && O.data) for (const h of O.data) { if (h < lo) lo = h; if (h > hi) hi = h; } if (isFinite(lo)) gu.uGrassY.value.set(lo - 5, hi + 10); }
   // per-blade data is packed (16-bit position in the cell, 8-bit randoms) and generated from a per-chunk seed, so a
   // chunk can grow its buffers when the quality goes up and still keep exactly the same blades
   const fill = (c, n) => {
@@ -643,11 +800,16 @@ export function buildGrass(hf, grassTex, opt = {}) {
     c.g.setAttribute('iRand', new THREE.InstancedBufferAttribute(rnd, 4, true));
     c.cap = n;
   };
+  // The blade rings keep each blade's static data (GLSL_BLADE_STATIC: ground, masks, noise, species, base colour) in
+  // textures, baked when a chunk moves to a new cell: per frame a blade vertex then reads four texels instead of running
+  // twenty texture reads and the species logic again for every vertex of every blade. The card rings (few vertices per
+  // tuft, chunks hundreds of metres wide) compute it in place.
   const rings = GRASS_RINGS.map((R, ri) => {
-    const base = R.card ? cardGeometry() : bladeGeometry(R.seg);
+    const base = R.card ? cardGeometry() : bladeGeometry(R.seg), baked = true;
     const ru = { uCellSize: { value: 1 }, uR: { value: 1 }, uIn: { value: new THREE.Vector2(0, 0) }, uLod: { value: R.lod }, uTuft: { value: R.tuft },
       uCard: { value: new THREE.Vector2(...(R.card || [0, 0])) }, tCard: { value: R.card ? grassCardTexture() : null }, uDens: { value: 1 } };
-    const mat = grassMaterial(hf, grassTex, gu, ru, !!R.card, R.seg || 0);
+    if (baked) Object.assign(ru, { tBladeIn: { value: null }, tBladeA: { value: null }, tBladeB: { value: null }, tBladeC: { value: null }, uBladeRows: { value: 1 } });
+    const mat = grassMaterial(hf, grassTex, gu, ru, !!R.card, baked);
     const chunks = [];
     for (let c = 0; c < K2; c++) {
       const g = new THREE.InstancedBufferGeometry();
@@ -659,8 +821,47 @@ export function buildGrass(hf, grassTex, opt = {}) {
       group.add(m);
       chunks.push({ m, g, i: c % GRASS_K, j: Math.floor(c / GRASS_K), X: NaN, Z: NaN, y0: 0, y1: 0, cap: 0, seed: 5 + ri * 7919 + c * 977 });
     }
-    return { R, ru, chunks, s: 1, rad: 0, inA: 0, on: false };
+    return { R, ru, chunks, s: 1, rad: 0, inA: 0, on: false, bake: baked ? { mats: [0, 1, 2].map(o => bakeMaterial(hf, gu, ru, !!R.card, o)), rts: null, inTex: null, n: 0, R: 1, todo: [] } : null };
   });
+  // the blades' fixed inputs (position in the cell, randoms: the same per-chunk seed and sequence as fill) and the
+  // targets the bake writes, chunk k in rows [k R, (k + 1) R)
+  const makeBake = (ring, n) => {
+    const B = ring.bake, R = Math.ceil(n / BAKE_W), H = ring.chunks.length * R;
+    if (B.rts) { B.rts.forEach(t => t.dispose()); B.inTex.dispose(); }
+    const data = new Uint32Array(BAKE_W * H * 2);
+    ring.chunks.forEach((c, k) => {
+      const rng = mulberry32(c.seed), o = k * R * BAKE_W * 2;
+      for (let i = 0; i < n; i++) {
+        const ox = Math.floor(rng() * 65535), oz = Math.floor(rng() * 65535), r0 = Math.floor(rng() * 255), r1 = Math.floor(rng() * 255), r2 = Math.floor(rng() * 255), r3 = Math.floor(rng() * 255);
+        data[o + i * 2] = ox + oz * 65536; data[o + i * 2 + 1] = r0 + r1 * 256 + r2 * 65536 + r3 * 16777216;
+      }
+    });
+    const inTex = new THREE.DataTexture(data, BAKE_W, H, THREE.RGIntegerFormat, THREE.UnsignedIntType);
+    inTex.internalFormat = 'RG32UI'; inTex.minFilter = inTex.magFilter = THREE.NearestFilter; inTex.generateMipmaps = false; inTex.needsUpdate = true;
+    // one target per output (a single multiple-render-target pass lost writes to its second target on this D3D11 path);
+    // the codes and densities fit half floats, ground and colour stay 32-bit (half floats moved blade tips)
+    const rts = [THREE.FloatType, THREE.FloatType, THREE.HalfFloatType].map(type => new THREE.WebGLRenderTarget(BAKE_W, H, { type, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false }));
+    Object.assign(B, { rts, inTex, n, R });
+    const u = ring.ru; u.tBladeIn.value = inTex; u.tBladeA.value = rts[0].texture; u.tBladeB.value = rts[1].texture; u.tBladeC.value = rts[2].texture; u.uBladeRows.value = R;
+    for (const m of B.mats) m.uniforms.uN.value = n;
+  };
+  const bakeQuad = new FullScreenQuad(null);
+  const runBake = ring => {
+    const B = ring.bake; if (!B || !B.todo.length) return;
+    const prev = renderer.getRenderTarget();
+    for (let o = 0; o < 3; o++) {
+      const rt = B.rts[o], u = B.mats[o].uniforms;
+      bakeQuad.material = B.mats[o];
+      for (const k of B.todo) {
+        const c = ring.chunks[k];
+        rt.viewport.set(0, k * B.R, BAKE_W, B.R); rt.scissor.copy(rt.viewport); rt.scissorTest = true;
+        u.uOrigin.value.set(c.X * ring.s, c.Z * ring.s); u.uChunk.value = k;
+        renderer.setRenderTarget(rt); bakeQuad.render(renderer);
+      }
+    }
+    B.todo.length = 0;
+    renderer.setRenderTarget(prev);
+  };
   const applyQuality = () => {
     const G = Q.grassR || GRASS_FALLBACK;
     let prev = 0;
@@ -673,7 +874,8 @@ export function buildGrass(hf, grassTex, opt = {}) {
       ring.ru.uCellSize.value = ring.s; ring.ru.uR.value = rad; ring.ru.uDens.value = dens;
       ring.ru.uIn.value.set(ring.inA, prev);
       const n = Math.max(1, Math.round(dens * ring.s * ring.s));
-      for (const c of ring.chunks) { if (n > c.cap) fill(c, n); c.g.instanceCount = n; c.X = NaN; }
+      if (ring.bake && ring.bake.n !== n) makeBake(ring, n);
+      for (const c of ring.chunks) { if (!ring.bake && n > c.cap) fill(c, n); c.g.instanceCount = n; c.X = NaN; }
       prev = rad;
     });
     updateGrassU(hf);
@@ -697,11 +899,13 @@ export function buildGrass(hf, grassTex, opt = {}) {
             c.m.matrix.makeTranslation(x0, 0, z0); c.m.matrixWorld.copy(c.m.matrix);
             c.g.boundingSphere.center.set(s / 2, (c.y0 + c.y1) / 2, s / 2);
             c.g.boundingSphere.radius = Math.hypot(s / 2, s / 2, (c.y1 - c.y0) / 2);
+            if (ring.bake) ring.bake.todo.push(c.i + c.j * K);
           }
           const nx = Math.max(x0 - cx, 0, cx - x0 - s), nz = Math.max(z0 - cz, 0, cz - z0 - s);
           const farX = Math.max(Math.abs(x0 - cx), Math.abs(x0 + s - cx)), farZ = Math.max(Math.abs(z0 - cz), Math.abs(z0 + s - cz));
-          c.m.visible = Math.hypot(nx, nz) < ring.rad && Math.hypot(farX, farZ) > ring.inA && x0 < E && x0 + s > -E && z0 < E && z0 + s > -E;
+          c.m.visible = nx * nx + nz * nz < ring.rad * ring.rad && farX * farX + farZ * farZ > ring.inA * ring.inA && x0 < E && x0 + s > -E && z0 < E && z0 + s > -E;
         }
+        runBake(ring);
       }
     },
   });
@@ -709,96 +913,111 @@ export function buildGrass(hf, grassTex, opt = {}) {
   scene.add(group);
   return group;
 }
-function grassMaterial(hf, grassTex, gu, ru, card) {
+// writes one of GLSL_BLADE_STATIC's outputs for every blade of one chunk (rows of the ring's bake target; uOrigin: the
+// chunk's cell)
+function bakeMaterial(hf, gu, ru, card, out) {
+  return new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false, defines: Object.assign({ BAKE_OUT: out }, card ? { GRASS_CARD: '' } : {}),
+    uniforms: { ...gu, ...ru, ...hf.U, ...paintU, ...turfU, tNoise: S.tNoise, uOrigin: { value: new THREE.Vector2() }, uChunk: { value: 0 }, uN: { value: 0 } },
+    vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: /* glsl */`
+      uniform highp usampler2D tBladeIn; uniform int uBladeRows, uChunk, uN; uniform vec2 uOrigin;
+      uniform sampler2D tMask, tMask2, tNoise;
+      uniform float uCellSize, uLod, uWaterLv, uSnow, uShore, uReeds; uniform vec2 uCard; uniform vec4 uTurf0, uTurf1, uTurfStripe;
+      ${GLSL_HEIGHT}
+      ${GLSL_PAVE}
+      ${GLSL_OUTER_HEIGHT}
+      ${MEADOW_GLSL}
+      ${GLSL_BLADE_STATIC}
+      layout(location = 0) out highp vec4 oV;
+      void main() {
+        ivec2 p = ivec2(gl_FragCoord.xy);
+        int i = (p.y - uChunk * uBladeRows) * ${BAKE_W} + p.x;
+        oV = vec4(0.0);
+        if (i >= uN) return;
+        uvec2 bIn = texelFetch(tBladeIn, p, 0).xy;
+        vec2 iOffset = vec2(float(bIn.x & 65535u), float(bIn.x >> 16u)) / 65535.0;
+        vec4 iRand = vec4(float(bIn.y & 255u), float((bIn.y >> 8u) & 255u), float((bIn.y >> 16u) & 255u), float(bIn.y >> 24u)) / 255.0;
+        vec4 a, b, c;
+        bladeStatic(uOrigin + iOffset * uCellSize, iRand, a, b, c);
+        oV = BAKE_OUT == 0 ? a : BAKE_OUT == 1 ? b : c;
+      }`,
+  });
+}
+function grassMaterial(hf, grassTex, gu, ru, card, baked) {
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, alphaTest: card ? 0.5 : 0, alphaToCoverage: card && Q.msaa > 0 });
   mat.defines = card ? { CLOUD_SHADE_VARYING: '', GRASS_CARD: '' } : { CLOUD_SHADE_VARYING: '' };
+  if (baked) mat.defines.GRASS_BAKED = '';
   mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, gu, ru, hf.U, paintU, turfU, { tNoise: S.tNoise, tGrassD: { value: grassTex },
+    Object.assign(sh.uniforms, gu, ru, hf.U, paintU, turfU, { uGrassY: gu.uGrassY, tNoise: S.tNoise, tGrassD: { value: grassTex },
       uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        attribute vec2 bladeUV; attribute vec2 iOffset; attribute vec4 iRand;
+        attribute vec2 bladeUV;
+        #ifdef GRASS_BAKED
+          uniform highp usampler2D tBladeIn; uniform highp sampler2D tBladeA, tBladeB, tBladeC; uniform int uBladeRows;
+        #else
+          attribute vec2 iOffset; attribute vec4 iRand;
+        #endif
         uniform sampler2D tMask, tMask2, tNoise, tGrassD;
         uniform vec3 uCam, uPlayer; uniform float uTime, uCellSize, uR, uLod, uTuft, uWind, uWaterLv, uSnow, uShore, uReeds, uDens; uniform vec2 uIn, uCard;
-        uniform vec4 uTurf0, uTurf1, uTurfStripe;
+        uniform vec4 uTurf0, uTurf1, uTurfStripe; uniform vec2 uGrassY;
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
         varying vec2 vCardUv; varying vec3 vFlCol; varying float vFl;
         ${GLSL_HEIGHT}
         ${GLSL_PAVE}
         ${GLSL_OUTER_HEIGHT}
         ${CLOUD_SHADE_GLSL}
-        ${MEADOW_GLSL}`)
+        ${MEADOW_GLSL}
+        #ifndef GRASS_BAKED
+          ${GLSL_BLADE_STATIC}
+        #endif`)
       .replace('#include <beginnormal_vertex>', /* glsl */`
+        #ifdef GRASS_BAKED
+          // this blade's texels in the ring's baked data: the chunk follows from its cell (cell index mod K), the blade
+          // from the instance
+          ivec2 bTx;
+          { vec2 cell = floor(modelMatrix[3].xz / uCellSize + 0.5), ij = cell - ${GRASS_K}.0 * floor(cell / ${GRASS_K}.0);
+            int ch = int(ij.y) * ${GRASS_K} + int(ij.x);
+            bTx = ivec2(gl_InstanceID % ${BAKE_W}, ch * uBladeRows + gl_InstanceID / ${BAKE_W}); }
+          uvec2 bIn = texelFetch(tBladeIn, bTx, 0).xy;
+          vec2 iOffset = vec2(float(bIn.x & 65535u), float(bIn.x >> 16u)) / 65535.0;
+          vec4 iRand = vec4(float(bIn.y & 255u), float((bIn.y >> 8u) & 255u), float((bIn.y >> 16u) & 255u), float(bIn.y >> 24u)) / 255.0;
+        #endif
         vec2 wp2 = modelMatrix[3].xz + iOffset * uCellSize;   // cell origin (the chunk's translation) + position in the cell
         float gdist = length(wp2 - uCam.xz);
         // ring cross-fade: blades thin out stochastically (so near and far rings keep the same blade height). Blades that
         // are faded out, or outside the grass area, leave before any texture is read
         float fade = (1.0 - smoothstep(uR * 0.55, uR, gdist)) * (uIn.y > 0.0 ? smoothstep(uIn.x, uIn.y, gdist) : 1.0);
         if (abs(wp2.x) > uGrassE || abs(wp2.y) > uGrassE || fract(iRand.y * 13.73 + iRand.x * 5.31) > fade * 1.02) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
-        bool inMap = abs(wp2.x) < uHalf - 1.0 && abs(wp2.y) < uHalf - 1.0;
-        vec4 gm2 = inMap ? textureLod(tMask2, maskUV(wp2), 0.0) : vec4(0.0);
-        bool rice = gm2.g > 0.6;
+        { // outside the view to the left or right (a chunk is culled whole, but the far rings' chunks are hundreds of metres
+          // wide): leave before the texture reads. The tuft is tested as a vertical span from the lowest to the highest
+          // ground in the map, padded by its reach (the widest card plus its lean), so nothing that could show is dropped.
+          vec4 cA = projectionMatrix * viewMatrix * vec4(wp2.x, uGrassY.x, wp2.y, 1.0), cB = projectionMatrix * viewMatrix * vec4(wp2.x, uGrassY.y, wp2.y, 1.0);
+          float pad = 12.0 * projectionMatrix[0][0];
+          if ((cA.x - pad > cA.w && cB.x - pad > cB.w) || (cA.x + pad < -cA.w && cB.x + pad < -cB.w) || (cA.w < -12.0 && cB.w < -12.0)) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
+        }
+        vec4 bA, bB, bC;
+        #ifdef GRASS_BAKED
+          bC = texelFetch(tBladeC, bTx, 0);
+          if (bC.w < 0.5) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
+          bA = texelFetch(tBladeA, bTx, 0); bB = texelFetch(tBladeB, bTx, 0);
+        #else
+          bladeStatic(wp2, iRand, bA, bB, bC);
+          if (bC.w < 0.5) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
+        #endif
+        float code = bC.w;
+        bool rice = mod(code, 4.0) >= 2.0, reed = mod(code, 8.0) >= 4.0, turf = mod(code, 16.0) >= 8.0;
+        float spc = mod(floor(code / 16.0), 4.0), fcat = mod(floor(code / 64.0), 8.0);
         if (rice) { wp2 = (floor(wp2 / vec2(0.32, 0.26)) + 0.5) * vec2(0.32, 0.26) + (iRand.zx - 0.5) * 0.05; gdist = length(wp2 - uCam.xz); } // transplanted rows
-        float gh = gAt(wp2);
-        float ghx = gAt(wp2 + vec2(uCell, 0.0)) - gAt(wp2 - vec2(uCell, 0.0));
-        float ghz = gAt(wp2 + vec2(0.0, uCell)) - gAt(wp2 - vec2(0.0, uCell));
-        vec3 gN = normalize(vec3(-ghx, 2.0 * uCell, -ghz));
-        vec4 gz0 = textureLod(tNoise, wp2 * 0.00041 + 0.37, 0.0);
-        vec4 gz1 = textureLod(tNoise, wp2 * 0.0021, 0.0);
-        vec4 gz2 = textureLod(tNoise, wp2 * 0.013, 0.0);
-        vec4 gz3 = textureLod(tNoise, wp2 * 0.06, 0.0);
-        // outside the map the forests follow the far-forest mask (as the ground shader and the far trees do)
-        vec4 gm = inMap ? textureLod(tMask, maskUV(wp2), 0.0)
-          : vec4(smoothstep(0.47, 0.6, gz1.r + (gz2.g - 0.5) * 0.12 + (gz0.b - 0.5) * 0.2) * smoothstep(0.2, 0.12, 1.0 - gN.y)
-              * (1.0 - smoothstep(uSnow - 45.0, uSnow + 5.0, gh)) * step(uWaterLv + 3.0, gh), 1.0, 0.0, 0.5);
-        float dens = smoothstep(uShore * 0.35, uShore * 1.2, gh - uWaterLv + (gz2.r - 0.5) * 1.2)
-          * (1.0 - smoothstep(0.26, 0.40, 1.0 - gN.y + (gz2.b - 0.5) * 0.14))
-          * (1.0 - smoothstep(uSnow - 25.0, uSnow + 3.0, gh))
-          * (1.0 - gm.b * 0.92)
-          * (1.0 - smoothstep(0.2, 0.75, gm.r + (gz3.r - 0.5) * 0.35) * 0.88);
-        dens *= smoothstep(0.1, 0.45, gz2.g + gz3.g * 0.35);
-        dens *= (1.0 - gm2.b) * (1.0 - smoothstep(0.2, 0.7, gm2.r) * 0.85);
-        dens *= 1.0 - 0.45 * gm2.a; // mowed town lawns are sparser...
-        if (rice) dens = 1.0;
-        // reed beds in clumps along the waterline (standing in the shallows and on the wet margin)
-        float hw = gh - uWaterLv, reedN = gz3.b * 0.55 + gz2.g * 0.65 + gz1.r * 0.2;
-        bool reed = !rice && uReeds > 0.5 && uLod < 0.9 && hw > -0.5 && hw < 0.55 && reedN > 0.66 && iRand.w < 0.7 && gN.y > 0.9;
-        if (reed) dens = 1.0;
-        // nothing grows on paving; along its edge the sward thins and stays low, so no blade stands through a kerb
-        float pv = inMap ? paveAt(wp2) : 0.0;
-        dens *= 1.0 - smoothstep(0.04, 0.3, pv);
-        bool turf = (wp2.x > uTurf0.x && wp2.x < uTurf0.z && wp2.y > uTurf0.y && wp2.y < uTurf0.w) || (wp2.x > uTurf1.x && wp2.x < uTurf1.z && wp2.y > uTurf1.y && wp2.y < uTurf1.w);
-        if (turf) dens = 0.92 * (1.0 - smoothstep(0.04, 0.3, pv));
-        float keep = step(iRand.w + 0.002, dens); // strict: dens 0 keeps nothing
-        if (keep < 0.5) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
-        float gs = keep;
-        // meadow zones: whole flower meadows in some valleys, short wiry alpine turf high up; woodland flowers along the
-        // forest edges (flowerPatch, shared with life.js)
-        float alpine = smoothstep(85.0, 150.0, gh - uWaterLv);
-        float forestF = smoothstep(0.25, 0.8, gm.r);
-        float fPatch = flowerPatch(gz1, gz2, gz3, gm.r);
-        // flowers per square metre: one budget shared with the close-up blossom sprites (life.js FLOWER_GLSL), so a patch
-        // keeps the same density from your feet to the far meadow; the per-blade chance divides it by this ring's blade
-        // density (a finer random than the 8-bit iRand.w, so thin backgrounds stay thin)
-        float flD = flowerDensity(clamp(fPatch, 0.0, 1.0), alpine) * dens * (1.0 - 0.6 * gm2.a);
+        float gh = bA.x; vec3 gN = bA.yzw;
+        float dens = bC.y, flD = bC.z, keep = 1.0, gs = 1.0, hw = gh - uWaterLv;
         float flR = iRand.w + fract(iRand.z * 61.7 + iRand.x * 13.1) / 255.0;
         bool flower = !rice && !reed && dens > 0.35 && flR < flD / uDens * smoothstep(22.0, 30.0, gdist);
-        // species: most blades are meadow grass; a share are seed-head grasses (more in drier patches), sun-dried straw
-        // blades, and broad low weed leaves (plantain / dock) in the unmown grass — under the trees mostly broad-leaved
-        // woodland herbs
-        float sp = fract(iRand.x * 7.13 + iRand.z * 3.71 + iRand.y * 1.37);
-        float dryness = smoothstep(0.5, 0.85, gz1.b + (gz3.g - 0.5) * 0.3);
         if (turf) flower = false;
         bool plain = !rice && !reed && !flower && !turf;
-        bool seedG = plain && sp < (0.05 + 0.07 * dryness) * (1.0 - forestF) && gm2.a < 0.5;
-        bool dryB = plain && !seedG && sp < (0.12 + 0.2 * dryness) * (1.0 - forestF * 0.7);
-        bool broadB = plain && !seedG && !dryB && sp > 0.91 - 0.5 * forestF && gm2.a < 0.5;
-        // tall-grass patches stand out of the shorter sward
-        float tallP = smoothstep(0.55, 0.8, gz2.a * 0.7 + gz3.r * 0.5);
-        float Hh = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * (1.0 + 0.45 * tallP) * mix(0.75, 1.0, fade) * keep;
-        Hh *= 1.0 - 0.68 * gm2.a;   // ...and short
-        Hh *= 1.0 - 0.5 * alpine;
-        Hh *= 1.0 - 0.35 * forestF; // low woodland herbs under the trees
+        bool seedG = plain && spc == 1.0, dryB = plain && spc == 2.0, broadB = plain && spc == 3.0;
+        float Hh = bB.w * mix(0.75, 1.0, fade);
         if (seedG) Hh = Hh * 1.3 + 0.22 * keep;
         if (broadB) Hh *= 0.42;
         if (flower) Hh = (0.28 + 0.32 * iRand.y) * mix(0.4, 1.0, fade);
@@ -817,10 +1036,10 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
           // clump cards turn to face the camera and grow a little toward the far edge of their ring
           vec2 toCam = uCam.xz - wp2; bdir = toCam / (length(toCam) + 1e-3); bside = vec2(-bdir.y, bdir.x);
           Wd = uCard.x * (0.75 + 0.5 * iRand.z) * (0.8 + 0.45 * smoothstep(uIn.y, uR, gdist)) * step(0.001, gs);
-          Hh = uCard.y * (0.7 + 0.6 * iRand.y) * (0.55 + 0.65 * gz2.g) * mix(0.75, 1.0, fade) * keep * (1.0 - 0.6 * gm2.a) * (rice ? 0.75 : 1.0);
+          Hh = bB.w * mix(0.75, 1.0, fade);
           flower = false;
         #endif
-        Hh *= 1.0 - 0.75 * smoothstep(0.0, 0.3, pv);
+        Hh *= bC.x;
         float t = bladeUV.y;
         vec2 windDir = normalize(vec2(1.0, 0.35));
         float gust = textureLod(tNoise, wp2 * 0.012 - windDir * uTime * 0.05, 0.0).r;
@@ -845,9 +1064,8 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         #ifdef GRASS_CARD
           gp.xz += bside * bladeUV.x * Wd * 0.5;
           vCardUv = vec2((bladeUV.x * 0.5 + 0.5) * 0.33 * Wd / max(uCard.x, 0.01) + iRand.x * 7.0, t);   // same blade count on every card
-          float pickF = fract(gz2.g * 5.3 + gz3.b * 0.6);
-          vFlCol = pickF < 0.26 ? vec3(1.0, 0.95, 0.86) : pickF < 0.5 ? vec3(1.0, 0.72, 0.06) : pickF < 0.7 ? vec3(1.0, 0.36, 0.55) : pickF < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
-          vFl = step(flR, clamp(flD * 0.22, 0.0, 0.75)) * (rice ? 0.0 : 1.0);
+          vFlCol = fcat < 0.5 ? vec3(1.0, 0.95, 0.86) : fcat < 1.5 ? vec3(1.0, 0.72, 0.06) : fcat < 2.5 ? vec3(1.0, 0.36, 0.55) : fcat < 3.5 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
+          vFl = code >= 512.0 ? 1.0 : 0.0;
         #else
           float prof = flower ? 0.5 + smoothstep(0.55, 0.85, t) * 3.5      // flowers open into a blossom
             : seedG ? (t < 0.66 ? 0.6 - 0.25 * t : 0.35 + 1.5 * sin((t - 0.66) / 0.34 * 3.1416))   // thin stem, spindle seed head
@@ -858,30 +1076,20 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         vGW = gp; vT = t; vCloudLit = cloudShade(gp);
         vec3 bn = normalize(vec3(bdir.x, 0.0, bdir.y) + vec3(0.0, 0.4 + t, 0.0) - vec3(lean.x, 0.0, lean.y) * 0.3);
         vec3 objectNormal = normalize(mix(bn, gN, 0.82) + vec3(bside.x, 0.0, bside.y) * bladeUV.x * 0.08);
-        // the blade takes the painted colour of the ground it grows from; tips are lighter and warmer
-        vec3 c = meadowColor(gz0, gz1, gz2, gz3);
-        c = mix(c, uP_forest * 1.25, smoothstep(0.2, 0.75, gm.r) * 0.6);
-        c *= 0.9 + 0.22 * iRand.y;
-        vec3 tip = mix(c, uP_gLight, 0.45) * 1.12 + vec3(0.03, 0.03, 0.0);
+        // the blade takes the painted colour of the ground it grows from (baked); tips are lighter and warmer
+        vec3 c = bB.rgb;
+        vec3 tip = rice ? c * 1.2 : turf ? c * (stripe > 0.5 ? 1.12 : 1.3) : reed ? c * 1.15 : mix(c, uP_gLight, 0.45) * 1.12 + vec3(0.03, 0.03, 0.0);
         if (dryB) { c = mix(c, vec3(0.55, 0.5, 0.26), 0.65); tip = mix(tip, vec3(0.9, 0.8, 0.5), 0.75); }
         if (broadB) { c *= vec3(0.78, 0.86, 0.74); tip = c * 1.2; }
         if (seedG) { float head = smoothstep(0.62, 0.72, t); tip = mix(tip, mix(vec3(0.7, 0.58, 0.34), vec3(0.56, 0.4, 0.34), step(0.5, fract(iRand.z * 9.1))), head); c = mix(c, tip * 0.8, head); }
         // bright bands where the gusts roll across the meadow (the rolling wave lays the blades over and shows their
         // lighter undersides)
         float wave = smoothstep(0.52, 0.85, gust) * (0.6 + 0.5 * roll);
-        tip += vec3(0.07, 0.09, 0.02) * wave;
-        if (rice) { c = mix(vec3(0.12, 0.36, 0.05), vec3(0.28, 0.5, 0.08), iRand.y) * (0.8 + 0.3 * gz3.r); tip = c * 1.2; }
-        if (turf) { c = mix(vec3(0.16, 0.36, 0.08), vec3(0.2, 0.42, 0.1), iRand.y) * (stripe > 0.5 ? 0.88 : 1.06); tip = c * (stripe > 0.5 ? 1.12 : 1.3); }
-        if (reed) {
-          c = mix(vec3(0.1, 0.3, 0.08), vec3(0.36, 0.42, 0.14), iRand.y * 0.75 + gz3.r * 0.25) * (0.8 + 0.3 * iRand.z);
-          tip = c * 1.15;
-          if (iRand.x > 0.9 && t > 0.84) c = tip = vec3(0.22, 0.12, 0.06);   // bulrush heads
-        }
+        if (!rice && !turf && !reed) tip += vec3(0.07, 0.09, 0.02) * wave;
+        if (reed && iRand.x > 0.9 && t > 0.84) c = tip = vec3(0.22, 0.12, 0.06);   // bulrush heads
         if (flower) {
-          // each patch has its own colour: white daisies, buttercups, pink clover, violets, poppies
-          float pick = fract(gz2.g * 5.3 + gz3.b * 0.6 + step(0.9, iRand.x) * 0.37);
-          vec3 fc = pick < 0.26 ? vec3(1.0, 0.95, 0.86) : pick < 0.5 ? vec3(1.0, 0.72, 0.06) : pick < 0.7 ? vec3(1.0, 0.36, 0.55)
-                  : pick < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
+          vec3 fc = fcat < 0.5 ? vec3(1.0, 0.95, 0.86) : fcat < 1.5 ? vec3(1.0, 0.72, 0.06) : fcat < 2.5 ? vec3(1.0, 0.36, 0.55)
+                  : fcat < 3.5 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
           float head = smoothstep(0.6, 0.72, t);
           c = mix(c, fc, head); tip = mix(tip, fc * 1.1, head);
         }
@@ -910,7 +1118,8 @@ function grassMaterial(hf, grassTex, gu, ru, card) {
         float gTr = pow(max(dot(gV, uSunDir), 1e-4), 4.0) * vT;
         totalEmissiveRadiance += vGTip * uSunCol * (gTr * 0.22 + 0.02 * vT) * vCloudLit;`);
   };
-  mat.customProgramCacheKey = () => card ? 'grassCard' : 'grass';
+  mat.customProgramCacheKey = () => card ? 'grassCard' : baked ? 'grassBaked' : 'grass';
+  mat.userData.drawClass = 2;
   return mat;
 }
 
@@ -991,13 +1200,72 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
   Object.assign(mat.uniforms, hf.U, { tNoise: S.tNoise, uTime: S.uTime, uSunDir: S.uSunDir, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
   mat.uniforms.tRefl.value = reflRT.texture; mat.uniforms.tNormal.value = normals; mat.uniforms.textureMatrix.value = textureMatrix;
   const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2), mat);
-  water.position.y = level; water.renderOrder = 2;
+  water.position.y = level; water.renderOrder = 2; water.userData.dynamic = true; // follows the camera
+  const _vpm = new THREE.Matrix4(), _fr = new THREE.Frustum(), _cp = new THREE.Vector4(), _crop = new THREE.Matrix4(), hideVis = [];
+  // occlusion queries round the draws of the water and of every pond surface linked to its reflection (watchVisibility)
+  const occl = (() => {
+    const gl = renderer.getContext(), Q = gl.ANY_SAMPLES_PASSED_CONSERVATIVE, pool = [], open = [], last = [];
+    let active = null, fr = 0, lastFrame = -2, known = false, visible = true;
+    const poll = () => { // results of earlier frames, oldest first; a frame's answer is known when all its queries are
+      while (open.length && gl.getQueryParameter(open[0].q, gl.QUERY_RESULT_AVAILABLE)) {
+        const e = open.shift(); if (e.f !== lastFrame) { if (lastFrame >= 0) { visible = last.some(Boolean); known = true; } last.length = 0; lastFrame = e.f; }
+        last.push(gl.getQueryParameter(e.q, gl.QUERY_RESULT)); pool.push(e.q);
+      }
+    };
+    return {
+      skipped: 0, tick() { fr++; },
+      hidden() { poll(); return known && !visible; },
+      begin() { if (active) return; const q = pool.pop() || gl.createQuery(); gl.beginQuery(Q, q); active = { q, f: fr }; },
+      end() { if (!active) return; gl.endQuery(Q); open.push(active); active = null; },
+    };
+  })();
+  const watch = m => { const b0 = m.onBeforeRender, a0 = m.onAfterRender;
+    m.onBeforeRender = function (r, s, c, g, mt, gr) { if (c.isPerspectiveCamera && c !== mirrorCam && r.getRenderTarget() !== reflRT) occl.begin(); b0.call(this, r, s, c, g, mt, gr); };
+    m.onAfterRender = function (r, s, c, g, mt, gr) { a0.call(this, r, s, c, g, mt, gr); occl.end(); }; };
   const mirrorPlane = new THREE.Plane(), normal = new THREE.Vector3(0, 1, 0), mirrorPos = new THREE.Vector3(), camPos = new THREE.Vector3(),
     rot = new THREE.Matrix4(), look = new THREE.Vector3(), clipPlane = new THREE.Vector4(), view = new THREE.Vector3(), target = new THREE.Vector3(), q = new THREE.Vector4();
-  water.onBeforeRender = (r, sc, cam) => {
+  // The mirror pass runs as its own top-level render just before the scene pass (post.beforeScene), not from inside the
+  // scene render: a nested render has its own light state, and every material drawn in both passes would otherwise look
+  // its shader program up again twice a frame
+  const renderReflection = (r, sc, cam, force = false) => {
+    if (!water.visible && !force) return;
+    water.updateMatrixWorld();
     mirrorPos.setFromMatrixPosition(water.matrixWorld); camPos.setFromMatrixPosition(cam.matrixWorld);
     view.subVectors(mirrorPos, camPos);
-    if (view.dot(normal) > 0 || !active(camPos)) return;
+    if (!force && (view.dot(normal) > 0 || !active(camPos))) return;
+    // hidden water: every surface that samples the reflection carries an occlusion query in the scene pass; when none of
+    // them drew a single sample last frame (behind buildings or the terrain), the mirror image is not needed. It is
+    // still refreshed every few frames, so the frame a surface comes into view never shows an old image for long.
+    occl.tick();
+    if (!force && occl.hidden() && ++occl.skipped < 6) return;
+    occl.skipped = 0;
+    // no water surface in view: the mirror image would never be sampled (userData.regions: boxes round every surface
+    // that samples this reflection — the river channel, ponds, fountains; unset = always render)
+    // The mirror pass is also cropped to the part of the screen those surfaces cover, plus a margin for the ripple
+    // distortion: it culls against that smaller frustum and draws only
+    // that rectangle of the reflection target; the rest of the target is never sampled.
+    const R = water.userData.regions;
+    let x0 = -1, x1 = 1, y0 = -1, y1 = 1;
+    if (!force && R) {
+      _vpm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _fr.setFromProjectionMatrix(_vpm);
+      let any = false, full = false; x0 = y0 = 1e9; x1 = y1 = -1e9;
+      for (const b of R) {
+        if (!_fr.intersectsBox(b)) continue;
+        any = true;
+        for (let k = 0; k < 8 && !full; k++) { // (a pond's mirrored lookup lands on its own screen position: its box is enough)
+          const cy = k & 2 ? b.max.y : b.min.y;
+          _cp.set(k & 1 ? b.max.x : b.min.x, cy, k & 4 ? b.max.z : b.min.z, 1).applyMatrix4(_vpm);
+          if (_cp.w < 0.05) { full = true; break; }
+          const px = _cp.x / _cp.w, py = _cp.y / _cp.w;
+          x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+        }
+        if (full) break;
+      }
+      if (!any) return;
+      if (full) { x0 = y0 = -1; x1 = y1 = 1; }
+      else { x0 = Math.max(-1, x0 - 0.25); x1 = Math.min(1, x1 + 0.25); y0 = Math.max(-1, y0 - 0.25); y1 = Math.min(1, y1 + 0.25); }
+      if (x1 <= x0 || y1 <= y0) return;
+    }
     view.reflect(normal).negate().add(mirrorPos);
     rot.extractRotation(cam.matrixWorld);
     look.set(0, 0, -1).applyMatrix4(rot).add(camPos);
@@ -1009,23 +1277,36 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
     mirrorCam.projectionMatrix.copy(cam.projectionMatrix);
     textureMatrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
     textureMatrix.multiply(mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
+    if (x0 > -1 || x1 < 1 || y0 > -1 || y1 < 1) { // crop: the rectangle's frustum drawn into the same rectangle of the target
+      const sx = 2 / (x1 - x0), sy = 2 / (y1 - y0);
+      _crop.set(sx, 0, 0, -(x0 + x1) / (x1 - x0), 0, sy, 0, -(y0 + y1) / (y1 - y0), 0, 0, 1, 0, 0, 0, 0, 1);
+      mirrorCam.projectionMatrix.premultiply(_crop);
+    }
+    const W = reflRT.width, H = reflRT.height, vx = Math.floor((x0 + 1) / 2 * W), vy = Math.floor((y0 + 1) / 2 * H);
+    reflRT.viewport.set(vx, vy, Math.ceil((x1 + 1) / 2 * W) - vx, Math.ceil((y1 + 1) / 2 * H) - vy); reflRT.scissor.copy(reflRT.viewport); reflRT.scissorTest = true;
     mirrorPlane.setFromNormalAndCoplanarPoint(normal, mirrorPos).applyMatrix4(mirrorCam.matrixWorldInverse);
     clipPlane.set(mirrorPlane.normal.x, mirrorPlane.normal.y, mirrorPlane.normal.z, mirrorPlane.constant);
     const pm = mirrorCam.projectionMatrix.elements;
     q.x = (Math.sign(clipPlane.x) + pm[8]) / pm[0]; q.y = (Math.sign(clipPlane.y) + pm[9]) / pm[5]; q.z = -1; q.w = (1 + pm[10]) / pm[14];
     clipPlane.multiplyScalar(2 / clipPlane.dot(q));
     pm[2] = clipPlane.x; pm[6] = clipPlane.y; pm[10] = clipPlane.z + 1 - 0.003; pm[14] = clipPlane.w;
+    mirrorCam.projectionMatrixInverse.copy(mirrorCam.projectionMatrix).invert();
     const prevRT = r.getRenderTarget(), prevShadow = r.shadowMap.autoUpdate;
-    const vis = hide.map(o => o.visible);
-    water.visible = false; hide.forEach(o => o.visible = false);
+    for (let i = 0; i < hide.length; i++) { hideVis[i] = hide[i].visible; hide[i].visible = false; }
+    water.visible = false;
     r.shadowMap.autoUpdate = false;
+    perf.push(P_REFL);
     r.setRenderTarget(reflRT); r.state.buffers.depth.setMask(true); r.clear();
     r.render(sc, mirrorCam);
-    water.visible = true; hide.forEach((o, i) => o.visible = vis[i]);
+    perf.pop();
+    water.visible = true; for (let i = 0; i < hide.length; i++) hide[i].visible = hideVis[i];
     r.shadowMap.autoUpdate = prevShadow; r.setRenderTarget(prevRT);
   };
+  post.beforeScene.push(renderReflection);
+  water.userData.renderReflection = renderReflection; // (forced once at load by the warm-up, main.js)
+  watch(water); water.userData.watchVisibility = watch; // (maps add their ponds and fountains)
   water.userData.resize = () => { const rw = Math.max(256, Math.round(Math.min(innerWidth, 1920) * Q.refl)); reflRT.setSize(rw, Math.round(rw * innerHeight / innerWidth)); };
-  water.userData.resize();
+  water.userData.resize(); onResize(water.userData.resize);
   water.userData.hide = hide;
   scene.add(water);
   return water;

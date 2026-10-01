@@ -687,6 +687,7 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
     const loD = sp.short ? () => Q.ferns * 1.1 : sp.tiny ? () => Q.treeHi * 0.7 : sp.small ? () => Q.trees * 0.3 : farDist;
     const lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
     if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) });
+    if ((MATS[sp.mat] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true; // wind-swayed: shadows redrawn near (sky.js)
     new Scatter(list, lods, sp.tiny ? 128 : cell);
     if (colliders && sp.trunk) for (const t of list) { const r = sp.trunk * t.s * (t.sx || 1); if (r > 0.07) addCircle(t.x, t.z, r + 0.05); }
   }
@@ -822,7 +823,7 @@ export function buildFarForest(sets) {
         if (kind === 'fir') for (let g = 0; g < 2; g++) { const sub = list.filter(t => (t.v === 2 || t.v === 4 ? 1 : 0) === g); if (sub.length) new Scatter(sub, [{ dist: near, parts: solid(firGeo[g], M) }], 256); }
         else new Scatter(list, [{ dist: near, parts: solid(leafGeo, M) }], 256);
         new Scatter(asCards(list, kind), [{ dist: near, parts: [] }, { dist: on, parts: card(kind) }], 256);
-      } else new Scatter(asCards(list, kind), [{ dist: on, parts: card(kind) }], 1024);
+      } else new Scatter(asCards(list, kind), [{ dist: on, parts: card(kind) }], 4096); // (2-triangle cards that cast no shadow: wide cells, few draws)
     }
   });
 }
@@ -834,7 +835,9 @@ export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * (
   const seed = { hydra: 21, hedge: 25, ivy: 27 }[kind] || 17;
   const M = materials(kind), hi = broadleafGeo(kind === 'hedge' ? 1 : 0, seed, kind), lo = broadleafGeo(1, seed, kind);
   const sp = { mat: kind, cardShadow: kind !== 'hydra' };
-  new Scatter(bushes, [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }], 192);
+  const lods = [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }];
+  if ((MATS[kind] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true;
+  new Scatter(bushes, lods, 192);
   if (collide) for (const b of bushes) if (b.s > 1.2 && kind !== 'ivy') addCircle(b.x, b.z, 0.35 * b.s * (kind === 'hedge' ? 0.6 : 1));
 }
 

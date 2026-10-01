@@ -1,6 +1,6 @@
 // "Sakuragawa" — a small Japanese town in a valley: station and level crossings, commuter trains, traffic,
 // houses and shops, utility poles, a river with concrete banks, rice paddies and cedar-covered hills.
-import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts,
+import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, flushProps,
   Scatter, addBox, addCircle, addPlatform, colliders, decimate } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt, pondWaterMaterial, flowWaterMaterial, foamMaterial } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
@@ -21,6 +21,7 @@ import { RAIL, buildRailway, railFences, trackside, buildCrossing, pedCrossing, 
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads } from './roads.js';
 import { DANCHI, DANCHI_ROADS, danchiGround, inDanchi, buildDanchi } from './danchi.js';
+import { perf } from './perf.js';
 
 export const meta = { name: 'Sakuragawa 桜川', startHour: 16.6, sunAzimuth: 2.6 };
 const Y0 = 6;
@@ -1355,10 +1356,14 @@ export async function build(progress) {
     active: c => Math.abs(c.x - riverX(c.z)) < 380 });
   reflected.add(water);
   for (const m of [MT.pondWater, MT.fountainWater]) m.userData.linkReflection(water);
+  // where the reflection can be seen: the river channel in 20 m boxes, and (once built) every pond and fountain basin
+  water.userData.regions = [];
+  for (let z = -1000; z < 1000; z += 20) { const a = riverX(z), b = riverX(z + 20); water.userData.regions.push(new THREE.Box3(new THREE.Vector3(Math.min(a, b) - 17, -4, z), new THREE.Vector3(Math.max(a, b) + 17, 2, z + 20))); }
 
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
-  B.flush(MT, { paint: false, stopLegend: false, cycleLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, pondWater: false, fountainWater: false, waterFlow: false, waterFoam: false, turf: false, net: false, lamp: false, chain: false, poly: false });
+  for (const m of B.flush(MT, { paint: false, stopLegend: false, cycleLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, pondWater: false, fountainWater: false, waterFlow: false, waterFoam: false, turf: false, net: false, lamp: false, chain: false, poly: false }))
+    if (m.material === MT.pondWater || m.material === MT.fountainWater) { m.geometry.computeBoundingBox(); water.userData.regions.push(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld).expandByScalar(0.5)); water.userData.watchVisibility(m); }
   Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
   const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg), danchiBenches = flushLandmarks(LBd);
 
@@ -1477,13 +1482,15 @@ export async function build(progress) {
     let [x, , z] = sp.p; if (sp.stop != null) { const k = sp.stop - (T.truck ? T.L / 2 - 0.75 : T.wb / 2) - T.r - 0.03; x += Math.sin(sp.r) * k; z += Math.cos(sp.r) * k; }
     const y = sp.y ?? hf.groundAt(x, z) + (sp.p[1] > Y0 + 0.1 ? 0.14 : 0);
     fleet.place(car, x, y, z, sp.r + Math.PI / 2, 0, 0, 0); addBox(x, z, T.L / 2, T.W / 2, sp.r + Math.PI / 2, -1e9, Math.max(Y0, y) + 1.6); });
-  const traffic = new Traffic(fleet, (x, z) => (Math.abs(z + 80) < 6.8 && XINGS.some(([cx, hw]) => Math.abs(x - cx) < hw) ? Y0 + 0.45 : surfaceY(x, z)) - 0.04);
+  const onXing = (x, pad) => { for (let i = 0; i < XINGS.length; i++) if (Math.abs(x - XINGS[i][0]) < XINGS[i][1] + pad) return true; return false; }; // (no closure per query)
+  const traffic = new Traffic(fleet, (x, z) => (Math.abs(z + 80) < 6.8 && onXing(x, 0) ? Y0 + 0.45 : surfaceY(x, z)) - 0.04);
   moving.forEach((m, i) => traffic.add(fleet.cars[parked.length + i], m.route, m.s));
   fleet.commit();
   // trains
   const trains = [new Train(Y0), new Train(Y0)];
   trains[0].start(1, 2); trains[1].start(-1, 40);
 
+  flushProps(); // instanced props (core.js)
   // town geometry, props, vehicles are not reflected by the river (keeps the reflection pass cheap)
   for (const o of scene.children) if (!reflected.has(o)) o.traverse(c => c.layers.set(1));
 
@@ -1507,13 +1514,15 @@ export async function build(progress) {
   let crowd = null; try { crowd = await loadCrowd(); } catch (e) { console.warn('crowd models failed, box figures instead', e); }
   const people = pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 300, 21, { blocked: xingClosed, crowd });
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
-  const _n = new THREE.Vector3();
+  const _n = new THREE.Vector3(), _pl = { x: 0, y: 0, z: 0 };
+  const PW = { lights: perf.id('world: lights'), lod: perf.id('world: building LOD'), crops: perf.id('world: crops'), props: perf.id('world: props'), people: perf.id('world: pedestrians'),
+    trains: perf.id('world: trains+xings'), traffic: perf.id('world: traffic'), signs: perf.id('world: sign LOD') };
   const world = {
     hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN, materials: MT, terrain: terrainGroup, shrineSpots,
     bounds: { minX: -990, maxX: 990, minZ: -990, maxZ: 990 },
     groundAt(x, z) {
       const f = forecourt.heightAt(x, z); if (f !== null) return f;
-      if (Math.abs(z + 80) < 6.8 && XINGS.some(([cx, hw]) => Math.abs(x - cx) < hw + 0.2)) return Y0 + 0.45; // crossing deck
+      if (Math.abs(z + 80) < 6.8 && onXing(x, 0.2)) return Y0 + 0.45; // crossing deck
       const w = RN.walkY(x, z); if (w !== null) return w;
       if (RN.roadAt(x, z)) return surfaceY(x, z);
       const g = hf.groundAt(x, z); if (onBridge(x, z) && (Math.abs(z + 25) < 7 || Math.abs(z - 200) < 3.5)) return Math.max(g, Y0 + 0.35);
@@ -1542,26 +1551,36 @@ export async function build(progress) {
     },
     collide(p) { traffic.collide(p); people.collide(p); for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
     update(dt, t, cam) {
-      updateNight(); updateGlow(); updateLod(cam); updateCrops(cam); landmarks.update(); parkBenches.update(); danchiBenches.update(); people.update(dt);
-      const pl = { x: cam.position.x, y: cam.position.y - 1.6, z: cam.position.z };
+      perf.begin(PW.lights); updateNight(); updateGlow(); perf.end(PW.lights);
+      perf.begin(PW.lod); updateLod(cam); perf.end(PW.lod);
+      perf.begin(PW.crops); updateCrops(cam); perf.end(PW.crops);
+      perf.begin(PW.props); landmarks.update(); parkBenches.update(); danchiBenches.update(); perf.end(PW.props);
+      perf.begin(PW.people); people.update(dt); perf.end(PW.people);
+      const pl = _pl; pl.x = cam.position.x; pl.y = cam.position.y - 1.6; pl.z = cam.position.z;
+      perf.begin(PW.trains);
       for (const tr of trains) tr.update(dt, pl);
       for (const c of crossings) c.active = crossingActive(c, trains);
       updateCrossings(dt, t); signals.update(dt);
+      perf.end(PW.trains);
+      perf.begin(PW.traffic);
       traffic.update(dt, pl, night.value > 0.35);
-      fleet.commit();
+      fleet.commit(cam.position, cam);
+      perf.end(PW.traffic);
       cityLightU.uCLI.value = smoothstep(0.2, 0.5, night.value); // lamps come on together at dusk
     },
   };
   // signage LOD: canvas-textured signs, plates and machine fronts are separate meshes (one texture each); they cast no
   // shadow (thin plates) and are skipped past ~190 m, where they are a few pixels — ~1700 fewer draws per pass
   const smallSigns = [];
-  scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || o.parent !== scene || !o.material || !o.material.map || !o.material.map.isCanvasTexture) return;
+  scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || o.parent !== scene || !o.material || !o.material.map || !o.material.map.isCanvasTexture || o.userData.keepShadow) return;
     o.geometry.computeBoundingSphere(); if (o.geometry.boundingSphere.radius > 4) return; o.castShadow = false; smallSigns.push(o); });
   let signTick = 0;
   const baseUpdate = world.update;
   world.update = (dt, t, cam) => { baseUpdate(dt, t, cam);
+    perf.begin(PW.signs);
     if (signTick++ % 6 === 0) { const R = 190 * (Q.lodScale || 1), R2 = R * R, p = cam.position;
-      for (const o of smallSigns) { const dx = o.position.x - p.x, dz = o.position.z - p.z; o.visible = dx * dx + dz * dz < R2; } } };
+      for (const o of smallSigns) { const dx = o.position.x - p.x, dz = o.position.z - p.z; o.visible = dx * dx + dz * dz < R2; } }
+    perf.end(PW.signs); };
   people.update(0);
   world.cityLights = Object.assign(cityLights, { materials: enableCityLights(scene) });
   world.people = people;

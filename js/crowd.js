@@ -101,7 +101,7 @@ export function crowdMeshes(bakes, walkers, colours) {
     mat.onBeforeCompile = s => patch(s, B); mat.customProgramCacheKey = () => 'crowd' + mi;
     const dmat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     dmat.onBeforeCompile = s => patch(s, B); dmat.customProgramCacheKey = () => 'crowdDepth' + mi;
-    const im = new THREE.InstancedMesh(geo, mat, n); im.customDepthMaterial = dmat; im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
+    const im = new THREE.InstancedMesh(geo, mat, n); im.customDepthMaterial = dmat; im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; im.userData.dynamicCaster = true;
     if (!list.length) im.count = 0;
     scene.add(im);
     return { im, anim, slot: new Map(list.map((wi, k) => [wi, k])), walkLen: B.walkLen };

@@ -3,7 +3,8 @@
 // Here all fixtures (lampPoints) are lit per pixel, with no distance at which a light activates:
 //   - the fixtures go into a float texture (position, radius, colour × intensity);
 //   - an 8 m grid over the town lists, per cell, the K lamps that matter most there (a lamp is listed in every cell its
-//     sphere of influence touches), so a fragment only loops over its own cell's short list;
+//     sphere of influence touches), so a fragment only loops over its own cell's short list; the cell lists are rows of
+//     the same texture below the lamps (one sampler: the grass cards already use all sixteen the GPU binds);
 //   - lights_fragment_begin runs those lamps through the material's own RE_Direct (toon diffuse + specular), for every
 //     standard material (buildings, roads, terrain, grass, trees, cars, people) that enableCityLights() tags.
 // Tiers: within ~1.2 km every lamp lights its surroundings (a lamp's own falloff ends at its radius, smoothly); past that
@@ -13,14 +14,14 @@ import { THREE } from './core.js';
 
 const K = 8, CELL = 8, LW = 512; // lamps per cell, cell size (m), lamps per row of the lamp texture
 export const cityLightU = {
-  uCLamp: { value: null }, uCLCell: { value: null }, uCLGrid: { value: new THREE.Vector2() }, uCLDim: { value: new THREE.Vector2() },
+  uCLamp: { value: null }, uCLRow: { value: 0 }, uCLGrid: { value: new THREE.Vector2() }, uCLDim: { value: new THREE.Vector2() },
   uCLI: { value: 0 }, uCLFar: { value: new THREE.Vector2(1200, 1600) },
   uCLDen: { value: null }, uCLDenT: { value: new THREE.Vector4() }, uCLAmb: { value: new THREE.Vector3(0.1, 0.075, 0.055) },
 };
 
 THREE.ShaderChunk.lights_pars_begin += /* glsl */`
 #ifdef CITY_LIGHTS
-uniform highp sampler2D uCLamp, uCLCell; uniform sampler2D uCLDen; uniform vec2 uCLGrid, uCLDim, uCLFar; uniform float uCLI; uniform vec4 uCLDenT; uniform vec3 uCLAmb;
+uniform highp sampler2D uCLamp; uniform sampler2D uCLDen; uniform vec2 uCLGrid, uCLDim, uCLFar; uniform float uCLI; uniform int uCLRow; uniform vec4 uCLDenT; uniform vec3 uCLAmb;
 #endif
 `;
 THREE.ShaderChunk.lights_fragment_begin += /* glsl */`
@@ -33,7 +34,7 @@ if ( uCLI > 0.0 ) {
 	reflectedLight.indirectDiffuse += uCLI * clDen * uCLAmb * ( 0.55 + 0.45 * ( geometryNormal * mat3( viewMatrix ) ).y ) * BRDF_Lambert( material.diffuseColor );
 	ivec2 clC = ivec2( floor( ( clWP.xz - uCLGrid ) / ${CELL.toFixed(1)} ) );
 	if ( clFade > 0.0 && clC.x >= 0 && clC.y >= 0 && clC.x < int( uCLDim.x ) && clC.y < int( uCLDim.y ) ) {
-		vec4 clA = texelFetch( uCLCell, ivec2( clC.x * 2, clC.y ), 0 ), clB = texelFetch( uCLCell, ivec2( clC.x * 2 + 1, clC.y ), 0 );
+		vec4 clA = texelFetch( uCLamp, ivec2( clC.x * 2, clC.y + uCLRow ), 0 ), clB = texelFetch( uCLamp, ivec2( clC.x * 2 + 1, clC.y + uCLRow ), 0 );
 		float clIdx[ 8 ] = float[ 8 ]( clA.x, clA.y, clA.z, clA.w, clB.x, clB.y, clB.z, clB.w );
 		IncidentLight clL; clL.visible = true;
 		for ( int i = 0; i < 8; i ++ ) {
@@ -88,9 +89,12 @@ export function buildCityLights(lamps) {
     const cx = k % GX, cz = Math.floor(k / GX);
     for (let j = 0; j < Math.min(K, ls.length); j++) CT[(cz * GX * 2 + cx * 2) * 4 + j] = ls[j][1];
   });
-  const tex = (data, w, h) => { const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; };
-  cityLightU.uCLamp.value = tex(LT, LW * 2, rows);
-  cityLightU.uCLCell.value = tex(CT, GX * 2, GY);
+  // lamps in rows [0, rows), cell lists in rows [rows, rows + GY)
+  const W = Math.max(LW * 2, GX * 2), D = new Float32Array(W * (rows + GY) * 4);
+  for (let r = 0; r < rows; r++) D.set(LT.subarray(r * LW * 2 * 4, (r + 1) * LW * 2 * 4), r * W * 4);
+  for (let r = 0; r < GY; r++) D.set(CT.subarray(r * GX * 2 * 4, (r + 1) * GX * 2 * 4), (rows + r) * W * 4);
+  const t = new THREE.DataTexture(D, W, rows + GY, THREE.RGBAFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  cityLightU.uCLamp.value = t; cityLightU.uCLRow.value = rows;
   cityLightU.uCLGrid.value.set(x0, z0); cityLightU.uCLDim.value.set(GX, GY);
   // lamp density (16 m cells, gaussian splat of 35 m) for the ambient fill; a 160 m margin lets it fade to nothing
   { const DC = 16, M = 160, dx0 = x0 - M, dz0 = z0 - M, DX = Math.ceil((x1 - x0 + 2 * M) / DC), DZ = Math.ceil((z1 - z0 + 2 * M) / DC), D = new Float32Array(DX * DZ), sg = 35;

@@ -1,12 +1,13 @@
 // Boot, UI, and main loop. Map is chosen with ?map=nature|town.
-import { THREE, renderer, scene, camera, S, Q, QUALITY, pixelRatio, loadState, manager, scatters, clamp, smoothstep, tick } from './core.js';
-import { time, updateSky, followCamera, env, applyShadowQuality, sky } from './sky.js';
+import { THREE, renderer, scene, camera, S, Q, QUALITY, pixelRatio, loadState, manager, scatters, clamp, smoothstep, tick, shareShadowDepth, swapMaterials, ownInstanceGeometry, freezeStatic, singlePassFlat, indexInstanced } from './core.js';
+import { time, updateSky, followCamera, env, applyShadowQuality, sky, prepareShadowCache } from './sky.js';
 import { post, buildComposer, updateRays } from './post.js';
 import { audio, Emitter } from './audio.js';
 import { player, keys, updatePlayer, updateCamera } from './player.js';
 import { $, toastMsg } from './ui.js';
 import { buildLife } from './life.js';
 import { flattenPhotoMaterials } from './toon.js';
+import { perf, toggleOverlay } from './perf.js';
 
 const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js') };
 const mapName = MAPS[new URLSearchParams(location.search).get('map')] ? new URLSearchParams(location.search).get('map') : 'nature';
@@ -72,36 +73,59 @@ function setQuality(name) {
   toastMsg('Quality: ' + name.toUpperCase());
 }
 
+const P_SKY = perf.id('sky + shadow fit'), P_PLAYER = perf.id('player/collision'), P_SCAT = perf.id('vegetation LOD'), P_WORLD = perf.id('world (total)'),
+  P_LIFE = perf.id('ambient life'), P_AUDIO = perf.id('audio'), P_RENDER = perf.id('post (misc)', 1);
+const audioState = { wind: 0, day: 0, night: 0, fly: false, under: false };
 function step(dt, t) {
+  perf.frameStart();
   if (dbgState.still) t = dbgState.still; else S.uTime.value = t;
   if (time.running && started) time.hour = (time.hour + dt * time.speed) % 24;
+  perf.begin(P_SKY);
   updateSky(false);
   post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
+  perf.end(P_SKY);
   const wind = 0.55 + 0.3 * Math.sin(t * 0.07) + 0.2 * Math.sin(t * 0.23 + 1.3) * Math.sin(t * 0.11);
   S.uWind.value = dbgState.still ? 0 : wind;
+  perf.begin(P_PLAYER);
   if (locked && started) updatePlayer(world, dt);
   if (!started && !dbgState.pause) player.yaw += dt * 0.02;
   updateCamera(world);
+  perf.end(P_PLAYER);
   camera.updateMatrixWorld();
   S.uCam.value.copy(camera.position);
   S.uPlayer.value.copy(player.pos);
   S.uSunViewDir.value.copy(S.uSunDir.value).transformDirection(camera.matrixWorldInverse);
+  perf.begin(P_SCAT);
   for (const s of scatters) s.update(camera.position.x, camera.position.z);
+  perf.end(P_SCAT);
+  perf.begin(P_SKY);
   followCamera((x, z) => world.groundAt(x, z), player.yaw);
+  perf.end(P_SKY);
   if (world.water) world.water.position.set(Math.round(camera.position.x), world.water.position.y, Math.round(camera.position.z));
+  perf.begin(P_WORLD);
   world.update(dbgState.still ? 0 : dt, t, camera);
+  perf.end(P_WORLD);
+  perf.begin(P_LIFE);
   life.update(t, time.hour);
+  perf.end(P_LIFE);
   const wl = world.waterAt(camera.position.x, camera.position.z);
   const under = camera.position.y < wl - 0.05 && world.groundAt(camera.position.x, camera.position.z) < wl;
   post.grade.uniforms.uTime.value = t; post.grade.uniforms.uUnder.value = under ? 1 : 0;
   updateRays(S.uSunDir.value, S.uSunCol.value, env.day);
+  perf.begin(P_AUDIO);
   ambTimer -= dt;
   if (ambTimer < 0) { ambTimer = 0.4; amb = world.ambience(player.pos.x, player.pos.z); }
   audio.listen(camera);
-  audio.update(dt, { wind, ...amb, day: env.day, night: env.night, fly: player.fly, under });
+  Object.assign(audioState, amb); audioState.wind = wind; audioState.day = env.day; audioState.night = env.night; audioState.fly = player.fly; audioState.under = under;
+  audio.update(dt, audioState);
   for (const e of audio.emitters) e.update(dt);
+  perf.end(P_AUDIO);
+  scene.updateMatrixWorld(); // once per frame for every pass (scene.matrixWorldAutoUpdate is off, core.js freezeStatic)
+  perf.push(P_RENDER);
   post.composer.render(dt);
+  perf.pop();
   if (failedPrograms.size) repairShaders();
+  perf.frameEnd();
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) {
     $('fps').textContent = Math.round(fpsN / fpsAcc) + ' fps · ' + Q.name;
@@ -130,6 +154,7 @@ document.addEventListener('mousemove', e => {
 });
 addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (e.code === 'F3') { e.preventDefault(); toggleOverlay(); }
   if (!locked) return;
   if (e.code === 'KeyF') { player.fly = !player.fly; if (player.fly) player.pos.copy(camera.position); else player.vy = 0; toastMsg(player.fly ? 'Fly mode' : 'Walking'); }
   if (e.code === 'KeyT') { time.running = !time.running; toastMsg(time.running ? 'Time running' : 'Time paused'); }
@@ -166,16 +191,53 @@ async function main() {
   updateSky(true); post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
   updateCamera(world); camera.updateMatrixWorld();
   for (const s of scatters) s.update(camera.position.x, camera.position.z);
+  indexInstanced(scene); shareShadowDepth(scene); singlePassFlat(scene); ownInstanceGeometry(scene); freezeStatic(scene); prepareShadowCache(scene);
   progress('Compiling shaders', 1); await tick();
   // KHR_parallel_shader_compile: the GPU process compiles every program side by side instead of one blocking call each
   await renderer.compileAsync(scene, camera);
+  await warmup();
   frame();
   const ld = $('loading'); ld.classList.add('hidden'); setTimeout(() => ld.remove(), 900);
   $('menu').classList.remove('hidden');
   let manualT = 0;
-  window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY,
-    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, dbg: debugToggles() }; // console debugging hook
+  window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
+    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, dbg: debugToggles(), perf, toggleOverlay, keys,
+    // automated play-testing: act as if the pointer were locked, so keys (keys.KeyW = true ...) drive the walker
+    autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); } }; // console debugging hook
 }
+// ---------------------------------------------------------------- warm-up
+// Everything is drawn once, in every pass it can appear in, before the first real frame. compileAsync only prepares
+// what is visible from the spawn with the scene pass's settings; the rest (far LOD levels, detail that appears on
+// approach, night-only objects, the shadow and mirror passes, the render-target formats ANGLE builds its D3D shader
+// variants for) would otherwise compile, link and upload its textures in the frame it is first seen — the 100–250 ms
+// hitches when walking into a new area. The pass runs at a tiny internal resolution: shader variants depend on the
+// target formats and sample counts, not on the size.
+async function warmup() {
+  const shown = [], unculled = [];
+  scene.traverse(o => {
+    if (!o.visible) { shown.push(o); o.visible = true; }
+    if ((o.isMesh || o.isPoints || o.isLine) && o.frustumCulled) { unculled.push(o); o.frustumCulled = false; }
+  });
+  // stand-ins for the materials objects switch to later (same geometry, so the same vertex layout)
+  const standIns = [], swapSeen = new Set();
+  for (const [mesh, mats] of swapMaterials) for (const m of mats) {
+    if (swapSeen.has(m) || m === mesh.material) continue; swapSeen.add(m);
+    const p = new THREE.Mesh(mesh.geometry, m); p.frustumCulled = false; p.castShadow = mesh.castShadow; p.receiveShadow = mesh.receiveShadow; p.layers.mask = mesh.layers.mask;
+    scene.add(p); standIns.push(p);
+  }
+  const pr = renderer.getPixelRatio();
+  renderer.setPixelRatio(Math.max(0.1, 192 / innerWidth)); buildComposer();
+  for (const l of scene.children) if (l.isDirectionalLight && l.castShadow) l.shadow.needsUpdate = true;
+  post.composer.render(0); await tick(); // scene pass, shadow maps, post chain
+  if (world.water && world.water.userData.renderReflection) { world.water.userData.renderReflection(renderer, scene, camera, true); await tick(); }
+  for (const o of shown) o.visible = false;
+  for (const o of unculled) o.frustumCulled = true;
+  for (const p of standIns) scene.remove(p);
+  renderer.setPixelRatio(pr); buildComposer();
+  followCamera((x, z) => world.groundAt(x, z), player.yaw); // places the cascades: the cached far ones get their static maps now
+  post.composer.render(0); await tick(); // the full-size targets once
+}
+
 // A/B switches for render diagnosis (flicker isolation): __wl.dbg.set({ taa: false, ao: false, shadows: false, ... })
 function debugToggles() {
   const M = world.materials || {}, cur = { taa: true, ao: true, shadows: true, bloom: true, roadNormal: true, roadDetail: true, marks: true, terrain: 'on', wind: true };

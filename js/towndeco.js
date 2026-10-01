@@ -798,16 +798,19 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null,
   };
   mat.customProgramCacheKey = () => 'people';
   const im = new THREE.InstancedMesh(geo, mat, count);
-  im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false;
+  im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; im.userData.dynamicCaster = true;
   if (!C) scene.add(im);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3();
-  const at = (P, s) => { // point + direction along a polyline
+  const at = (P, s, out) => { // point + direction along a polyline, into out [x, z, dx, dz]
     s = clamp(s, 0, P.L);
     for (let i = 0; i < P.seg.length; i++) {
-      if (s <= P.seg[i] || i === P.seg.length - 1) { const a = P.pts[i], b = P.pts[i + 1], t = P.seg[i] ? s / P.seg[i] : 0, dx = (b[0] - a[0]) / (P.seg[i] || 1), dz = (b[1] - a[1]) / (P.seg[i] || 1); return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), dx, dz]; }
+      if (s <= P.seg[i] || i === P.seg.length - 1) { const a = P.pts[i], b = P.pts[i + 1], t = P.seg[i] ? s / P.seg[i] : 0;
+        out[0] = lerp(a[0], b[0], t); out[1] = lerp(a[1], b[1], t); out[2] = (b[0] - a[0]) / (P.seg[i] || 1); out[3] = (b[1] - a[1]) / (P.seg[i] || 1); return out; }
       s -= P.seg[i];
     }
+    return out;
   };
+  const _at = [0, 0, 0, 0];
   const walkAttr = geo.attributes.iWalk, rate0 = Float32Array.from(ps.filter((_, k) => k % 2 === 1)), phase0 = Float32Array.from(ps.filter((_, k) => k % 2 === 0));
   const update = (dt) => {
     let animChanged = false;
@@ -818,10 +821,10 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null,
       let ns = w.s + w.dir * w.speed * dt;
       if (ns < 0 || ns > w.P.L) { w.dir *= -1; ns = clamp(ns, 0, w.P.L); }
       let wait = false;
-      if (blocked && dt > 0) { const [nx0, nz0, ndx, ndz] = at(w.P, ns + w.dir * 0.8), oo = w.P.off * w.side; wait = blocked(w.x, w.z, nx0 - ndz * oo, nz0 + ndx * oo); }
+      if (blocked && dt > 0) { const A = at(w.P, ns + w.dir * 0.8, _at), oo = w.P.off * w.side; wait = blocked(w.x, w.z, A[0] - A[3] * oo, A[1] + A[2] * oo); }
       if (!wait) w.s = ns;
       if (wait !== !!w.waiting) { w.waiting = wait; ps[i * 2 + 1] = wait ? 0 : rate0[i]; ps[i * 2] = wait ? 0 : phase0[i]; animChanged = true; }
-      const [x, z, dx, dz] = at(w.P, w.s), o = w.P.off * w.side;
+      const A = at(w.P, w.s, _at), x = A[0], z = A[1], dx = A[2], dz = A[3], o = w.P.off * w.side;
       w.x = x - dz * o; w.z = z + dx * o;
       const y = groundAt(w.x, w.z) + (w.P.lift ? w.P.lift(w.x, w.z) : 0);
       q.setFromAxisAngle(up, Math.atan2(dx * w.dir, dz * w.dir));
@@ -831,7 +834,7 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null,
     }
     if (C) C.commit(); else { im.instanceMatrix.needsUpdate = true; if (animChanged) walkAttr.needsUpdate = true; }
   };
-  return { mesh: C ? C.meshes[0] : im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz); if (d < 0.6 && d > 1e-4) { p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
+  return { mesh: C ? C.meshes[0] : im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d2 = dx * dx + dz * dz; if (d2 < 0.36 && d2 > 1e-8) { const d = Math.sqrt(d2); p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
 }
 
 // municipal tennis courts (市民テニスコート): two sand-filled artificial-grass courts inside a 4 m chain-link cage, nets on
