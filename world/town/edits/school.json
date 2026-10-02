@@ -1,0 +1,22 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "school",
+  "objects": [
+    {
+      "id": "school_school_001",
+      "slots": {
+        "chain#6": { "hidden": true },
+        "steel#48": { "hidden": true },
+        "steel#49": { "hidden": true },
+        "steel#50": { "hidden": true },
+        "steel#51": { "hidden": true },
+        "steel#52": { "hidden": true },
+        "steel#53": { "hidden": true },
+        "steel#54": { "hidden": true }
+      },
+      "origin": [-89.75, 6, 223]
+    }
+  ]
+}

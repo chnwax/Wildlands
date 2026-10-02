@@ -6,6 +6,6 @@
   "note": "Index of the world files of this map. The game loads every file listed in \"edits\" (and \"materialEdits\"). Generated files describe what the generator places; they are rewritten on regeneration, edits never are.",
   "areas": ["danchi", "farmland", "hills", "midtown", "newtown", "oldtown", "paddies", "river", "school", "shrine", "station"],
   "generated": ["generated/danchi.json", "generated/farmland.json", "generated/hills.json", "generated/midtown.json", "generated/newtown.json", "generated/oldtown.json", "generated/paddies.json", "generated/river.json", "generated/school.json", "generated/shrine.json", "generated/station.json", "generated/fields.json"],
-  "edits": [],
+  "edits": ["edits/danchi.json", "edits/farmland.json", "edits/hills.json", "edits/midtown.json", "edits/newtown.json", "edits/oldtown.json", "edits/river.json", "edits/school.json", "edits/station.json"],
   "libraries": { "prefabs": "prefabs.json", "materials": "materials.json" }
 }

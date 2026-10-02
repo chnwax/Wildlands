@@ -1,0 +1,207 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "station",
+  "objects": [
+    {
+      "id": "bench_new_001",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-5.074, 6.22, -49.833],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_002",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-7.065, 6.22, -49.821],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_003",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-8.909, 6.22, -49.835],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_004",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-10.85, 6.22, -49.818],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_005",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-12.713, 6.22, -49.831],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_006",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-14.575, 6.22, -49.864],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_007",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-14.588, 6.22, -50.516],
+      "rotation": [0, -179.63, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_008",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-12.727, 6.22, -50.525],
+      "rotation": [0, -179.57, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_009",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-10.839, 6.22, -50.536],
+      "rotation": [0, 179.84, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_010",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-8.92, 6.22, -50.542],
+      "rotation": [0, 179.48, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_011",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-7.071, 6.22, -50.569],
+      "rotation": [0, 179.78, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bench_new_012",
+      "name": "Bench",
+      "prefab": "bench",
+      "position": [-5.124, 6.22, -50.588],
+      "rotation": [0, -180, 0],
+      "scale": [1, 1, 1],
+      "material": "landmark_wood"
+    },
+    {
+      "id": "bike_shelter_new_001",
+      "name": "Bike shelter",
+      "prefab": "bike_shelter",
+      "position": [-9.63, 6.22, -50.127],
+      "rotation": [0, 0, 0],
+      "scale": [1.538, 1, 1],
+      "material": "concrete"
+    },
+    {
+      "id": "house_station_008",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [94.753, 5.985, -44.82]
+    },
+    {
+      "id": "house_station_012",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [53.712, 5.971, -47.491]
+    },
+    {
+      "id": "house_station_047",
+      "slots": {
+        "wood": { "offset": [-0.4666, -8.6707, -0.0187], "rotate": [0, 0, -90], "scale": [2.4672, 1.0212, 1] }
+      },
+      "origin": [93.569, 5.982, 4.178]
+    },
+    {
+      "id": "house_station_050",
+      "slots": {
+        "wood": { "offset": [-1.1797, -7.3102, -0.0472], "rotate": [0, 0, -90], "scale": [2.1944, 0.6437, 1.2838] }
+      },
+      "origin": [87.089, 5.994, 23.936]
+    },
+    {
+      "id": "pergola_new_001",
+      "name": "Pergola",
+      "prefab": "pergola",
+      "position": [-14.242, 6.22, -42.881],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "wood"
+    },
+    {
+      "id": "pergola_new_002",
+      "name": "Pergola",
+      "prefab": "pergola",
+      "position": [-14.135, 6.22, -36.305],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "wood"
+    },
+    {
+      "id": "post_box_new_001",
+      "name": "Post box",
+      "prefab": "post_box",
+      "position": [-30.04, 6.22, -38.242],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "plain"
+    },
+    {
+      "id": "public_toilet_new_001",
+      "name": "Public toilet",
+      "prefab": "public_toilet",
+      "position": [-0.655, 6.22, -38.485],
+      "rotation": [0, -88.14, 0],
+      "scale": [1, 1, 1],
+      "material": "tiles"
+    },
+    {
+      "id": "route_bus_new_001",
+      "name": "Route bus",
+      "prefab": "route_bus",
+      "position": [17.158, 6.085, -55.449],
+      "rotation": [0, -89.98, 0],
+      "scale": [1, 1, 1],
+      "material": "plastic"
+    },
+    {
+      "id": "stone_lantern_toro_new_001",
+      "name": "Stone lantern toro",
+      "prefab": "stone_lantern_toro",
+      "position": [-24.127, 6.22, -51.8],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "concrete"
+    }
+  ]
+}

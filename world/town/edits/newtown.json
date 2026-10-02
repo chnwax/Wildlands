@@ -1,0 +1,67 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "newtown",
+  "objects": [
+    {
+      "id": "house_newtown_028",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [95.529, 6.034, 164.422]
+    },
+    {
+      "id": "house_newtown_100",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [200.184, 5.989, 257.925]
+    },
+    {
+      "id": "house_newtown_116",
+      "slots": {
+        "wood#0.0": { "hidden": true }
+      },
+      "origin": [40.252, 5.948, 230.992]
+    },
+    {
+      "id": "house_newtown_117",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [53.256, 5.944, 231.039]
+    },
+    {
+      "id": "shop_newtown_001",
+      "slots": {
+        "alu#0": { "scale": [1, 1, 1.0526] },
+        "plain#1": { "scale": [1, 1, 1.0382] },
+        "plain#2": { "scale": [1, 1, 14.497] },
+        "plain#4": { "scale": [1, 1, 1.0357] },
+        "plain#5": { "hidden": true },
+        "plain#6": { "hidden": true },
+        "roofmetal#0": { "scale": [1, 1, 1.0428] },
+        "tiles#1": { "hidden": true, "offset": [0, -3.1595, 0] },
+        "tiles#2": { "hidden": true }
+      },
+      "origin": [160.876, 6.01, -37.12]
+    },
+    {
+      "id": "shop_newtown_002",
+      "slots": {
+        "alu#0": { "scale": [1, 1, 1.0619] },
+        "alu#3": { "scale": [1, 1, 1.0507] },
+        "plain#1": { "scale": [1, 1, 1.0478] },
+        "plain#2": { "scale": [1, 1, 18.6772] },
+        "plain#4": { "scale": [1, 1, 1.0452] },
+        "plain#5": { "hidden": true },
+        "plain#6": { "hidden": true },
+        "roofmetal#0": { "scale": [1, 1, 1.0539] },
+        "siding#1": { "hidden": true },
+        "siding#2": { "hidden": true }
+      },
+      "origin": [166.281, 6.029, -12.88]
+    }
+  ]
+}
