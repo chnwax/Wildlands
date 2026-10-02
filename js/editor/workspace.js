@@ -20,6 +20,7 @@ export async function startWorkspace(ed) {
   ed.doc = doc; ed.E = E;
   ed.refreshShadows = () => refreshShadowCasters();
   // the camera orbits around / zooms toward what is under the cursor (objects only when close: the ground is cheaper)
+  ed.cam.getPivot = () => { if (!E.sel.length) return null; const b = new THREE.Box3(); for (const id of E.sel) { const e = L.get(id); if (e) b.union(L.worldBox(e)); } return b.isEmpty() ? null : b.getCenter(new THREE.Vector3()); };
   ui.pickPoint = (x, y) => { const p = E.picker.pick(x, y); return p.hit ? p.hit.point : p.ground ? p.ground.point : null; };
   // ---------------------------------------------------------------- panels
   const tabs = el('div', { class: 'tabs' }), olPane = el('div', { class: 'pane' }), palPane = el('div', { class: 'pane hidden' });
@@ -147,9 +148,11 @@ export async function startWorkspace(ed) {
   K('KeyC', () => E.copy(), { ctrl: true, when: has });
   K('KeyV', () => E.paste(), { ctrl: true, shift: false });
   K('KeyV', () => E.pasteMaterial(), { ctrl: true, shift: true });
-  K('Delete', () => E.remove(), { when: has }); K('Backspace', () => E.remove(), { when: has });
+  K('Delete', () => E.remove(), { when: () => has() && !E.part }); K('Backspace', () => E.remove(), { when: () => has() && !E.part });
   K('End', () => E.dropToGround(false), { shift: false, when: has }); K('End', () => E.dropToGround(true), { shift: true, when: has });
   K('KeyF', () => E.focus(), { when: has });
+  K('KeyH', () => E.editElement(el => ({ ...el, hidden: el.hidden ? undefined : true }), 'Hide / show element'), { when: () => !!E.part, alt: false });
+  K('Delete', () => E.editElement(el => ({ ...el, hidden: true }), 'Hide element'), { when: () => !!E.part });
   K('KeyH', () => E.setFlag('hidden'), { when: has, alt: false }); K('KeyH', () => E.showAll(), { alt: true });
   K('KeyL', () => E.setFlag('locked'), { when: has });
   K('KeyG', () => E.group(), { ctrl: true, shift: false }); K('KeyG', () => E.ungroup(), { ctrl: true, shift: true });
@@ -157,7 +160,7 @@ export async function startWorkspace(ed) {
   K('KeyA', () => { const ids = E.picker.inRect(0, 0, innerWidth, innerHeight); E.select(ids); toast(`Selected ${ids.length} visible objects`); }, { ctrl: true });
   K('F2', () => { if (E.sel.length === 1) { showTab('Outliner'); outliner.startRename(E.primary); } });
   K('KeyF', () => { showTab('Outliner'); outliner.focusSearch(); }, { ctrl: true });
-  K('Escape', () => { if (E.gizmo.drag) E.gizmo.end(true); else if (E.placing) E.disarm(); else if (E.eyedropper) E.armEyedropper(); else E.select([]); });
+  K('Escape', () => { if (E.gizmo.drag) E.gizmo.end(true); else if (E.part) E.selectElement(E.part.id, null); else if (E.placing) E.disarm(); else if (E.eyedropper) E.armEyedropper(); else E.select([]); });
   K('Equal', () => E.scaleGhost(1.25), { when: () => !!E.placing }); K('Minus', () => E.scaleGhost(0.8), { when: () => !!E.placing });
   K('NumpadAdd', () => E.scaleGhost(1.25), { when: () => !!E.placing }); K('NumpadSubtract', () => E.scaleGhost(0.8), { when: () => !!E.placing });
   K('BracketLeft', () => E.turnGhost(-Math.PI / 12), { when: () => !!E.placing }); K('BracketRight', () => E.turnGhost(Math.PI / 12), { when: () => !!E.placing });
@@ -168,8 +171,9 @@ export async function startWorkspace(ed) {
   // right-click menu on the selection
   renderer.domElement.addEventListener('contextmenu', e => {
     if (ed.cam.drag && ed.cam.drag.moved > 4) return;
-    const p = E.picker.pick(e.clientX, e.clientY); if (!p.hit) return;
-    if (!E.sel.includes(p.hit.id)) E.select([p.hit.id]);
+    // (the right button never selects: it is the camera's; the menu is for what is already selected)
+    if (!E.sel.length) return;
+    const p = E.picker.pick(e.clientX, e.clientY); if (!p.hit || !E.sel.includes(p.hit.id)) return;
     const n = E.sel.length;
     contextMenu(e.clientX, e.clientY, [
       { label: 'Focus', key: 'F', run: () => E.focus() }, '-',

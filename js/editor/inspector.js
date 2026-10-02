@@ -57,7 +57,7 @@ export function buildInspector(E, pane) {
   function setOverride(ids, slot, k, v, preview, end) {
     const fn = r => {
       const prim = slotInfo(r.id)[0];
-      if (!slotInfo(r.id).includes(slot)) return null;
+      if (!slotInfo(r.id).includes(slot.split('#')[0])) return null;
       if (slot === prim && k !== 'material') { const o = { ...(r.materialOverrides || {}) }; if (v === undefined) delete o[k]; else o[k] = v; if (Object.keys(o).length) r.materialOverrides = o; else delete r.materialOverrides; }
       else if (slot === prim && k === 'material') { if (v === undefined) delete r.material; else r.material = v; }
       else { const S = { ...(r.slots || {}) }, o = { ...(S[slot] || {}) }; if (v === undefined) delete o[k]; else o[k] = v; if (Object.keys(o).length) S[slot] = o; else delete S[slot]; if (Object.keys(S).length) r.slots = S; else delete r.slots; }
@@ -73,20 +73,21 @@ export function buildInspector(E, pane) {
     doc.setShared(name, cur, `${labelOf(k)} of shared material ${name}`);
   }
   function materialEditor(ids, slot, isPrimary, recs) {
-    const users = [...L.geo].filter(e => L.slotsOf(e).includes(slot)).length;
+    const lib = slot.split('#')[0]; // (a piece "stucco#3" uses the library material "stucco")
+    const users = [...L.geo].filter(e => L.slotsOf(e).includes(lib)).length;
     const shared = matMode === 'shared', box = el('div', { class: 'slot' });
     const r0 = recs[0], ov = slotOv(r0, slot, slotInfo(r0.id)[0]);
-    const base = L.sharedProps(ov.material || slot) || {};
-    const cur = shared ? { ...base, ...(doc.mats.get(slot) || {}) } : { ...base, ...ov };
-    const set = (k, v, preview) => shared ? setSharedProp(slot, k, v, preview) : setOverride(ids, slot, k, v, preview);
-    const changed = k => shared ? doc.mats.get(slot) && doc.mats.get(slot)[k] !== undefined : ov[k] !== undefined;
+    const base = L.sharedProps(ov.material || lib) || {};
+    const cur = shared ? { ...base, ...(doc.mats.get(lib) || {}) } : { ...base, ...ov };
+    const set = (k, v, preview) => shared ? setSharedProp(lib, k, v, preview) : setOverride(ids, slot, k, v, preview);
+    const changed = k => shared ? doc.mats.get(lib) && doc.mats.get(lib)[k] !== undefined : ov[k] !== undefined;
     const reset = k => changed(k) ? el('button', { class: 'btn sm', title: shared ? 'Back to the generated value' : 'Remove this override', onclick: () => set(k, undefined) }, '↺') : null;
     box.append(el('div', { class: 'slot-h' }, el('span', { class: 'ic', style: { width: '10px', height: '10px', borderRadius: '2px', background: cur.color || '#888', display: 'inline-block' } }), slot, isPrimary ? el('small', {}, 'main') : null,
       el('small', { style: { marginLeft: 'auto' } }, shared ? `shared · ${users} objects` : 'this object')));
     if (!shared) {
       const names = [...L.matByName.keys()].sort();
-      const sel = el('select', { class: 'sel', style: { width: '100%' }, title: 'Use another library material for this slot (this object only)', onchange: e => setOverride(ids, slot, 'material', e.target.value === slot ? undefined : e.target.value) }, names.map(n => el('option', { value: n }, n)));
-      sel.value = ov.material || slot;
+      const sel = el('select', { class: 'sel', style: { width: '100%' }, title: 'Use another library material for this slot (this object only)', onchange: e => setOverride(ids, slot, 'material', e.target.value === lib ? undefined : e.target.value) }, names.map(n => el('option', { value: n }, n)));
+      sel.value = ov.material || lib;
       box.append(row('Material', sel));
     }
     const color = el('input', { type: 'color', class: 'swatch', value: cur.color || '#ffffff' });
@@ -129,6 +130,19 @@ export function buildInspector(E, pane) {
       one ? el('div', { class: 'kv id', title: 'Object id (stable; used in the world files) — click to copy', style: { cursor: 'copy' }, onclick: () => { navigator.clipboard && navigator.clipboard.writeText(r0.id); toast('Copied id ' + r0.id); } }, r0.id) : el('div', { class: 'note' }, [...new Set(recs.map(r => r.prefab))].slice(0, 6).join(', ')),
       one ? el('div', { class: 'note' }, `${labelOf(r0.prefab || '')} · ${e0.kind === 'added' ? 'added' : 'generated'} · ${e0.area || ''}${st ? ' · ' + st : ''}${doc.fileOf.get(r0.id) ? ' · ' + doc.fileOf.get(r0.id) : ''}`) : null,
       r0.deleted ? el('div', { class: 'note err' }, 'Deleted — undo (Ctrl+Z) or restore it:', el('button', { class: 'btn sm', style: { marginLeft: '6px' }, onclick: () => E.editSel(r => { delete r.deleted; return r; }, 'Restore') }, 'Restore')) : null)));
+    // one element (the parts of one material slot: roof, walls, windows...) being edited
+    if (one && E.part && E.part.id === r0.id) {
+      const slot = E.part.slot, ev = (r0.slots || {})[slot] || {};
+      const evec = (key, label, def, digits, step) => row(label, el('div', { class: 'vec' }, [0, 1, 2].map(i => numField((ev[key] || def)[i], v => E.editElement(x => { const a = (x[key] || def).slice(); a[i] = v; x[key] = a; return x; }, `Element ${slot} ${key}`), { axis: 'XYZ'[i], digits, step })))) ;
+      const piece = slot.includes('#'), base = slot.split('#')[0];
+      body.append(section('element', piece ? `Piece: ${base} ${+slot.split('#')[1] + 1}` : `Element: ${slot}`, [piece ? el('button', { class: 'btn sm', title: 'Every part of this material', onclick: () => E.selectElement(r0.id, base) }, 'All ' + base) : null, el('button', { class: 'btn sm', title: 'Back to the whole object (Esc)', onclick: () => E.selectElement(r0.id, null) }, 'Whole object')].filter(Boolean),
+        el('div', { class: 'note' }, (piece ? 'One connected piece of the “' + base + '” parts.' : 'Every part of this object made of “' + slot + '”.') + ' Move / turn / scale it with the gizmo or here (in the object’s own axes). Alt+click picks another element.'),
+        evec('offset', 'Move m', [0, 0, 0], 2, 0.05), evec('rotate', 'Turn °', [0, 0, 0], 1, 1), evec('scale', 'Scale', [1, 1, 1], 3, 0.01),
+        el('div', { class: 'ib' },
+          el('button', { class: 'btn sm', onclick: () => E.editElement(x => ({ ...x, hidden: x.hidden ? undefined : true }), ev.hidden ? 'Show element' : 'Hide element') }, icon(ev.hidden ? 'eye' : 'eyeoff'), ev.hidden ? 'Show' : 'Hide'),
+          el('button', { class: 'btn sm', title: 'Undo every change to this element', onclick: () => E.editElement(() => ({}), `Reset element ${slot}`) }, 'Reset element')),
+        materialEditor(ids, slot, !piece && slot === slotInfo(r0.id)[0], recs)));
+    }
     // transform
     const vec = (key, label, digits, step) => row(label, el('div', { class: 'vec' }, [0, 1, 2].map(i => numField(common(recs, r => r[key][i]), (v, preview, end) => setVec(ids, key, i, v, preview, end), { axis: 'XYZ'[i], mixed: common(recs, r => r[key][i]) === null, digits, step }))));
     const sizes = ids.map(sizeOf);
@@ -159,6 +173,17 @@ export function buildInspector(E, pane) {
       el('button', { class: 'btn sm', disabled: !E.matClip, title: 'Paste the copied material onto the selection (Ctrl+Shift+V)', onclick: () => E.pasteMaterial() }, icon('drop'), 'Paste' + (E.matClip ? ` (${(doc.rec(E.matClip.from) || {}).name || E.matClip.from})` : '')),
       el('button', { class: 'btn sm', title: 'Remove every material override of the selection', onclick: () => E.editSel(r => { if (!r.materialOverrides && !r.slots && (L.get(r.id).kind === 'added' || r.material === (L.generatedRecord(L.get(r.id)) || {}).material)) return null; delete r.materialOverrides; delete r.slots; const g = L.get(r.id).kind === 'added' ? null : L.generatedRecord(L.get(r.id)); if (g) r.material = g.material; return r; }, 'Reset materials') }, 'Reset')));
     body.append(section('material', 'Material', null, ...matKids));
+    // the object's elements: pick one to move / hide / recolour it on its own
+    if (one && !(E.part && E.part.id === r0.id)) {
+      const list = el('div', { style: { display: 'grid', gap: '2px' } });
+      for (const sl of slotInfo(r0.id)) {
+        const ex = (r0.slots || {})[sl] || {}, changed = Object.keys(ex).length > 0;
+        list.append(el('div', { class: 'ib', style: { flexWrap: 'nowrap', alignItems: 'center' } },
+          el('button', { class: 'btn sm', style: { flex: '1', justifyContent: 'flex-start' }, title: 'Edit this element (or Alt+click it in the view)', onclick: () => E.selectElement(r0.id, sl) }, sl, changed ? el('span', { class: 'badge mod', style: { marginLeft: 'auto', fontSize: '9.5px', color: 'var(--warn)' } }, 'edited') : null),
+          el('button', { class: 'btn sm', title: ex.hidden ? 'Show' : 'Hide', onclick: () => { E.part = { id: r0.id, slot: sl }; E.editElement(x => ({ ...x, hidden: x.hidden ? undefined : true }), (ex.hidden ? 'Show' : 'Hide') + ' element ' + sl); E.part = null; E.refreshSelection(); } }, icon(ex.hidden ? 'eyeoff' : 'eye'))));
+      }
+      body.append(section('elements', 'Elements', null, el('div', { class: 'note' }, 'Each part of the object by material. Click one to move, turn, scale, hide or recolour just that part (Alt+click in the view does the same).'), list));
+    }
     // organisation
     const groups = new Set(recs.map(r => r.group || ''));
     const grp = el('input', { class: 'txt', value: groups.size === 1 ? [...groups][0] : '', placeholder: groups.size > 1 ? '—' : 'no group', spellcheck: false });

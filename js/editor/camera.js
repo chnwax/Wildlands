@@ -9,7 +9,7 @@ const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _r = new THREE.Vector3
 export class EditorCamera {
   constructor(dom, { groundAt, pickPoint }) {
     this.dom = dom; this.groundAt = groundAt; this.pickPoint = pickPoint; // pickPoint(clientX, clientY) -> Vector3 | null
-    this.mode = 'orbit'; this.yaw = 0; this.pitch = -0.5; this.dist = 60; this.pivot = new THREE.Vector3();
+    this.mode = 'fly'; this.yaw = 0; this.pitch = -0.5; this.dist = 60; this.pivot = new THREE.Vector3();
     this.speed = 12; this.keys = {}; this.drag = null; this.anim = null; this.onChange = () => {};
     dom.addEventListener('pointerdown', e => this._down(e));
     addEventListener('pointermove', e => this._move(e));
@@ -42,14 +42,16 @@ export class EditorCamera {
     this.anim = { t: 0, from, to };
   }
   _down(e) {
-    if (e.button !== 2 && e.button !== 1) return;
+    // right: look around (fly) / orbit (orbit mode); middle or Shift+right: pan; Alt+left: orbit round the selection
+    const altOrbit = e.button === 0 && e.altKey;
+    if (e.button !== 2 && e.button !== 1 && !altOrbit) return;
     e.preventDefault(); this.dom.setPointerCapture?.(e.pointerId);
-    const pan = e.button === 1 || (e.button === 2 && e.shiftKey && this.mode === 'orbit');
+    const pan = e.button === 1 || (e.button === 2 && e.shiftKey);
     this.anim = null;
-    // orbit around what is under the cursor when the drag starts (if it is in front), so turning never swings the view away
-    if (e.button === 2 && !pan && this.mode === 'orbit') {
-      const p = this.pickPoint(e.clientX, e.clientY);
-      if (p) { const d = p.distanceTo(camera.position); if (d > 1 && d < 3000) { this.dist = d; this.pivot.copy(camera.position).addScaledVector(this.forward(), d); } }
+    if (altOrbit) { // pivot: the selection (getPivot) or what is under the cursor; the view itself does not jump
+      const p = (this.getPivot && this.getPivot()) || this.pickPoint(e.clientX, e.clientY);
+      if (p) { const d = Math.max(1, p.distanceTo(camera.position)); this.dist = d; this.pivot.copy(camera.position).addScaledVector(this.forward(), d); this.orbitAround = p.clone(); } else this.orbitAround = null;
+      this.drag = { button: 0, x: e.clientX, y: e.clientY, pan: false, orbit: true, moved: 0 }; return;
     }
     let panDepth = this.dist;
     if (pan) { const p = this.pickPoint(e.clientX, e.clientY); if (p) panDepth = Math.max(2, p.distanceTo(camera.position)); }
@@ -64,8 +66,17 @@ export class EditorCamera {
       const up = _v.set(0, 1, 0).applyQuaternion(camera.quaternion);
       const delta = _r.multiplyScalar(-dx * k).addScaledVector(up, dy * k);
       camera.position.add(delta); this.pivot.add(delta); this._apply();
+    } else if (D.orbit && this.orbitAround) {
+      // turn the camera round the pivot point: position rotates about it, the view direction turns with it
+      const P = this.orbitAround, off = camera.position.clone().sub(P), oldYaw = this.yaw, oldPitch = this.pitch;
+      this.yaw -= dx * 0.005; this.pitch = clamp(this.pitch - dy * 0.005, -1.5, 1.5);
+      off.applyAxisAngle(_v.set(0, 1, 0), this.yaw - oldYaw);
+      const right = _r.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); off.applyAxisAngle(right, this.pitch - oldPitch);
+      camera.position.copy(P).add(off);
+      const g = this.groundAt(camera.position.x, camera.position.z); if (camera.position.y < g + 0.4) camera.position.y = g + 0.4;
+      this._apply(); this._syncPivot();
     } else {
-      this.yaw -= dx * 0.0042; this.pitch = clamp(this.pitch - dy * 0.0042, -1.55, 1.55);
+      this.yaw -= dx * 0.0035; this.pitch = clamp(this.pitch - dy * 0.0035, -1.55, 1.55);
       if (this.mode === 'orbit' && !this._keysMoving()) this._fromPivot(); else { this._apply(); this._syncPivot(); }
     }
     this.onChange();
@@ -77,7 +88,7 @@ export class EditorCamera {
     if (this.flying) { this.speed = clamp(this.speed * (e.deltaY < 0 ? 1.25 : 0.8), 0.5, 600); this.onChange(); return; }
     this.anim = null;
     const s = Math.exp(clamp(e.deltaY, -300, 300) * 0.0012);
-    if (this.mode === 'orbit') {
+    if (true) { // zoom toward what is under the cursor (both modes)
       // zoom toward the point under the cursor
       const p = this.pickPoint(e.clientX, e.clientY);
       if (p) { const d = p.distanceTo(camera.position), nd = clamp(d * s, 0.5, 6000); camera.position.lerp(p, 1 - nd / d); this._syncPivot(); this.dist = clamp(this.dist * s, 0.5, 6000); this._syncPivot(); }

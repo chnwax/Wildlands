@@ -38,7 +38,8 @@ export class Editor {
   on(fn) { this.listeners.add(fn); }
   emit(t) { for (const f of this.listeners) f(t); }
   // ---------------------------------------------------------------- selection
-  select(ids, mode = 'set') {
+  select(ids, mode = 'set', keepPart = false) {
+    if (!keepPart) this.part = null;
     ids = ids.filter(id => { const e = this.L.get(id); return e && !(this.doc.rec(id) || {}).locked; });
     if (mode === 'set') this.sel = [...new Set(ids)];
     else if (mode === 'add') { for (const id of ids) if (!this.sel.includes(id)) this.sel.push(id); }
@@ -52,7 +53,8 @@ export class Editor {
     this.sel.forEach((id, k) => {
       const e = this.L.get(id); if (!e) return;
       const rec = this.doc.rec(id);
-      if (k < MAX_OUTLINED && !(rec && (rec.deleted))) { if (!e.det) this.L.detach(e); if (e.det.group.visible) e.det.group.traverse(o => { if (o.isMesh && o.visible !== false) meshes.push(o); }); else boxes.push(this.L.worldBox(e)); }
+      const P = this.part && this.part.id === id ? this.part.slot : null;
+      if (k < MAX_OUTLINED && !(rec && (rec.deleted))) { if (!e.det) this.L.detach(e); if (e.det.group.visible) { if (P) { for (const p of e.det.parts) if (p.slot === P) meshes.push(p.mesh); } else e.det.group.traverse(o => { if (o.isMesh && o.visible !== false) meshes.push(o); }); } else boxes.push(this.L.worldBox(e)); }
       else boxes.push(this.L.worldBox(e));
     });
     const hov = [];
@@ -67,7 +69,30 @@ export class Editor {
     if (!ids.length) return;
     const c = new THREE.Vector3(); for (const id of ids) c.add(_v.fromArray(this.doc.rec(id).position)); c.divideScalar(ids.length);
     const prim = this.doc.rec(ids[ids.length - 1]);
+    if (this.part && ids.length === 1) { const e = this.L.get(ids[0]); if (e && e.det) { const el = (prim.slots || {})[this.part.slot] || {}, c = this.L.elementPivot(e, this.part.slot).clone().add(_v.fromArray(el.offset || [0, 0, 0])); e.det.group.updateMatrixWorld(true); this.gizmo.place(c.applyMatrix4(e.det.group.matrixWorld), quatOf(prim.rotation)); return; } }
     this.gizmo.place(ids.length === 1 ? _v.fromArray(prim.position) : c, quatOf(prim.rotation));
+  }
+  // ---------------------------------------------------------------- elements (parts of one material slot: roof, walls...)
+  // the element of object id under the cursor (client x, y), or its main element
+  elementAt(id, x, y) {
+    const e = this.L.get(id); if (!e) return null; if (!e.det) this.L.detach(e);
+    const r = this.picker.setFromClient(x, y), ray = new THREE.Raycaster(); ray.ray.copy(r); ray.layers.enableAll();
+    const hit = ray.intersectObject(e.det.group, true).find(h => h.object.visible !== false);
+    if (!hit) return null;
+    if (hit.object.isInstancedMesh) { const p = e.det.parts.find(q => q.mesh === hit.object); return p && p.slot; }
+    return this.L.pieceAt(e, hit.object, hit.faceIndex); // one connected piece: a wall, a window frame, a sign plate
+  }
+  selectElement(id, slot) {
+    if (!slot) { this.part = null; this.refreshSelection(); return; }
+    const e = this.L.get(id); if (e && slot.includes('#')) this.L.ensurePiece(e, slot);
+    this.sel = [id]; this.part = { id, slot }; if (this.tool === 'select') this.tool = 'translate'; this.gizmo.mode = this.tool;
+    this.refreshSelection(); ui.status(`Element “${slot}” of ${(this.doc.rec(id) || {}).name || id} — move / turn / scale it with the gizmo, H hides it, Esc back to the whole object`);
+  }
+  // edit element fields of the current part (fn(el) -> el)
+  editElement(fn, label) {
+    const P = this.part; if (!P) return;
+    this.doc.edit([P.id], r => { const S = { ...(r.slots || {}) }, el = fn({ ...(S[P.slot] || {}) }); for (const k of Object.keys(el)) if (el[k] === undefined) delete el[k]; if (Object.keys(el).length) S[P.slot] = el; else delete S[P.slot]; if (Object.keys(S).length) r.slots = Object.fromEntries(Object.entries(S).sort()); else delete r.slots; return r; }, label);
+    this.refreshSelection();
   }
   setTool(t) { this.tool = t; this.gizmo.mode = t === 'select' ? this.gizmo.mode : t; this.placeGizmo(); this.emit('tool'); }
   // ---------------------------------------------------------------- pointer
@@ -81,12 +106,15 @@ export class Editor {
       if (this.eyedropper) { this.pickMaterialAt(e.clientX, e.clientY); return; }
       const h = this.gizmo.hit(e.clientX, e.clientY);
       if (h) { D.setPointerCapture(e.pointerId); this.gizmo.begin(h, e.clientX, e.clientY); return; }
+      if (e.altKey) { // Alt+left-drag is the camera's (orbit); Alt+click picks an element
+        down = { x: e.clientX, y: e.clientY, alt: true, box: false, cam: true }; return; }
       down = { x: e.clientX, y: e.clientY, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, box: false };
       D.setPointerCapture(e.pointerId);
     });
     D.addEventListener('pointermove', e => {
       if (this.gizmo.drag) { this.gizmo.move(e.clientX, e.clientY); return; }
       if (down) {
+        if (down.cam) { if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.moved = true; return; }
         if (!down.box && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.box = true;
         if (down.box) { const x0 = Math.min(down.x, e.clientX), y0 = Math.min(down.y, e.clientY); Object.assign(rect.style, { display: 'block', left: x0 + 'px', top: y0 + 'px', width: Math.abs(e.clientX - down.x) + 'px', height: Math.abs(e.clientY - down.y) + 'px' }); }
         return;
@@ -102,6 +130,7 @@ export class Editor {
       if (this.gizmo.drag) { this.gizmo.end(); return; }
       if (!down) return;
       const d = down; down = null; rect.style.display = 'none';
+      if (d.cam && d.moved) return;
       if (d.box) {
         const ids = this.picker.inRect(Math.min(d.x, e.clientX), Math.min(d.y, e.clientY), Math.max(d.x, e.clientX), Math.max(d.y, e.clientY), { fields: this.boxFields });
         this.select(ids, d.shift ? 'add' : d.ctrl ? 'remove' : 'set');
@@ -109,6 +138,8 @@ export class Editor {
         return;
       }
       const p = this.picker.pick(e.clientX, e.clientY);
+      // Alt+click (or any click inside the object whose element is being edited) picks one element of an object
+      if (p.hit && (d.alt || (this.part && this.part.id === p.hit.id))) { this.selectElement(p.hit.id, this.elementAt(p.hit.id, e.clientX, e.clientY)); return; }
       if (p.hit) this.select([p.hit.id], d.shift ? 'toggle' : d.ctrl ? 'remove' : 'set');
       else if (!d.shift && !d.ctrl) this.select([]);
     });
@@ -131,6 +162,7 @@ export class Editor {
   }
   // ---------------------------------------------------------------- gizmo drags
   dragStart() {
+    if (this.part) { const r = this.doc.rec(this.part.id); this.drag = { part: this.part, start: r, el: { ...((r.slots || {})[this.part.slot] || {}) } }; return; }
     this.drag = { ids: this.sel.filter(id => { const r = this.doc.rec(id); return r && !r.deleted && !r.locked; }), start: new Map() };
     for (const id of this.drag.ids) this.drag.start.set(id, this.doc.rec(id));
     for (const id of this.drag.ids) { const e = this.L.get(id); if (e.det) e.det.group.traverse(o => { o.userData.dynamicCaster = true; }); }
@@ -138,6 +170,18 @@ export class Editor {
   }
   dragMove(o) {
     const D = this.drag; if (!D) return;
+    if (D.part) {
+      const e = this.L.get(D.part.id), r0 = D.start, qo = quatOf(r0.rotation), qi = qo.clone().invert(), so = _v.fromArray(r0.scale).clone(), el = { ...D.el }, st = o.snapStep;
+      if (o.mode === 'translate') {
+        const loc = o.offset.clone().applyQuaternion(qi).divide(so), base = el.offset || [0, 0, 0];
+        el.offset = base.map((v, i) => { let n = v + loc.getComponent(i); if (o.snap && st.move > 0) n = Math.round(n / st.move) * st.move; return n; });
+      } else if (o.mode === 'rotate') {
+        el.rotate = eulerOf(qi.clone().multiply(o.quat).multiply(qo).multiply(quatOf(el.rotate || [0, 0, 0])));
+      } else el.scale = (el.scale || [1, 1, 1]).map((v, i) => { let n = v * o.scale[i]; if (o.snap && st.scale > 0) n = Math.max(st.scale, Math.round(n / st.scale) * st.scale); return n; });
+      const r = clone(r0); r.slots = { ...(r.slots || {}), [D.part.slot]: el };
+      D.last = el; this.L.apply(e, r); if (o.mode === 'translate') this.placeGizmo(); this.emit('preview');
+      return;
+    }
     D.last = new Map();
     const snapOn = o.snap, st = o.snapStep;
     for (const id of D.ids) {
@@ -170,6 +214,11 @@ export class Editor {
   }
   dragEnd(cancel) {
     const D = this.drag; this.drag = null; if (!D) return;
+    if (D.part) {
+      this.L.apply(this.L.get(D.part.id), D.start);
+      if (!cancel && D.last) { const el = D.last; this.editElement(() => el, `${{ translate: 'Move', rotate: 'Rotate', scale: 'Scale' }[this.gizmo.mode]} element ${D.part.slot}`); }
+      this.picker.invalidate(D.part.id); this.ed.refreshShadows && this.ed.refreshShadows(); this.placeGizmo(); this.emit('selection'); return;
+    }
     for (const id of D.ids) { const e = this.L.get(id); if (e && e.det) e.det.group.traverse(o => { delete o.userData.dynamicCaster; }); }
     if (cancel || !D.last) { for (const [id, r] of D.start) this.L.apply(this.L.get(id), r); }
     else {

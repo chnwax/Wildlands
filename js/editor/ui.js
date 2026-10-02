@@ -163,11 +163,11 @@ function buildStatus(U, ed) {
 // ---------------------------------------------------------------- shortcut overlay
 export const SHORTCUTS = [
   ['Tools', [['Select', 'Q'], ['Move', 'W'], ['Rotate', 'E'], ['Scale / stretch', 'R'], ['Local / world space', 'X'], ['Toggle snapping', 'G'], ['Invert snapping while dragging', 'Ctrl (hold)'], ['Constrain drag to an axis', 'gizmo handle'], ['Uniform scale', 'centre handle']]],
-  ['Selection', [['Select', 'Click'], ['Add / remove', 'Shift+Click'], ['Box select', 'Drag on empty space'], ['Add box to selection', 'Shift+Drag'], ['Select all visible', 'Ctrl+A'], ['Deselect', 'Esc'], ['Select a group', 'Double-click a member'], ['Search the outliner', 'Ctrl+F']]],
+  ['Selection', [['Select', 'Click'], ['Add / remove', 'Shift+Click'], ['Box select', 'Drag on empty space'], ['Add box to selection', 'Shift+Drag'], ['Select all visible', 'Ctrl+A'], ['Deselect', 'Esc'], ['Select one part (wall, window, sign plate…)', 'Alt+Click'], ['Back to the whole object', 'Esc'], ['Select a group', 'Double-click a member'], ['Search the outliner', 'Ctrl+F']]],
   ['Placing (palette)', [['Place one', 'Click'], ['Turn', '[ / ] / Alt+Wheel'], ['Resize', '+ / −'], ['Stop placing', 'Esc / Right-click'], ['Drop in from the palette', 'Drag']]],
   ['Edit', [['Undo', 'Ctrl+Z'], ['Redo', 'Ctrl+Y / Ctrl+Shift+Z'], ['Duplicate', 'Ctrl+D'], ['Copy', 'Ctrl+C'], ['Paste', 'Ctrl+V'], ['Delete', 'Delete'], ['Drop to ground', 'End'], ['Align to surface', 'Shift+End'], ['Group', 'Ctrl+G'], ['Ungroup', 'Ctrl+Shift+G'], ['Rename', 'F2'], ['Hide / show', 'H'], ['Show all hidden', 'Alt+H'], ['Lock / unlock', 'L']]],
   ['Materials', [['Pick material (eyedropper)', 'I'], ['Paste material onto selection', 'Ctrl+Shift+V']]],
-  ['Camera', [['Focus selection', 'F'], ['Orbit / fly', 'Tab'], ['Orbit', 'Right-drag'], ['Pan', 'Middle-drag / Shift+Right-drag'], ['Zoom', 'Wheel'], ['Fly', 'Hold right + W A S D, Q / E'], ['Fly faster / slower', 'Shift / Ctrl, wheel while flying']]],
+  ['Camera', [['Look around', 'Right-drag'], ['Fly', 'Hold right + W A S D, Q / E'], ['Orbit round the selection', 'Alt+Left-drag'], ['Pan', 'Middle-drag / Shift+Right-drag'], ['Zoom to the cursor', 'Wheel'], ['Fly faster / slower', 'Wheel while flying, Shift / Ctrl'], ['Focus selection', 'F'], ['Right-drag orbits instead', 'Tab']]],
   ['World', [['Save', 'Ctrl+S'], ['Time of day −/+', '[ / ]'], ['Performance overlay', 'F3'], ['This help', '?']]],
 ];
 export function showShortcuts() {

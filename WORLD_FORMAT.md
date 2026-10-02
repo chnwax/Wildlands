@@ -156,6 +156,17 @@ Override values (all optional):
 Recolouring a lamp's light: override its `lamp` slot (`color` or `emissive`) — the light it casts at night takes that
 colour.
 
+**Elements and pieces** — one part of an object on its own. A `slots` entry may also move, turn, scale or hide
+that slot's parts (an **element**: all the roof, all the windows), or one connected **piece** of them, keyed
+`"<slot>#<n>"` (the n-th piece, counted from 0: one wall panel, one window frame, one sign plate). The editor picks
+pieces with Alt+click. Element keys (all optional): `offset` `[x, y, z]` metres and `rotate` `[x, y, z]` degrees in
+the object's own axes, about the element's centre; `scale` `[x, y, z]`; `hidden` true/false. They combine with the
+material keys:
+
+```json
+{ "id": "house_newtown_008", "slots": { "rooftile": { "offset": [0, 0.5, 0] }, "wood#0": { "hidden": true }, "window#3": { "color": "#3a6ea5" } } }
+```
+
 **Shared material** — changes every object using it. Only in `edits/materials.json` (listed in `world.json` as
 `"materialEdits": "edits/materials.json"`):
 

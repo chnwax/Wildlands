@@ -47,6 +47,7 @@ export const PRIMITIVES = {
   plane: { label: 'Plane', geo: () => new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0.01, 0) },
   ramp: { label: 'Ramp', geo: () => { const g = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0); const p = g.attributes.position; for (let i = 0; i < p.count; i++) if (p.getY(i) > 0.5 && p.getZ(i) > 0) p.setY(i, 0); g.computeVertexNormals(); return g; } },
 };
+export const ELEMENT_KEYS = ['hidden', 'offset', 'rotate', 'scale']; // per-slot element edits (in "slots" only)
 const SHARED_KEYS = ['color', 'roughness', 'metalness', 'emissive', 'emissiveIntensity', 'texture', 'opacity'];
 
 export async function finalizeWorld(opts) {
@@ -276,7 +277,7 @@ export class WorldLayer {
     const det = this.buildParts(ent, true);
     this.baseMatrix(ent).decompose(det.group.position, det.group.quaternion, det.group.scale);
     det.group.userData.ent = ent.id;
-    scene.add(det.group); ent.det = det;
+    scene.add(det.group); det.group.updateMatrixWorld(true); ent.det = det; // (the scene's matrices update once a frame: picks right after need it now)
     this.claim(ent);
     for (const p of det.parts) if (p.lod) this.detLod.push(p.mesh);
     return det;
@@ -375,6 +376,7 @@ export class WorldLayer {
     return o && Object.keys(o).length ? o : null;
   }
   materials(ent, rec, gen) {
+    if (rec.slots) for (const k of Object.keys(rec.slots)) if (k.includes('#')) this.ensurePiece(ent, k);
     for (const p of ent.det.parts) {
       if (p.loose || !p.slot) continue;
       const o = this.slotOverride(ent, rec, gen, p.slot);
@@ -382,6 +384,8 @@ export class WorldLayer {
       if (ent.prim) base = this.matByName.get(rec.material) || this.matByName.get('primitive');
       if (o && o.material && this.matByName.has(o.material)) base = this.matByName.get(o.material);
       const ov = o ? { ...o } : {}; delete ov.material;
+      for (const k of ELEMENT_KEYS) delete ov[k];
+      this.element(ent, p, (rec.slots && rec.slots[p.slot]) || {});
       // instance-tinted parts (trees, rocks, bikes): the colour is the tint
       if (p.tint) { const c = ov.color ? new THREE.Color(ov.color) : null; const a = p.mesh.instanceColor.array; if (c) { a[0] = c.r; a[1] = c.g; a[2] = c.b; } else a.set(p.tint); p.mesh.instanceColor.needsUpdate = true; delete ov.color; }
       // vertex-coloured kit parts: an exact colour, keeping the light and dark of the original shading
@@ -393,6 +397,65 @@ export class WorldLayer {
       }
       p.mesh.material = Object.keys(ov).length ? this.variant(base, ov) : base;
     }
+  }
+  // one element of an object (all its parts of one material slot: the roof, the walls, the windows...): hidden, or
+  // moved / turned / scaled about the element's own centre, in the object's frame
+  element(ent, p, el) {
+    const m = p.mesh;
+    if (!p.t0) { m.updateMatrix(); p.t0 = m.matrix.clone(); }
+    m.userData.partHidden = !!el.hidden; m.visible = !el.hidden;
+    if (!el.offset && !el.rotate && !el.scale) { if (p.moved) { p.t0.decompose(m.position, m.quaternion, m.scale); p.moved = false; } return; }
+    const c = this.elementPivot(ent, p.slot), o = el.offset || [0, 0, 0], r = el.rotate || [0, 0, 0], k = el.scale || [1, 1, 1];
+    _e.set(r[0] * DEG, r[1] * DEG, r[2] * DEG, 'XYZ'); _q.setFromEuler(_e);
+    const M = new THREE.Matrix4().compose(_v.set(c.x + o[0], c.y + o[1], c.z + o[2]), _q, _s.fromArray(k)).multiply(_m2.makeTranslation(-c.x, -c.y, -c.z)).multiply(p.t0);
+    M.decompose(m.position, m.quaternion, m.scale); p.moved = true;
+  }
+  // ---------------------------------------------------------------- pieces: one connected part of an element
+  // ("stucco#3": the 4th connected piece of the stucco parts — one wall, one window frame, one sign plate). A piece is
+  // split off into a mesh of its own the first time it is selected or edited, and is then edited like an element.
+  piecesOf(ent, slot) {
+    ent.pieceLists = ent.pieceLists || {};
+    if (ent.pieceLists[slot]) return ent.pieceLists[slot];
+    const out = [];
+    for (const p of ent.det.parts) {
+      if (p.slot !== slot || p.mesh.isInstancedMesh || !p.mesh.geometry.index) continue;
+      const g = p.mesh.geometry, P = g.attributes.position.array, I = p.idx0 || g.index.array, n = P.length / 3, par = new Int32Array(n), key = new Map();
+      for (let v = 0; v < n; v++) { const k = Math.round(P[v * 3] * 500) + ',' + Math.round(P[v * 3 + 1] * 500) + ',' + Math.round(P[v * 3 + 2] * 500); const q = key.get(k); par[v] = q === undefined ? v : q; if (q === undefined) key.set(k, v); }
+      const find = v => { while (par[v] !== v) { par[v] = par[par[v]]; v = par[v]; } return v; };
+      for (let t = 0; t + 2 < I.length; t += 3) { const a = find(I[t]), b = find(I[t + 1]), c = find(I[t + 2]); if (a !== b) par[b] = a; const a2 = find(a); if (a2 !== find(c)) par[find(c)] = a2; }
+      const comp = new Map();
+      for (let t = 0; t + 2 < I.length; t += 3) { if (I[t] === I[t + 1] && I[t] === I[t + 2]) continue; const r = find(I[t]); let c = comp.get(r); if (!c) { c = { part: p, tris: [] }; comp.set(r, c); out.push(c); } c.tris.push(t / 3); }
+    }
+    return (ent.pieceLists[slot] = out);
+  }
+  // which piece of slot the triangle `face` of part mesh m belongs to (its key "slot#k"), or null
+  pieceAt(ent, m, face) {
+    const own = ent.det.parts.find(p => p.mesh === m); if (!own) return null;
+    if (own.slot.includes('#')) return own.slot;
+    const list = this.piecesOf(ent, own.slot), k = list.findIndex(c => c.part === own && c.tris.includes(face));
+    return k >= 0 ? own.slot + '#' + k : own.slot;
+  }
+  ensurePiece(ent, key) {
+    if (!ent.det || ent.det.parts.some(p => p.slot === key)) return;
+    const [slot, ks] = key.split('#'), c = this.piecesOf(ent, slot)[+ks]; if (!c) return;
+    const src = c.part.mesh, g = src.geometry, I = g.index.array; if (!c.part.idx0) c.part.idx0 = I.slice();
+    const I0 = c.part.idx0, map = new Map(), idx = [];
+    for (const t of c.tris) for (let j = 0; j < 3; j++) { const v = I0[t * 3 + j]; let w = map.get(v); if (w === undefined) { w = map.size; map.set(v, w); } idx.push(w); I[t * 3 + j] = I0[t * 3]; }
+    g.index.needsUpdate = true;
+    const ng = new THREE.BufferGeometry(), vs = [...map.keys()];
+    for (const name in g.attributes) { const a = g.attributes[name], w = a.itemSize, A = new a.array.constructor(vs.length * w); vs.forEach((v, i) => { for (let k = 0; k < w; k++) A[i * w + k] = a.array[v * w + k]; }); ng.setAttribute(name, new THREE.BufferAttribute(A, w, a.normalized)); }
+    ng.setIndex(idx); ng.computeBoundingSphere(); ng.computeBoundingBox();
+    const m = new THREE.Mesh(ng, c.part.baseMat); m.castShadow = src.castShadow; m.receiveShadow = src.receiveShadow; m.layers.mask = src.layers.mask;
+    src.updateMatrix(); m.matrix.copy(c.part.t0 || src.matrix); m.matrix.decompose(m.position, m.quaternion, m.scale); m.userData.worldPart = true;
+    ent.det.group.add(m); ent.det.parts.push({ mesh: m, slot: key, baseMat: c.part.baseMat, piece: true });
+  }
+  // centre of an element in the object's frame (the pivot its edits turn and scale about)
+  elementPivot(ent, slot) {
+    ent.pivots = ent.pivots || {};
+    if (ent.pivots[slot]) return ent.pivots[slot];
+    const box = new THREE.Box3();
+    for (const p of ent.det.parts) if (p.slot === slot) { const g = p.mesh.geometry; if (!g.boundingBox) g.computeBoundingBox(); const M = p.t0 || (p.mesh.updateMatrix(), p.mesh.matrix); box.union(_bb.copy(g.boundingBox).applyMatrix4(M)); }
+    return (ent.pivots[slot] = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3()));
   }
   variant(base, ov) {
     const key = base.uuid + JSON.stringify(Object.keys(ov).sort().map(k => [k, ov[k]]));
@@ -589,7 +652,7 @@ export class WorldLayer {
     if (this.dirtyLights) this.refreshLights();
     if (this.detLod.length && (this._lt = (this._lt || 0) + 1) % 4 === 0) for (const m of this.detLod) {
       const g = m.geometry; if (!g.boundingSphere) continue; _v.copy(g.boundingSphere.center).applyMatrix4(m.matrixWorld);
-      m.visible = _v.distanceTo(cam.position) - g.boundingSphere.radius < (m.userData.lodDist || 1e9) * (globalThis.__wlLodScale || 1);
+      m.visible = !m.userData.partHidden && _v.distanceTo(cam.position) - g.boundingSphere.radius < (m.userData.lodDist || 1e9) * (globalThis.__wlLodScale || 1);
     }
   }
   // a dismissible note listing data problems (the game; the editor has its own panel)

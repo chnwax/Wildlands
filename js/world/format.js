@@ -12,6 +12,7 @@ export const parseGeneratedId = id => { const m = GEN_ID_RE.exec(id); return m ?
 
 // key order of an object record (also the list of allowed keys)
 export const OBJECT_KEYS = ['id', 'name', 'prefab', 'source', 'position', 'rotation', 'scale', 'material', 'materialOverrides', 'slots', 'group', 'tags', 'hidden', 'locked', 'deleted', 'origin'];
+export const ELEMENT_KEYS = ['hidden', 'offset', 'rotate', 'scale']; // per-slot element edits
 export const OVERRIDE_KEYS = ['material', 'color', 'roughness', 'metalness', 'emissive', 'emissiveIntensity', 'texture', 'opacity'];
 const FILE_KEYS = ['format', 'kind', 'map', 'area', 'name', 'note', 'areas', 'generated', 'edits', 'libraries', 'materialEdits', 'fields', 'prefabs', 'materials', 'textures', 'objects'];
 
@@ -53,6 +54,13 @@ const didYouMean = (w, list) => { const c = closest(w, list); return c ? ` — d
 function checkOverride(o, where, P, ctx, allowMaterial) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) { P.error(where, 'must be an object like { "color": "#aabbcc", "roughness": 0.6 }'); return; }
   for (const k of Object.keys(o)) {
+    if (allowMaterial && ELEMENT_KEYS.includes(k)) {
+      const v = o[k], f = where + '.' + k;
+      if (k === 'hidden') { if (typeof v !== 'boolean') P.error(f, 'must be true or false'); }
+      else if (!isVec3(v)) P.error(f, `must be three numbers [x, y, z]${k === 'rotate' ? ' in degrees' : k === 'offset' ? ' in metres' : ''}`);
+      else if (k === 'scale' && v.some(x => x === 0)) P.error(f, 'scale must not be 0');
+      continue;
+    }
     if (!OVERRIDE_KEYS.includes(k) || (k === 'material' && !allowMaterial)) { P.error(where + '.' + k, `unknown key "${k}"` + didYouMean(k, OVERRIDE_KEYS.filter(x => allowMaterial || x !== 'material'))); continue; }
     const v = o[k], f = where + '.' + k;
     if (k === 'color' || k === 'emissive') { if (typeof v !== 'string' || !COLOR_RE.test(v)) P.error(f, `must be a hex colour like "#c8b89a", not ${JSON.stringify(v)}`); }
@@ -153,12 +161,12 @@ function val(v, key, ind, inline) {
     if (v.every(x => typeof x !== 'object' || x === null)) return '[' + v.map(x => JSON.stringify(x)).join(', ') + ']';
     return '[\n' + v.map(x => ind + '  ' + val(x, '', ind + '  ', inline)).join(',\n') + '\n' + ind + ']';
   }
-  if (v && typeof v === 'object') return obj(v, ind, inline || key === 'materialOverrides' || OVERRIDE_PARENT.has(key) || (Object.keys(v).length > 0 && Object.keys(v).every(k => OVERRIDE_KEYS.includes(k))));
+  if (v && typeof v === 'object') return obj(v, ind, inline || key === 'materialOverrides' || OVERRIDE_PARENT.has(key) || (Object.keys(v).length > 0 && Object.keys(v).every(k => OVERRIDE_KEYS.includes(k) || ELEMENT_KEYS.includes(k))));
   if (typeof v === 'number') return num(v, 4);
   return JSON.stringify(v);
 }
 const OVERRIDE_PARENT = new Set(['libraries']);
-const orderOf = keys => keys.includes('id') ? OBJECT_KEYS : keys.some(k => OVERRIDE_KEYS.includes(k)) ? OVERRIDE_KEYS : null;
+const orderOf = keys => keys.includes('id') ? OBJECT_KEYS : keys.some(k => OVERRIDE_KEYS.includes(k) || ELEMENT_KEYS.includes(k)) ? [...OVERRIDE_KEYS, ...ELEMENT_KEYS] : null;
 function sortKeys(o) {
   const keys = Object.keys(o).filter(k => o[k] !== undefined), order = orderOf(keys);
   if (!order) return keys;
