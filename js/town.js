@@ -46,7 +46,16 @@ const LEVEL = [[-147, 190, -32.5, 256]]; // school block
 // channel only (abutments on the two bank lines, 14.4 m either side of the river centre), road edge half width off it
 const BRIDGES = [[-25, 12, 'A', ['桜川橋', 'さくらがわばし']], [200, 11.5, 'F', ['舟橋', 'ふなばし']]];
 const BRIDGE_EDGE = { A: 6.0, F: 5.75 }; // road centre to the back of its footway / gutter on the approaches
-const RIVER_STAIRS = [[-170, 1], [-150, -1], [95, -1], [130, 1], [270, -1]]; // [z where the stair starts, bank side]
+// The river: one water surface along its whole length (no step anywhere). Through the town (|z| <= RIVER_END) it runs
+// between concrete revetments sloping from the toe at rd 12.2 (y 0.45) up to the bank-top walkway at rd 14.6; past
+// their end walls it runs on between natural earth banks, the ground easing from the revetment's line onto them over
+// BANK_BLEND m. The surface stands 1.15 m up the revetment, 4.5 m below the walkway and the lanes along the banks.
+const RIVER_LV = 1.6, RIVER_END = 760, BANK_BLEND = 30;
+const REV_K = (Y0 - 0.3) / 2.4, REV_WL = 12.2 + (RIVER_LV - 0.45) / REV_K; // revetment rise per metre; rd of its waterline
+const revY = rd => 0.45 + (rd - 12.2) * REV_K; // the revetment slab's surface
+// natural river bank, by distance from the centreline: bed, a shelving margin under the water, the waterline at about the
+// same distance as on the revetments (rd ~12.7), wet mud and pebbles, then an earth bank up to the valley floor at rd 24
+const naturalBank = rd => -1.3 + 2.45 * smoothstep(3.5, 11.5, rd) + 0.75 * smoothstep(10.5, 14.5, rd) + 4.1 * smoothstep(13.5, 24, rd);
 // bamboo stands the town is known for: in the shrine's wood behind the hall, on the river terraces beyond the houses,
 // and on the town's outer edges toward the fields (the hill-foot stands come from the forest planting, the garden and
 // block groves from towngreen.js). [x, z, radius]
@@ -114,17 +123,18 @@ function baseHeight(x, z) {
   // channel: bed, then a sloped concrete revetment from rd 12.2 (y 0.45) up to the walkway at rd 14.6; the ground
   // stays 1.3 m under the revetment slab (so the 2 m heightfield never pokes through it) and is level again under the
   // walkway deck, well before the lanes along the banks
-  if (rd < 17) {
-    const bed = rd < 5 ? -1.3 : rd < 12.2 ? lerp(-1.3, 0.45, (rd - 5) / 7.2) : 0.45;
-    const rev = 0.45 + (rd - 12.2) / 2.4 * (Y0 - 0.3);
+  // past the revetments the banks are natural earth; at a revetment's end wall the ground meets the wall just under its
+  // cap (the slab's line, and the walkway's level behind it) and eases onto the natural bank over BANK_BLEND m
+  if (rd < 26) {
+    const bed = rd < 5 ? -1.3 : rd < 12.2 ? lerp(-1.3, 0.45, (rd - 5) / 7.2) : 0.45, az = Math.abs(z);
     // under the revetment slab the ground is kept well down: with 2 m cells a vertex on the gravel margin and the next
     // one up the slope interpolate straight through a 67-degree slab (the saw-toothed sand showing along the toe)
-    h = rd < 12.2 ? bed : rd < 14.8 ? Math.min(h, 0.2) : Math.min(h, Math.max(0.45, rev - 1.3), Y0 - 0.45);
-    void rev;
-    // under a river stair cut into the revetment the ground drops to the foot of the flight (it would stand above the
-    // lower treads otherwise)
-    const sd = Math.sign(x - riverX(z));
-    if (rd > 12.4 && RIVER_STAIRS.some(([z0, s2]) => s2 === sd && z > z0 - 2.4 && z < z0 + 9.8)) h = Math.min(h, 0.2);
+    const town = rd < 12.2 ? bed : rd < 14.8 ? Math.min(h, 0.2) : rd < 17 ? Math.min(h, Math.max(0.45, revY(rd) - 1.3), Y0 - 0.45) : h;
+    if (az <= RIVER_END) h = town;
+    else {
+      const face = rd < 12.2 ? bed : rd < 14.6 ? revY(rd) - 0.3 : rd < 17.6 ? Y0 + 0.08 : h;
+      h = lerp(face, Math.min(h, naturalBank(rd)), smoothstep(RIVER_END, RIVER_END + BANK_BLEND, az));
+    }
   }
   // the apartment district stands on a graded platform cut into the foot of the hills (its rim blends back to them)
   h = danchiGround(x, z, h, Y0);
@@ -567,27 +577,34 @@ export async function build(progress) {
   const stationCars = [], forecourt = stationForecourt(B, { Y0, RN, sOf, rng: mulberry32(55), parked: stationCars });
   // river banks: concrete revetments with railings, plus bridges. Nothing grows through the revetment slabs or
   // under the walkway deck (the ground there sits below the concrete)
-  hf.paintPave(100, -800, 330, 800, (x, z) => Math.abs(x - riverX(z)) < 18.3 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
+  hf.paintPave(100, -RIVER_END - 1, 330, RIVER_END + 1, (x, z) => Math.abs(z) < RIVER_END + 0.4 && Math.abs(x - riverX(z)) < 18.3 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
+  // nothing grows anywhere in the channel, along its whole length (the bed under the water; the grass rule keeps blades
+  // off the water's edge as well)
+  hf.paint2(2, -hf.HALF, -hf.HALF, hf.HALF, hf.HALF, (x, z) => smoothstep(REV_WL - 0.4, REV_WL - 1.6, Math.abs(x - riverX(z))));
   // where the bank walkway stops: the two road bridges (it meets their footways at the parapet line) and the railway
   const WALK_GAPS = [...BRIDGES.map(([bz, , id]) => [bz - BRIDGE_EDGE[id] - 3.0, bz + BRIDGE_EDGE[id] + 3.0]), [-90.6, -69.4]]; // (ramps up to the roads / pedestrian crossings take over there)
-  // river stairs: [z of the head landing's start, z of the flight's foot, side]
-  const STAIR_RUN = 0.32, STAIR_N = Math.ceil((Y0 + 0.12 - 0.45) / 0.19);
-  const STAIR_ZONES = RIVER_STAIRS.map(([z0, sd]) => [z0 - 1.4, z0 + STAIR_N * STAIR_RUN, sd]);
+  // the revetment's colour by height: [y, vertex colour] (the slab's photo texture and weathering stay continuous)
+  const REV_S = Math.hypot(2.4, Y0 - 0.3) / (Y0 - 0.3), DRY = [0.8, 0.8, 0.78];
+  const REV_BANDS = [[0.45, [0.42, 0.43, 0.36]], [RIVER_LV - 0.45, [0.4, 0.44, 0.34]], [RIVER_LV - 0.06, [0.25, 0.32, 0.19]], [RIVER_LV + 0.08, [0.29, 0.33, 0.24]],
+    [RIVER_LV + 0.3, [0.48, 0.49, 0.43]], [RIVER_LV + 0.55, [0.64, 0.62, 0.56]], [RIVER_LV + 1.1, DRY], [Y0 + 0.15, DRY]];
   const clipRanges = (a, b, gaps) => { let parts = [[a, b]]; for (const [g0, g1] of gaps) parts = parts.flatMap(([p, q]) => q <= g0 || p >= g1 ? [[p, q]] : [...(p < g0 ? [[p, g0]] : []), ...(q > g1 ? [[g1, q]] : [])]); return parts.filter(([p, q]) => q - p > 0.02); };
   for (let z = -760; z < 760; z += 4) {
     for (const sd of [-1, 1]) {
       const xa = riverX(z) + sd * 14.6, xb = riverX(z + 4) + sd * 14.6, xa0 = riverX(z) + sd * 12.2, xb0 = riverX(z + 4) + sd * 12.2;
       B.frame(0, 0, 0, 0);
-      // sloped revetment slab, with a low toe wall where it meets the gravel margin (cut away where a stair is set into it)
-      for (const [za, zb] of clipRanges(z, z + 4, STAIR_ZONES.filter(q => q[2] === sd))) {
-        const A = [riverX(za) + sd * 12.2, 0.45, za], Bp = [riverX(zb) + sd * 12.2, 0.45, zb], C = [riverX(zb) + sd * 14.6, Y0 + 0.15, zb], D = [riverX(za) + sd * 14.6, Y0 + 0.15, za];
-        B.poly('stone', [A, Bp, C, D], [-sd, 0.4, 0], { uv: 2, color: [0.8, 0.8, 0.78] });
+      // sloped revetment slab, unbroken along the whole river (no access down to the water), with a low toe wall where
+      // it meets the bed. It is laid in bands up the slope so the water leaves its marks: silt-grey stone under the
+      // surface, a dark band of algae at the waterline, wet stone above it drying out toward the walkway
+      for (let k = 0; k + 1 < REV_BANDS.length; k++) {
+        const [y0, c0] = REV_BANDS[k], [y1, c1] = REV_BANDS[k + 1], r0 = 12.2 + (y0 - 0.45) / REV_K, r1 = 12.2 + (y1 - 0.45) / REV_K, s0 = (y0 - 0.45) * REV_S / 2, s1 = (y1 - 0.45) * REV_S / 2;
+        B.poly('stone', [[riverX(z) + sd * r0, y0, z], [riverX(z + 4) + sd * r0, y0, z + 4], [riverX(z + 4) + sd * r1, y1, z + 4], [riverX(z) + sd * r1, y1, z]], [-sd, 0.4, 0],
+          { uvs: [[z / 2, s0], [z / 2 + 2, s0], [z / 2 + 2, s1], [z / 2, s1]], colors: [c0, c0, c1, c1] });
       }
       if (sd < 0) B.quad('concrete', [xa0 + 0.35, 0.1, z], [xb0 + 0.35, 0.1, z + 4], [xb0, 0.45, z + 4], [xa0, 0.45, z], { color: [0.7, 0.7, 0.68] });
       else B.quad('concrete', [xb0 - 0.35, 0.1, z + 4], [xa0 - 0.35, 0.1, z], [xa0, 0.45, z], [xb0, 0.45, z + 4], { color: [0.7, 0.7, 0.68] });
       // paved walkway on top of the bank, with a skirt down to the ground on its outer edge. It runs right up to the
       // bridges (where it meets the road's own footway or, at the railway, ends at a railing with a paved link to the
-      // lane R crossing), and the railing on its river edge runs just as far, broken only at the stair heads
+      // lane R crossing), and the railing on its river edge runs just as far, unbroken
       const yd = Y0 + 0.12, pc = { uv: 1.5, color: [0.88, 0.86, 0.82] }, sk = { uv: 2, color: [0.72, 0.72, 0.7] }, rc = { color: [0.3, 0.52, 0.47] };
       const walkParts = clipRanges(z, z + 4, WALK_GAPS);
       for (const [za, zb] of walkParts) {
@@ -595,8 +612,7 @@ export async function build(progress) {
         B.poly('pavement', [[wa, yd, za], [wb, yd, zb], [xo2, yd, zb], [xo, yd, za]], [0, 1, 0], pc);
         B.poly('concrete', [[xo, Y0 - 1.2, za], [xo2, Y0 - 1.2, zb], [xo2, yd, zb], [xo, yd, za]], [sd, 0, 0], sk);
       }
-      const stairGaps = RIVER_STAIRS.filter(([, s2]) => s2 === sd).map(([z0]) => [z0 - 1.4, z0]);
-      for (const [za, zb] of clipRanges(z, z + 4, [...WALK_GAPS, ...stairGaps])) {
+      for (const [za, zb] of walkParts) {
         const ra = riverX(za) + sd * 15.0, rb = riverX(zb) + sd * 15.0, L = zb - za; if (L < 0.05) continue;
         B.beam('alu', [ra, Y0 + 1.07, za], [rb, Y0 + 1.07, zb], 0.07, 0.07, rc);
         B.beam('alu', [ra, Y0 + 0.62, za], [rb, Y0 + 0.62, zb], 0.035, 0.035, rc);
@@ -605,48 +621,35 @@ export async function build(progress) {
       }
     }
   }
-  // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
-  // an aluminium railing, name pillars (親柱) at the four corners, lamps, and steel expansion joints across the road
-  // river access (階段護岸): a straight flight set INTO the revetment, parallel to the bank. From a head landing flush
-  // with the walkway (entered through a gap in its railing) the treads step down along the bank to the gravel margin.
-  // The revetment slab is cut away over the stair: a vertical retaining face rises behind the treads to the walkway,
-  // the upper treads stand proud of the slope with a solid face and a handrail on the river side, the lower ones are
-  // recessed into the slope, which closes over the end of the flight. Every tread is a walkable platform.
-  {
-    const XR0 = 12.95, XL = 14.6, TOP = Y0 + 0.12, yS = rd => 0.45 + (rd - 12.2) / 2.4 * (Y0 - 0.3), xS = y => 12.2 + (y - 0.45) / (Y0 - 0.3) * 2.4, yRS = yS(XR0);
-    const R = (TOP - 0.45) / STAIR_N, run = STAIR_RUN, TC = [0.76, 0.76, 0.74], WC = { uv: 2, color: [0.8, 0.8, 0.78] }, RC = { color: [0.3, 0.52, 0.47] };
-    for (const [z0, sd] of RIVER_STAIRS) {
-      const W = (rd, y, z) => [riverX(z) + sd * rd, y, z], toR = [-sd, 0, 0];
-      B.frame(0, 0, 0, 0);
-      const slices = [{ za: z0 - 1.4, zb: z0, y: TOP }];
-      for (let k = 0; k < STAIR_N; k++) slices.push({ za: z0 + k * run, zb: z0 + (k + 1) * run, y: TOP - (k + 1) * R });
-      slices.forEach((q, i) => {
-        const xr = q.y >= yRS ? XR0 : xS(q.y), { za, zb, y } = q;
-        B.poly('concrete', [W(xr, y, za), W(XL, y, za), W(XL, y, zb), W(xr, y, zb)], [0, 1, 0], { color: i ? TC : [0.84, 0.82, 0.78], uv: 1.2 });           // tread / landing
-        if (i) B.poly('concrete', [W(xr + 0.02, y + 0.004, zb - 0.06), W(XL, y + 0.004, zb - 0.06), W(XL, y + 0.004, zb - 0.02), W(xr + 0.02, y + 0.004, zb - 0.02)], [0, 1, 0], { color: [0.6, 0.6, 0.58] }); // nosing
-        B.poly('stone', [W(XL, y, za), W(XL, y, zb), W(XL, Y0 + 0.15, zb), W(XL, Y0 + 0.15, za)], toR, WC);                                   // retaining face behind
-        if (y > yRS) B.poly('stone', [W(XR0, yRS, za), W(XR0, yRS, zb), W(XR0, y, zb), W(XR0, y, za)], toR, WC);                             // river face under a proud tread
-        B.poly('stone', [W(12.2, 0.45, za), W(12.2, 0.45, zb), W(xr, yS(xr), zb), W(xr, yS(xr), za)], [-sd, 0.4, 0], WC);                    // remaining slope in front
-        if (i) { const p2 = slices[i - 1], xrp = p2.y >= yRS ? XR0 : xS(p2.y);                                                               // riser up to the tread above
-          B.poly('concrete', [W(xr, y, za), W(XL, y, za), W(XL, p2.y, za), W(xrp, p2.y, za)], [0, 0, 1], { color: TC.map(v => v * 0.92) }); }
-        addPlatform((W(xr, 0, (za + zb) / 2)[0] + W(XL, 0, (za + zb) / 2)[0]) / 2, (za + zb) / 2, (XL - xr) / 2, (zb - za) / 2 + 0.01, 0, y);
-      });
-      // ends of the cut: the landing's flank above the slope at the head, the slope's own end face over the foot
-      { const za = z0 - 1.4; B.poly('stone', [W(XR0, yRS, za), W(XR0, TOP, za), W(XL, TOP, za)], [0, 0, -1], WC); }
-      { const zb = z0 + STAIR_N * run; B.poly('stone', [W(12.2, 0.45, zb), W(XL, 0.45, zb), W(XL, Y0 + 0.15, zb)], [0, 0, -1], WC); }
-      // handrail on the river edge while the drop is real, and across the landing's far end back to the walkway railing
-      const zr1 = z0 + Math.max(2, Math.floor((TOP - yRS - 0.35) / R)) * run, hAt = zz => zz <= z0 ? TOP : TOP - Math.ceil((zz - z0) / run) * R, rail = [];
-      for (let zz = z0 - 1.35; zz <= zr1 + 1e-3; zz += 1.2) { const p = W(XR0 + 0.07, hAt(zz), zz); B.cyl('steel', p[0], p[1], p[2], 0.025, 0.025, 0.9, 8, { color: RC.color, cap: true }); rail.push([p[0], p[1] + 0.9, p[2]]); }
-      if (rail.length > 1) { B.sweep('steel', [[-0.024, -0.024], [0.024, -0.024], [0.024, 0.024], [-0.024, 0.024]], rail, { closed: true, caps: true, color: RC.color });
-        for (let i = 0; i + 1 < rail.length; i++) { const [ax, ay, az] = rail[i], [bx, by, bz] = rail[i + 1];
-          B.beam('steel', [ax, ay - 0.45, az], [bx, by - 0.45, bz], 0.02, 0.02, RC);
-          addBox((ax + bx) / 2, (az + bz) / 2, 0.06, Math.hypot(bx - ax, bz - az) / 2 + 0.05, Math.atan2(bx - ax, bz - az), 0, Math.max(ay, by) + 0.2); } }
-      { const zz = z0 - 1.35, a2 = W(XR0 + 0.07, TOP + 0.9, zz), b2 = W(15.0, TOP + 0.9, zz);
-        B.beam('steel', a2, b2, 0.045, 0.045, RC); B.beam('steel', [a2[0], TOP + 0.45, zz], [b2[0], TOP + 0.45, zz], 0.02, 0.02, RC);
-        addBox((a2[0] + b2[0]) / 2, zz, Math.abs(b2[0] - a2[0]) / 2, 0.06, 0, 0, TOP + 1.1); }
-      // the retaining face is a wall to anyone on the treads (the walkway above is unaffected)
-      { const zm = (z0 + z0 + STAIR_N * run) / 2, p = W(XL + 0.08, 0, zm); addBox(p[0], zm, 0.08, STAIR_N * run / 2, 0, -1e9, Y0 - 0.25); }
+  // end walls where the revetments stop and the natural banks begin: a cast wall across the end of each revetment,
+  // its cap standing proud of the slab and running flush across the end of the walkway (closing it off underneath); the
+  // ground of the natural bank meets its outer face just under the cap
+  for (const zE of [-RIVER_END, RIVER_END]) for (const sd of [-1, 1]) {
+    const e = Math.sign(zE), z1 = zE + e * 0.4, W = (rd, y, zz) => [riverX(zE) + sd * rd, y, zz], o = { uv: 2, color: [0.76, 0.76, 0.73] };
+    const top = rd => rd <= 12.2 ? 0.6 : rd <= 14.6 ? revY(rd) + 0.15 : Y0 + 0.12, bot = rd => rd <= 12.2 ? -1.3 : rd <= 14.6 ? revY(rd) - 1.8 : Y0 - 1.4;
+    const R = [11.75, 12.2, 14.6, 17.75];
+    B.frame(0, 0, 0, 0);
+    for (let k = 0; k + 1 < R.length; k++) {
+      const ra = R[k], rb = R[k + 1], ta = top(ra), tb = top(rb), ba = bot(ra), bb = bot(rb);
+      B.poly('concrete', [W(ra, ba, z1), W(rb, bb, z1), W(rb, tb, z1), W(ra, ta, z1)], [0, 0, e], o);                    // outer face
+      B.poly('concrete', [W(ra, ta, zE), W(rb, tb, zE), W(rb, tb, z1), W(ra, ta, z1)], [0, 1, 0], { color: [0.8, 0.8, 0.77] }); // cap
+      if (rb <= 12.2 || ra >= 14.6) B.poly('concrete', [W(ra, ba, zE), W(rb, bb, zE), W(rb, tb, zE), W(ra, ta, zE)], [0, 0, -e], o); // inner face (toe / under the walkway)
+      else B.poly('concrete', [W(ra, revY(ra) - 0.02, zE), W(rb, revY(rb) - 0.02, zE), W(rb, tb, zE), W(ra, ta, zE)], [0, 0, -e], o);  // its lip above the slab
     }
+    B.poly('concrete', [W(R[0], bot(R[0]), zE), W(R[0], bot(R[0]), z1), W(R[0], top(R[0]), z1), W(R[0], top(R[0]), zE)], [-sd, 0, 0], o); // river end
+    B.poly('concrete', [W(R[3], bot(R[3]), zE), W(R[3], bot(R[3]), z1), W(R[3], top(R[3]), z1), W(R[3], top(R[3]), zE)], [sd, 0, 0], o); // landward end
+  }
+  // the natural banks past the revetments: stones lie along the waterline — a bigger stone every few metres, half in
+  // the water, with smaller ones spilled round it (instanced with the district's rocks below)
+  const riverRocks = [], rrng = mulberry32(4242), RTINT = [[1.0, 0.97, 0.9], [0.9, 0.92, 0.95], [0.86, 0.85, 0.8], [0.96, 0.95, 0.9]].map(c => new THREE.Color(...c));
+  for (const sg of [-1, 1]) for (const sd of [-1, 1]) for (let az = RIVER_END + 18; az < hf.HALF - 4;) {
+    const z = sg * az, n = 1 + Math.floor(rrng() * 3);
+    for (let k = 0; k < n; k++) {
+      const big = k === 0, s = big ? 0.6 + rrng() * 0.7 : 0.22 + rrng() * 0.3, rd = (big ? 12.3 : 12.0) + rrng() * (big ? 1.0 : 1.8), zz = z + (big ? 0 : (rrng() - 0.5) * 2.4);
+      riverRocks.push({ x: riverX(zz) + sd * rd, z: zz, s, kind: 's', part: Math.floor(rrng() * 64), sink: big ? 0.3 : 0.4, r: rrng() * 6.283, tilt: (rrng() - 0.5) * 0.4, tilt2: (rrng() - 0.5) * 0.4,
+        sx: 0.85 + rrng() * 0.35, sy: 0.7 + rrng() * 0.4, c: RTINT[Math.floor(rrng() * RTINT.length)].clone().offsetHSL(0, 0, (rrng() - 0.5) * 0.06) });
+    }
+    az += 3 + rrng() * 7;
   }
   // at the railway the bank walkways ramp up onto their pedestrian level crossings (built with the road crossings);
   // on the west bank a paved link also leads off the walkway to the lane R crossing
@@ -675,6 +678,8 @@ export async function build(progress) {
     addBox((ra[0] + rb[0]) / 2, (z1 + rb[2]) / 2, 0.1, Math.abs(rb[2] - z1) / 2, 0);
     hf.paint2(2, riverX(z2) + sd * 14.4 - 3.5, Math.min(z1, z2) - 1, riverX(z2) + sd * 14.4 + 3.5, Math.max(z1, z2) + 1, () => 1);
   }
+  // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
+  // an aluminium railing, name pillars (親柱) at the four corners, lamps, and steel expansion joints across the road
   for (const [bz, bw, id, names] of BRIDGES) {
     // deck, girders and cross beams span the channel from bank line to bank line (the river crosses the road askew
     // here, so the deck ends run along the banks); piers turned into the current; abutments along both bank lines
@@ -1342,7 +1347,7 @@ export async function build(progress) {
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.76); await tick();
   const firstNatural = scene.children.length;
-  const terrainGroup = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: 0, snow: 900, conifer: 0.72 }));
+  const terrainGroup = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: RIVER_LV, snow: 900, conifer: 0.72, riverBed: true }));
   // the hill woods and the riverside trees are mirrored in the river; garden and street trees, saplings and the
   // forest floor are not (keeps the reflection pass cheap)
   const allTrees = [...trees, ...sakura.map(t => ({ ...t, kind: 'sakura', v: t.v ?? Math.floor(srng() * 4) }))];
@@ -1351,14 +1356,26 @@ export async function build(progress) {
   buildTrees([...allTrees.filter(t => t.town), ...saplings]);
   buildTrees(floor.twigs, { colliders: false });
   buildLogs(floor.logs);
-  const grass = buildGrass(hf, layers.grass.d, { water: 0, snow: 900, reeds: true, shore: 0.9 });
-  const water = buildWater(hf, { level: 0, normals: waterNormals, hide: [grass], waves: 6, strength: 0.3, deep: '#1d5a78', mid: '#2e8f9a', shallow: '#5cc4b0',
-    active: c => Math.abs(c.x - riverX(c.z)) < 380 });
+  // no grass in the river: nothing is rooted within 30 cm of the surface (it thins out and shortens above that), and no
+  // reed beds stand in the channel
+  const grass = buildGrass(hf, layers.grass.d, { water: RIVER_LV, snow: 900, reeds: false, shore: 0.9, dry: 0.3 });
+  // where the water meets a revetment the depth follows the slab (the ground under it lies well below), so the water
+  // clears toward the wall and laps against it in a line of foam, as it does on the natural banks
+  const bankGLSL = /* glsl */`
+    float bankDepth(vec2 p, float d) {
+      if (abs(p.y) > ${RIVER_END.toFixed(1)}) return d;
+      float rd = abs(p.x - (215.0 + 22.0 * sin(p.y * 0.0075) + 8.0 * sin(p.y * 0.021 + 1.0)));
+      // (the face is read as shelving gently for the shading, so the contact is a soft clear margin with a lapping line,
+      // not a hairline)
+      return rd > 12.2 ? min(d, max(0.0, ${REV_WL.toFixed(4)} - rd) * 0.9) : d;
+    }`;
+  const water = buildWater(hf, { level: RIVER_LV, normals: waterNormals, hide: [grass], waves: 6, strength: 0.3, deep: '#1d5a78', mid: '#2e8f9a', shallow: '#5cc4b0',
+    active: c => Math.abs(c.x - riverX(c.z)) < 380, bank: bankGLSL });
   reflected.add(water);
   for (const m of [MT.pondWater, MT.fountainWater]) m.userData.linkReflection(water);
   // where the reflection can be seen: the river channel in 20 m boxes, and (once built) every pond and fountain basin
   water.userData.regions = [];
-  for (let z = -1000; z < 1000; z += 20) { const a = riverX(z), b = riverX(z + 20); water.userData.regions.push(new THREE.Box3(new THREE.Vector3(Math.min(a, b) - 17, -4, z), new THREE.Vector3(Math.max(a, b) + 17, 2, z + 20))); }
+  for (let z = -1000; z < 1000; z += 20) { const a = riverX(z), b = riverX(z + 20); water.userData.regions.push(new THREE.Box3(new THREE.Vector3(Math.min(a, b) - 17, RIVER_LV - 4, z), new THREE.Vector3(Math.max(a, b) + 17, RIVER_LV + 2, z + 20))); }
 
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
@@ -1385,7 +1402,7 @@ export async function build(progress) {
     if (rockSet) for (const p of extractParts(rockSet)) stones.push({ parts: [p], dim: normalizeParts([p], false) });
     const bould = boulderM ? (() => { const parts = extractParts(boulderM); return { parts, dim: normalizeParts(parts, false) }; })() : null;
     const low = (x, z, r) => Math.min(hf.groundAt(x, z), hf.groundAt(x - r, z), hf.groundAt(x + r, z), hf.groundAt(x, z - r), hf.groundAt(x, z + r)), groups = new Map();
-    for (const q of danchi.rocks || []) { const M = q.kind === 'b' && bould ? bould : stones.length ? stones[q.part % stones.length] : bould; if (!M) continue;
+    for (const q of [...(danchi.rocks || []), ...riverRocks]) { const M = q.kind === 'b' && bould ? bould : stones.length ? stones[q.part % stones.length] : bould; if (!M) continue;
       const h = q.s * M.dim.h * (q.sy || 1), y = low(q.x, q.z, q.s * M.dim.w * 0.3) - h * q.sink;
       if (!groups.has(M)) groups.set(M, []); groups.get(M).push({ x: q.x, y, z: q.z, s: q.s, sx: q.sx, sy: q.sy, r: q.r, tilt: q.tilt, tilt2: q.tilt2, c: q.c });
       if (h * (1 - q.sink) > 0.4) addCircle(q.x, q.z, q.s * M.dim.w * 0.36); }
@@ -1530,15 +1547,18 @@ export async function build(progress) {
       if (rd > 14.55 && rd < 17.65 && dz < 6.6) return Y0 + 0.447;                                                   // pedestrian level crossing
       if (rd > 14.55 && rd < 17.65 && dz < 10.6) return Math.max(g, lerp(Y0 + 0.447, Y0 + 0.12, (dz - 6.6) / 4.0)); // its ramps
       if (rd > 14.55 && rd < 17.65) for (const [bz, , id] of BRIDGES) { const E = BRIDGE_EDGE[id], d = Math.abs(z - bz); if (d >= E && d < E + 3.0) return lerp(Y0 + 0.385, Y0 + 0.12, (d - E) / 3.0); }
-      return rd > 14.55 && rd < 17.65 ? Math.max(g, Y0 + 0.12) : g; // bank-top walkway
+      if (Math.abs(z) > RIVER_END + 0.4) return g; // past the revetments: natural banks
+      if (rd > 14.55 && rd < 17.65) return Math.max(g, Y0 + 0.12); // bank-top walkway
+      return rd > 12.2 && rd <= 14.55 ? Math.max(g, revY(rd)) : g; // the revetment slab (the ground lies under it) and its end wall
     },
-    normalAt: (x, z, out) => hf.normalAt(x, z, out),
-    waterAt: (x, z) => Math.abs(x - riverX(z)) < 15 ? 0 : -1e9,
+    normalAt: (x, z, out) => { const rd = x - riverX(z); if (Math.abs(rd) > 12.2 && Math.abs(rd) <= 14.55 && Math.abs(z) <= RIVER_END) { const l = Math.hypot(REV_K, 1); return out.set(-Math.sign(rd) * REV_K / l, 1 / l, 0); } return hf.normalAt(x, z, out); },
+    waterAt: (x, z) => Math.abs(x - riverX(z)) < 16 ? RIVER_LV : -1e9,
+    waterLevel: RIVER_LV,
     surfaceAt(x, z, y) {
       if (y !== undefined && y > Y0 + 0.9 && Math.abs(z + 80) < 8) return 'asphalt';
       if (Math.abs(z + 80) < 5.6 && y < Y0 + 0.6) return 'gravel';
       const g = hf.groundAt(x, z);
-      if (Math.abs(x - riverX(z)) < 14.5) return g < 0.2 ? 'water' : 'gravel';
+      if (Math.abs(x - riverX(z)) < 14.5) return g < RIVER_LV ? 'water' : 'gravel';
       if (inPaddyZone(x, z) && paddyOK(x, z) && paddyCell(x, z) > 1.2) return 'water';
       const m2 = hf.mask2[hf.idx(x, z) * 4 + 2], ur = hf.mask2[hf.idx(x, z) * 4];
       if (m2 > 128 || hf.paveAt(x, z) > 0.5) return 'asphalt';
@@ -1549,7 +1569,9 @@ export async function build(progress) {
       const rd = Math.abs(x - riverX(z));
       return { forest: FOREST[hf.idx(clamp(x, -HALF, HALF), clamp(z, -HALF, HALF))], water: rd < 40 ? (1 - rd / 40) * 0.6 : 0, town: Math.abs(x) < 450 && Math.abs(z) < 330 ? 1 : 0.3, insects: 0.9 };
     },
-    collide(p) { traffic.collide(p); people.collide(p); for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
+    collide(p) { traffic.collide(p); people.collide(p);
+      // the revetments are walls to anyone in the channel: no climbing the slab out of the water
+      if (Math.abs(p.z) <= RIVER_END && p.y < Y0 - 0.5) { const rx = riverX(p.z), rd = p.x - rx; if (Math.abs(rd) > REV_WL - 0.2 && Math.abs(rd) < 15) p.x = rx + Math.sign(rd) * (REV_WL - 0.2); } for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
     update(dt, t, cam) {
       perf.begin(PW.lights); updateNight(); updateGlow(); perf.end(PW.lights);
       perf.begin(PW.lod); updateLod(cam); perf.end(PW.lod);

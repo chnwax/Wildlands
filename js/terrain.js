@@ -184,7 +184,10 @@ void bladeStatic(vec2 wp2, vec4 iRand, out vec4 bA, out vec4 bB, out vec4 bC) {
   vec4 gm = inMap ? textureLod(tMask, maskUV(wp2), 0.0)
     : vec4(smoothstep(0.47, 0.6, gz1.r + (gz2.g - 0.5) * 0.12 + (gz0.b - 0.5) * 0.2) * smoothstep(0.2, 0.12, 1.0 - gN.y)
         * (1.0 - smoothstep(uSnow - 45.0, uSnow + 5.0, gh)) * step(uWaterLv + 3.0, gh), 1.0, 0.0, 0.5);
-  float dens = smoothstep(uShore * 0.35, uShore * 1.2, gh - uWaterLv + (gz2.r - 0.5) * 1.2)
+  // toward the water the sward thins out over a noisy band; whatever the noise, no blade is rooted lower than uDry above
+  // the surface (the shore band's noise alone let blades grow on the bed and stand up through the water)
+  float hw0 = gh - uWaterLv;
+  float dens = smoothstep(uShore * 0.35, uShore * 1.2, hw0 + (gz2.r - 0.5) * 1.2) * smoothstep(uDry, uDry + 0.25 + 0.5 * gz3.g, hw0)
     * (1.0 - smoothstep(0.26, 0.40, 1.0 - gN.y + (gz2.b - 0.5) * 0.14))
     * (1.0 - smoothstep(uSnow - 25.0, uSnow + 3.0, gh))
     * (1.0 - gm.b * 0.92)
@@ -223,6 +226,7 @@ void bladeStatic(vec2 wp2, vec4 iRand, out vec4 bA, out vec4 bB, out vec4 bC) {
   bool broadB = plain && !seedG && !dryB && sp > 0.91 - 0.5 * forestF && gm2.a < 0.5;
   #ifdef GRASS_CARD
     float Hs = uCard.y * (0.7 + 0.6 * iRand.y) * (0.55 + 0.65 * gz2.g) * keep * (1.0 - 0.6 * gm2.a) * (rice ? 0.75 : 1.0);
+    if (!reed) Hs *= mix(0.45, 1.0, smoothstep(uDry, uDry + 0.9, hw0));
     float pick = fract(gz2.g * 5.3 + gz3.b * 0.6);
     float flR = iRand.w + fract(iRand.z * 61.7 + iRand.x * 13.1) / 255.0;
     float extra = step(flR, clamp(flD * 0.22, 0.0, 0.75)) * (rice ? 0.0 : 512.0);
@@ -230,6 +234,7 @@ void bladeStatic(vec2 wp2, vec4 iRand, out vec4 bA, out vec4 bB, out vec4 bC) {
     // tall-grass patches stand out of the shorter sward
     float tallP = smoothstep(0.55, 0.8, gz2.a * 0.7 + gz3.r * 0.5);
     float Hs = mix(0.18, 0.78, iRand.y * iRand.y) * (0.5 + 0.7 * gz2.g) * (1.0 + 0.45 * tallP) * keep;
+    if (!reed) Hs *= mix(0.45, 1.0, smoothstep(uDry, uDry + 0.9, hw0)); // short and sparse at the water's edge
     Hs *= 1.0 - 0.68 * gm2.a;   // ...and short
     Hs *= 1.0 - 0.5 * alpine;
     Hs *= 1.0 - 0.35 * forestF; // low woodland herbs under the trees
@@ -329,6 +334,7 @@ export function terrainMaterial(hf, L, opt = {}) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
   // cloud shadows are evaluated per vertex (keeps the fragment shader light)
   mat.defines = opt.lite ? { CLOUD_SHADE_VARYING: '', TERRAIN_LITE: '' } : { CLOUD_SHADE_VARYING: '' };
+  if (opt.riverBed) mat.defines.RIVER_BED = ''; // the ground under the water is a river's bed (gravel, silt), not a lake's
   // if this GPU cannot run the full splat shader, main.js swaps in the painted-colour version (no photo textures)
   if (!opt.lite) mat.userData.fallback = () => terrainMaterial(hf, L, Object.assign({}, opt, { lite: true }));
   mat.userData.opt = opt;
@@ -510,8 +516,31 @@ export function terrainMaterial(hf, L, opt = {}) {
         col = mix(col, uP_snow, wSnow); nW = normalize(mix(nW, wN, wSnow * 0.7));
         float wet = max(1.0 - smoothstep(0.0, 0.7, h), msk2.g * 0.8);
         col = mix(col, uP_sandWet, wet * wSand * 0.8);
-        col = mix(col, uP_bed * (0.85 + 0.3 * nz3.g), smoothstep(0.0, 1.0, -h) * (1.0 - msk2.g)); // teal lake bed
-        col *= mix(1.0, 0.7, smoothstep(1.0, 12.0, -h));
+        #ifdef RIVER_BED
+          // a river's bed: grey-brown gravel and pebbles (the gravel photo at pebble scale), olive silt settled in the
+          // hollows and the deep middle, a green film of algae on the stones. Its banks meet the water in damp brown
+          // earth with pebbles washed up toward the line, darker where it is wet — no beach sand
+          float bedW = smoothstep(0.2, -0.2, h + shoreN * 0.12) * (1.0 - msk2.g);
+          float bankW = wSand * (1.0 - bedW) * (1.0 - msk2.g);
+          if (bedW + bankW > 0.0) {
+            vec3 gTex = layDG(wuv / 1.1, 4.0, wdx / 1.1, wdy / 1.1).rgb;
+            float gL = lum3(gTex);
+            vec3 cPeb = vec3(0.47, 0.44, 0.38) * clamp(gL * 2.6, 0.45, 1.5) * mix(vec3(1.0), vec3(0.86, 0.9, 0.8), nz2.g);
+            float near = smoothstep(0.9, 0.05, h + (nz3.r - 0.5) * 0.3);
+            vec3 cMud = mix(vec3(0.42, 0.34, 0.24), vec3(0.5, 0.43, 0.32), nz3.g) * mix(1.0, clamp(lum3(cSand) * 1.4, 0.7, 1.3), 0.5);
+            vec3 cBank = mix(cMud, cPeb, smoothstep(0.35, 0.6, gL + (nz3.b - 0.5) * 0.4) * (0.3 + 0.7 * near));
+            cBank *= mix(1.0, 0.66, near);
+            vec3 cSilt = vec3(0.3, 0.29, 0.21) * (0.85 + 0.3 * nz3.g);
+            vec3 cBed = mix(cPeb, cSilt, smoothstep(0.3, 1.6, -h + (nz2.r - 0.5) * 0.8) * 0.85);
+            cBed = mix(cBed, cBed * vec3(0.78, 0.95, 0.66), smoothstep(0.4, 0.75, nz2.a) * smoothstep(0.0, 0.5, -h) * 0.6);
+            col = mix(col, cBank, bankW);
+            col = mix(col, cBed, bedW);
+            col *= mix(1.0, 0.72, smoothstep(0.5, 4.0, -h));
+          }
+        #else
+          col = mix(col, uP_bed * (0.85 + 0.3 * nz3.g), smoothstep(0.0, 1.0, -h) * (1.0 - msk2.g)); // teal lake bed
+          col *= mix(1.0, 0.7, smoothstep(1.0, 12.0, -h));
+        #endif
         // dense stands keep a darker, calmer floor under their crowns
         col *= mix(1.0, ao, 0.6) * (1.0 - canopy * 0.45) * mix(1.0, 0.86, smoothstep(0.6, 0.95, forest) * wForest * inside);
         // the meadow the grass rings leave to the ground: under the card rings it is the shade between the blades, so the
@@ -548,7 +577,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = splatRough;')
       .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(splatN, 0.0)).xyz);');
   };
-  mat.customProgramCacheKey = () => opt.lite ? 'terrainLite' : 'terrain';
+  mat.customProgramCacheKey = () => (opt.lite ? 'terrainLite' : 'terrain') + (opt.riverBed ? '|bed' : '');
   // drawn after everything standing on it (core.js draw order) with a strict depth test: it loses exact ties, as it did
   // when it was drawn first, so coplanar surfaces keep showing over it
   mat.userData.drawClass = 3; mat.depthFunc = THREE.LessDepth;
@@ -787,6 +816,7 @@ function bladeGeometry(SEG) {
 export function buildGrass(hf, grassTex, opt = {}) {
   const group = new THREE.Group(), K2 = GRASS_K * GRASS_K, O = hf.outer;
   const gu = { uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uReeds: { value: opt.reeds ? 1 : 0 },
+    uDry: { value: opt.dry ?? 0 }, // lowest root of a (non-reed) blade above the water surface, m
     tOuterH: { value: O ? O.tex : null }, uOuterE: { value: O ? O.E : hf.HALF }, uOuterS: { value: O ? O.S : 1 }, uOuterN: { value: O ? O.N : 2 }, uGrassE: grassU.uGrassE,
     uGrassY: { value: new THREE.Vector2(-50, 3000) } };
   { let lo = Infinity, hi = -Infinity; for (const h of hf.H) { if (h < lo) lo = h; if (h > hi) hi = h; } if (O && O.data) for (const h of O.data) { if (h < lo) lo = h; if (h > hi) hi = h; } if (isFinite(lo)) gu.uGrassY.value.set(lo - 5, hi + 10); }
@@ -923,7 +953,7 @@ function bakeMaterial(hf, gu, ru, card, out) {
     fragmentShader: /* glsl */`
       uniform highp usampler2D tBladeIn; uniform int uBladeRows, uChunk, uN; uniform vec2 uOrigin;
       uniform sampler2D tMask, tMask2, tNoise;
-      uniform float uCellSize, uLod, uWaterLv, uSnow, uShore, uReeds; uniform vec2 uCard; uniform vec4 uTurf0, uTurf1, uTurfStripe;
+      uniform float uCellSize, uLod, uWaterLv, uSnow, uShore, uReeds, uDry; uniform vec2 uCard; uniform vec4 uTurf0, uTurf1, uTurfStripe;
       ${GLSL_HEIGHT}
       ${GLSL_PAVE}
       ${GLSL_OUTER_HEIGHT}
@@ -960,7 +990,7 @@ function grassMaterial(hf, grassTex, gu, ru, card, baked) {
           attribute vec2 iOffset; attribute vec4 iRand;
         #endif
         uniform sampler2D tMask, tMask2, tNoise, tGrassD;
-        uniform vec3 uCam, uPlayer; uniform float uTime, uCellSize, uR, uLod, uTuft, uWind, uWaterLv, uSnow, uShore, uReeds, uDens; uniform vec2 uIn, uCard;
+        uniform vec3 uCam, uPlayer; uniform float uTime, uCellSize, uR, uLod, uTuft, uWind, uWaterLv, uSnow, uShore, uReeds, uDry, uDens; uniform vec2 uIn, uCard;
         uniform vec4 uTurf0, uTurf1, uTurfStripe; uniform vec2 uGrassY;
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
         varying vec2 vCardUv; varying vec3 vFlCol; varying float vFl;
@@ -1125,14 +1155,16 @@ function grassMaterial(hf, grassTex, gu, ru, card, baked) {
 
 // ---------------------------------------------------------------- water with planar reflection
 // painted water: turquoise shallows deepening to blue, a soft sky sheen, crisp white foam lines at the shore, sun sparkles
-export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e', mid = '#2398be', shallow = '#52d6c4', waves = 4.0, strength = 0.4, active = () => true } = {}) {
+// bank: optional GLSL defining float bankDepth(vec2 p, float d) — the depth at p where built banks (walls, revetments)
+// stand in the water and the ground under them lies deeper than their face (d: the depth to the ground)
+export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e', mid = '#2398be', shallow = '#52d6c4', waves = 4.0, strength = 0.4, active = () => true, bank = '' } = {}) {
   const mirrorCam = new THREE.PerspectiveCamera();
   mirrorCam.layers.set(0); // objects moved to layer 1 are not reflected (cheap reflection pass)
   const textureMatrix = new THREE.Matrix4();
   const reflDepth = new THREE.DepthTexture(512, 512); reflDepth.type = THREE.FloatType; // 32F: pairs with reversed-Z
   const reflRT = new THREE.WebGLRenderTarget(512, 512, { type: THREE.HalfFloatType, depthTexture: reflDepth });
   const mat = new THREE.ShaderMaterial({
-    transparent: true, fog: true, depthWrite: true,
+    transparent: true, fog: true, depthWrite: true, defines: bank ? { WATER_BANK: '' } : {},
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       tRefl: { value: null }, tNormal: { value: null }, textureMatrix: { value: null }, uLevel: { value: level },
       uDeep: { value: new THREE.Color(deep) }, uMid: { value: new THREE.Color(mid) }, uShallow: { value: new THREE.Color(shallow) }, uWaves: { value: waves }, uStrength: { value: strength },
@@ -1152,6 +1184,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
       #include <common>
       #include <fog_pars_fragment>
       ${GLSL_HEIGHT}
+      ${bank}
       vec4 getNoise(vec2 uv){
         vec2 uv0 = uv / 103.0 + vec2(uTime / 17.0, uTime / 29.0);
         vec2 uv1 = uv / 107.0 - vec2(uTime / -19.0, uTime / 31.0);
@@ -1175,6 +1208,9 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
         vec3 spec = uSunCol * (glint * 2.2 + pow(sd, 90.0) * 0.12) * step(0.0, uLightDir.y);
         float inside = step(abs(vW.x), uHalf) * step(abs(vW.z), uHalf);
         float depth = mix(40.0, max(0.0, uLevel - hAt(vW.xz)), inside);
+        #ifdef WATER_BANK
+          depth = bankDepth(vW.xz, depth);
+        #endif
         float dd = 1.0 - exp(-depth * 0.32);
         vec3 body = mix(uShallow, uMid, smoothstep(0.0, 0.55, dd));
         body = mix(body, uDeep, smoothstep(0.5, 1.0, dd));
@@ -1199,7 +1235,9 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
   });
   Object.assign(mat.uniforms, hf.U, { tNoise: S.tNoise, uTime: S.uTime, uSunDir: S.uSunDir, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
   mat.uniforms.tRefl.value = reflRT.texture; mat.uniforms.tNormal.value = normals; mat.uniforms.textureMatrix.value = textureMatrix;
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000).rotateX(-Math.PI / 2), mat);
+  // (subdivided: a two-triangle plane 40 km across, its centre under the camera, is clipped unreliably near the eye — one
+  // whole triangle of it could vanish from a viewpoint just above the surface)
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000, 64, 64).rotateX(-Math.PI / 2), mat);
   water.position.y = level; water.renderOrder = 2; water.userData.dynamic = true; // follows the camera
   const _vpm = new THREE.Matrix4(), _fr = new THREE.Frustum(), _cp = new THREE.Vector4(), _crop = new THREE.Matrix4(), hideVis = [];
   // occlusion queries round the draws of the water and of every pond surface linked to its reflection (watchVisibility)

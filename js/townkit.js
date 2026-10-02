@@ -53,7 +53,8 @@ export class GeoBuilder {
     const uvs = opt.uvs || [[u0, v0], [u0 + lu, v0], [u0 + lu, v0 + lv], [u0, v0 + lv]];
     const wa = this.P(a), B = this.bucket(mat, wa[0], wa[2]), base = B.pos.length / 3, col = opt.color || WHITE;
     const ns = opt.normals; // optional per-vertex normals (local frame) for smooth shading
-    for (const [i, p] of [a, b, c, d].entries()) { const w = this.P(p), nn = ns ? this.N(norm(ns[i])) : n; B.pos.push(w[0], w[1], w[2]); B.nor.push(nn[0], nn[1], nn[2]); B.uv.push(uvs[i][0], uvs[i][1]); B.col.push(col[0], col[1], col[2]); }
+    for (const [i, p] of [a, b, c, d].entries()) { const w = this.P(p), nn = ns ? this.N(norm(ns[i])) : n, cc = opt.colors ? opt.colors[i] : col; // (opt.colors: per-vertex colours)
+      B.pos.push(w[0], w[1], w[2]); B.nor.push(nn[0], nn[1], nn[2]); B.uv.push(uvs[i][0], uvs[i][1]); B.col.push(cc[0], cc[1], cc[2]); }
     this._extra(B, 4, opt.attr);
     B.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
@@ -82,9 +83,9 @@ export class GeoBuilder {
   // triangle or quad with its winding chosen so it faces along `hint` (local frame)
   poly(mat, pts, hint, opt = {}) {
     const n = cross(sub(pts[1], pts[0]), sub(pts[pts.length - 1], pts[0]));
-    let p = pts, uvs = opt.uvs;
-    if (n[0] * hint[0] + n[1] * hint[1] + n[2] * hint[2] < 0) { p = [...pts].reverse(); if (uvs) uvs = [...uvs].reverse(); }
-    const o = uvs ? Object.assign({}, opt, { uvs }) : opt;
+    let p = pts, uvs = opt.uvs, colors = opt.colors;
+    if (n[0] * hint[0] + n[1] * hint[1] + n[2] * hint[2] < 0) { p = [...pts].reverse(); if (uvs) uvs = [...uvs].reverse(); if (colors) colors = [...colors].reverse(); }
+    const o = uvs || colors ? Object.assign({}, opt, { uvs, colors }) : opt;
     if (p.length === 3) this.tri(mat, p[0], p[1], p[2], o); else this.quad(mat, p[0], p[1], p[2], p[3], o);
   }
   // box with chamfered edges (bevel b): edges and corners catch the light, so things stop reading as raw primitives
