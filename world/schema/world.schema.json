@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wildlands.local/world/schema/world.schema.json",
+  "title": "Wildlands world file",
+  "description": "Every JSON file under world/<map>/ (see WORLD_FORMAT.md). The file's \"kind\" decides which shape applies. tools/validate-world.mjs checks these rules and the cross-file ones a schema cannot express (ids exist, names resolve, no id appears twice).",
+  "type": "object",
+  "required": ["format", "kind"],
+  "properties": {
+    "format": { "const": "wildlands-world/1" },
+    "kind": { "enum": ["index", "generated", "edits", "materials", "prefabs", "materialLibrary"] }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/indexFile" },
+    { "$ref": "#/$defs/generatedFile" },
+    { "$ref": "#/$defs/editsFile" },
+    { "$ref": "#/$defs/materialEditsFile" },
+    { "$ref": "#/$defs/prefabLibrary" },
+    { "$ref": "#/$defs/materialLibrary" }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[_-][a-z0-9]+)*$", "description": "Stable readable id. Generated objects: <prefab>_<area>_<nnn>, e.g. bench_danchi_007." },
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+    "override": {
+      "type": "object",
+      "description": "Material values for one object only (never changes the shared library material).",
+      "additionalProperties": false,
+      "properties": {
+        "material": { "type": "string", "description": "(slots only) use another library material for this slot" },
+        "color": { "$ref": "#/$defs/color" },
+        "roughness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "metalness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "emissive": { "$ref": "#/$defs/color" },
+        "emissiveIntensity": { "type": "number", "minimum": 0, "maximum": 100 },
+        "texture": { "type": ["string", "null"], "description": "a texture path from materials.json \"textures\", or null for none" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "object": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "maxLength": 160 },
+        "prefab": { "type": "string", "description": "prefab name from prefabs.json (required for new objects unless source is given)" },
+        "source": { "$ref": "#/$defs/id", "description": "new objects: copy the look of this object (any generated or added object)" },
+        "position": { "$ref": "#/$defs/vec3", "description": "metres, world space; y is up" },
+        "rotation": { "$ref": "#/$defs/vec3", "description": "degrees, Euler angles applied X, then Y, then Z (Y turns the object round its vertical axis)" },
+        "scale": { "$ref": "#/$defs/vec3" },
+        "material": { "type": "string", "description": "library material of the object's main slot" },
+        "materialOverrides": { "$ref": "#/$defs/override" },
+        "slots": { "type": "object", "additionalProperties": { "$ref": "#/$defs/override" }, "description": "per material slot (keyed by the slot's library material name)" },
+        "group": { "$ref": "#/$defs/id" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "hidden": { "type": "boolean", "description": "not drawn and not solid, in the game and the editor (the editor can show hidden objects as ghosts)" },
+        "locked": { "type": "boolean", "description": "editor only: cannot be selected in the viewport" },
+        "deleted": { "type": "boolean", "description": "removes a generated object" },
+        "origin": { "$ref": "#/$defs/vec3", "description": "where the generator placed this object (written by the editor); used to find it again if ids shift" }
+      }
+    },
+    "indexFile": {
+      "properties": {
+        "kind": { "const": "index" },
+        "map": { "type": "string" }, "name": { "type": "string" }, "note": { "type": "string" },
+        "areas": { "type": "array", "items": { "type": "string" } },
+        "generated": { "type": "array", "items": { "type": "string" } },
+        "edits": { "type": "array", "items": { "type": "string" } },
+        "materialEdits": { "type": "string" },
+        "libraries": { "type": "object" }
+      },
+      "required": ["kind", "edits"]
+    },
+    "generatedFile": {
+      "properties": { "kind": { "const": "generated" }, "objects": { "type": "array", "items": { "$ref": "#/$defs/object" } }, "fields": { "type": "array" } },
+      "required": ["kind", "objects"]
+    },
+    "editsFile": {
+      "properties": { "kind": { "const": "edits" }, "map": { "type": "string" }, "area": { "type": "string" }, "objects": { "type": "array", "items": { "$ref": "#/$defs/object" } } },
+      "required": ["kind", "objects"]
+    },
+    "materialEditsFile": {
+      "properties": { "kind": { "const": "materials" }, "materials": { "type": "object", "additionalProperties": { "$ref": "#/$defs/override" } } },
+      "required": ["kind", "materials"]
+    },
+    "prefabLibrary": {
+      "properties": { "kind": { "const": "prefabs" }, "prefabs": { "type": "array", "items": { "type": "object", "required": ["name", "category", "source"] } } },
+      "required": ["kind", "prefabs"]
+    },
+    "materialLibrary": {
+      "properties": { "kind": { "const": "materialLibrary" }, "textures": { "type": "array", "items": { "type": "string" } }, "materials": { "type": "array", "items": { "type": "object", "required": ["name"] } } },
+      "required": ["kind", "materials"]
+    }
+  }
+}

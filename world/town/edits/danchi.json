@@ -1,0 +1,645 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "danchi",
+  "objects": [
+    {
+      "id": "apartment_lowrise_danchi_008",
+      "slots": {
+        "plain#0": { "scale": [1, 1, 1.0144] }
+      },
+      "origin": [464, 6.304, 331]
+    },
+    {
+      "id": "apartment_mansion_danchi_001",
+      "slots": {
+        "concrete#135": { "offset": [0, 0, -0.1452], "scale": [1, 1, 1.1102] },
+        "concrete#138": { "offset": [0, 0, -0.2151] },
+        "concrete#169": { "offset": [0, -0.0584, 0] },
+        "concrete#170": { "offset": [-0.0555, -0.0624, 0] },
+        "concrete#178": { "offset": [0, -0.0589, 0] },
+        "concrete#179": { "offset": [-0.0644, -0.0595, 0] },
+        "concrete#180": { "offset": [21.7178, -1.4277, 0], "scale": [16.1489, 1, 1] },
+        "concrete#180.4": { "offset": [21.6696, -1.4321, 0], "scale": [16.2688, 1, 1] },
+        "plain#100": { "offset": [0, -0.0989, 0] },
+        "plain#102": { "offset": [0, -0.0297, 0] },
+        "plain#103": { "offset": [0, -0.0314, 0] },
+        "plain#119": { "offset": [0, -0.0172, 0] },
+        "plain#119.0": { "offset": [0, -0.0211, -0.0103], "scale": [1, 1, 0.9321] },
+        "plain#120": { "offset": [-0.0589, -0.0159, 0] },
+        "plain#121": { "offset": [0, -0.0198, 0] },
+        "plain#122": { "offset": [0, -0.019, 0] },
+        "plain#137": { "offset": [0, -0.0252, -0.0011], "scale": [1, 0.9759, 0.9141] },
+        "plain#138": { "offset": [-0.0562, 0, 0] },
+        "plain#139": { "offset": [0, -0.0162, 0] },
+        "plain#140": { "offset": [0, -0.0234, 0] },
+        "plain#155.0": { "offset": [0, -0.0585, 0.0037], "scale": [1, 1.398, 0.9122] },
+        "plain#156": { "offset": [-0.0428, -0.0232, 0] },
+        "plain#157": { "offset": [0, -0.011, 0] },
+        "plain#158": { "offset": [0, -0.0202, 0] },
+        "plain#173.0": { "offset": [-0.0016, -0.0253, 0.0225], "scale": [1, 1, 0.6796] },
+        "plain#174": { "offset": [-0.0546, -0.0216, 0] },
+        "plain#175": { "offset": [0, -0.0198, 0] },
+        "plain#176": { "offset": [0, -0.0179, 0] },
+        "plain#191": { "offset": [0, -0.0167, 0.0682], "scale": [1, 1, 0.8054] },
+        "plain#192": { "offset": [-0.0581, -0.0197, 0] },
+        "plain#98": { "offset": [0, -0.0682, 0] },
+        "tiles#23": { "offset": [0, -0.0487, 0] },
+        "tiles#25": { "offset": [0, -0.0631, 0] },
+        "tiles#28": { "offset": [0.0431, -1.2998, 0.0322] },
+        "tiles#29": { "offset": [0.0266, -1.3491, -0.0361] },
+        "tiles#31": { "offset": [-0.0031, 0, 0] },
+        "tiles#32": { "offset": [0, 0, -0.0028] },
+        "tiles#34": { "offset": [-0.0047, 0, 0] },
+        "tiles#35": { "offset": [0, 0, -0.0022] },
+        "tiles#37": { "offset": [-0.0038, 0, 0] },
+        "tiles#38": { "offset": [0, 0, -0.0047] },
+        "tiles#39": { "offset": [-0.0027, 0, 0] },
+        "tiles#41": { "offset": [-0.0014, -0.0425, -0.0052] },
+        "tiles#41.2": { "offset": [-0.0348, -0.0465, 0] },
+        "tiles#42": { "offset": [-0.0021, 0, 0] },
+        "tiles#44": { "offset": [0.0027, -0.0527, -0.0025] }
+      },
+      "origin": [493, 10.62, 183]
+    },
+    {
+      "id": "apartment_mansion_danchi_002",
+      "slots": {
+        "concrete#112": { "offset": [12.012, -1.3682, 0], "scale": [9.2537, 1, 1] },
+        "plastic#88": { "offset": [0, 0, 0] },
+        "tiles#19": { "offset": [-0.0068, -5.1074, 0.0126], "scale": [1, 1.4684, 1] },
+        "tiles#19.0": { "offset": [0.0104, -4.0709, 0], "scale": [1, 1.3449, 1] },
+        "tiles#19.7": { "offset": [0, -10.8282, 0], "scale": [1, 2.1428, 1] },
+        "tiles#20": { "offset": [0.0703, -3.8001, -0.0147], "scale": [1, 1.3218, 1] }
+      },
+      "origin": [466, 10.62, 157]
+    },
+    {
+      "id": "apartment_mansion_danchi_004",
+      "slots": {
+        "concrete#236": { "offset": [0, 0, 0.0123] },
+        "concrete#237": { "offset": [-0.1789, 0, -0.2057] },
+        "concrete#238": { "offset": [-0.0149, 0, 0.0117] },
+        "concrete#239": { "offset": [-0.0074, 0, -0.0149] },
+        "plain#258": { "offset": [-0.0176, 0, -0.0058] },
+        "tiles#36": { "offset": [0.0002, 0, -0.0069] },
+        "tiles#37": { "offset": [0.0125, 0, -0.0104] }
+      },
+      "origin": [568, 6.02, 84]
+    },
+    {
+      "id": "apartment_mansion_danchi_005",
+      "slots": {
+        "concrete#190": { "offset": [19.581, -1.4121, 0.1214], "scale": [14.6207, 1, 1] },
+        "tiles#30": { "offset": [0.0421, -1.2641, 0.0197] },
+        "tiles#31": { "offset": [0.0385, -1.2855, -0.0163] }
+      },
+      "origin": [503, 6.028, 224]
+    },
+    {
+      "id": "apartment_mansion_danchi_006",
+      "slots": {
+        "concrete#162": { "offset": [0, 0.0016, -0.0275] },
+        "concrete#90": { "offset": [11.3643, -1.4083, 0], "scale": [8.7336, 1, 1] },
+        "metal#15": { "offset": [0, 0, -0.0069] },
+        "plain#193": { "offset": [-1.8962, 0, 0], "scale": [1.0292, 1, 1] },
+        "plain#25": { "offset": [-0.7525, 0, 0], "scale": [0.9238, 1, 1] },
+        "tiles#12": { "offset": [0, -0.0027, 0] },
+        "tiles#13": { "offset": [0.0345, -1.2962, 0.0216] },
+        "tiles#13.0": { "offset": [0.0541, -1.2961, 0] },
+        "tiles#14": { "offset": [0.0177, -1.2801, -0.0403] },
+        "tiles#28": { "offset": [-0.0004, 0, 0] },
+        "tiles#29": { "offset": [0, 0, -0.0035] },
+        "tiles#31": { "offset": [-0.0041, 0, 0] },
+        "tiles#59": { "offset": [-0.7927, 0, 0], "scale": [0.9238, 1, 1] },
+        "tiles#63": { "offset": [0, 0.0001, 0] }
+      },
+      "origin": [388.3, 6.02, 41]
+    },
+    {
+      "id": "apartment_mansion_danchi_007",
+      "slots": {
+        "concrete#81": { "offset": [0, 0.0027, -0.0309] },
+        "metal#24": { "offset": [0, 0, -0.0024] },
+        "plain#72": { "offset": [0.8111, 0, 0], "scale": [0.9337, 1, 1] },
+        "plain#72.1": { "offset": [0.8306, 0, 0], "scale": [0.9299, 1, 1] },
+        "tiles#19": { "offset": [0.827, 0, 0], "scale": [0.9332, 1, 1] },
+        "tiles#22": { "offset": [0, 0, 0.799], "scale": [1, 1, 1.5598] },
+        "tiles#22.4": { "offset": [0, -0.0187, 0.8357], "scale": [1, 1, 1.6004] },
+        "tiles#23": { "offset": [0, 0.004, 0] }
+      },
+      "origin": [405, 6.02, 24.3]
+    },
+    {
+      "id": "apartment_mansion_danchi_008",
+      "slots": {
+        "concrete#149": { "offset": [14.754, -1.3713, 0.0356], "scale": [11.1114, 1, 1] },
+        "concrete#149.4": { "offset": [14.7623, -1.4403, 0.1245], "scale": [11.1449, 1, 1] },
+        "concrete#150": { "offset": [-0.0006, 0, 0.0126] },
+        "concrete#151": { "offset": [-0.2147, 0, -0.5515] },
+        "concrete#152": { "offset": [0.005, 0, 0.0002] },
+        "concrete#153": { "offset": [-0.009, 0, -0.0164] },
+        "concrete#153.2": { "offset": [-0.0082, 0, -0.0083] },
+        "plain#174": { "offset": [-0.002, 0, 0.0403] },
+        "tiles#26": { "offset": [0, -1.2409, 0] },
+        "tiles#27": { "offset": [0, -1.2437, 0] }
+      },
+      "origin": [543.722, 6.022, 177.315]
+    },
+    {
+      "id": "apartment_tower_danchi_003",
+      "slots": {
+        "metal#4": { "offset": [-0.001, 0, -0.0096] }
+      },
+      "origin": [428, 6.02, 236]
+    },
+    {
+      "id": "apartment_tower_danchi_005",
+      "slots": {
+        "alu#14": { "offset": [0.0098, 0, 0] },
+        "pavement#2": { "offset": [0, 0, 0.4606], "scale": [1, 1, 1.3056] }
+      },
+      "origin": [425, 6.025, 300]
+    },
+    {
+      "id": "apartment_walkup_danchi_001",
+      "slots": {
+        "alu#1188": { "offset": [0, -3.1619, 0] },
+        "alu#357": { "offset": [0, -3.1261, 0] },
+        "metal#12": { "offset": [0, 0, -0.0023] },
+        "metal#16": { "offset": [0, 0, -0.004] },
+        "metal#3": { "offset": [0, 0, -0.0058] },
+        "plain#0": { "hidden": true, "offset": [0, 0.9322, 0] },
+        "plain#58": { "hidden": true }
+      },
+      "origin": [384, 6.02, 80]
+    },
+    {
+      "id": "apartment_walkup_danchi_002",
+      "slots": {
+        "concrete#44": { "offset": [0.0004, 0, 0.0032] },
+        "metal#3": { "offset": [-0.0001, 0, -0.0006] }
+      },
+      "origin": [393, 6.02, 126]
+    },
+    {
+      "id": "apartment_walkup_danchi_004",
+      "slots": {
+        "alu#916": { "offset": [0, -3.1329, 0] },
+        "alu#917": { "offset": [0, -3.1939, 0] }
+      },
+      "origin": [476, 6.02, 80]
+    },
+    {
+      "id": "apartment_walkup_danchi_005",
+      "slots": {
+        "alu#1191": { "offset": [0, -3.0554, 0] },
+        "alu#1192": { "offset": [0, -3.2065, 0] }
+      },
+      "origin": [508, 6.02, 118]
+    },
+    {
+      "id": "apartment_walkup_danchi_006",
+      "slots": {
+        "alu#692": { "offset": [0, -3.2248, 0] },
+        "alu#693": { "offset": [0, -3.1861, 0] },
+        "concrete#34": { "offset": [0, 0, 0.0065] },
+        "metal#11": { "offset": [0, 0, -0.0048] },
+        "metal#7.0": { "offset": [0, 0, -0.0072] }
+      },
+      "origin": [637, 6.02, 74]
+    },
+    {
+      "id": "apartment_walkup_danchi_007",
+      "slots": {
+        "alu#1474": { "offset": [0, -3.1218, 0] },
+        "alu#1475": { "offset": [0, -3.1478, 0] },
+        "metal#3": { "offset": [0, 0, -0.0087] },
+        "metal#7": { "offset": [0, 0, -0.0051] }
+      },
+      "origin": [637, 6.113, 121]
+    },
+    {
+      "id": "apartment_walkup_danchi_008",
+      "slots": {
+        "alu#470": { "offset": [0, -3.0622, 0] },
+        "alu#471": { "offset": [0, -3.1406, 0] }
+      },
+      "origin": [468, 6.077, 280]
+    },
+    {
+      "id": "bench_danchi_001",
+      "position": [383.287, 6, 101],
+      "origin": [368.25, 6, 101]
+    },
+    {
+      "id": "bench_danchi_016",
+      "position": [499.802, 6.05, -2.159],
+      "rotation": [0, -23.7, 0],
+      "origin": [494.114, 6.05, 0.56]
+    },
+    {
+      "id": "bench_danchi_018",
+      "position": [496.755, 6, 28.698],
+      "rotation": [0, -172.39, 0],
+      "origin": [496.689, 6, 28.589]
+    },
+    {
+      "id": "bollard_danchi_001",
+      "slots": {
+        "lamp": { "scale": [1.0298, 1, 1] }
+      },
+      "origin": [552.6, 6, 132.1]
+    },
+    {
+      "id": "bollard_danchi_002",
+      "scale": [0.8705, 1, 1],
+      "slots": {
+        "lamp": { "scale": [1.0229, 1, 1] }
+      },
+      "origin": [552.6, 6, 135.9]
+    },
+    {
+      "id": "box_new_001",
+      "name": "Box",
+      "prefab": "box",
+      "position": [-75.737, 5.991, 233.663],
+      "rotation": [0, 0, 0],
+      "scale": [1.955, 0.5347, 0.0639],
+      "material": "bicycle_paint",
+      "materialOverrides": { "emissive": "#4f4a4a", "texture": "tex/concrete_block_wall_diff_1k.jpg" },
+      "locked": true
+    },
+    {
+      "id": "box_new_002",
+      "name": "Box",
+      "prefab": "box",
+      "position": [398.768, 6.42, 11.59],
+      "rotation": [0, 0, 0],
+      "scale": [1, 2.8564, 3.7673],
+      "material": "tiles",
+      "materialOverrides": { "color": "#998a8a", "roughness": 0, "metalness": 0.45, "emissive": "#ffffff", "emissiveIntensity": 0.2 }
+    },
+    {
+      "id": "bush_danchi_001",
+      "position": [429.587, 5.95, -12.1],
+      "origin": [428.9, 5.95, -12.1]
+    },
+    {
+      "id": "bush_danchi_002",
+      "position": [430.856, 5.95, -12.1],
+      "origin": [430.2, 5.95, -12.1]
+    },
+    {
+      "id": "bush_danchi_003",
+      "position": [432.116, 5.95, -12.1],
+      "origin": [431.5, 5.95, -12.1]
+    },
+    {
+      "id": "bush_danchi_004",
+      "position": [433.366, 5.95, -12.1],
+      "origin": [432.8, 5.95, -12.1]
+    },
+    {
+      "id": "bush_danchi_005",
+      "position": [434.59, 5.95, -12.1],
+      "origin": [434.1, 5.95, -12.1]
+    },
+    {
+      "id": "bush_danchi_011",
+      "position": [396.865, 5.879, 103.899],
+      "origin": [396.865, 8.55, 104.089]
+    },
+    {
+      "id": "bush_danchi_012",
+      "position": [395.452, 5.877, 103.185],
+      "origin": [395.452, 8.55, 103.185]
+    },
+    {
+      "id": "bush_danchi_013",
+      "position": [396.56, 5.985, 102.866],
+      "origin": [396.56, 8.55, 102.866]
+    },
+    {
+      "id": "bush_danchi_014",
+      "position": [397.782, 5.987, 104.111],
+      "origin": [397.782, 8.55, 104.111]
+    },
+    {
+      "id": "bush_danchi_562",
+      "position": [508.826, 6.206, 284.547],
+      "origin": [508.826, 8.83, 285.433]
+    },
+    {
+      "id": "bush_danchi_563",
+      "position": [512.407, 6.259, 286.571],
+      "origin": [512.407, 8.83, 286.571]
+    },
+    {
+      "id": "bush_danchi_564",
+      "position": [509.5, 6.148, 284.236],
+      "origin": [509.013, 8.83, 284.71]
+    },
+    {
+      "id": "bush_danchi_565",
+      "position": [509.377, 6.238, 284.629],
+      "origin": [509.377, 8.83, 284.629]
+    },
+    {
+      "id": "bush_danchi_566",
+      "position": [510.507, 6.26, 284.132],
+      "origin": [510.507, 8.83, 284.132]
+    },
+    {
+      "id": "bush_danchi_567",
+      "position": [510.74, 6.244, 283.572],
+      "origin": [510.74, 8.83, 284.367]
+    },
+    {
+      "id": "detail_m164_t65598",
+      "rotation": [0, 3.02, 0],
+      "scale": [1, 1, 1.3357],
+      "origin": [440.978, 6.039, 332.743]
+    },
+    {
+      "id": "detail_m164_t70698",
+      "position": [448.977, 6.05, 166],
+      "origin": [447, 6.05, 166]
+    },
+    {
+      "id": "detail_m164_t70742",
+      "position": [454.554, 6.05, 182],
+      "origin": [447, 6.05, 182]
+    },
+    {
+      "id": "detail_m169_t7428",
+      "position": [481.58, 6.05, 157.01],
+      "scale": [1, 1, 1.0135],
+      "origin": [481.58, 6.05, 157]
+    },
+    {
+      "id": "detail_m170_t42457",
+      "position": [447, 6.529, 150],
+      "origin": [447, 6.51, 150]
+    },
+    {
+      "id": "detail_m170_t42469",
+      "position": [448.975, 6.516, 166],
+      "origin": [447, 6.51, 166]
+    },
+    {
+      "id": "detail_m170_t42481",
+      "position": [454.576, 6.531, 182],
+      "origin": [447, 6.51, 182]
+    },
+    {
+      "id": "detail_m18_t19922",
+      "position": [437.471, 6.064, 331.211],
+      "rotation": [0, 7.58, 0],
+      "origin": [437.18, 6.049, 332.248]
+    },
+    {
+      "id": "detail_m191_t42526",
+      "rotation": [88.56, 0, 0],
+      "origin": [452, 9.65, 158]
+    },
+    {
+      "id": "detail_m19_t8634",
+      "position": [435.915, 6.182, 332.285],
+      "origin": [435.915, 6.164, 332.285]
+    },
+    {
+      "id": "detail_m19_t8658",
+      "position": [438.394, 6.181, 332.608],
+      "origin": [438.394, 6.164, 332.608]
+    },
+    {
+      "id": "detail_m259_t0",
+      "position": [417, 6.089, -7],
+      "slots": {
+        "cyclelegend": { "offset": [-0.3334, 0.0362, 0], "rotate": [0, 0, 2.2525], "scale": [1.1496, 0.7017, 1.0188] }
+      },
+      "origin": [417, 6.065, -7]
+    },
+    {
+      "id": "detail_m259_t16",
+      "position": [427.067, 6.116, -7],
+      "rotation": [0, 0, -1.93],
+      "scale": [1.0522, 0.725, 1],
+      "origin": [427, 6.065, -7]
+    },
+    {
+      "id": "detail_m262_t0",
+      "position": [432.04, 5.7, -13],
+      "origin": [431.5, 5.7, -13]
+    },
+    {
+      "id": "detail_m262_t44",
+      "position": [432.005, 7.285, -13],
+      "origin": [431.5, 7.3, -13]
+    },
+    {
+      "id": "detail_m263_t0",
+      "position": [431.983, 5.8, -12.1],
+      "origin": [431.5, 5.8, -12.1]
+    },
+    {
+      "id": "detail_m281_t1272",
+      "position": [555.39, 6.123, 44],
+      "origin": [555.39, 6.12, 44]
+    },
+    {
+      "id": "detail_m598_t9568",
+      "position": [424.576, 6.074, -3.5],
+      "deleted": true,
+      "origin": [424.576, 6.074, -3.652]
+    },
+    {
+      "id": "equipment_shed_danchi_001",
+      "position": [602.086, 6, 31.5],
+      "rotation": [0, -91.53, 0],
+      "origin": [599.5, 6, 31.5]
+    },
+    {
+      "id": "garbage_point_danchi_002",
+      "deleted": true,
+      "origin": [354.25, 6, 137.8]
+    },
+    {
+      "id": "pergola_danchi_001",
+      "position": [396, 6, 105.237],
+      "rotation": [0, -14.52, 0],
+      "origin": [396, 6, 104]
+    },
+    {
+      "id": "plane_new_001",
+      "name": "Plane",
+      "prefab": "plane",
+      "position": [463.975, 12.195, 331.019],
+      "rotation": [180, -12.4, 0],
+      "scale": [21.2267, 1, 9.5092],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_002",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [506.148, 12.343, 312.575],
+      "rotation": [180, -28.5, 0],
+      "scale": [21.5054, 1, 9.562],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_003",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [431.895, 12.06, 339.971],
+      "rotation": [180, -0.08, 0],
+      "scale": [23.4213, 1, 9.5092],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_004",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [399.967, 11.952, 335.981],
+      "rotation": [180, -0.05, 0],
+      "scale": [23.1783, 1, 9.5092],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_005",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [371.995, 11.923, 278.961],
+      "rotation": [180, 89.86, 0],
+      "scale": [19.3702, 1, 9.5092],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_006",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [371.027, 11.934, 252.018],
+      "rotation": [0, -89.9, -180],
+      "scale": [21.2267, 1, 9.6463],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_007",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [372.049, 11.929, 225.044],
+      "rotation": [0, -89.58, 180],
+      "scale": [21.364, 1, 9.6034],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_008",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [435.853, 11.911, 214.932],
+      "rotation": [180, 0.15, 0],
+      "scale": [23.3932, 1, 9.5807],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_009",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [372.04, 11.911, 175.98],
+      "rotation": [180, 0.01, 0],
+      "scale": [23.4621, 1, 9.6697],
+      "material": "primitive"
+    },
+    {
+      "id": "plane_new_010",
+      "name": "Plane (copy)",
+      "prefab": "plane",
+      "position": [630.018, 12.17, 158.118],
+      "rotation": [0, 89.84, 180],
+      "scale": [21.4167, 1, 9.5917],
+      "material": "primitive"
+    },
+    {
+      "id": "team_shelter_danchi_001",
+      "position": [544.728, 6, 41.2],
+      "origin": [552, 6, 41.2]
+    },
+    {
+      "id": "tree_oak_danchi_016",
+      "position": [490.364, 5.8, 2.84],
+      "origin": [491.805, 5.8, 2.84]
+    },
+    {
+      "id": "tree_zelkova_danchi_010",
+      "position": [380.65, 5.8, 106.581],
+      "origin": [375, 5.8, 106]
+    },
+    {
+      "id": "tree_zelkova_danchi_038",
+      "position": [448.898, 5.8, 166],
+      "origin": [447, 5.8, 166]
+    },
+    {
+      "id": "tree_zelkova_danchi_039",
+      "position": [454.612, 5.8, 182],
+      "origin": [447, 5.8, 182]
+    },
+    {
+      "id": "utility_box_new_001",
+      "name": "Utility box",
+      "prefab": "utility_box",
+      "position": [360.771, 6, 178.575],
+      "rotation": [0, -90.19, 0],
+      "scale": [1.3, 1.3, 1.3],
+      "material": "utility_box_02"
+    },
+    {
+      "id": "utility_box_new_002",
+      "name": "Utility box",
+      "prefab": "utility_box",
+      "position": [369.525, 5.992, 214.801],
+      "rotation": [0, -179.42, 0],
+      "scale": [1.3, 1.3, 1.3],
+      "material": "utility_box_02"
+    },
+    {
+      "id": "utility_box_new_003",
+      "name": "Utility box",
+      "prefab": "utility_box",
+      "position": [368.22, 6.02, 241.804],
+      "rotation": [0, 177.83, 0],
+      "scale": [1.3, 1.3, 1.3],
+      "material": "utility_box_02"
+    },
+    {
+      "id": "utility_box_new_004",
+      "name": "Utility box",
+      "prefab": "utility_box",
+      "position": [369.271, 5.99, 269.845],
+      "rotation": [0, 179.2, 0],
+      "scale": [1.3, 1.3, 1.3],
+      "material": "utility_box_02"
+    },
+    {
+      "id": "utility_box_new_005",
+      "name": "Utility box",
+      "prefab": "utility_box",
+      "position": [388.783, 5.985, 339.044],
+      "rotation": [0, -88.71, 0],
+      "scale": [1.3, 1.3, 1.3],
+      "material": "utility_box_02"
+    },
+    {
+      "id": "utility_box_new_006",
+      "name": "Utility box",
+      "prefab": "utility_box",
+      "position": [420.837, 6.055, 343.095],
+      "rotation": [0, -90.2, 0],
+      "scale": [1.3, 1.3, 1.3],
+      "material": "utility_box_02"
+    }
+  ]
+}

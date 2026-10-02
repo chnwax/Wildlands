@@ -1,6 +1,6 @@
 // Cars: procedural Japanese car models (kei wagons, compacts, kei trucks, vans, taxis) rendered with instancing,
 // and a left-hand-traffic simulation along road loops with car-following, stop signs and level-crossing logic.
-import { THREE, scene, clamp, lerp, mulberry32, addBox } from './core.js';
+import { THREE, scene, Q, clamp, lerp, mulberry32, addBox } from './core.js';
 import { Emitter } from './audio.js';
 import { night, canvasTex, JP_FONT } from './townkit.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -49,12 +49,32 @@ function offsetPoly(pts, d) {
     return [p[0] + nx / l * d, p[1] + ny / l * d];
   });
 }
+// far level of detail (cars beyond Fleet.lodDist): the same shapes with fewer segments on curves, bevels and rounds
+let LO = false;
+const sg = (n, min = 3) => LO ? Math.max(min, Math.round(n / 2)) : n;
 function extrude(shape, width, bevel = 0.05) {
-  const g = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.01, width - bevel * 2), bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel * 0.6, bevelSegments: 3, curveSegments: 5 });
+  const g = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.01, width - bevel * 2), bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel * 0.6, bevelSegments: LO ? 1 : 3, curveSegments: LO ? 2 : 5 });
   g.translate(0, 0, -(width - bevel * 2) / 2);
   return g;
 }
 const boxG = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+// clip a closed polygon to x >= xc (keep = 1) or x <= xc (keep = -1)
+function clipX(pts, xc, keep) {
+  const out = [], inside = p => keep > 0 ? p[0] >= xc : p[0] <= xc;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], ia = inside(a), ib = inside(b);
+    if (ia) out.push(a);
+    if (ia !== ib) { const t = (xc - a[0]) / (b[0] - a[0]); out.push([xc, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out;
+}
+// geometry painted with one vertex colour (for the multi-coloured cabin and driver meshes)
+const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+function mergeC(geos) {
+  const parts = geos.map(g => g.index ? g.toNonIndexed() : g), m = merge(parts), n = m.attributes.position.count, col = new Float32Array(n * 3);
+  let o = 0; for (const g of parts) { col.set(g.attributes.color.array, o * 3); o += g.attributes.position.count; }
+  m.setAttribute('color', new THREE.BufferAttribute(col, 3)); return m;
+}
 function merge(geos) {
   // tiny merge (positions/normals/uvs) – avoids pulling in BufferGeometryUtils for simple parts
   const parts = geos.map(g => g.index ? g.toNonIndexed() : g);
@@ -91,6 +111,13 @@ const paintMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.
 const glassMat = new THREE.MeshStandardMaterial({ color: 0x0b1015, metalness: 0.2, roughness: 0.02, transparent: true, opacity: 0.5, depthWrite: false, envMapIntensity: 1.4, side: THREE.DoubleSide });
 const trimMat = new THREE.MeshStandardMaterial({ color: 0x151617, roughness: 0.6, side: THREE.DoubleSide });
 const chromeMat = new THREE.MeshStandardMaterial({ color: 0xd8dde2, metalness: 1, roughness: 0.12 });
+const cabinMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
+const clothMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
+const CLOTH = [[0.2, 0.3, 0.5], [0.88, 0.88, 0.85], [0.3, 0.3, 0.32], [0.62, 0.22, 0.2], [0.25, 0.42, 0.3], [0.72, 0.64, 0.5], [0.12, 0.12, 0.14], [0.55, 0.62, 0.78], [0.86, 0.72, 0.74], [0.9, 0.84, 0.6]];
+const HAIRS = [[0.06, 0.05, 0.05], [0.1, 0.07, 0.05], [0.22, 0.15, 0.1], [0.08, 0.06, 0.05], [0.55, 0.55, 0.56], [0.32, 0.22, 0.14], [0.05, 0.05, 0.06]];
+const hairMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 });
+const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
+const BODY = ['paint', 'glass', 'trim', 'plate', 'head', 'tail', 'chrome', 'shadow', 'cabin'], DRIVER = ['driverSkin', 'driverCloth', 'driverHair'], PAX = ['paxSkin', 'paxCloth', 'paxHair'];
 const plateTex = canvasTex(256, 128, (g, W, H) => {
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.strokeStyle = '#1f4d2c'; g.lineWidth = 6; g.strokeRect(4, 4, W - 8, H - 8);
   g.fillStyle = '#1f4d2c'; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -148,9 +175,16 @@ function buildType(T) {
   const bodyPts = T.body;
   const parts = {};
   const roofY = Math.max(...bodyPts.map(p => p[1]));
-  // painted shell = lower body (below the belt line) + roof panel + pillars; the greenhouse is real glass
+  // painted shell = lower body (below the belt line) + roof panel + pillars; the greenhouse is real glass. The lower body is
+  // hollow where the cabin is: a bonnet block ahead of the dashboard, a tail block behind the cabin, thin door skins
+  // along the sides and a floor pan, so the seats, dashboard and driver sit in a real cabin under the glass
   const lower = clipBelow(withArches(bodyPts, T), T.belt + 0.02);
-  const shell = [extrude(roundedShape(lower, 0.1), T.W, 0.06)];
+  const wsx0 = bodyPts[3][0], cx1 = wsx0 - 0.02, cx0 = T.truck ? bodyPts[0][0] + 0.1 : -hl + 0.32, skin = 0.07, floorY = 0.36; // floor pan and seats sit low, as in a real cabin (heads clear the roof)
+  const shell = [extrude(roundedShape(clipX(lower, cx1, 1), 0.1), T.W, 0.06)];
+  if (!T.truck) shell.push(extrude(roundedShape(clipX(lower, cx0, -1), 0.1), T.W, 0.06));
+  for (const sd of [-1, 1]) shell.push(extrude(roundedShape(lower, 0.1), skin, 0.02).translate(0, 0, sd * (T.W / 2 - skin / 2)));
+  shell.push(boxG(cx1 - cx0 + 0.02, floorY - 0.3, T.W - 2 * skin + 0.02, (cx0 + cx1) / 2, (floorY + 0.3) / 2, 0));
+  if (T.truck) shell.push(boxG(0.06, T.belt - 0.3, T.W - 0.02, cx0 - 0.03, (T.belt + 0.3) / 2, 0)); // cab back wall
   const top = clipAbove(bodyPts, roofY - 0.09);
   if (top.length > 2) shell.push(extrude(roundedShape(top, 0.05), T.W * 0.98, 0.04));
   const up = clipAbove(bodyPts, T.belt);                 // greenhouse outline: find front (A) and rear (C) edges
@@ -163,7 +197,14 @@ function buildType(T) {
   if (!T.truck) shell.push(...[-1, 1].map(sd => boxG(0.1, roofY - T.belt, 0.07, bx, (roofY + T.belt) / 2, sd * (T.W / 2 - 0.04))));
   let body = merge(shell);
   const gl = offsetPoly(clipAbove(bodyPts, T.belt - 0.02), -0.01).map(p => [p[0], Math.min(p[1], roofY - 0.06)]);
-  const glass = extrude(roundedShape(gl, 0.06), T.W - 0.07, 0);
+  // the greenhouse extrusion is a closed prism: drop its floor (the faces along the belt line), which would otherwise lie
+  // over the cabin like a sheet of dark glass
+  const glass = (() => { const g0 = extrude(roundedShape(gl, 0.06), T.W - 0.07, 0).toNonIndexed(), P = g0.attributes.position, keep = [];
+    const v = i => new THREE.Vector3(P.getX(i), P.getY(i), P.getZ(i));
+    for (let i = 0; i < P.count; i += 3) { const a = v(i), b = v(i + 1), c = v(i + 2), n = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+      if (!(n.y < -0.7 && Math.max(a.y, b.y, c.y) < T.belt + 0.05)) keep.push(i); }
+    const pos = new Float32Array(keep.length * 9); keep.forEach((i, k) => { for (let j = 0; j < 9; j++) pos[k * 9 + j] = P.array[i * 3 + j]; });
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(keep.length * 6), 2)); g.computeVertexNormals(); return g; })();
   const wsx = bodyPts[3][0];                     // windshield base
   const side = fn => [-1, 1].flatMap(sd => fn(sd));
   const trim = [
@@ -174,11 +215,6 @@ function buildType(T) {
     ...side(sd => [boxG(Math.max(0.5, wsx + hl - 0.25), 0.022, 0.012, (wsx - hl) / 2 - 0.05, T.belt - 0.01, sd * (T.W / 2 + 0.003))]), // belt moulding
     ...side(sd => [0, 1, 2].filter(k => wsx - 0.05 - k * 1.02 > -hl + 0.35 && !(T.truck && k > 0)).map(k => boxG(0.01, T.belt - 0.4, 0.006, wsx - 0.05 - k * 1.02, 0.4 + (T.belt - 0.4) / 2, sd * (T.W / 2 + 0.002)))), // door seams
     ...side(sd => [0, 1].filter(k => wsx - 0.35 - k * 1.02 > -hl + 0.3 && !(T.truck && k > 0)).map(k => boxG(0.16, 0.03, 0.02, wsx - 0.35 - k * 1.02, T.belt - 0.12, sd * (T.W / 2 + 0.01)))), // door handles
-    // interior seen through the glass: dashboard, seats, steering wheel
-    boxG(0.35, 0.25, T.W - 0.2, wsx - 0.15, T.belt - 0.08, 0),
-    ...side(sd => [boxG(0.5, 0.18, 0.48, wsx - 0.85, T.belt - 0.45, sd * 0.33), boxG(0.12, 0.6, 0.46, wsx - 1.15, T.belt - 0.1, sd * 0.33)]),
-    ...(T.truck ? [] : [boxG(0.5, 0.18, T.W - 0.3, wsx - 1.85, T.belt - 0.45, 0), boxG(0.12, 0.55, T.W - 0.3, wsx - 2.15, T.belt - 0.12, 0)]),
-    new THREE.TorusGeometry(0.17, 0.02, 6, 16).rotateY(Math.PI / 2).rotateZ(0.4).translate(wsx - 0.45, T.belt + 0.08, 0.33),
     ...wheelX(T).filter(x => !(T.truck && x < 0)).map(x => archLiner(x, T)),
   ];
   if (T.truck) {
@@ -188,6 +224,77 @@ function buildType(T) {
   }
   if (T.taxi) trim.push(boxG(0.45, 0.16, 0.2, -0.3, roofY + 0.08, 0));
   parts.paint = body; parts.glass = glass; parts.trim = merge(trim);
+  // ---- cabin (vertex coloured): dashboard with instrument hood and centre stack, steering column and wheel on the right
+  // (right-hand drive, +z), front seats with cushions, backrests and headrests, a rear bench, door cards, floor carpet
+  const DASH = [0.13, 0.13, 0.14], SEAT = T.taxi ? [0.2, 0.22, 0.3] : [0.36, 0.36, 0.38], DOOR = [0.32, 0.31, 0.3], CARPET = [0.12, 0.12, 0.12], PLAS = [0.22, 0.22, 0.23];
+  const B0 = T.belt, dz = 0.34 * T.W / 1.47, cabin = [];
+  const dx0 = cx1 - 0.55;                                                       // dashboard face
+  cabin.push(tint(boxG(cx1 - dx0, B0 - floorY - 0.12, T.W - 2 * skin, (cx1 + dx0) / 2, (B0 + floorY + 0.12) / 2, 0), DASH));
+  cabin.push(tint(new THREE.BoxGeometry(0.55, 0.06, T.W - 2 * skin).rotateZ(-0.18).translate((cx1 + dx0) / 2 + 0.02, B0 + 0.03, 0), DASH));   // dash top
+  cabin.push(tint(boxG(0.22, 0.09, 0.42, dx0 + 0.1, B0 + 0.08, dz), PLAS));                                            // instrument hood
+  cabin.push(tint(boxG(0.1, 0.34, 0.26, dx0 - 0.02, B0 - 0.2, 0), PLAS));                                              // centre stack
+  cabin.push(tint(new THREE.CylinderGeometry(0.025, 0.03, 0.34, sg(8)).rotateZ(Math.PI / 2 - 0.45).translate(dx0 - 0.1, B0 - 0.05, dz), PLAS)); // column
+  cabin.push(tint(new THREE.TorusGeometry(0.17, 0.022, sg(8), sg(22)).rotateY(Math.PI / 2).rotateZ(-0.45).translate(dx0 - 0.25, B0 + 0.02, dz), DASH));
+  cabin.push(tint(new THREE.CylinderGeometry(0.05, 0.05, 0.05, sg(10)).rotateZ(Math.PI / 2 - 0.45).translate(dx0 - 0.25, B0 + 0.02, dz), PLAS)); // hub
+  const sx = dx0 - 0.6;                                                         // centre of the front seat cushions
+  for (const sd of [-1, 1]) {
+    cabin.push(tint(boxG(0.5, 0.14, 0.48, sx, floorY + 0.16, sd * dz), SEAT));
+    cabin.push(tint(boxG(0.1, 0.22, 0.4, sx + 0.02, floorY + 0.08, sd * dz), PLAS));                                  // seat base
+    cabin.push(tint(new THREE.BoxGeometry(0.12, 0.62, 0.46).translate(0, 0.31, 0).rotateZ(0.2).translate(sx - 0.27, floorY + 0.2, sd * dz), SEAT));
+    cabin.push(tint(boxG(0.1, 0.16, 0.26, sx - 0.37, floorY + 0.86, sd * dz), SEAT));                                 // headrest
+    cabin.push(tint(boxG(cx1 - cx0 - 0.1, B0 - floorY - 0.05, 0.03, (cx0 + cx1) / 2 - 0.05, (B0 + floorY) / 2, sd * (T.W / 2 - skin - 0.015)), DOOR)); // door cards
+    cabin.push(tint(boxG(0.3, 0.04, 0.1, sx + 0.1, B0 - 0.2, sd * (T.W / 2 - skin - 0.07)), PLAS));                  // armrests
+  }
+  cabin.push(tint(boxG(0.6, 0.2, 0.2, sx + 0.05, floorY + 0.1, 0), PLAS));                                           // console
+  cabin.push(tint(boxG(cx1 - cx0 - 0.1, 0.02, T.W - 2 * skin - 0.02, (cx0 + cx1) / 2, floorY + 0.01, 0), CARPET));
+  const rx = sx - 1.0;
+  if (!T.truck && rx - 0.35 > cx0) {                                             // rear bench
+    cabin.push(tint(boxG(0.5, 0.16, T.W - 2 * skin - 0.1, rx, floorY + 0.2, 0), SEAT));
+    cabin.push(tint(new THREE.BoxGeometry(0.12, 0.6, T.W - 2 * skin - 0.1).translate(0, 0.3, 0).rotateZ(0.22).translate(rx - 0.27, floorY + 0.26, 0), SEAT));
+  }
+  parts.cabin = mergeC(cabin);
+  // ---- occupants: a seated figure built from rounded parts — head with jaw, nose, ears and eyes, neck, a torso with
+  // shoulders and collar, jointed arms (hands on the wheel for the driver, in the lap for the passenger), thighs and
+  // shins, a seat belt across the chest. Three meshes each: skin/trousers/shoes/belt (fixed colours), shirt (tinted per
+  // car) and hair (tinted per car). The driver sits on the right (right-hand drive), a front passenger on the left.
+  const SKIN = [0.96, 0.8, 0.68], PANTS = [0.2, 0.22, 0.28], SHOE = [0.12, 0.1, 0.09], BELT = [0.16, 0.16, 0.17], EYE = [0.1, 0.08, 0.08];
+  const cap = (r, a, b) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length(), g = new THREE.CapsuleGeometry(r, Math.max(0.001, L), sg(4, 2), sg(10));
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); return g; };
+  const person = (pz, drive) => {
+    const hx = sx - 0.08, hy0 = floorY + 0.13, skin = [], hair = [], shirt = [], head = [hx - 0.19, hy0 + 0.86, pz];
+    skin.push(tint(new THREE.SphereGeometry(0.098, sg(16), sg(12)).scale(0.95, 1.1, 0.86).translate(...head), SKIN));                          // skull
+    skin.push(tint(new THREE.SphereGeometry(0.07, sg(12), sg(8)).scale(1, 0.8, 1.05).translate(head[0] + 0.03, head[1] - 0.06, pz), SKIN));  // jaw
+    skin.push(tint(new THREE.SphereGeometry(0.018, sg(6), sg(5)).scale(1.2, 1.3, 0.9).translate(head[0] + 0.093, head[1] - 0.01, pz), SKIN)); // nose
+    for (const e of [-1, 1]) { skin.push(tint(new THREE.SphereGeometry(0.022, sg(6), sg(5)).scale(0.5, 1, 1).translate(head[0] - 0.005, head[1] - 0.005, pz + e * 0.087), SKIN)); // ears
+      skin.push(tint(new THREE.SphereGeometry(0.011, sg(6), sg(5)).translate(head[0] + 0.082, head[1] + 0.018, pz + e * 0.034), EYE)); }        // eyes
+    skin.push(tint(new THREE.CylinderGeometry(0.036, 0.042, 0.1, sg(10)).translate(head[0] + 0.01, head[1] - 0.13, pz), SKIN));          // neck
+    // hair: a cap over the crown and back of the head, a fringe over the brow
+    hair.push(new THREE.SphereGeometry(0.106, sg(16), sg(10), 0, Math.PI * 2, 0, 1.75).scale(0.97, 1.02, 0.9).rotateZ(0.42).translate(head[0] - 0.012, head[1] + 0.012, pz));
+    hair.push(new THREE.SphereGeometry(0.06, sg(10), sg(6)).scale(0.6, 0.45, 1.35).translate(head[0] + 0.06, head[1] + 0.07, pz));
+    // torso: a rounded chest and shoulders leaning back with the seat, collar round the neck
+    const sh = [hx - 0.17, hy0 + 0.6], hip = [hx - 0.1, hy0 + 0.1];
+    shirt.push(cap(0.13, [hip[0], hip[1] + 0.1, pz], [sh[0], sh[1] - 0.08, pz]).scale(1, 1, 1).translate(0, 0, 0));
+    shirt.push(new THREE.CapsuleGeometry(0.075, 0.28, sg(4, 2), sg(10)).rotateX(Math.PI / 2).translate(sh[0], sh[1], pz));                        // shoulders
+    shirt.push(new THREE.TorusGeometry(0.045, 0.014, sg(6), sg(12)).rotateX(Math.PI / 2).translate(head[0] + 0.01, head[1] - 0.17, pz));     // collar
+    // seat belt from the outboard shoulder across to the inboard hip
+    { const out = drive ? 1 : -1; skin.push(tint(cap(0.012, [sh[0] + 0.07, sh[1] + 0.02, pz + out * 0.15], [hip[0] + 0.15, hip[1] + 0.1, pz - out * 0.15]), BELT)); }
+    // arms: upper arm, forearm, hand
+    for (const e of [-1, 1]) {
+      const S = [sh[0], sh[1] - 0.02, pz + e * 0.17];
+      const H = drive ? [dx0 - 0.3, B0 + 0.03 + e * 0.1, dz + e * 0.13] : [hx + 0.26, hy0 + 0.16, pz + e * 0.09];
+      const E = drive ? [hx + 0.07, hy0 + 0.33, pz + e * 0.22] : [hx + 0.02, hy0 + 0.28, pz + e * 0.21];
+      shirt.push(cap(0.047, S, E)); shirt.push(cap(0.04, E, [lerp(E[0], H[0], 0.85), lerp(E[1], H[1], 0.85), lerp(E[2], H[2], 0.85)]));
+      skin.push(tint(new THREE.SphereGeometry(0.036, sg(8), sg(6)).scale(1.2, 0.8, 1).translate(...H), SKIN));
+      // legs: thigh along the cushion, shin down to the pedals, a shoe
+      const K = [hx + 0.34, hy0 + 0.22, pz + e * 0.1], A = [hx + 0.55, floorY + 0.08, pz + e * 0.1];
+      skin.push(tint(cap(0.068, [hip[0] + 0.02, hip[1] - 0.01, pz + e * 0.09], K), PANTS), tint(cap(0.052, K, A), PANTS));
+      skin.push(tint(new THREE.BoxGeometry(0.22, 0.07, 0.09).translate(A[0] + 0.06, floorY + 0.035, A[2]), SHOE));
+    }
+    return { skin: mergeC(skin), hair: merge(hair.map(g => g.index ? g.toNonIndexed() : g)), shirt: merge(shirt.map(g => g.index ? g.toNonIndexed() : g)) };
+  };
+  { const d = person(dz, true), q = person(-dz, false);
+    parts.driverSkin = d.skin; parts.driverHair = d.hair; parts.driverCloth = d.shirt;
+    parts.paxSkin = q.skin; parts.paxHair = q.hair; parts.paxCloth = q.shirt; }
   parts.plate = merge([boxG(0.02, 0.165, 0.33, hl + 0.09, 0.5, 0), boxG(0.02, 0.165, 0.33, -hl - 0.09, 0.6, 0)]);
   const hy = bodyPts[2][1] - 0.1;
   parts.head = merge([boxG(0.05, 0.12, 0.3, hl - 0.01, hy, T.W / 2 - 0.22), boxG(0.05, 0.12, 0.3, hl - 0.01, hy, -T.W / 2 + 0.22)]);
@@ -195,9 +302,9 @@ function buildType(T) {
   const ty = T.truck ? 0.62 : bodyPts[bodyPts.length - 1][1] - 0.35;
   parts.tail = merge([boxG(0.05, 0.3, 0.14, -hl - 0.01, ty, T.W / 2 - 0.1), boxG(0.05, 0.3, 0.14, -hl - 0.01, ty, -T.W / 2 + 0.1)]);
   parts.shadow = new THREE.PlaneGeometry(T.L + 0.7, T.W + 0.6).rotateX(-Math.PI / 2).translate(0, 0.025, 0);
-  const tire = new THREE.CylinderGeometry(T.r, T.r, 0.17, 20); tire.rotateX(Math.PI / 2);
-  const rimParts = [new THREE.CylinderGeometry(T.r * 0.64, T.r * 0.64, 0.02, 18).rotateX(Math.PI / 2).translate(0, 0, 0.07),
-    new THREE.CylinderGeometry(T.r * 0.18, T.r * 0.18, 0.05, 10).rotateX(Math.PI / 2).translate(0, 0, 0.09)];
+  const tire = new THREE.CylinderGeometry(T.r, T.r, 0.17, sg(20)); tire.rotateX(Math.PI / 2);
+  const rimParts = [new THREE.CylinderGeometry(T.r * 0.64, T.r * 0.64, 0.02, sg(18)).rotateX(Math.PI / 2).translate(0, 0, 0.07),
+    new THREE.CylinderGeometry(T.r * 0.18, T.r * 0.18, 0.05, sg(10)).rotateX(Math.PI / 2).translate(0, 0, 0.09)];
   for (let k = 0; k < 5; k++) rimParts.push(new THREE.BoxGeometry(T.r * 0.5, 0.055, 0.03).translate(T.r * 0.3, 0, 0.09).rotateZ(k / 5 * Math.PI * 2));
   const rim = merge(rimParts);
   // sculpt the extruded shells: rounded corners in plan view, tumblehome above the belt line, tucked-in bumpers
@@ -219,64 +326,170 @@ function buildType(T) {
   const smooth = g => { g.deleteAttribute('normal'); g.deleteAttribute('uv'); const m = mergeVertices(g, 1e-3); m.computeVertexNormals(); return m; };
   parts.paint = T.truck ? sculpt(parts.paint) : smooth(sculpt(parts.paint));
   parts.glass = smooth(sculpt(parts.glass));
-  for (const k of ['trim', 'plate', 'head', 'chrome', 'tail']) sculpt(parts[k]);
+  for (const k of ['trim', 'plate', 'head', 'chrome', 'tail', 'cabin']) sculpt(parts[k]);
   return { parts, tire, rim, T };
 }
 
 // ---------------------------------------------------------------- fleet: instanced rendering of all cars
-const _m = new THREE.Matrix4(), _w = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _c = new THREE.Color();
+const _m = new THREE.Matrix4(), _w = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _c = new THREE.Color(), _qs = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
+const PART_MAT = { paint: paintMat, glass: glassMat, trim: trimMat, plate: plateMat, head: headMat, tail: tailMat, chrome: chromeMat, shadow: shadowMat, tire: tireMat, rim: rimMat,
+  cabin: cabinMat, driverSkin: cabinMat, driverCloth: clothMat, driverHair: hairMat, paxSkin: cabinMat, paxCloth: clothMat, paxHair: hairMat };
+const CASTS = { paint: true, glass: true, tire: true };
+const TINTED = ['paint', 'plate', 'head', 'tail', 'driverCloth', 'paxCloth', 'driverHair', 'paxHair'];
+const OCCUPANT = new Set([...DRIVER, ...PAX]);
+// Every car keeps a stable identity (fleet.cars[id]: type, index within its type, transform, colours). What is drawn is
+// derived from it each frame: per car type the near set — full detail within lodDist of the camera — and, beyond it,
+// the same car with fewer segments. The far cars are spread over the whole town, so they are drawn as two lists: the
+// cars inside the view, rebuilt every frame (the rest are never sent to the GPU), and every far car's shadow-casting
+// shell (body, glass, tyres) on a layer only the shadow passes draw. A car moves between near and far with a few metres
+// of hysteresis. In the near and shadow sets the moving cars occupy the first slots and the parked ones the rest, so the
+// per-frame upload is only the moving span; only the moving cars have drivers and passengers.
 export class Fleet {
   constructor(specs) { // specs: [{type, color}]
-    this.cars = [];
+    this.cars = []; this.types = {}; this.lodDist = 60;
     const byType = {};
     specs.forEach((sp, i) => { (byType[sp.type] ||= []).push(i); });
-    this.types = {};
     for (const [type, idxs] of Object.entries(byType)) {
-      const G = buildType(TYPES[type]), n = idxs.length, mk = (geo, mat, cnt, shadow = true) => {
-        const im = new THREE.InstancedMesh(geo, mat, cnt); im.castShadow = shadow; im.receiveShadow = true; im.frustumCulled = false; scene.add(im); return im;
+      const T = TYPES[type], n = idxs.length;
+      const G = buildType(T); LO = true; const F = buildType(T); LO = false;
+      // kind 0: near set (all parts); 1: far shadow shells (shadow passes only, layer 7); 2: far cars in view (no shadow)
+      const family = (geo, kind) => {
+        const M = {};
+        for (const key in PART_MAT) {
+          if (kind === 1 && !CASTS[key]) continue;
+          const g = key === 'tire' ? geo.tire : key === 'rim' ? geo.rim : geo.parts[key], per = key === 'tire' || key === 'rim' ? 4 : 1;
+          const im = new THREE.InstancedMesh(g, PART_MAT[key], n * per); im.count = 0;
+          im.castShadow = kind !== 2 && !!CASTS[key]; im.receiveShadow = key !== 'shadow';
+          im.frustumCulled = kind === 0; // the near set is bounded every frame; the far lists are culled per car
+          if (TINTED.includes(key)) im.setColorAt(0, _c.setRGB(1, 1, 1));
+          im.userData.per = per; im.userData.occupant = OCCUPANT.has(key); im.userData.dynamicCaster = true; M[key] = im; scene.add(im);
+        }
+        if (M.glass) M.glass.renderOrder = 3;
+        const list = Object.values(M), sphere = new THREE.Sphere();
+        if (kind === 0) for (const im of list) im.boundingSphere = sphere;
+        if (kind === 1) for (const im of list) { im.userData.shadowOnly = true; im.layers.set(7); }
+        return { M, list, sphere, slots: [], nMove: 0, d0: Infinity, d1: -1 };
       };
-      const M = { paint: mk(G.parts.paint, paintMat, n), glass: mk(G.parts.glass, glassMat, n), trim: mk(G.parts.trim, trimMat, n, false), plate: mk(G.parts.plate, plateMat, n, false),
-        head: mk(G.parts.head, headMat, n, false), tail: mk(G.parts.tail, tailMat, n, false), chrome: mk(G.parts.chrome, chromeMat, n, false), shadow: mk(G.parts.shadow, shadowMat, n, false),
-        tire: mk(G.tire, tireMat, n * 4), rim: mk(G.rim, rimMat, n * 4, false) };
-      M.glass.renderOrder = 3; M.shadow.receiveShadow = false;
-      this.types[type] = { G, M };
+      const sets = [family(G, 0), family(F, 1)], view = family(F, 2);
+      this.types[type] = { T, sets, view, cars: [] };
       idxs.forEach((si, k) => {
-        const sp = specs[si], T = TYPES[type];
-        const car = { type, k, T, spin: 0, x: 0, y: 0, z: 0, r: 0 };
-        M.paint.setColorAt(k, _c.setRGB(...(sp.color || PAINTS[0])));
-        M.plate.setColorAt(k, T.kei ? _c.setRGB(0.95, 0.82, 0.1) : _c.setRGB(0.95, 0.95, 0.93));
-        M.head.setColorAt(k, _c.setRGB(0.1, 0, 0)); M.tail.setColorAt(k, _c.setRGB(0.1, 0, 0));
-        this.cars[si] = car;
+        const sp = specs[si];
+        const car = { id: si, type, k, T, spin: 0, x: 0, y: 0, z: 0, r: 0, lod: -1, slot: -1, moving: false, placed: false, dirty: false,
+          mat: new Float32Array(16), wheels: new Float32Array(64), head: 0, tail: 0,
+          col: { paint: sp.color || PAINTS[0], plate: T.kei ? [0.95, 0.82, 0.1] : [0.95, 0.95, 0.93],
+            driverCloth: CLOTH[(si * 7 + 3) % CLOTH.length], paxCloth: CLOTH[(si * 5 + 1) % CLOTH.length], driverHair: HAIRS[(si * 3 + 1) % HAIRS.length], paxHair: HAIRS[(si * 11 + 2) % HAIRS.length] } };
+        this.cars[si] = car; this.types[type].cars.push(car);
       });
     }
   }
-  place(car, x, y, z, r, dist = 0, head = 0, tail = 0) {
-    const { M, G } = this.types[car.type], T = car.T, k = car.k;
-    car.x = x; car.y = y; car.z = z; car.r = r;
+  place(car, x, y, z, r, dist = 0, head = 0, tail = 0, steer = 0) {
+    const T = car.T;
+    car.x = x; car.y = y; car.z = z; car.r = r; car.head = head; car.tail = tail; car.dirty = true; car.placed = true;
+    if (car.driver && !car.moving) { car.moving = true; if (car.lod >= 0) { const l = car.lod; car.moving = false; this._remove(car); car.moving = true; this._insert(car, l); } }
     _e.set(0, r, 0); _q.setFromEuler(_e); _p.set(x, y, z);
-    _m.compose(_p, _q, _s);
-    for (const key of ['paint', 'glass', 'trim', 'plate', 'head', 'tail', 'chrome', 'shadow']) M[key].setMatrixAt(k, _m);
+    _m.compose(_p, _q, _s); _m.toArray(car.mat);
     car.spin -= dist / T.r;
-    const [fx, rx] = wheelX(T);
+    const wx2 = T._wheelX || (T._wheelX = wheelX(T));
     let i = 0;
-    for (const wx of [fx, rx]) for (const side of [-1, 1]) {
+    for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) {
+      const side = b ? 1 : -1;
       _e.set(side > 0 ? 0 : Math.PI, 0, car.spin * side); _q.setFromEuler(_e);
-      _w.compose(_p.set(wx, T.r, side * (T.W / 2 - 0.13)), _q, _s);
-      _w.premultiply(_m);
-      M.tire.setMatrixAt(k * 4 + i, _w); M.rim.setMatrixAt(k * 4 + i, _w); i++;
+      if (a === 0 && steer) _q.premultiply(_qs.setFromAxisAngle(_up, steer)); // front wheels steer
+      _w.compose(_p.set(wx2[a], T.r, side * (T.W / 2 - 0.13)), _q, _s);
+      _w.premultiply(_m); _w.toArray(car.wheels, i * 16); i++;
     }
-    M.head.setColorAt(k, _c.setRGB(head, 0, 0)); M.tail.setColorAt(k, _c.setRGB(tail, 0, 0));
   }
-  commit() {
-    for (const { M } of Object.values(this.types)) for (const im of Object.values(M)) {
-      im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+  // write one car into its slot of its set
+  _write(set, car, s = car.slot) {
+    const M = set.M, A = car.mat;
+    for (const key of BODY) if (M[key]) M[key].instanceMatrix.array.set(A, s * 16);
+    const drv = car.driver ? A : _zero.elements, pax = car.driver && car.pax ? A : _zero.elements;
+    for (const key of DRIVER) if (M[key]) M[key].instanceMatrix.array.set(drv, s * 16);
+    for (const key of PAX) if (M[key]) M[key].instanceMatrix.array.set(pax, s * 16);
+    M.tire.instanceMatrix.array.set(car.wheels, s * 64); if (M.rim) M.rim.instanceMatrix.array.set(car.wheels, s * 64);
+    for (const key of TINTED) {
+      if (!M[key]) continue;
+      const c = key === 'head' ? _hc(car.head) : key === 'tail' ? _hc(car.tail) : car.col[key], arr = M[key].instanceColor.array;
+      arr[s * 3] = c[0]; arr[s * 3 + 1] = c[1]; arr[s * 3 + 2] = c[2];
+    }
+    if (s < set.d0) set.d0 = s; if (s > set.d1) set.d1 = s;
+  }
+  _put(set, car, slot) { set.slots[slot] = car; car.slot = slot; this._write(set, car); }
+  _insert(car, lod) {
+    const set = this.types[car.type].sets[lod], n = set.slots.length;
+    car.lod = lod;
+    if (car.moving) { // moving cars first: the parked car at the boundary moves to the end
+      if (set.nMove < n) this._put(set, set.slots[set.nMove], n);
+      this._put(set, car, set.nMove); set.nMove++;
+    } else this._put(set, car, n);
+  }
+  _remove(car) {
+    const set = this.types[car.type].sets[car.lod], s = car.slot, last = set.slots.length - 1;
+    if (car.moving) {
+      const lm = set.nMove - 1;
+      if (s !== lm) this._put(set, set.slots[lm], s);
+      if (lm !== last) this._put(set, set.slots[last], lm);
+      set.nMove--;
+    } else if (s !== last) this._put(set, set.slots[last], s);
+    set.slots.length = last; car.lod = -1; car.slot = -1;
+  }
+  // choose each car's level of detail from the camera, write what changed and upload only that span
+  commit(cam, camera) {
+    const D = this.lodDist * (Q.lodScale || 1), H = 4, cx = cam ? cam.x : 0, cz = cam ? cam.z : 0;
+    if (camera) _fr.setFromProjectionMatrix(_vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    for (const type in this.types) {
+      const ty = this.types[type];
+      for (const car of ty.cars) {
+        if (!car.placed) continue;
+        const dx = car.x - cx, dz = car.z - cz, d2 = dx * dx + dz * dz;
+        const want = !cam ? 1 : car.lod === 0 ? (d2 > (D + H) * (D + H) ? 1 : 0) : car.lod === 1 ? (d2 < (D - H) * (D - H) ? 0 : 1) : (d2 < D * D ? 0 : 1);
+        if (want !== car.lod) { if (car.lod >= 0) this._remove(car); this._insert(car, want); }
+        else if (car.dirty) this._write(ty.sets[car.lod], car);
+        car.dirty = false;
+      }
+      for (let li = 0; li < 2; li++) {
+        const set = ty.sets[li], n = set.slots.length;
+        for (const im of set.list) im.count = (im.userData.occupant ? set.nMove : n) * im.userData.per;
+        if (li === 0 && n) { // bound the near set (cars are ~5 m long)
+          let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, z0 = 1e9, z1 = -1e9;
+          for (const c of set.slots) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x); y0 = Math.min(y0, c.y); y1 = Math.max(y1, c.y); z0 = Math.min(z0, c.z); z1 = Math.max(z1, c.z); }
+          const ex = x1 - x0, ey = y1 - y0, ez = z1 - z0;
+          set.sphere.center.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); set.sphere.radius = Math.sqrt(ex * ex + ey * ey + ez * ez) / 2 + 3.5;
+        }
+        if (set.d1 < set.d0) continue;
+        for (const im of set.list) {
+          const per = im.userData.per, a = im.instanceMatrix, c = im.instanceColor;
+          a.clearUpdateRanges(); a.addUpdateRange(set.d0 * per * 16, (set.d1 - set.d0 + 1) * per * 16); a.needsUpdate = true;
+          if (c) { c.clearUpdateRanges(); c.addUpdateRange(set.d0 * 3, (set.d1 - set.d0 + 1) * 3); c.needsUpdate = true; }
+        }
+        set.d0 = Infinity; set.d1 = -1;
+      }
+      // the far cars in view (moving ones first: they carry the drivers), every frame
+      const V = ty.view; let k = 0, km = 0;
+      V.d0 = Infinity; V.d1 = -1;
+      for (let pass = 0; pass < 2; pass++) for (const car of ty.sets[1].slots) {
+        if (car.moving !== (pass === 0)) continue;
+        _sph.center.set(car.x, car.y + 0.9, car.z);
+        if (camera && !_fr.intersectsSphere(_sph)) continue;
+        this._write(V, car, k++); if (pass === 0) km = k;
+      }
+      for (const im of V.list) {
+        im.count = (im.userData.occupant ? km : k) * im.userData.per; im.visible = k > 0;
+        if (!k) continue;
+        const per = im.userData.per, a = im.instanceMatrix, c = im.instanceColor;
+        a.clearUpdateRanges(); a.addUpdateRange(0, k * per * 16); a.needsUpdate = true;
+        if (c) { c.clearUpdateRanges(); c.addUpdateRange(0, k * 3); c.needsUpdate = true; }
+      }
     }
   }
 }
+const _fr = new THREE.Frustum(), _vp = new THREE.Matrix4(), _sph = new THREE.Sphere(new THREE.Vector3(), 3.2);
+const _hcv = [0, 0, 0], _hc = v => { _hcv[0] = v; return _hcv; }; // lamp intensity rides in the red channel
 export const CAR_TYPES = Object.keys(TYPES);
 export function randomCar(rng, trucks = true) {
   const r = rng();
-  const type = r < 0.3 ? 'keiTall' : r < 0.5 ? 'keiHatch' : r < 0.68 ? 'compact' : r < 0.8 ? 'minivan' : r < 0.88 && trucks ? 'keiTruck' : r < 0.94 ? 'van' : 'taxi';
+  // (the compact hatch and the kei pickup are retired: crude shapes that also left no headroom for the occupants)
+  const type = r < 0.34 ? 'keiTall' : r < 0.58 ? 'keiHatch' : r < 0.8 ? 'minivan' : r < 0.93 ? 'van' : 'taxi'; void trucks;
   const color = type === 'taxi' ? [0.08, 0.1, 0.2] : type === 'van' || type === 'keiTruck' ? (rng() < 0.8 ? [0.93, 0.93, 0.92] : [0.62, 0.64, 0.66]) : PAINTS[Math.floor(rng() * PAINTS.length)];
   return { type, color };
 }
@@ -294,7 +507,7 @@ export class Route {
       const a = pts[(i + n - 1) % n], b = pts[(i + 1) % n];
       const da = Math.hypot(a[0] - p[0], a[1] - p[1]), db = Math.hypot(b[0] - p[0], b[1] - p[1]), r = Math.min(fillet, da / 2.1, db / 2.1);
       const p1 = [p[0] + (a[0] - p[0]) / da * r, p[1] + (a[1] - p[1]) / da * r], p2 = [p[0] + (b[0] - p[0]) / db * r, p[1] + (b[1] - p[1]) / db * r];
-      for (let k = 0; k <= 6; k++) { const t = k / 6, u = 1 - t; P.push([u * u * p1[0] + 2 * u * t * p[0] + t * t * p2[0], u * u * p1[1] + 2 * u * t * p[1] + t * t * p2[1]]); }
+      for (let k = 0; k <= 16; k++) { const t = k / 16, u = 1 - t; P.push([u * u * p1[0] + 2 * u * t * p[0] + t * t * p2[0], u * u * p1[1] + 2 * u * t * p[1] + t * t * p2[1]]); }
     }
     if (closed) P.push(P[0]);
     // resample
@@ -307,6 +520,19 @@ export class Route {
     }
     this.pts.push(P[P.length - 1]); this.s.push(acc);
     this.len = acc;
+    // a tangent per point (the mean of the segments either side) interpolated between points: heading and the lane
+    // offset turn continuously through a bend instead of stepping at every point of the polyline
+    const N = this.pts.length, last = N - 1;
+    const seg = (i, j) => { const a = this.pts[i], b = this.pts[j], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz); return l > 1e-6 ? [dx / l, dz / l] : null; };
+    const wrap = i => !closed ? i : i < 0 ? i + last : i > last ? i - last : i; // (closed: the last point is the first)
+    this.tan = this.pts.map((_, i) => {
+      let a = null, b = null;
+      for (let k = 1; k < 6 && !a; k++) { const j = wrap(i - k), h = wrap(i - k + 1); if (j >= 0 && j <= last) a = seg(j, h); }
+      for (let k = 1; k < 6 && !b; k++) { const j = wrap(i + k), h = wrap(i + k - 1); if (j >= 0 && j <= last) b = seg(h, j); }
+      if (!a) a = b; if (!b) b = a; if (!a) return [1, 0];
+      const x = a[0] + b[0], z = a[1] + b[1], l = Math.hypot(x, z);
+      return l > 1e-6 ? [x / l, z / l] : b;
+    });
     this.stops = []; // {s, kind: 'stop'|'crossing', crossing}
   }
   at(s, out) {
@@ -314,24 +540,26 @@ export class Route {
     let lo = 0, hi = this.s.length - 1;
     while (hi - lo > 1) { const m = (lo + hi) >> 1; if (this.s[m] <= s) lo = m; else hi = m; }
     const a = this.pts[lo], b = this.pts[hi], t = (s - this.s[lo]) / Math.max(1e-6, this.s[hi] - this.s[lo]);
-    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
-    out.x = lerp(a[0], b[0], t); out.z = lerp(a[1], b[1], t); out.dx = dx / l; out.dz = dz / l;
+    const ta = this.tan[lo], tb = this.tan[hi], tx = lerp(ta[0], tb[0], t), tz = lerp(ta[1], tb[1], t), l = Math.hypot(tx, tz) || 1;
+    out.x = lerp(a[0], b[0], t); out.z = lerp(a[1], b[1], t); out.dx = tx / l; out.dz = tz / l;
     return out;
   }
-  curvature(s) { const a = {}, b = {}; this.at(s, a); this.at(s + 6, b); return Math.acos(clamp(a.dx * b.dx + a.dz * b.dz, -1, 1)) / 6; }
+  // signed turn rate of the heading (radians per metre, positive = the yaw angle growing), from the tangents 1.5 m either side
+  turnRate(s) { const a = this.at(s - 1.5, _ca), b = this.at(s + 1.5, _cb); return Math.atan2(a.dz * b.dx - a.dx * b.dz, a.dx * b.dx + a.dz * b.dz) / 3; }
+  curvature(s) { const a = _ca, b = _cb; this.at(s, a); this.at(s + 6, b); return Math.acos(clamp(a.dx * b.dx + a.dz * b.dz, -1, 1)) / 6; }
 }
 
-const tmpA = {}, tmpB = {};
+const tmpA = { x: 0, z: 0, dx: 0, dz: 0 }, tmpB = { x: 0, z: 0, dx: 0, dz: 0 }, _ca = { x: 0, z: 0, dx: 0, dz: 0 }, _cb = { x: 0, z: 0, dx: 0, dz: 0 };
 export class Traffic {
   constructor(fleet, groundAt) { this.fleet = fleet; this.groundAt = groundAt; this.movers = []; this.emitters = [0, 1, 2, 3].map(() => new Emitter('engine')); }
-  add(car, route, s) { this.movers.push({ car, route, s, v: route.vmax * 0.5, wait: 0, stopIdx: this.nextStop(route, s), brake: 0 }); }
+  add(car, route, s) { car.driver = true; car.pax = ((car.k * 7919 + car.type.length * 31) % 100) < 35; this.movers.push({ car, route, s, v: route.vmax * 0.5, wait: 0, stopIdx: this.nextStop(route, s), brake: 0 }); }
   nextStop(route, s) { let best = -1, bd = 1e9; route.stops.forEach((st, i) => { const d = ((st.s - s) % route.len + route.len) % route.len; if (d < bd) { bd = d; best = i; } }); return best; }
   update(dt, player, headlights) {
     const M = this.movers;
     for (const m of M) {
       const R = m.route, pos = R.at(m.s, tmpA);
       const hx = pos.dx, hz = pos.dz;
-      m.wx = pos.x - hz * R.lane; m.wz = pos.z + hx * R.lane; m.hx = hx; m.hz = hz; // drive on the left: offset to the left of travel
+      m.wx = pos.x + hz * R.lane; m.wz = pos.z - hx * R.lane; m.hx = hx; m.hz = hz; // drive on the left: offset to the left of travel (x right, z toward the viewer)
     }
     for (const m of M) {
       const R = m.route;
@@ -354,7 +582,10 @@ export class Traffic {
         const st = R.stops[m.stopIdx];
         let d = ((st.s - m.s) % R.len + R.len) % R.len - m.car.T.L / 2 - 0.5;
         if (d > R.len - 20) d = -1;
-        if (d < 40) {
+        if (st.signal) {
+          if (d <= 0.6 && st.signal.go(d)) { m.stopIdx = (m.stopIdx + 1) % R.stops.length; m.stoppedHere = false; }
+          else if (d < 40 && !st.signal.go(d)) target = Math.min(target, d > 0.6 ? Math.sqrt(2 * 2.8 * Math.max(0, d - 0.3)) : 0);
+        } else if (d < 40) {
           const blocked = st.crossing && (st.crossing.active || st.crossing.down > 0.02);
           if (m.wait <= 0 && d > 0.6) target = Math.min(target, Math.sqrt(2 * 2.8 * Math.max(0, d - 0.3)));
           else if (d <= 0.6) {
@@ -372,12 +603,21 @@ export class Traffic {
       m.accel = (m.v - prev) / Math.max(dt, 1e-3);
       m.s += m.v * dt;
       if (!R.closed && m.s > R.len) m.s = 0;
-      const y = this.groundAt(m.wx, m.wz);
-      this.fleet.place(m.car, m.wx, y, m.wz, Math.atan2(m.hx, m.hz) - Math.PI / 2, m.v * dt, headlights ? 1.4 : 0.02, (headlights ? 0.45 : 0.08) + m.brake * 0.9);
+      const y = this.groundAt(m.wx, m.wz), T = m.car.T, wx = T._wheelX || (T._wheelX = wheelX(T));
+      const steer = clamp(Math.atan((wx[0] - wx[1]) * R.turnRate(m.s)), -0.6, 0.6); m.steer = (m.steer || 0) + (steer - (m.steer || 0)) * Math.min(1, dt * 8);
+      this.fleet.place(m.car, m.wx, y, m.wz, Math.atan2(m.hx, m.hz) - Math.PI / 2, m.v * dt, headlights ? 1.4 : 0.02, (headlights ? 0.45 : 0.08) + m.brake * 0.9, m.steer);
     }
-    // engine sounds for the nearest few cars
-    const near = M.map(m => ({ m, d: Math.hypot(m.wx - player.x, m.wz - player.z) })).sort((a, b) => a.d - b.d).slice(0, this.emitters.length);
-    this.emitters.forEach((e, i) => { const n = near[i]; e.on = !!n && n.d < 90; if (n) e.set(n.m.wx, n.m.car.y + 0.5, n.m.wz, { speed: n.m.v, accel: n.m.accel }); });
+    // engine sounds for the nearest few cars (insertion into a fixed-size list: no per-frame arrays)
+    const E = this.emitters, nm = this._near || (this._near = E.map(() => null)), nd = this._nearD || (this._nearD = new Float64Array(E.length));
+    nm.fill(null); nd.fill(Infinity);
+    for (const m of M) {
+      const dx = m.wx - player.x, dz = m.wz - player.z, d = Math.sqrt(dx * dx + dz * dz);
+      if (d >= nd[E.length - 1]) continue;
+      let j = E.length - 1; while (j > 0 && nd[j - 1] > d) { nd[j] = nd[j - 1]; nm[j] = nm[j - 1]; j--; }
+      nd[j] = d; nm[j] = m;
+    }
+    const st = this._est || (this._est = { speed: 0, accel: 0 });
+    for (let i = 0; i < E.length; i++) { const e = E[i], m = nm[i]; e.on = !!m && nd[i] < 90; if (m) { st.speed = m.v; st.accel = m.accel; e.set(m.wx, m.car.y + 0.5, m.wz, st); } }
   }
   // push the player out of moving cars
   collide(p) {

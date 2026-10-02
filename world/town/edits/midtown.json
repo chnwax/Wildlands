@@ -1,0 +1,85 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "midtown",
+  "objects": [
+    {
+      "id": "house_midtown_002",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [33.264, 6.067, -242.317]
+    },
+    {
+      "id": "house_midtown_059",
+      "slots": {
+        "wood": { "offset": [-0.0067, -3.5367, -0.1291] }
+      },
+      "origin": [71.614, 6.089, -160.365]
+    },
+    {
+      "id": "house_midtown_065",
+      "slots": {
+        "wood": { "offset": [0.0127, -3.402, -0.1179] }
+      },
+      "origin": [71.175, 6.089, -205.12]
+    },
+    {
+      "id": "house_midtown_075",
+      "slots": {
+        "wood#0": { "offset": [0, -3.5392, -0.1155] }
+      },
+      "origin": [138.442, 6.053, -247.263]
+    },
+    {
+      "id": "house_midtown_086",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [123.716, 5.975, -108.836]
+    },
+    {
+      "id": "house_midtown_090",
+      "slots": {
+        "wood": { "offset": [0, -3.0733, -0.1364] }
+      },
+      "origin": [96.042, 6.125, -300.333]
+    },
+    {
+      "id": "house_midtown_092",
+      "slots": {
+        "wood#0": { "offset": [0, 0, -0.1164] }
+      },
+      "origin": [97.199, 6.061, -262.5]
+    },
+    {
+      "id": "house_midtown_115",
+      "slots": {
+        "wood": { "offset": [0, -1.4089, -0.1192], "scale": [1, 0.5011, 1] }
+      },
+      "origin": [97.011, 6.069, 138.079]
+    },
+    {
+      "id": "house_midtown_203",
+      "slots": {
+        "wood": { "offset": [-2.0165, -11.4296, 0.0158], "rotate": [0, 0, -90], "scale": [2.7231, 0.7467, 1] }
+      },
+      "origin": [54.03, 5.989, -141.625]
+    },
+    {
+      "id": "house_midtown_206",
+      "slots": {
+        "wood": { "offset": [0, -2.9389, -0.1353] }
+      },
+      "origin": [62.694, 6.027, -235.163]
+    },
+    {
+      "id": "house_midtown_208",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [77.51, 6.019, -249.727]
+    }
+  ]
+}

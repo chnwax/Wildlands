@@ -1,0 +1,11 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "index",
+  "map": "nature",
+  "name": "Wildlands",
+  "note": "Index of the world files of this map. The game loads every file listed in \"edits\" (and \"materialEdits\"). Generated files describe what the generator places; they are rewritten on regeneration, edits never are.",
+  "areas": ["lakeshore", "mountains", "valley"],
+  "generated": ["generated/lakeshore.json", "generated/mountains.json", "generated/valley.json", "generated/fields.json"],
+  "edits": [],
+  "libraries": { "prefabs": "prefabs.json", "materials": "materials.json" }
+}

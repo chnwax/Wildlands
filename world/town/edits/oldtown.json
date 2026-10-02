@@ -1,0 +1,43 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "oldtown",
+  "objects": [
+    {
+      "id": "house_oldtown_050",
+      "position": [-392.358, 5.946, 231.998],
+      "rotation": [0, 179.67, 0],
+      "origin": [-392.358, 5.946, 230.804]
+    },
+    {
+      "id": "house_oldtown_051",
+      "rotation": [0, 179.83, 0],
+      "origin": [-382.925, 5.959, 231.122]
+    },
+    {
+      "id": "house_oldtown_052",
+      "rotation": [0, 179.59, 0],
+      "origin": [-373.337, 5.958, 231.803]
+    },
+    {
+      "id": "house_oldtown_053",
+      "rotation": [0, 178.92, 0],
+      "origin": [-363.563, 5.962, 232.532]
+    },
+    {
+      "id": "house_oldtown_184",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-409.944, 6.017, -193.179]
+    },
+    {
+      "id": "house_oldtown_415",
+      "slots": {
+        "wood": { "offset": [0.0106, 0, -0.1148] }
+      },
+      "origin": [-275.577, 5.941, -292.041]
+    }
+  ]
+}
