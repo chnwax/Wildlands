@@ -31,3 +31,10 @@ development branch), `-ResetToken` forgets the saved token, `Play-Wildlands.bat 
 
 WASD to move, mouse to look, Shift to run, Space to jump, C to crouch, F to fly, `[` / `]` to change the time of day,
 T to pause time, H to hide the HUD, M to mute, 1–5 for quality presets (low, medium, high, ultra, extreme — Extreme is for high-end PCs: 8k shadows, supersampling and the densest grass and far forests).
+
+## World editor
+
+Double-click `Editor.bat` (or run `npm run editor`; needs Node.js 18+). It starts a small local server and opens the
+editor at `http://localhost:5180/editor.html?map=town` (`?map=nature` for the lake valley). Changes are saved to
+`world/<map>/edits/` and the game loads them (the game also runs on that server: `http://localhost:5180/?map=town`).
+Press `?` in the editor for every shortcut. The world files are described in [WORLD_FORMAT.md](WORLD_FORMAT.md).
