@@ -8,6 +8,7 @@ import { $, toastMsg } from './ui.js';
 import { buildLife } from './life.js';
 import { flattenPhotoMaterials } from './toon.js';
 import { perf, toggleOverlay } from './perf.js';
+import { colliderView } from './coldebug.js';
 
 const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js') };
 const mapName = MAPS[new URLSearchParams(location.search).get('map')] ? new URLSearchParams(location.search).get('map') : 'nature';
@@ -89,6 +90,7 @@ function step(dt, t) {
   if (locked && started) updatePlayer(world, dt);
   if (!started && !dbgState.pause) player.yaw += dt * 0.02;
   updateCamera(world);
+  if (colliderView.on) colliderView.update(player.pos, (x, z) => world.groundAt(x, z));
   perf.end(P_PLAYER);
   camera.updateMatrixWorld();
   S.uCam.value.copy(camera.position);
@@ -154,6 +156,7 @@ document.addEventListener('mousemove', e => {
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'F3') { e.preventDefault(); toggleOverlay(); }
+  if (e.code === 'F4') { e.preventDefault(); toastMsg(colliderView.toggle(player.pos, (x, z) => world.groundAt(x, z)) ? 'Colliders shown' : 'Colliders hidden'); }
   if (!locked) return;
   if (e.code === 'KeyF') { player.fly = !player.fly; if (player.fly) player.pos.copy(camera.position); else player.vy = 0; toastMsg(player.fly ? 'Fly mode' : 'Walking'); }
   if (e.code === 'KeyT') { time.running = !time.running; toastMsg(time.running ? 'Time running' : 'Time paused'); }
@@ -200,7 +203,7 @@ async function main() {
   $('menu').classList.remove('hidden');
   let manualT = 0;
   window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
-    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, dbg: debugToggles(), perf, toggleOverlay, keys,
+    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys,
     // automated play-testing: act as if the pointer were locked, so keys (keys.KeyW = true ...) drive the walker
     autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); } }; // console debugging hook
 }

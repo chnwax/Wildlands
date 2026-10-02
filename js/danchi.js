@@ -46,7 +46,7 @@ export function danchiGround(x, z, h, Y0) {
 }
 
 // ---------------------------------------------------------------- building the district
-import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle } from './core.js';
+import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle, buildCompound, addCompound } from './core.js';
 import { lampPoints, signMesh, JP_FONT, GeoBuilder } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
@@ -281,7 +281,13 @@ export function buildDanchi(ctx) {
     const at = fit(fam, o, x0, z0, r, sf, pending); if (!at) { console.warn("danchi: no room for", fam, x0, z0, JSON.stringify(conflicts(envWorld(fam, o, x0, z0, r), fam !== 'L', false, { f: sf, x: x0, z: z0, r }).slice(0, 8).map(p => p.map(v => +v.toFixed(1))))); continue; }
     const [x, z] = at; placed.push(envWorld(fam, o, x, z, r)); fields.push(sf);
     const y = gy(x, z) + 0.02, pal = PALETTES[o.pal] || PALETTES.cream, s = { ...o, x, y, z, r, pal, gy };
+    const mark = new Map(); for (const [k, b] of B.parts) mark.set(k, b.idx.length); const ex0 = extras.length;
     const info = fam === 'S' ? walkupSlab(B, s, rng, extras) : fam === 'T' ? pointTower(B, s, rng, extras) : fam === 'M' ? mansion(B, s, rng, extras) : fam === 'L' ? centreBlock(B, s, rng, extras) : fam === 'K' ? cornerBlock(B, s, rng, extras) : lowRise(B, s, rng, extras);
+    // the building collides as what it is drawn with (a compound collider from its own triangles: walls, galleries,
+    // stairs, rails), not the boxes the families give as a rough stand-in for it
+    { const T = []; for (const [k, b] of B.parts) { const P = b.pos.a, I = b.idx.a; for (let t = mark.get(k) || 0; t < b.idx.length; t++) { const v = I[t] * 3; T.push(P[v], P[v + 1], P[v + 2]); } }
+      info.collider = addCompound(buildCompound(new Float32Array(T), { x, y, z, r, ground: gy }));
+      for (let i = extras.length - 1; i >= ex0; i--) if (extras[i].t === 'box') extras.splice(i, 1); }
     info.fam = fam; info.x = x; info.z = z; info.r = r; info.y = y; info.x0 = x0; info.z0 = z0; info.wa = o.wa; blds.push(info);
     // keep everything else off its footprint (one rectangle, or several for the L-shaped centre); no grass against it
     info.boxes = [];

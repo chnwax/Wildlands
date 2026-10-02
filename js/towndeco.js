@@ -826,7 +826,7 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null,
       if (wait !== !!w.waiting) { w.waiting = wait; ps[i * 2 + 1] = wait ? 0 : rate0[i]; ps[i * 2] = wait ? 0 : phase0[i]; animChanged = true; }
       const A = at(w.P, w.s, _at), x = A[0], z = A[1], dx = A[2], dz = A[3], o = w.P.off * w.side;
       w.x = x - dz * o; w.z = z + dx * o;
-      const y = groundAt(w.x, w.z) + (w.P.lift ? w.P.lift(w.x, w.z) : 0);
+      const y = w.y = groundAt(w.x, w.z) + (w.P.lift ? w.P.lift(w.x, w.z) : 0);
       q.setFromAxisAngle(up, Math.atan2(dx * w.dir, dz * w.dir));
       m4.compose(v.set(w.x, y, w.z), q, sc.setScalar(w.scale));
       if (C) C.set(i, m4, w.phase, w.speed / (1.4 * w.scale), w.waiting ? 1 : 0); // one gait cycle (two steps) ≈ 1.4 m
@@ -834,7 +834,8 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null,
     }
     if (C) C.commit(); else { im.instanceMatrix.needsUpdate = true; if (animChanged) walkAttr.needsUpdate = true; }
   };
-  return { mesh: C ? C.meshes[0] : im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d2 = dx * dx + dz * dz; if (d2 < 0.36 && d2 > 1e-8) { const d = Math.sqrt(d2); p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
+  return { mesh: C ? C.meshes[0] : im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d2 = dx * dx + dz * dz; if (d2 < 0.36 && d2 > 1e-8 && (w.y === undefined || Math.abs(p.y - w.y) < 1.7)) {   // (only someone at the walker's own level: not under a gallery)
+       const d = Math.sqrt(d2); p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
 }
 
 // municipal tennis courts (市民テニスコート): two sand-filled artificial-grass courts inside a 4 m chain-link cage, nets on

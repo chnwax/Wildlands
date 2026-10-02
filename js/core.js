@@ -317,9 +317,11 @@ export function noiseAt(u, v, c) {
 // ---------------------------------------------------------------- collisions (circles + oriented boxes, spatial hash)
 const COL_CELL = 16;
 export const colliders = new Map();
+// (numeric cell keys: no string is built per query)
+export const colKey = (i, j) => (i + 32768) * 65536 + (j + 32768);
 function colKeys(minX, minZ, maxX, maxZ, fn) {
   for (let z = Math.floor(minZ / COL_CELL); z <= Math.floor(maxZ / COL_CELL); z++)
-    for (let x = Math.floor(minX / COL_CELL); x <= Math.floor(maxX / COL_CELL); x++) fn(x + ',' + z);
+    for (let x = Math.floor(minX / COL_CELL); x <= Math.floor(maxX / COL_CELL); x++) fn(colKey(x, z));
 }
 function colAdd(c, minX, minZ, maxX, maxZ) {
   colKeys(minX, minZ, maxX, maxZ, k => { if (!colliders.has(k)) colliders.set(k, []); colliders.get(k).push(c); });
@@ -334,12 +336,14 @@ export function clearColliders(x, z, r) {
   for (const [k, list] of colliders) colliders.set(k, list.filter(c => c.t !== 0 || Math.hypot(c.x - x, c.z - z) >= r));
 }
 // push point p (x,z; feet y) out of colliders, player radius pr
+let colStamp = 0;
 export function collide(p, pr = 0.35, height = 1.7) {
-  const seen = new Set();
-  colKeys(p.x - 1, p.z - 1, p.x + 1, p.z + 1, k => {
-    const list = colliders.get(k); if (!list) return;
-    for (const c of list) {
-      if (seen.has(c)) continue; seen.add(c);
+  const stamp = ++colStamp;                                                           // (each collider once a call)
+  for (let cz = Math.floor((p.z - 1) / COL_CELL); cz <= Math.floor((p.z + 1) / COL_CELL); cz++) for (let cx = Math.floor((p.x - 1) / COL_CELL); cx <= Math.floor((p.x + 1) / COL_CELL); cx++) {
+    const list = colliders.get(colKey(cx, cz)); if (!list) continue;
+    for (let n = 0; n < list.length; n++) { const c = list[n];
+      if (c._s === stamp) continue; c._s = stamp;
+      if (c.t === 2) { compoundPush(c, p, pr, height); continue; }
       if (p.y + height < c.y0 || p.y > c.y1 - 0.35) continue; // can step onto low boxes
       if (c.t === 0) {
         const ex = p.x - c.x, ez = p.z - c.z, d = Math.hypot(ex, ez), m = c.r + pr;
@@ -354,20 +358,134 @@ export function collide(p, pr = 0.35, height = 1.7) {
         }
       }
     }
-  });
+  }
 }
 // highest walkable box top under a point (for platforms, steps)
 export function standHeight(x, z, feetY) {
   let best = -1e9;
-  colKeys(x, z, x, z, k => {
-    const list = colliders.get(k); if (!list) return;
-    for (const c of list) {
-      if (c.t !== 1 || c.y1 > feetY + 0.45 || !c.walk) continue;
-      const dx = x - c.x, dz = z - c.z, lx = dx * c.c - dz * c.s, lz = dx * c.s + dz * c.c;
-      if (Math.abs(lx) <= c.hx && Math.abs(lz) <= c.hz) best = Math.max(best, c.y1);
-    }
-  });
+  const list = colliders.get(colKey(Math.floor(x / COL_CELL), Math.floor(z / COL_CELL))); if (!list) return best;
+  for (let n = 0; n < list.length; n++) { const c = list[n];
+    if (c.t === 2) { const h = compoundFloor(c, x, z, feetY); if (h > best) best = h; continue; }
+    if (c.t !== 1 || c.y1 > feetY + 0.45 || !c.walk) continue;
+    const dx = x - c.x, dz = z - c.z, lx = dx * c.c - dz * c.s, lz = dx * c.s + dz * c.c;
+    if (Math.abs(lx) <= c.hx && Math.abs(lz) <= c.hz) best = Math.max(best, c.y1);
+  }
   return best;
+}
+// ---------------------------------------------------------------- compound colliders (buildings)
+// A building collides as what it is built of: its own triangles (the very ones it is drawn with) are sorted into a grid
+// of 20 cm cells in its frame. In each cell they become vertical spans: solid spans — walls, glazing, doors, columns,
+// risers, rails, balusters, parapets, soffits — each keeping the tight footprint of what it is within the cell (so a
+// 5 cm rail stays 5 cm, and a 1 m stair between two balustrades stays 1 m wide), merged where they overlap; and the
+// heights of the walkable tops over the cell's centre — floors, galleries, landings, treads, steps (faces turned up,
+// at most ~53 degrees from level). The walker stands on the highest top it can step onto (0.45 m) and is held off any
+// solid span between its knees (what it can step onto does not stop it: risers, kerbs, plinths) and its head. Nothing collides that
+// is not drawn, and nothing drawn can be walked through.
+const CC = 0.2, KNEE = 0.47;   // (the knee: anything lower can be stepped onto — the step the walker climbs is 0.45 m — so it does not stop it)
+export function buildCompound(tri, { x, y, z, r, ground = null }, kind = 'building') {
+  const c = Math.cos(r), s = Math.sin(r), n = tri.length / 9, L = new Float32Array(tri.length);
+  let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+  for (let i = 0; i < tri.length; i += 3) { const dx = tri[i] - x, dz = tri[i + 2] - z, lx = dx * c - dz * s, lz = dx * s + dz * c;
+    L[i] = lx; L[i + 1] = tri[i + 1] - y; L[i + 2] = lz; x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); z0 = Math.min(z0, lz); z1 = Math.max(z1, lz); }
+  x0 -= CC; z0 -= CC; const nx = Math.ceil((x1 - x0) / CC) + 2, nz = Math.ceil((z1 - z0) / CC) + 2;
+  const cells = new Map(), push = (k, ...v) => { let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(...v); };
+  // clip a polygon (flat x, y, z) to one side of an axis-aligned plane
+  const clip = (P, ax, v, keepAbove) => { const out = [], m = P.length / 3; for (let i = 0; i < m; i++) { const j = (i + 1) % m, a = P[i * 3 + ax], b = P[j * 3 + ax], ia = keepAbove ? a >= v : a <= v, ib = keepAbove ? b >= v : b <= v;
+    if (ia) out.push(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); if (ia !== ib) { const t = (v - a) / (b - a); out.push(P[i * 3] + (P[j * 3] - P[i * 3]) * t, P[i * 3 + 1] + (P[j * 3 + 1] - P[i * 3 + 1]) * t, P[i * 3 + 2] + (P[j * 3 + 2] - P[i * 3 + 2]) * t); } } return out; };
+  for (let t = 0; t < n; t++) {
+    const o = t * 9, ax = L[o], ay = L[o + 1], az = L[o + 2], bx = L[o + 3], by = L[o + 4], bz = L[o + 5], qx = L[o + 6], qy = L[o + 7], qz = L[o + 8];
+    const ex = bx - ax, ey = by - ay, ez = bz - az, fx = qx - ax, fy = qy - ay, fz = qz - az, Nx = ey * fz - ez * fy, Ny = ez * fx - ex * fz, Nz = ex * fy - ey * fx, Nl = Math.hypot(Nx, Ny, Nz);
+    if (Nl < 1e-9) continue;
+    const ny = Ny / Nl, walk = ny > 0.6, ar = ex * fz - ez * fx;                               // (faces are wound outward: a top faces up)
+    const i0 = Math.floor((Math.min(ax, bx, qx) - x0) / CC), i1 = Math.floor((Math.max(ax, bx, qx) - x0) / CC), j0 = Math.floor((Math.min(az, bz, qz) - z0) / CC), j1 = Math.floor((Math.max(az, bz, qz) - z0) / CC);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const cx0 = x0 + i * CC, cz0 = z0 + j * CC, k = j * nx + i;
+      if (walk) { // a top: its height over the cell's centre, if the centre is on it
+        if (Math.abs(ar) < 1e-9) continue; const px = cx0 + CC / 2 - ax, pz = cz0 + CC / 2 - az, u = (px * fz - pz * fx) / ar, v = (ex * pz - ez * px) / ar;
+        if (u >= -1e-4 && v >= -1e-4 && u + v <= 1 + 1e-4) push(k, 1, ay + ey * u + fy * v, 0, 0, 0, 0, 0);
+        continue; }
+      let P = [ax, ay, az, bx, by, bz, qx, qy, qz];
+      P = clip(P, 0, cx0, true); if (!P.length) continue; P = clip(P, 0, cx0 + CC, false); if (!P.length) continue;
+      P = clip(P, 2, cz0, true); if (!P.length) continue; P = clip(P, 2, cz0 + CC, false); if (!P.length) continue;
+      let ylo = 1e9, yhi = -1e9, mx0 = 1e9, mx1 = -1e9, mz0 = 1e9, mz1 = -1e9;
+      for (let q = 0; q < P.length; q += 3) { ylo = Math.min(ylo, P[q + 1]); yhi = Math.max(yhi, P[q + 1]); mx0 = Math.min(mx0, P[q]); mx1 = Math.max(mx1, P[q]); mz0 = Math.min(mz0, P[q + 2]); mz1 = Math.max(mz1, P[q + 2]); }
+      push(k, 0, ylo, yhi, mx0, mx1, mz0, mz1);
+    }
+  }
+  // per cell: its tops (sorted, deduplicated) and its solid spans merged where they overlap in height
+  const tops = new Map(), sols = new Map();
+  for (const [k, a] of cells) { const tp = [], sl = [];
+    for (let m = 0; m < a.length; m += 7) (a[m] ? tp : sl).push(a.slice(m, m + 7));
+    tp.sort((p, q2) => p[1] - q2[1]); const T = []; let last = -1e9; for (const t of tp) if (t[1] - last > 0.02) { T.push(t[1]); last = t[1]; }
+    sl.sort((p, q2) => p[1] - q2[1]); const S = []; let cur = null;
+    for (const sp of sl) { if (cur && sp[1] <= cur[2] + 0.02) { cur[2] = Math.max(cur[2], sp[2]); cur[3] = Math.min(cur[3], sp[3]); cur[4] = Math.max(cur[4], sp[4]); cur[5] = Math.min(cur[5], sp[5]); cur[6] = Math.max(cur[6], sp[6]); }
+      else { if (cur) S.push(cur); cur = sp.slice(); } }
+    if (cur) S.push(cur);
+    if (T.length) tops.set(k, T); if (S.length) sols.set(k, S); }
+  // what a walker can reach: the ground round the building, and the tops it can step onto from there — a flood over
+  // the tops from those within a step of the ground, on to a neighbouring top within a step where there is headroom
+  // (stairs, landings, galleries, corridors, porches; not balconies behind walls, roofs or railing tops). Only those
+  // tops are kept, and only the solid spans within reach of a level someone can stand on near them (its knees to its
+  // head when it jumps): the rest of the building is never touched and is dropped
+  const gl = k => { const i = k % nx, j = (k - i) / nx, lx = x0 + (i + 0.5) * CC, lz = z0 + (j + 0.5) * CC; return ground ? ground(x + lx * c + lz * s, z - lx * s + lz * c) - y : 0; };
+  const G = new Map(), gAt = k => { let g = G.get(k); if (g === undefined) G.set(k, g = gl(k)); return g; };
+  const room = (k, h) => { const S = sols.get(k); if (!S) return true; for (const sp of S) if (sp[2] > h + KNEE && sp[1] < h + 1.6) return false; return true; };
+  // (the ground outside: flooded in from the grid's edge through every cell with headroom over the ground; the tops
+  // seeded are those within a step of it, so nothing sealed inside the walls — a plinth's top — counts)
+  const out = new Uint8Array(nx * nz), fl = [];
+  for (let i = 0; i < nx; i++) fl.push(i, (nz - 1) * nx + i); for (let j = 0; j < nz; j++) fl.push(j * nx, j * nx + nx - 1);
+  while (fl.length) { const k = fl.pop(); if (out[k] || !room(k, gAt(k))) continue; out[k] = 1; const i = k % nx; if (i > 0) fl.push(k - 1); if (i < nx - 1) fl.push(k + 1); if (k >= nx) fl.push(k - nx); if (k < (nz - 1) * nx) fl.push(k + nx); }
+  const outside = k => { const i = k % nx; return out[k] || (i > 0 && out[k - 1]) || (i < nx - 1 && out[k + 1]) || (k >= nx && out[k - nx]) || (k < (nz - 1) * nx && out[k + nx]); };
+  const reach = new Map(), st = [];
+  for (const [k, T] of tops) { if (!outside(k)) continue; for (const h of T) if (Math.abs(h - gAt(k)) <= 0.6 && room(k, h)) { if (!reach.has(k)) reach.set(k, new Set()); if (!reach.get(k).has(h)) { reach.get(k).add(h); st.push(k, h); } } }
+  while (st.length) { const h = st.pop(), k = st.pop(), i = k % nx;
+    for (const nb of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]) { const T = nb >= 0 ? tops.get(nb) : null; if (!T) continue;
+      for (const h2 of T) { if (Math.abs(h2 - h) > 0.45 || !room(nb, h2)) continue; if (!reach.has(nb)) reach.set(nb, new Set()); const R2 = reach.get(nb); if (!R2.has(h2)) { R2.add(h2); st.push(nb, h2); } } } }
+  const levels = k => { const Lv = out[k] ? [gAt(k)] : [], R2 = reach.get(k); if (R2) for (const h of R2) Lv.push(h); return Lv; };
+  const keep = new Map();
+  for (const [k, S] of sols) { const i = k % nx, j = (k - i) / nx, Lv = [];
+    for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue; for (const h of levels(jj * nx + ii)) Lv.push(h); }
+    const K = S.filter(sp => Lv.some(h => sp[2] > h + KNEE - 0.05 && sp[1] < h + 2.6)); if (K.length) keep.set(k, K); }
+  // pack: a dense index from cell to its records (kind, y0, y1, footprint x0 x1 z0 z1) — a cell's tops first, its solid
+  // spans from mid on: the floor test reads only the one, the push only the other
+  const keys = [...new Set([...reach.keys(), ...keep.keys()])].sort((a, b) => a - b), start = new Uint32Array(keys.length + 1), mid = new Uint32Array(keys.length), index = new Int32Array(nx * nz).fill(-1), data = [];
+  keys.forEach((k, q) => { index[k] = q; start[q] = data.length / 7;
+    const R2 = reach.get(k); if (R2) for (const h of [...R2].sort((a, b) => a - b)) data.push(1, h, h, 0, 0, 0, 0);
+    mid[q] = data.length / 7; for (const sp of keep.get(k) || []) data.push(...sp); });
+  start[keys.length] = data.length / 7;
+  // (and which 0.8 m blocks hold any solid span at all: most of a walker's steps near a building need look no further)
+  const bx = (nx >> 2) + 1, blk = new Uint8Array(bx * ((nz >> 2) + 1)); for (const k of keep.keys()) { const i = k % nx, j = (k - i) / nx; blk[(j >> 2) * bx + (i >> 2)] = 1; }
+  const R = Math.hypot(nx, nz) * CC / 2, mx = x0 + nx * CC / 2, mz = z0 + nz * CC / 2;
+  return { t: 2, kind, x, y, z, r, c, s, x0, z0, nx, nz, cell: CC, keys: Int32Array.from(keys), index, start, mid, blk, bx, data: new Float32Array(data), wx: x + mx * c + mz * s, wz: z - mx * s + mz * c, R, y0: -1e9, y1: 1e9 };
+}
+export function addCompound(C) { colAdd(C, C.wx - C.R, C.wz - C.R, C.wx + C.R, C.wz + C.R); return C; }
+function compoundFloor(C, x, z, feetY) {
+  const dx = x - C.x, dz = z - C.z, lx = dx * C.c - dz * C.s, lz = dx * C.s + dz * C.c, i = Math.floor((lx - C.x0) / CC), j = Math.floor((lz - C.z0) / CC);
+  if (i < 0 || j < 0 || i >= C.nx || j >= C.nz) return -1e9;
+  const q = C.index[j * C.nx + i]; if (q < 0) return -1e9;
+  let best = -1e9; const ly = feetY - C.y, D = C.data;
+  for (let m = C.start[q]; m < C.mid[q]; m++) { const h = D[m * 7 + 1]; if (h <= ly + 0.45 && h > best) best = h; }
+  return best === -1e9 ? best : best + C.y;
+}
+function compoundPush(C, p, pr, height) {
+  const dx = p.x - C.x, dz = p.z - C.z; let lx = dx * C.c - dz * C.s, lz = dx * C.s + dz * C.c;
+  const i0 = Math.floor((lx - pr - C.x0) / CC), i1 = Math.floor((lx + pr - C.x0) / CC), j0 = Math.floor((lz - pr - C.z0) / CC), j1 = Math.floor((lz + pr - C.z0) / CC);
+  if (i1 < 0 || j1 < 0 || i0 >= C.nx || j0 >= C.nz) return;
+  { let any = 0; for (let b = Math.max(0, j0) >> 2; b <= Math.min(C.nz - 1, j1) >> 2; b++) for (let a = Math.max(0, i0) >> 2; a <= Math.min(C.nx - 1, i1) >> 2; a++) any |= C.blk[b * C.bx + a]; if (!any) return; }
+  const ly0 = p.y - C.y + KNEE, ly1 = p.y - C.y + height, D = C.data;
+  let moved = false;
+  for (let j = Math.max(0, j0); j <= Math.min(C.nz - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(C.nx - 1, i1); i++) {
+    const q = C.index[j * C.nx + i]; if (q < 0) continue;
+    for (let m = C.mid[q]; m < C.start[q + 1]; m++) { const o = m * 7; if (D[o + 2] < ly0 || D[o + 1] > ly1) continue;
+      // push off the span's footprint (a thin rectangle) to the walker's radius
+      const cx = clamp(lx, D[o + 3], D[o + 4]), cz = clamp(lz, D[o + 5], D[o + 6]); let ox = lx - cx, oz = lz - cz, d = Math.hypot(ox, oz);
+      if (d >= pr) continue;
+      if (d < 1e-5) { // inside the footprint: out by the shortest way
+        const l = lx - D[o + 3], rr = D[o + 4] - lx, b = lz - D[o + 5], f = D[o + 6] - lz, mn = Math.min(l, rr, b, f);
+        if (mn === l) lx = D[o + 3] - pr; else if (mn === rr) lx = D[o + 4] + pr; else if (mn === b) lz = D[o + 5] - pr; else lz = D[o + 6] + pr;
+        moved = true; continue; }
+      lx = cx + ox / d * pr; lz = cz + oz / d * pr; moved = true; } }
+  if (moved) { p.x = C.x + lx * C.c + lz * C.s; p.z = C.z - lx * C.s + lz * C.c; }
 }
 export function addPlatform(x, z, hx, hz, a, top) {
   const R = Math.hypot(hx, hz);
