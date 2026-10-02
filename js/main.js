@@ -1,5 +1,5 @@
 // Boot, UI, and main loop. Map is chosen with ?map=nature|town.
-import { THREE, renderer, scene, camera, S, Q, QUALITY, pixelRatio, loadState, manager, scatters, clamp, smoothstep, tick, shareShadowDepth, swapMaterials, ownInstanceGeometry, freezeStatic, singlePassFlat, indexInstanced } from './core.js';
+import { THREE, renderer, scene, camera, S, Q, QUALITY, pixelRatio, loadState, manager, scatters, clamp, smoothstep, tick, shareShadowDepth, swapMaterials, ownInstanceGeometry, freezeStatic, singlePassFlat, indexInstanced, wind } from './core.js';
 import { time, updateSky, followCamera, env, applyShadowQuality, sky, prepareShadowCache } from './sky.js';
 import { post, buildComposer, updateRays } from './post.js';
 import { audio, Emitter } from './audio.js';
@@ -84,8 +84,7 @@ function step(dt, t) {
   updateSky(false);
   post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
   perf.end(P_SKY);
-  const wind = 0.55 + 0.3 * Math.sin(t * 0.07) + 0.2 * Math.sin(t * 0.23 + 1.3) * Math.sin(t * 0.11);
-  S.uWind.value = dbgState.still ? 0 : wind;
+  wind.update(dt, t, !!dbgState.still);
   perf.begin(P_PLAYER);
   if (locked && started) updatePlayer(world, dt);
   if (!started && !dbgState.pause) player.yaw += dt * 0.02;
@@ -116,7 +115,7 @@ function step(dt, t) {
   ambTimer -= dt;
   if (ambTimer < 0) { ambTimer = 0.4; amb = world.ambience(player.pos.x, player.pos.z); }
   audio.listen(camera);
-  Object.assign(audioState, amb); audioState.wind = wind; audioState.day = env.day; audioState.night = env.night; audioState.fly = player.fly; audioState.under = under;
+  Object.assign(audioState, amb); audioState.wind = wind.strength; audioState.day = env.day; audioState.night = env.night; audioState.fly = player.fly; audioState.under = under;
   audio.update(dt, audioState);
   for (const e of audio.emitters) e.update(dt);
   perf.end(P_AUDIO);
@@ -201,7 +200,7 @@ async function main() {
   $('menu').classList.remove('hidden');
   let manualT = 0;
   window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
-    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, dbg: debugToggles(), perf, toggleOverlay, keys,
+    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, dbg: debugToggles(), perf, toggleOverlay, keys,
     // automated play-testing: act as if the pointer were locked, so keys (keys.KeyW = true ...) drive the walker
     autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); } }; // console debugging hook
 }

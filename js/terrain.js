@@ -1,6 +1,6 @@
 // Reusable outdoor systems: heightfield terrain with painted splat shading, GPU grass (and rice, reeds, flowers),
 // planar-reflection water, conifer forests (trees.js). Maps configure these and add their own content.
-import { THREE, scene, renderer, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt, onResize } from './core.js';
+import { THREE, scene, renderer, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt, onResize, GLSL_WIND } from './core.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
 import { buildConiferForest, buildFarForest, firColor, coniferColor, broadColor } from './trees.js';
 import { perf } from './perf.js';
@@ -980,7 +980,7 @@ function grassMaterial(hf, grassTex, gu, ru, card, baked) {
   if (baked) mat.defines.GRASS_BAKED = '';
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, gu, ru, hf.U, paintU, turfU, { uGrassY: gu.uGrassY, tNoise: S.tNoise, tGrassD: { value: grassTex },
-      uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
+      uCam: S.uCam, uPlayer: S.uPlayer, uTime: S.uTime, uWind: S.uWind, uWindDir: S.uWindDir, uWindOff: S.uWindOff, uWindPhase: S.uWindPhase, uSunDir: S.uSunDir, uSunCol: S.uSunCol });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         attribute vec2 bladeUV;
@@ -994,6 +994,7 @@ function grassMaterial(hf, grassTex, gu, ru, card, baked) {
         uniform vec4 uTurf0, uTurf1, uTurfStripe; uniform vec2 uGrassY;
         varying vec3 vGCol; varying vec3 vGTip; varying float vT; varying vec3 vGW; varying float vCloudLit;
         varying vec2 vCardUv; varying vec3 vFlCol; varying float vFl;
+        ${GLSL_WIND}
         ${GLSL_HEIGHT}
         ${GLSL_PAVE}
         ${GLSL_OUTER_HEIGHT}
@@ -1071,11 +1072,12 @@ function grassMaterial(hf, grassTex, gu, ru, card, baked) {
         #endif
         Hh *= bC.x;
         float t = bladeUV.y;
-        vec2 windDir = normalize(vec2(1.0, 0.35));
-        float gust = textureLod(tNoise, wp2 * 0.012 - windDir * uTime * 0.05, 0.0).r;
+        // the shared wind (core.js): its direction, the gust patches it carries at this blade, and the rolling waves
+        // running downwind across the meadow
+        vec2 windDir = uWindDir;
+        float gust = textureLod(tNoise, (wp2 - uWindOff) * 0.012, 0.0).r;
         float flutter = sin(uTime * (2.2 + iRand.z * 2.5) + iRand.x * 40.0 + dot(wp2, windDir) * 0.8);
-        // gusts travel across the meadow as rolling waves
-        float roll = sin(dot(wp2, windDir) * 0.32 - uTime * 2.1 + gust * 4.0) * 0.5 + 0.5;
+        float roll = sin(dot(wp2, windDir) * 0.32 - uWindPhase + gust * 4.0) * 0.5 + 0.5;
         vec2 lean = bdir * (rice ? 0.35 + iRand.z * 0.3 : reed ? 0.04 + iRand.z * 0.14 : broadB ? 0.7 + iRand.z * 0.4 : 0.12 + iRand.z * 0.4)
           + windDir * (gust * gust * 1.5 + 0.12) * (0.65 + 0.7 * roll) * uWind * (rice ? 0.6 : reed ? 0.35 : broadB ? 0.3 : seedG ? 1.25 : 1.0) + bside * flutter * 0.1 * uWind;
         #ifdef GRASS_CARD
@@ -1548,23 +1550,33 @@ export function buildStream(pts) {
   return m;
 }
 
+// sway in the shared wind (trees, bushes, hedges and their shadow casters): every part bends downwind with the square
+// of its height in the model, by the wind's strength at the plant (gust patches and the waves running downwind reach it
+// as they reach the grass round it), around that a slow sway and a quicker flutter along the wind and a little across
+// it, each plant on its own phase. The wind's world direction is taken into the instance's own frame. The offset is a
+// function of the vertex's height alone, so pieces that meet (a limb in its trunk) move together.
 export function windPatch(mat, key, amount = 1) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     if (prev) prev(sh, r);
-    sh.uniforms.uTime = S.uTime; sh.uniforms.uWind = S.uWind;
+    Object.assign(sh.uniforms, { uTime: S.uTime, uWind: S.uWind, uWindDir: S.uWindDir, uWindOff: S.uWindOff, uWindPhase: S.uWindPhase, tWindNoise: S.tNoise });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind; uniform sampler2D tWindNoise;\n' + GLSL_WIND)
       .replace('#include <begin_vertex>', `vec3 transformed = vec3(position);
         #ifdef USE_INSTANCING
-          vec3 ip = instanceMatrix[3].xyz;
+          vec3 wnP = instanceMatrix[3].xyz; mat3 wnM = mat3(instanceMatrix);
         #else
-          vec3 ip = vec3(0.0);
+          vec3 wnP = modelMatrix[3].xyz; mat3 wnM = mat3(modelMatrix);
         #endif
-        float ph = ip.x * 0.071 + ip.z * 0.053;
-        float sw = max(position.y, 0.0); sw *= sw * ${amount.toFixed(3)};
-        transformed.x += (sin(uTime * 0.9 + ph) * 0.6 + sin(uTime * 2.3 + ph * 1.7) * 0.2) * 0.012 * uWind * sw;
-        transformed.z += cos(uTime * 0.7 + ph * 1.3) * 0.006 * uWind * sw;`);
+        vec3 wnW = vec3(uWindDir.x, 0.0, uWindDir.y);
+        vec2 wnL = vec2(dot(wnM[0], wnW) / max(dot(wnM[0], wnM[0]), 1e-6), dot(wnM[2], wnW) / max(dot(wnM[2], wnM[2]), 1e-6));
+        wnL /= max(length(wnL), 1e-6);
+        float wnPh = wnP.x * 0.071 + wnP.z * 0.053;
+        float wnG = windAt(tWindNoise, wnP.xz), wnR = windRoll(wnP.xz, 0.11);
+        float wnS = max(position.y, 0.0); wnS *= wnS * ${amount.toFixed(3)};
+        float wnA = wnG * ((0.35 + 0.65 * wnR) * 0.009 + sin(uTime * 0.9 + wnPh) * 0.004 + sin(uTime * 2.3 + wnPh * 1.7) * 0.0016);
+        float wnC = wnG * (cos(uTime * 0.7 + wnPh * 1.3) * 0.0032 + sin(uTime * 3.1 + wnPh * 2.3) * 0.001);
+        transformed.xz += (wnL * wnA + vec2(-wnL.y, wnL.x) * wnC) * wnS;`);
   };
   mat.customProgramCacheKey = () => key;
 }

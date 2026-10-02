@@ -69,15 +69,15 @@ function motes(world) {
   const R = 13;
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    uniforms: Object.assign({ uCam: S.uCam, uTime: S.uTime, uSunDir: S.uSunDir, uSunCol: S.uSunCol, uWind: S.uWind }, world.hf.U, U),
+    uniforms: Object.assign({ uCam: S.uCam, uTime: S.uTime, uSunDir: S.uSunDir, uSunCol: S.uSunCol, uWind: S.uWind, uWindOff: S.uWindOff }, world.hf.U, U),
     vertexShader: /* glsl */`
-      attribute vec4 aRnd; uniform vec3 uCam, uSunDir, uSunCol; uniform float uTime, uMote, uPx, uPR, uWind;
+      attribute vec4 aRnd; uniform vec3 uCam, uSunDir, uSunCol; uniform float uTime, uMote, uPx, uPR, uWind; uniform vec2 uWindOff;
       varying vec3 vC;
       ${GLSL_HEIGHT}
       ${wrapGLSL}
       void main(){
         float t = uTime + aRnd.w * 100.0;
-        vec2 drift = vec2(1.0, 0.35) * uTime * 0.35 * uWind + vec2(sin(t * 0.37 + aRnd.z * 9.0), cos(t * 0.29 + aRnd.x * 7.0)) * 0.8;
+        vec2 drift = uWindOff * 0.06 + vec2(sin(t * 0.37 + aRnd.z * 9.0), cos(t * 0.29 + aRnd.x * 7.0)) * 0.8;
         vec2 wp = wrapAround(fract(aRnd.xy + drift / ${(2 * R).toFixed(1)}), ${R.toFixed(1)});
         float y = hAt(wp) + 0.2 + 5.5 * aRnd.z + sin(t * 0.5) * 0.4;
         vec3 w = vec3(wp.x, y, wp.y);
@@ -108,7 +108,7 @@ function flowers(world) {
     transparent: false, depthWrite: true, fog: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
     vertexShader: /* glsl */`
-      attribute vec4 aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uPx, uPR, uWaterLv, uTime, uWind;
+      attribute vec4 aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uPx, uPR, uWaterLv, uTime, uWind; uniform vec2 uWindDir;
       uniform sampler2D tMask, tMask2, tNoise; uniform vec4 uTurf0;
       varying vec3 vCol; varying float vAng;
       ${GLSL_HEIGHT}
@@ -137,8 +137,8 @@ function flowers(world) {
         ok *= 1.0 - step(uTurf0.x, wp.x) * step(wp.x, uTurf0.z) * step(uTurf0.y, wp.y) * step(wp.y, uTurf0.w);                                  // none on sports turf
         float d = length(wp - uCam.xz);
         float fade = 1.0 - smoothstep(${(R * 0.7).toFixed(1)}, ${R.toFixed(1)}, d);
-        float sway = sin(uTime * (1.5 + aRnd.z) + aRnd.x * 30.0) * 0.04 * uWind;
-        vec3 w = vec3(wp.x + sway, g + 0.18 + 0.32 * aRnd.z, wp.y + sway * 0.5);
+        float sway = (0.6 + sin(uTime * (1.5 + aRnd.z) + aRnd.x * 30.0)) * 0.035 * uWind;     // (nodding downwind)
+        vec3 w = vec3(wp.x + uWindDir.x * sway, g + 0.18 + 0.32 * aRnd.z, wp.y + uWindDir.y * sway);
         float pick = fract(z2.g * 5.3 + z3.b * 0.6 + step(0.92, aRnd.y) * 0.37);
         vec3 fc = pick < 0.26 ? vec3(1.0, 0.95, 0.86) : pick < 0.5 ? vec3(1.0, 0.72, 0.06) : pick < 0.7 ? vec3(1.0, 0.36, 0.55)
                 : pick < 0.88 ? vec3(0.42, 0.3, 1.0) : vec3(1.0, 0.3, 0.12);
@@ -166,7 +166,7 @@ function flowers(world) {
         #include <fog_fragment>
       }`,
   });
-  Object.assign(mat.uniforms, world.hf.U, U, turfU, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind, tNoise: S.tNoise, uWaterLv: { value: world.waterLevel ?? 0 } });
+  Object.assign(mat.uniforms, world.hf.U, U, turfU, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind, uWindDir: S.uWindDir, tNoise: S.tNoise, uWaterLv: { value: world.waterLevel ?? 0 } });
   return wrappedPoints(COUNT, 29, mat);
 }
 
@@ -185,7 +185,7 @@ function petals(trees) {
   const mat = new THREE.ShaderMaterial({
     fog: true, uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]),
     vertexShader: /* glsl */`
-      attribute vec4 aTree, aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uTime, uWind, uPx, uPR;
+      attribute vec4 aTree, aRnd; uniform vec3 uCam, uSunCol, uAmb; uniform float uTime, uWind, uWindBase, uPx, uPR; uniform vec2 uWindDir;
       varying vec3 vCol; varying float vAng;
       #include <common>
       #include <fog_pars_vertex>
@@ -197,7 +197,7 @@ function petals(trees) {
         float fallH = p.y - aTree.y + 0.2;
         p.y -= ph * fallH;
         // blown downwind, fluttering in little loops
-        vec2 wind = normalize(vec2(1.0, 0.35)) * (1.0 + 2.5 * uWind);
+        vec2 wind = uWindDir * (1.0 + 2.5 * uWindBase);   // (the steady wind: a petal's whole flight is drawn from it)
         float sw = uTime * (1.6 + aRnd.z) + aRnd.x * 40.0;
         p.xz += wind * ph * life * 0.45 + vec2(sin(sw), cos(sw * 0.8)) * 0.45 * ph;
         p.y += sin(sw * 1.3) * 0.12;
@@ -225,7 +225,7 @@ function petals(trees) {
         #include <fog_fragment>
       }`,
   });
-  Object.assign(mat.uniforms, U, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind });
+  Object.assign(mat.uniforms, U, { uCam: S.uCam, uSunCol: S.uSunCol, uAmb: S.uAmb, uTime: S.uTime, uWind: S.uWind, uWindBase: S.uWindBase, uWindDir: S.uWindDir });
   const pts = new THREE.Points(g, mat); pts.frustumCulled = false; pts.layers.set(1); scene.add(pts);
   return pts;
 }

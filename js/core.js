@@ -169,7 +169,42 @@ export const S = {
   uAmb: { value: new THREE.Vector3() }, uFogCol: { value: new THREE.Vector3() },
   uCam: { value: new THREE.Vector3() }, uPlayer: { value: new THREE.Vector3() },
   tNoise: { value: null },
+  // the wind (see `wind` below): direction it blows toward, how far the air has travelled, the phase of its waves
+  uWindDir: { value: new THREE.Vector2(0.94, 0.33) }, uWindOff: { value: new THREE.Vector2() }, uWindPhase: { value: 0 },
+  uWindBase: { value: 0.6 },   // (the strength without its gusts: for what integrates the wind over a long flight)
 };
+
+// ---------------------------------------------------------------- the wind
+// One wind state for everything that moves in it — grass, trees, bushes, hedges, flowers, petals, motes — kept on the
+// CPU and handed to every shader as the shared uniforms above (uWind: the strength, 0 calm .. ~1.6 a strong gust):
+//  - the direction drifts slowly and now and then swings round (sums of slow sines of time, so it never jumps)
+//  - the strength runs through calm spells and windy spells over minutes, with gusts on top while it blows
+//  - the air's travel (uWindOff) is integrated frame by frame along the current direction: the gust patches it carries
+//    (windAt) drift downwind and keep drifting smoothly as the direction turns; the waves that run downwind through
+//    grass and crowns (windRoll) advance by an integrated phase for the same reason
+// Everything samples the field at its own position, so a gust is seen crossing a meadow and then reaching the trees.
+export const wind = {
+  angle: 0.34, strength: 0.6, base: 0.6, gust: 0,
+  update(dt, t, still = false) {
+    const T = 2 * Math.PI;
+    this.angle = 0.34 + 0.55 * Math.sin(T * t / 900) + 0.3 * Math.sin(T * t / 370 + 1.1) + 0.12 * Math.sin(T * t / 97 + 2.3);
+    this.base = clamp(0.5 + 0.42 * Math.sin(T * t / 640 + 0.7) + 0.2 * Math.sin(T * t / 230 + 2.1), 0.05, 1.1);
+    const g1 = Math.max(0, Math.sin(T * t / 23 + 1.7 * Math.sin(t * 0.13))), g2 = Math.max(0, Math.sin(T * t / 7.3 + 1));
+    this.gust = g1 * g1 * g1 * 0.6 + g2 * g2 * g2 * g2 * 0.25;
+    this.strength = still ? 0 : this.base * (1 + this.gust * smoothstep(0.15, 0.4, this.base));
+    const d = S.uWindDir.value.set(Math.cos(this.angle), Math.sin(this.angle));
+    if (!still) { S.uWindOff.value.addScaledVector(d, (2 + 5 * this.strength) * dt); S.uWindPhase.value = (S.uWindPhase.value + dt * (1.2 + 1.6 * this.strength)) % (2 * Math.PI * 64); }
+    S.uWind.value = this.strength; S.uWindBase.value = still ? 0 : this.base;
+  },
+};
+// GLSL: declares the wind's uniforms (uWind and the noise sampler are the caller's) and
+//   windAt(tex, p): the strength at p — the global strength carried in gust patches drifting downwind (0.3x .. 1.9x)
+//   windRoll(p, k): a wave of wavenumber k running downwind, 0..1
+export const GLSL_WIND = /* glsl */`
+uniform vec2 uWindDir, uWindOff; uniform float uWindPhase;
+float windAt(sampler2D tex, vec2 p) { float n = textureLod(tex, (p - uWindOff) * 0.012, 0.0).r; return uWind * (0.3 + 1.6 * n * n); }
+float windRoll(vec2 p, float k) { return sin(dot(p, uWindDir) * k - uWindPhase) * 0.5 + 0.5; }
+`;
 
 // ---------------------------------------------------------------- atmospheric fog
 // Replaces three's fog with height-attenuated exponential fog plus forward in-scattering toward the sun.
