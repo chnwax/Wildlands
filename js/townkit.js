@@ -1,7 +1,8 @@
 // Town construction kit: batched geometry builder, PBR materials, canvas-drawn signage, buildings and street props.
-import { THREE, scene, S, Q, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform, maxAniso, Scatter, addProp } from './core.js';
+import { capHooks, lampPoints, withScatterMeta, THREE, scene, S, Q, clamp, lerp, mulberry32, phTex, NFLAT, addBox, addCircle, addPlatform, maxAniso, Scatter, addProp } from './core.js';
 import { env } from './sky.js';
 import { relief, weather, asphaltAge, wornPaint, windowMaterial, paving } from './surface.js';
+import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 // ---------------------------------------------------------------- batched builder
 // Geometry is accumulated per (material, 96 m chunk) and flushed into a few hundred meshes.
@@ -16,6 +17,7 @@ const WHITE = [1, 1, 1];
 // arrays of doubles (8 bytes a number, plus growth slack) pushed the build past the renderer's 4 GB heap; float32 /
 // uint32 storage is 4 bytes a number and converts to a vertex attribute without a copy.
 function releaseArray() { this.array = null; }
+export const keepArrays = { on: false }; // set by the world editor before the map is built
 class GrowBuf {
   constructor(T = Float32Array, cap = 256) { this.T = T; this.a = new T(cap); this.length = 0; }
   grow(n) { if (this.length + n <= this.a.length) return; let c = this.a.length * 2; while (c < this.length + n) c *= 2; const b = new this.T(c); b.set(this.a.subarray(0, this.length)); this.a = b; }
@@ -28,12 +30,13 @@ export class GeoBuilder {
   constructor(chunk = 96) { this.chunk = chunk * 2; this.parts = new Map(); this.lod = 0; this.frame(0, 0, 0, 0); }
   // emit fn's geometry as detail of level n (1: fine parts, 2: micro details); those meshes are drawn only near the camera
   detail(n, fn) { const o = this.lod; this.lod = Math.max(o, n); try { return fn(); } finally { this.lod = o; } }
-  frame(x, y, z, r = 0) { this.F = { x, y, z, c: Math.cos(r), s: Math.sin(r), r }; return this; }
+  frame(x, y, z, r = 0) { this.F = { x, y, z, c: Math.cos(r), s: Math.sin(r), r }; if (capHooks.frame) capHooks.frame(x, y, z, r); return this; }
   P(l) { const F = this.F; return [F.x + l[0] * F.c + l[2] * F.s, F.y + l[1], F.z - l[0] * F.s + l[2] * F.c]; }
   N(n) { const F = this.F; return [n[0] * F.c + n[2] * F.s, n[1], -n[0] * F.s + n[2] * F.c]; }
   bucket(mat, x, z) {
     const c = this.lod ? this.chunk / 2 : this.chunk, k = mat + '|' + this.lod + '|' + Math.floor(x / c) + ',' + Math.floor(z / c);
-    let b = this.parts.get(k); if (!b) { b = { mat, lod: this.lod, pos: new GrowBuf(), nor: new GrowBuf(), uv: new GrowBuf(), col: new GrowBuf(), idx: new GrowBuf(Uint32Array), extra: {} }; this.parts.set(k, b); }
+    let b = this.parts.get(k); if (!b) { b = { mat, lod: this.lod, pos: new GrowBuf(), nor: new GrowBuf(), uv: new GrowBuf(), col: new GrowBuf(), idx: new GrowBuf(Uint32Array), extra: {}, mesh: null }; this.parts.set(k, b); }
+    if (capHooks.bucket) capHooks.bucket(b); // (world objects: which object wrote which vertices, world/capture.js)
     return b;
   }
   // optional extra per-vertex attributes (opt.attr = { name: [v0, v1, v2(, v3)] }, each a 2-vector); other vertices get 0
@@ -196,12 +199,13 @@ export class GeoBuilder {
       g.computeBoundingSphere();
       const m = new THREE.Mesh(g, materials[b.mat]);
       if (!materials[b.mat]) console.warn('missing material', b.mat);
+      b.mesh = m; Object.defineProperty(m.userData, 'bucket', { value: b, enumerable: false }); // (not copied by clone / JSON)
       m.castShadow = shadow[b.mat] !== false; m.receiveShadow = true; m.matrixAutoUpdate = false;
       if (b.lod) { m.userData.lodDist = LOD_DIST[b.lod]; lodMeshes.push(m); m.layers.set(3); }
       // static and already bounded: once uploaded the CPU copy of every attribute is dropped (it would otherwise hold the
       // whole town twice, in the JS heap and on the GPU)
-      for (const k in g.attributes) g.attributes[k].onUpload(releaseArray);
-      if (g.index) g.index.onUpload(releaseArray);
+      // (the world editor keeps them: it reads and rewrites the objects inside these buffers)
+      if (!keepArrays.on) { for (const k in g.attributes) g.attributes[k].onUpload(releaseArray); if (g.index) g.index.onUpload(releaseArray); }
       scene.add(m); meshes.push(m);
     }
     this.parts.clear();
@@ -433,7 +437,7 @@ const vmFrontGeo = new THREE.PlaneGeometry(1.0, 1.83).translate(0, 0, 0.375);
 const vmSideMats = [0xc8102e, 0x0b4ea2, 0xf3f3ef, 0x1b1b1b, 0xe8e8e8].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.4, metalness: 0.3 }));
 const _pm = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pe = new THREE.Euler(), _pv = new THREE.Vector3(), _ps = new THREE.Vector3(1, 1, 1);
 const propMatrix = (x, y, z, ry, out = new THREE.Matrix4()) => out.compose(_pv.set(x, y, z), _pq.setFromEuler(_pe.set(0, ry, 0)), _ps);
-export function vendingMachine(x, y, z, r, i, B = null) {
+function vendingMachine_build(x, y, z, r, i, B = null) {
   const t = vendingTexture(i);
   const front = new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0, roughness: 0.35 });
   front.userData.glow = 0.55; glowMats.push(front);
@@ -463,7 +467,7 @@ export function vendingMachine(x, y, z, r, i, B = null) {
 const poleAds = {}; // one painted advert (texture, material, plate) per text, shared by every pole that carries it
 const POLE_ADS = ['桜川歯科 →', 'やまだ内科', '学習塾 明星', '中村鉄工所', 'さくら整骨院', '桜川不動産'];
 const poleAdTex = {};
-export function utilityPole(B, x, y, z, r, rng, { transformer = false, light = false, side = 1 } = {}) {
+function utilityPole_build(B, x, y, z, r, rng, { transformer = false, light = false, side = 1 } = {}) {
   B.frame(x, y, z, r);
   B.cyl('concrete', 0, -0.2, 0, 0.19, 0.13, 12.7, 16, { color: [0.78, 0.78, 0.76], uv: 3 });
   B.cyl('concrete', 0, 12.5, 0, 0.13, 0.08, 0.06, 16, { color: [0.72, 0.72, 0.7], cap: true });
@@ -564,7 +568,7 @@ const mirrorVisorMat = new THREE.MeshStandardMaterial({ color: 0xf07818, roughne
 const mirrorVisor = new THREE.CylinderGeometry(0.47, 0.47, 0.16, 24, 1, true, Math.PI * 0.6, Math.PI * 0.8);
 const mirrorPlate = new THREE.PlaneGeometry(0.16, 0.06), mirrorTab = new THREE.BoxGeometry(0.05, 0.12, 0.03), mirrorPlateMat = new THREE.MeshStandardMaterial({ color: 0xf4f4ee, roughness: 0.6 });
 
-export function curveMirror(B, x, y, z, r, heads = 1) {
+function curveMirror_build(B, x, y, z, r, heads = 1) {
   B.frame(x, y, z, r);
   const OR = [0.94, 0.47, 0.1], H = 3.3, R = 0.4;
   B.cyl('concrete', 0, -0.06, 0, 0.16, 0.18, 0.1, 12, { color: [0.68, 0.68, 0.66], cap: true });
@@ -615,7 +619,7 @@ function roadSignTex(kind) {
   return signTex[kind];
 }
 const signMats = {}, signPlate = new THREE.PlaneGeometry(0.75, 0.75);
-export function roadSign(B, x, y, z, r, kind) {
+function roadSign_build(B, x, y, z, r, kind) {
   B.frame(x, y, z, r);
   const ph = kind === 'stop' ? 2.1 : 2.6, sy = kind === 'stop' ? 1.85 : 2.3;
   B.cyl('alu', 0, -0.15, 0, 0.032, 0.03, ph + 0.15, 12, { color: [0.82, 0.84, 0.86] });
@@ -660,7 +664,7 @@ export function signalLampMaterial(kind) { // kind: 'g' | 'y' | 'r' | 'walk' | '
   m.userData.on = ped ? 2.2 : 3.2;
   return m;
 }
-export function signalMast(B, x, y, z, r, { arm = 4, peds = [] } = {}) {
+function signalMast_build(B, x, y, z, r, { arm = 4, peds = [] } = {}) {
   B.frame(x, y, z, r);
   const G = [0.74, 0.76, 0.78], HOUSE = [0.8, 0.81, 0.8];
   B.cyl('concrete', 0, -0.08, 0, 0.24, 0.22, 0.16, 16, { color: [0.7, 0.7, 0.68] });            // footing collar
@@ -720,7 +724,7 @@ export const cycleMat = new THREE.MeshStandardMaterial({ map: cycleTex, alphaToC
 // anime palettes: clean pastel walls and saturated roofs (Shinkai / Ghibli town streets)
 export const WALL_TINTS = [[1, 0.97, 0.9], [0.98, 0.98, 0.96], [0.9, 0.95, 1], [0.92, 1, 0.93], [1, 0.9, 0.84], [1, 0.97, 0.8], [1, 0.9, 0.9], [0.9, 0.88, 0.86], [0.86, 0.92, 0.98]];
 
-export const lampPoints = []; // world positions of light fixtures (for dynamic point lights)
+export { lampPoints }; // world positions of light fixtures (citylights.js); kept in core.js so world objects can own them
 // red paper lantern (chochin): lamp material, so it glows warm red at night
 export function chochin(B, x, y, z, col = [1, 0.3, 0.2], s = 1) {
   B.cyl('dark', x, y + 0.5 * s, z, 0.1 * s, 0.1 * s, 0.05 * s, 8, { cap: true });
@@ -796,12 +800,13 @@ function bicycleGeometry(lo = 0) {
 export function bicycles(list, rng) { // list: [{x,y,z,r}]
   const cols = [[0.88, 0.88, 0.86], [0.1, 0.1, 0.1], [0.62, 0.12, 0.12], [0.2, 0.32, 0.58], [0.72, 0.72, 0.74], [0.95, 0.9, 0.78], [0.25, 0.42, 0.32], [0.86, 0.62, 0.7], [0.4, 0.62, 0.72]];
   const paintM = new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0.35 }), restM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.55 });
+  paintM.name = 'bicycle_paint'; restM.name = 'bicycle_metal';
   const items = list.map(b => ({ x: b.x, y: b.y, z: b.z, s: 1, r: b.r, tilt2: (rng() - 0.5) * 0.08 + 0.06, c: new THREE.Color(...cols[Math.floor(rng() * cols.length)]) }));
   const parts = lo => { const G = bicycleGeometry(lo); return [{ geometry: G.paint, material: paintM, tint: true, castShadow: true }, { geometry: G.rest, material: restM, castShadow: true }]; };
-  new Scatter(items, [{ dist: () => 30 * (Q.lodScale || 1), parts: parts(0) }, { dist: () => Infinity, parts: parts(1) }], 128);
+  withScatterMeta({ prefab: 'bicycle', category: 'vehicle' }, () => new Scatter(items, [{ dist: () => 30 * (Q.lodScale || 1), parts: parts(0) }, { dist: () => Infinity, parts: parts(1) }], 128));
   return items;
 }
-export function clockPole(B, x, y, z) {
+function clockPole_build(B, x, y, z) {
   B.frame(x, y, z, 0);
   B.cyl('metal', 0, 0, 0, 0.07, 0.06, 3.6, 8, { color: [0.3, 0.32, 0.33] });
   const face = canvasTex(256, 256, (g, W, H) => {
@@ -815,3 +820,11 @@ export function clockPole(B, x, y, z) {
   const d2 = d.clone(); d2.rotation.y = Math.PI; d2.position.z -= 0.02; scene.add(d2);
   addCircle(x, z, 0.12);
 }
+
+// ---------------------------------------------------------------- placed objects (world/capture.js: each call is one editable world object)
+export const vendingMachine = placeable('vending_machine', vendingMachine_build, (x, y, z, r) => [x, y, z, r]);
+export const utilityPole = placeable('utility_pole', utilityPole_build, atXYZR);
+export const curveMirror = placeable('curve_mirror', curveMirror_build, atXYZR);
+export const roadSign = placeable((B, x, y, z, r, kind) => 'road_sign_' + kind, roadSign_build, atXYZR);
+export const signalMast = placeable('traffic_signal', signalMast_build, atXYZR);
+export const clockPole = placeable('clock_pole', clockPole_build, (B, x, y, z) => [x, y, z, 0]);

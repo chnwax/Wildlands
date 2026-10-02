@@ -7,6 +7,7 @@
 import { scene, clamp, lerp, mulberry32 } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS } from './townkit.js';
 import { cropSet } from './crops.js';
+import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
 const jitter = (rng, c, a = 0.04) => c.map(v => clamp(v + (rng() - 0.5) * a, 0, 1));
@@ -369,7 +370,7 @@ export function boxWalls(B, cx, w, d, y0, y1, bands, holesOf, revealC) {
   }));
 }
 
-export function house(B, lot, rng, extras) {
+function house_build(B, lot, rng, extras) {
   const { x, y, z, r, w: LW, d: LD } = lot;
   B.frame(x, y, z, r);
   const farm = lot.district === 'farm';
@@ -656,7 +657,7 @@ function barn(B, w, d, rng, extras) {
 // rolled-down shutter), sign board on a backing frame lit by gooseneck lamps, fabric awning on steel arms, noren and
 // lanterns; living quarters above with real windows, wall-bracket AC units; back yard with service door, meters,
 // water heater and sometimes an external steel stair; flat roof with parapet coping, water tank, condensers.
-export function shopBuilding(B, s, rng, extras) {
+function shopBuilding_build(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
   // three shopfront types: RC flat-roofed (2-3 floors), 看板建築 (a flat false front hiding a pitched roof) and the
@@ -789,7 +790,7 @@ export function shopBuilding(B, s, rng, extras) {
 }
 
 // ---------------------------------------------------------------- convenience store
-export function konbini(B, s, rng, extras) {
+function konbini_build(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
   const H = 4.2, gl = { x0: -w / 2 + 0.5, x1: w / 2 - 0.5, y0: 0.12, y1: 2.95, d: 0.22 };
@@ -843,7 +844,7 @@ export function konbini(B, s, rng, extras) {
 // ---------------------------------------------------------------- apartment block (mansion)
 // Balconies on the +Z side with slab edges, frosted panels in aluminium frames, fire-escape partitions, sliding glass
 // doors behind; open access corridors on the back with a parapet, unit doors with meter boxes; stair tower; roof plant.
-export function apartment(B, s, rng, extras) {
+function apartment_build(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
   const floors = 5, fh = 2.95, H = floors * fh + 0.3, units = Math.floor(w / 6.2), uw = w / units, wc = jitter(rng, [0.8, 0.76, 0.69], 0.04); // muted: a white block in full sun blew out into bloom
@@ -925,7 +926,7 @@ export function apartment(B, s, rng, extras) {
 const TRADES = ['桜川運輸', '山田工業', '中村鉄工所', '川口建材', '森田自動車', '桜川農協'];
 // steel-clad warehouse / workshop: box-profile walls, low metal gable roof, roll-up door, personnel door, a high band of
 // windows, concrete apron, company sign, pallets
-export function warehouse(B, s, rng, extras) {
+function warehouse_build(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
   const W = w - 3, D = d - 7, H = 5.4 + rng() * 1.6, wc = jitter(rng, pick(rng, [[0.72, 0.78, 0.82], [0.86, 0.84, 0.78], [0.62, 0.7, 0.64], [0.8, 0.8, 0.82], [0.78, 0.66, 0.56]]), 0.04);
@@ -957,7 +958,7 @@ export function warehouse(B, s, rng, extras) {
   });
 }
 // monthly car park (月極駐車場): asphalt with bays, wheel stops, a sign; returns bay spots for parked cars
-export function carPark(B, s, rng, extras) {
+function carPark_build(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
   B.bbox('asphalt', 0, -0.06, 0, w, 0.1, d, 0.01, { color: [1, 1, 1], skip: 'ny', uv: 4 });
@@ -981,7 +982,7 @@ export function carPark(B, s, rng, extras) {
 // plastic tunnel greenhouse (ビニールハウス): galvanised hoops every 1.5 m on ground pipes, purlins along the ridge and
 // shoulders, milky film with the side vents rolled up, end walls framed in pipe with a film-covered sliding door (one
 // end propped open), raised beds inside with crops, a water tank and hose outside. w: span, d: length.
-export function greenhouse(B, s, rng, gy) {
+function greenhouse_build(B, s, rng, gy) {
   const { x, y, z, r, w = 5.4, d = 24, film = 'new' } = s, h = s.h || 3.0, R2 = w / 2, n = 12, PIPE = [0.72, 0.74, 0.76];
   // fresh film is clear, a season-old one milky and yellowed; a bare frame is a house whose film came off for winter
   const FILM = film === 'old' ? [0.9, 0.9, 0.78] : [0.93, 0.96, 0.97], bare = film === 'bare';
@@ -1036,7 +1037,7 @@ function plant(B, type, lx, ly, lz, rng, s = 1, t = null) { const p = B.P([lx, l
 // different crops — cabbages, leeks, tomatoes on cane frames, eggplants, potatoes, some under black or silver mulch
 // film — a cucumber net, bird netting over the brassicas, paths of trodden earth, a tool box, water tank and hose,
 // compost bin and a wheelbarrow. Local frame: the street side is +z.
-export function allotment(B, s, rng, gy) {
+function allotment_build(B, s, rng, gy) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
   const SOIL = [0.5, 0.39, 0.3], LEAF = [0.34, 0.6, 0.3];
@@ -1108,7 +1109,7 @@ const frameGround = (B, y, gy) => (lx, lz) => { const p = B.P([lx, 0, lz]); retu
 // taro with big leaves, white row-cover tunnels, black or silver mulch with seedlings, a fallow strip. A bare headland
 // runs round the edge; an irrigation standpipe with a hose stands at one corner; the far end often has a corrugated tool
 // shed, a water drum, crates and a heap under a blue tarp, and now and then a scarecrow stands in a furrow.
-export function field(B, s, rng, gy) {
+function field_build(B, s, rng, gy) {
   const { x, y, z, r, w, d, shed = false } = s;
   B.frame(x, y, z, r);
   const at = frameGround(B, y, gy), US = 2.5;
@@ -1190,3 +1191,14 @@ export function field(B, s, rng, gy) {
     B.cyl('plain', kx, g + 1.6, kz, 0.34, 0.34, 0.03, 14, { color: [0.82, 0.72, 0.46], cap: true }); B.cyl('plain', kx, g + 1.62, kz, 0.14, 0.12, 0.12, 10, { color: [0.82, 0.72, 0.46], cap: true });
   }
 }
+
+// ---------------------------------------------------------------- placed objects (world/capture.js: each call is one editable world object)
+export const house = placeable('house', house_build, atObj);
+export const shopBuilding = placeable('shop', shopBuilding_build, atObj);
+export const konbini = placeable('konbini', konbini_build, atObj);
+export const apartment = placeable('apartment_block', apartment_build, atObj);
+export const warehouse = placeable('warehouse', warehouse_build, atObj);
+export const carPark = placeable('car_park', carPark_build, atObj);
+export const allotment = placeable('allotment', allotment_build, atObj);
+export const greenhouse = placeable('greenhouse', greenhouse_build, atObj);
+export const field = placeable('vegetable_field', field_build, atObj);

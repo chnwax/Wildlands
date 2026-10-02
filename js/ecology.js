@@ -87,6 +87,7 @@ export function bambooGrove({ x: cx, z: cz, R, rng, groundAt, ok = () => true, s
     out.push(bambooCulm(x, groundAt(x, z), z, rng, lerp(lerp(edgeH[0], edgeH[1], rng()), lerp(H[0], H[1], rng()), core) * (0.86 + rng() * 0.28), tone, e, [lx / rl * lean, lz / rl * lean]));
     if (e > 0.72) out[out.length - 1].v = 6 + Math.floor(rng() * 3);                           // the rim: leafy low down
   }
+  for (const t of out) t.field = 'bamboo_grove';
   return out;
 }
 // one bamboo clump record (tree format): h = height (m), tone = the grove's foliage colour, e = 0 core .. 1 rim
@@ -217,6 +218,7 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
       place(t, 0.7);
     }
   }
+  for (const t of trees) t.field = 'forest'; for (const t of saplings) t.field = 'forest'; // dense fill: world/capture.js fields
   return { trees, saplings, hash, FB, FW };
 }
 
@@ -263,6 +265,7 @@ export function forestFloor({ hf, forest, moist, trees, seed = 5, water = 0, blo
     const m = moist ? at(moist, x, z) : 0.5, c = bushColor(rng).multiplyScalar(0.72 + 0.12 * m);
     out.shrubs.push({ x, y: h - 0.12, z, s: lerp(0.6, 1.5, Math.pow(rng(), 1.3)), sx: 0.9 + rng() * 0.4, r: rng() * 6.28, c });
   }
+  for (const k of ['logs', 'twigs', 'shrubs']) for (const t of out[k] || []) t.field = 'forest_floor';
   return out;
 }
 

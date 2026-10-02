@@ -1,9 +1,11 @@
 // "Wildlands" — lake valley, conifer forests, mountains.
-import { THREE, Q, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, Scatter, addCircle, clearColliders, decimate } from './core.js';
+import { withScatterMeta, THREE, Q, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, Scatter, addCircle, clearColliders, decimate } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, buildStream, farForestAt } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree, crownR } from './ecology.js';
-import { GeoBuilder, dock, shrine, cottage, bench, lantern, ruin, viewpoint, hokora, footbridge, flushLandmarks } from './landmarks.js';
+import { GeoBuilder, dock, shrine, cottage, bench, lantern, ruin, viewpoint, hokora, footbridge, flushLandmarks, landmarkMaterials } from './landmarks.js';
+import { startCapture, stopCapture } from './world/capture.js';
+import { finalizeWorld } from './world/layer.js';
 
 export const meta = { name: 'Wildlands', startHour: 16.4, sunAzimuth: 2.2, life: { flockCenter: { x: 40, y: 0, z: -60 } } };
 const LAKE_X = 40, LAKE_Z = -60;
@@ -93,7 +95,8 @@ function height(x, z) {
   return Math.min(h, lerp(inner, h, smoothstep(hw, bank, s.d)));
 }
 
-export async function build(progress) {
+export async function build(progress, opts = {}) {
+  startCapture(); // every placed object is recorded for the world data layer (world/)
   progress('Tracing streams', 0.01); await tick();
   if (!streams.length) traceStreams();
   const hf = new Heightfield({ world: 2048, grid: 1024, height });
@@ -376,8 +379,8 @@ export async function build(progress) {
     for (const m of members) if (m.part === pi) add(m.x, m.z, m.s, m.s < 0.8 ? 0.3 : 0.22);
     // scanned rocks are dense meshes: full detail up close, a clustered low-poly copy further out
     const lo = decimate(part.geometry, 9);
-    new Scatter(items, [{ dist: () => Math.min(110, Q.rocks), parts: [{ geometry: part.geometry, material: part.material, castShadow: true }] },
-      { dist: () => Q.rocks, parts: [{ geometry: lo, material: part.material, castShadow: true }] }], 128);
+    withScatterMeta({ prefab: 'rock_' + (pi + 1), category: 'rock' }, () => new Scatter(items, [{ dist: () => Math.min(110, Q.rocks), parts: [{ geometry: part.geometry, material: part.material, castShadow: true }] },
+      { dist: () => Q.rocks, parts: [{ geometry: lo, material: part.material, castShadow: true }] }], 128));
   });
   if (boulder) {
     const parts = extractParts(boulder), dim = normalizeParts(parts, false), items = [];
@@ -390,7 +393,7 @@ export async function build(progress) {
     }
     for (const c of centres) if (c.big) add(c.x, c.z, lerp(2.8, 6.0, krng()));
     const loParts = parts.map(p => ({ ...p, geometry: decimate(p.geometry, 12), castShadow: true }));
-    new Scatter(items, [{ dist: () => 170, parts: parts.map(p => ({ ...p, castShadow: true })) }, { dist: () => Q.rocks * 2.2, parts: loParts }], 160);
+    withScatterMeta({ prefab: 'boulder', category: 'rock' }, () => new Scatter(items, [{ dist: () => 170, parts: parts.map(p => ({ ...p, castShadow: true })) }, { dist: () => Q.rocks * 2.2, parts: loParts }], 160));
     // outcrops: big rock heads breaking out of steep upper slopes and ridges, half buried, seen from far away
     const out = [], orng = mulberry32(4455);
     for (let k = 0; k < 5000 && out.length < 46; k++) {
@@ -400,14 +403,14 @@ export async function build(progress) {
       out.push({ x, y: placeLow(x, z, s2 * dim.w * 0.3) - s2 * dim.h * 0.45, z, s: s2, sx: 0.8 + orng() * 0.6, sy: 0.6 + orng() * 0.4, r: orng() * 6.28, tilt: Math.atan2(nrm.z, nrm.y) * 0.6, tilt2: -Math.atan2(nrm.x, nrm.y) * 0.6 });
       addCircle(x, z, s2 * dim.w * 0.35);
     }
-    new Scatter(out, [{ dist: () => 320, parts: parts.map(p => ({ ...p, castShadow: true })) }, { dist: () => Q.trees, parts: loParts }], 256);
+    withScatterMeta({ prefab: 'rock_outcrop', category: 'rock' }, () => new Scatter(out, [{ dist: () => 320, parts: parts.map(p => ({ ...p, castShadow: true })) }, { dist: () => Q.trees, parts: loParts }], 256));
   }
   // weight(x, z, f, m): chance a plant grows here (f forest cover, m ground moisture)
-  const understory = (model, count, weight, sMin, sMax, dist, cell, split = false) => {
+  const understory = (model, count, weight, sMin, sMax, dist, cell, split = false, prefab = 'plant') => {
     if (!model) return;
     const parts = extractParts(model);
     if (split) { // several plants on one asset sheet: scatter each separately
-      parts.forEach(p => { const one = new THREE.Group(); one.add(new THREE.Mesh(p.geometry, p.material)); understory(one, Math.ceil(count / parts.length), weight, sMin, sMax, dist, cell); });
+      parts.forEach(p => { const one = new THREE.Group(); one.add(new THREE.Mesh(p.geometry, p.material)); understory(one, Math.ceil(count / parts.length), weight, sMin, sMax, dist, cell, false, prefab); });
       return;
     }
     normalizeParts(parts, true);
@@ -420,14 +423,14 @@ export async function build(progress) {
       hf.normalAt(x, z, nrm); if (nrm.y < 0.8) continue;
       items.push({ x, y: h - 0.05, z, s: lerp(sMin, sMax, prng()), r: prng() * 6.28, tilt: (prng() - 0.5) * 0.25, tilt2: (prng() - 0.5) * 0.25 });
     }
-    new Scatter(items, [{ dist: () => dist() * 0.35, parts: parts.map(p => ({ ...p, castShadow: false })) }, { dist, parts: parts.map(p => ({ ...p, geometry: decimate(p.geometry, 6), castShadow: false })) }], cell);
+    withScatterMeta({ prefab, category: 'vegetation', field: 'understory' }, () => new Scatter(items, [{ dist: () => dist() * 0.35, parts: parts.map(p => ({ ...p, castShadow: false })) }, { dist, parts: parts.map(p => ({ ...p, geometry: decimate(p.geometry, 6), castShadow: false })) }], cell));
   };
   // ferns carpet the damp, shaded ground in patches (thin on dry pine slopes); scanned shrubs keep to edges and glades
   const fernPatch = (x, z) => smoothstep(-0.15, 0.3, fbm(x * 0.035 + 9.1, z * 0.035 - 1.7, 2));
-  understory(fern, 15000, (x, z, f, m) => f < 0.25 ? 0 : f * (0.2 + 0.8 * smoothstep(0.2, 0.6, m)) * (0.15 + 0.85 * fernPatch(x, z)) * (1 - smoothstep(120, 170, hf.heightAt(x, z))), 0.45, 1.15, () => Q.ferns, 96);
-  understory(shrub, 3800, (x, z, f) => f < 0.12 ? 0 : f < 0.6 ? 1 : 0.35, 0.6, 1.5, () => Q.ferns * 1.3, 128, true);
+  understory(fern, 15000, (x, z, f, m) => f < 0.25 ? 0 : f * (0.2 + 0.8 * smoothstep(0.2, 0.6, m)) * (0.15 + 0.85 * fernPatch(x, z)) * (1 - smoothstep(120, 170, hf.heightAt(x, z))), 0.45, 1.15, () => Q.ferns, 96, false, 'fern');
+  understory(shrub, 3800, (x, z, f) => f < 0.12 ? 0 : f < 0.6 ? 1 : 0.35, 0.6, 1.5, () => Q.ferns * 1.3, 128, true, 'shrub');
   // forest debris: scanned stumps and fallen dead trunks lying on the slope
-  const debris = (model, count, sMin, sMax, dist, lying, spots = []) => {
+  const debris = (model, count, sMin, sMax, dist, lying, spots = [], prefab = 'stump') => {
     if (!model) return;
     const parts = extractParts(model), dim = normalizeParts(parts, !lying), items = [];
     for (let k = 0; k < count * 10 + spots.length && items.length < count + spots.length; k++) {
@@ -440,7 +443,7 @@ export async function build(progress) {
       items.push({ x, y: placeLow(x, z, s * dim.w * 0.3) - s * dim.h * (lying ? 0.25 : 0.08), z, s, r: prng() * 6.28, tilt: Math.atan2(nrm.z, nrm.y) * 0.8, tilt2: -Math.atan2(nrm.x, nrm.y) * 0.8 });
       if (s * dim.h > 0.4) addCircle(x, z, s * dim.w * (lying ? 0.18 : 0.35));
     }
-    new Scatter(items, [{ dist: () => lying ? 70 : 45, parts: parts.map(p => ({ ...p, castShadow: true })) }, { dist, parts: parts.map(p => ({ ...p, geometry: decimate(p.geometry, lying ? 12 : 7), castShadow: true })) }], 160);
+    withScatterMeta({ prefab, category: 'vegetation' }, () => new Scatter(items, [{ dist: () => lying ? 70 : 45, parts: parts.map(p => ({ ...p, castShadow: true })) }, { dist, parts: parts.map(p => ({ ...p, geometry: decimate(p.geometry, lying ? 12 : 7), castShadow: true })) }], 160));
   };
   // every glade gets a fallen trunk and a few old stumps from the trees that once stood there
   const gl = mulberry32(99), stumpSpots = [], logSpots = [];
@@ -449,10 +452,14 @@ export async function build(progress) {
     for (let k = 0, n = 2 + Math.floor(gl() * 4); k < n; k++) { const a = gl() * 6.28, d = c.r * (0.4 + gl() * 0.5); stumpSpots.push({ x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d }); }
   }
   debris(stump, 500, 0.45, 1.0, () => Q.rocks * 0.45, false, stumpSpots);
-  debris(deadTrunk, 120, 5, 9, () => Q.rocks * 0.45, true, logSpots);
+  debris(deadTrunk, 120, 5, 9, () => Q.rocks * 0.45, true, logSpots, 'dead_trunk');
 
+  // world data: object ids, the edits in world/nature/edits (world/layer.js)
+  stopCapture();
+  const layer = await finalizeWorld({ map: opts.map || 'nature', editor: !!opts.editor, progress, materialSets: { landmark: landmarkMaterials() },
+    areaOf: (x, z) => Math.hypot(x - LAKE_X, (z - LAKE_Z) * 1.3) < 330 ? 'lakeshore' : Math.hypot(x, z) < 800 ? 'valley' : 'mountains' });
   const _n = new THREE.Vector3();
-  return {
+  const world = {
     hf, grass, water, spawn, sakura, streams, sites: { dock: dockS, shrine: shrineS, cottage: cottageS, view: viewS, ruin: ruinS && { x: ruinS.x, z: ruinS.z, r: 0 } },
     bounds: { minX: -HALF + 30, maxX: HALF - 30, minZ: -HALF + 30, maxZ: HALF - 30 },
     groundAt: (x, z) => hf.groundAt(x, z),
@@ -471,4 +478,6 @@ export async function build(progress) {
     },
     update() { landmarks.update(); },
   };
+  world.layer = layer; layer.attach(world);
+  return world;
 }

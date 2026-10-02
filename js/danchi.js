@@ -52,6 +52,7 @@ import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PAL
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
 import { PedNet, snapWidth, LIFT } from './pednet.js';
+import { entity } from './world/capture.js';
 
 // The ground a building really covers — walls, balconies, galleries, stair towers, canopies, steps, garden fences:
 // everything it builds above the paving, projected onto the ground. Measured by building it once off-site (its own
@@ -375,16 +376,16 @@ export function buildDanchi(ctx) {
     occRect(cx, cz, L2 / 2, L1 / 2, r, 1, 1, rid);
   };
   const poles = [];
-  const pathLamp = (x, z) => { const y = gy(x, z); B.frame(x, y, z, 0); poles.push([x, z]);
+  const pathLamp = (x, z) => { return entity('lamp_path', () => { const y = gy(x, z); B.frame(x, y, z, 0); poles.push([x, z]);
     B.cyl('steel', 0, 0, 0, 0.06, 0.05, 3.2, 10, { color: [0.3, 0.32, 0.34] }); B.cyl('metal', 0, 3.2, 0, 0.16, 0.2, 0.08, 14, { color: [0.28, 0.3, 0.32], cap: true });
-    B.cyl('lamp', 0, 3.02, 0, 0.14, 0.14, 0.18, 12, {}); B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, y + 2.9, z], s: 0.45 }); addCircle(x, z, 0.1); };
+    B.cyl('lamp', 0, 3.02, 0, 0.14, 0.14, 0.18, 12, {}); B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, y + 2.9, z], s: 0.45 }); addCircle(x, z, 0.1); }); };
   // street lamp: a tapered galvanised pole with an LED head on a short arm over the carriageway
-  const streetLamp = (x, z, yaw) => { const y = gy(x, z); B.frame(x, y, z, yaw); poles.push([x, z]);
+  const streetLamp = (x, z, yaw) => { return entity('street_lamp', () => { const y = gy(x, z); B.frame(x, y, z, yaw); poles.push([x, z]);
     B.bbox('concrete', 0, -0.25, 0, 0.36, 0.3, 0.36, 0.02, { color: [0.7, 0.7, 0.68] });
     B.cyl('steel', 0, 0, 0, 0.1, 0.06, 7.6, 12, { color: [0.72, 0.74, 0.76] });
     B.sweep('steel', [[-0.03, -0.03], [0.03, -0.03], [0.03, 0.03], [-0.03, 0.03]], [[0, 7.5, 0], [0, 7.75, 0.4], [0, 7.8, 1.4]], { closed: true, caps: true, color: [0.72, 0.74, 0.76] });
     B.bbox('metal', 0, 7.68, 1.55, 0.3, 0.1, 0.62, 0.02, { color: [0.46, 0.48, 0.5] }); B.box('lamp', 0, 7.66, 1.55, 0.24, 0.02, 0.5);
-    const p = B.P([0, 7.4, 1.55]); B.frame(0, 0, 0, 0); lampPoints.push({ p, s: 1.0 }); addCircle(x, z, 0.12); };
+    const p = B.P([0, 7.4, 1.55]); B.frame(0, 0, 0, 0); lampPoints.push({ p, s: 1.0 }); addCircle(x, z, 0.12); }); };
 
   // ---- streets: street lamps, trees, name signs
   const lampQ = [], signsAt = [];
@@ -568,7 +569,7 @@ export function buildDanchi(ctx) {
       RN.cuts.push({ id, side: best.side, s0: best.s + e * gap / 2 - (e > 0 ? 0 : per * 2.5), s1: best.s + e * gap / 2 + (e > 0 ? per * 2.5 : 0) }); }
   }
 
-  function bikeShelter(x, z, yaw, n) { const y = gy(x, z); B.frame(x, y, z, yaw); const L = n * 0.8 + 0.6;
+  function bikeShelter(x, z, yaw, n) { return entity('bike_shelter', () => { const y = gy(x, z); B.frame(x, y, z, yaw); const L = n * 0.8 + 0.6;
     B.box('concrete', 0, -0.05, 0, L, 0.08, 2.4, { color: [0.72, 0.72, 0.7] });
     for (const e of [-1, 1]) for (const zz of [-0.95]) B.cyl('steel', e * (L / 2 - 0.2), 0, zz, 0.045, 0.045, 2.2, 8, { color: [0.62, 0.64, 0.66] });
     B.beam('steel', [-L / 2, 2.25, -1.0], [L / 2, 2.25, -1.0], 0.08, 0.1, { color: [0.62, 0.64, 0.66] });
@@ -578,7 +579,7 @@ export function buildDanchi(ctx) {
     for (let i = 0; i < n; i++) if (rng() < 0.8) { const p = [x + Math.cos(yaw) * (-L / 2 + 0.7 + i * 0.8), z - Math.sin(yaw) * (-L / 2 + 0.7 + i * 0.8)]; out.bikes.push({ x: p[0], y, z: p[1], r: yaw + Math.PI / 2 + (rng() - 0.5) * 0.1 }); }
     addBox(x, z, L / 2, 1.2, yaw, y - 1, y + 2.3); occRect(x, z, L / 2 + 0.3, 1.4, yaw, 1);
     pave(x - L, z - L, x + L, z + L, (px, pz) => inRect(px, pz, x, z, yaw, L / 2 + 0.1, 1.3) ? 1 : 0);
-  }
+  }); }
 
   // ---- courtyards, each of its own kind
   // street furniture keeps off the walking surface: a bench whose footprint (with 0.35 m to spare) touches a path,
@@ -685,7 +686,7 @@ export function buildDanchi(ctx) {
       for (const cz2 of [PZ0, PZ1]) { const a0 = s > 0 ? (cz2 === PZ0 ? 0 : -Math.PI / 2) : (cz2 === PZ0 ? Math.PI / 2 : Math.PI); arcL(gx, cz2, 1.0, a0, a0 + Math.PI / 2, 6);
         B.frame(gx, ty(gx, cz2), cz2, 0); B.cyl('plastic', 0, 0, 0, 0.02, 0.02, 1.5, 6, { color: [0.95, 0.95, 0.95] }); B.poly('plastic', [[0, 1.5, 0], [0, 1.2, 0], [s * 0.4, 1.35, 0.01]], [0, 0, 1], { color: [0.95, 0.75, 0.1] }); B.poly('plastic', [[0, 1.2, 0], [0, 1.5, 0], [s * 0.4, 1.35, 0.01]], [0, 0, -1], { color: [0.95, 0.75, 0.1] }); B.frame(0, 0, 0, 0); } }
     // goals: 5 × 2 m white frames on the goal lines, a back frame 1.4 m deep, nets on the back, sides and roof
-    for (const [gx, s] of [[PX0, -1], [PX1, 1]]) { const y = gy(gx, cz) + 0.02, W = 5, H = 2, D = 1.4, dH = 1.0, WC = [0.96, 0.96, 0.95];
+    for (const [gx, s] of [[PX0, -1], [PX1, 1]]) { entity('football_goal', () => { const y = gy(gx, cz) + 0.02, W = 5, H = 2, D = 1.4, dH = 1.0, WC = [0.96, 0.96, 0.95];
       B.frame(gx, y, cz, 0);
       for (const e of [-1, 1]) { B.bbox('steel', 0, 0, e * W / 2, 0.1, H, 0.1, 0.02, { color: WC }); B.beam('steel', [s * D, 0, e * W / 2], [s * D, dH, e * W / 2], 0.05, 0.05, { color: WC });
         B.beam('steel', [0, H - 0.02, e * W / 2], [s * D, dH, e * W / 2], 0.05, 0.05, { color: WC }); B.beam('steel', [0, 0.02, e * W / 2], [s * D, 0.02, e * W / 2], 0.05, 0.05, { color: WC }); }
@@ -700,7 +701,7 @@ export function buildDanchi(ctx) {
       for (let k = -2; k <= 2; k++) B.cyl('steel', 0, 0, k * 6, 0.07, 0.06, 6, 10, { color: [0.3, 0.46, 0.38] });
       B.beam('steel', [0, 5.95, -12], [0, 5.95, 12], 0.05, 0.05, { color: [0.3, 0.46, 0.38] });
       B.quad('net', [0, 2.3, 12], [0, 2.3, -12], [0, 5.9, -12], [0, 5.9, 12], { uvs: [[0, 0], [24 / 0.12, 0], [24 / 0.12, 3.6 / 0.12], [0, 3.6 / 0.12]] });
-      B.frame(0, 0, 0, 0); }
+      B.frame(0, 0, 0, 0); }); }
     // the fence: galvanised posts every 3 m painted green, chain link, top rail, a kick board; gaps at the gates
     const GC = [0.3, 0.46, 0.38], gap = (x, z) => (Math.abs(z - z1) < 0.3 && Math.abs(x - GX) < 1.3) || (Math.abs(x - x1) < 0.3 && Math.abs(z - EZ) < 2.2);
     for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) { const L = Math.hypot(bx - ax, bz - az), n = Math.ceil(L / 3);
@@ -737,14 +738,14 @@ export function buildDanchi(ctx) {
         pave(xe - 1, EZ - 3, xf + 1, EZ + 3, (x, z) => x > xe - 0.1 && x < xf + 0.2 && Math.abs(z - EZ) < 2.4 ? 1 : 0); occRect((xe + xf) / 2, EZ, 2.4, L / 2 + 0.2, Math.PI / 2, 1, 4); }
       if (best) RN.cuts.push({ id: 'DU', side: best.side, s0: best.s - 2.4, s1: best.s + 2.4 }); }
     // team shelters facing the pitch from the north touchline, a line of benches on the south side
-    for (const sx of [cx - 15, cx + 15]) { const x = sx, z = PZ1 + 3.2, y = gy(x, z); B.frame(x, y, z, Math.PI);
+    for (const sx of [cx - 15, cx + 15]) { entity('team_shelter', () => { const x = sx, z = PZ1 + 3.2, y = gy(x, z); B.frame(x, y, z, Math.PI);
       B.bbox('concrete', 0, -0.05, 0, 5.2, 0.12, 1.6, 0.01, { color: [0.7, 0.7, 0.68] });
       B.bbox('wood', 0, 0.42, 0.1, 4.6, 0.06, 0.42, 0.01, { color: [0.3, 0.44, 0.62] }); for (const e of [-2.1, 0, 2.1]) B.box('steel', e, 0, 0.1, 0.06, 0.42, 0.34, { color: [0.6, 0.6, 0.6] });
       B.poly('plastic', [[-2.6, 0.05, -0.7], [2.6, 0.05, -0.7], [2.6, 2.1, -0.7], [-2.6, 2.1, -0.7]], [0, 0, 1], { color: [0.78, 0.84, 0.88] });
       for (const e of [-1, 1]) B.poly('plastic', [[e * 2.6, 0.05, -0.7], [e * 2.6, 0.05, 0.6], [e * 2.6, 1.9, 0.6], [e * 2.6, 2.1, -0.7]], [e, 0, 0], { color: [0.78, 0.84, 0.88] });
       B.poly('roofMetal', [[-2.7, 2.15, -0.8], [2.7, 2.15, -0.8], [2.7, 1.95, 0.8], [-2.7, 1.95, 0.8]], [0, 1, 0.1], { color: [0.3, 0.46, 0.38] });
       for (const e of [-2.55, 2.55]) for (const zz of [-0.65, 0.55]) B.box('steel', e, 0, zz, 0.06, zz < 0 ? 2.12 : 1.93, 0.06, { color: [0.6, 0.6, 0.6] });
-      B.frame(0, 0, 0, 0); addBox(x, z - 0.65, 2.6, 0.1, 0, y - 1, y + 2.2); navRect(x, z, 2.8, 1.0, 0, 2); }
+      B.frame(0, 0, 0, 0); addBox(x, z - 0.65, 2.6, 0.1, 0, y - 1, y + 2.2); navRect(x, z, 2.8, 1.0, 0, 2); }); }
     for (let x = cx - 18; x <= cx + 18; x += 6) { const z = PZ0 - 2.4, y = gy(x, z); B.frame(x, y, z, 0); B.bbox('wood', 0, 0.42, 0, 2.0, 0.06, 0.38, 0.01, { color: [0.62, 0.48, 0.32] }); for (const e of [-0.8, 0.8]) B.box('concrete', e, 0, 0, 0.14, 0.42, 0.3, { color: [0.7, 0.7, 0.68] }); B.frame(0, 0, 0, 0); }
     // drainage: a slotted channel round the pitch, a metre outside its lines
     for (const [ax, az, bx, bz] of [[PX0 - 1.2, PZ0 - 1.2, PX1 + 1.2, PZ0 - 1.2], [PX1 + 1.2, PZ0 - 1.2, PX1 + 1.2, PZ1 + 1.2], [PX1 + 1.2, PZ1 + 1.2, PX0 - 1.2, PZ1 + 1.2], [PX0 - 1.2, PZ1 + 1.2, PX0 - 1.2, PZ0 - 1.2]]) {
@@ -752,14 +753,14 @@ export function buildDanchi(ctx) {
         B.beam('concrete', [xa, ty(xa, za) + 0.005, za], [xb, ty(xb, zb) + 0.005, zb], 0.3, 0.02, { color: [0.66, 0.66, 0.64] });
         B.beam('dark', [xa, ty(xa, za) + 0.016, za], [xb, ty(xb, zb) + 0.016, zb], 0.06, 0.005, { color: [0.16, 0.16, 0.17] }); } }
     // floodlights at the corners, a shed for the goals and the line marker by the maintenance gate
-    for (const [x, z] of [[x0 + 2, z0 + 2], [x1 - 2, z0 + 2], [x1 - 2, z1 - 2], [x0 + 2, z1 - 2]]) { const y = gy(x, z), yaw = Math.atan2(cx - x, cz - z);
+    for (const [x, z] of [[x0 + 2, z0 + 2], [x1 - 2, z0 + 2], [x1 - 2, z1 - 2], [x0 + 2, z1 - 2]]) { entity('floodlight', () => { const y = gy(x, z), yaw = Math.atan2(cx - x, cz - z);
       B.frame(x, y, z, yaw); B.bbox('concrete', 0, -0.3, 0, 0.8, 0.5, 0.8, 0.02, { color: [0.7, 0.7, 0.68] }); B.cyl('steel', 0, 0.2, 0, 0.16, 0.1, 14, 10, { color: [0.7, 0.72, 0.74] });
       B.box('steel', 0, 14.1, 0.15, 2.2, 0.1, 0.1, { color: [0.6, 0.62, 0.64] });
       for (const e of [-0.75, 0, 0.75]) { B.bbox('metal', e, 13.9, 0.35, 0.6, 0.5, 0.3, 0.02, { color: [0.4, 0.42, 0.44] }); B.box('lamp', e, 13.94, 0.51, 0.5, 0.42, 0.02); }
-      B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, y + 13.5, z], s: 1.4 }); addCircle(x, z, 0.25); }
-    { const x = x1 - 4.5, z = EZ + 5.5, y = gy(x, z); B.frame(x, y, z, Math.PI / 2); B.bbox('concrete', 0, -0.2, 0, 3.4, 0.3, 2.6, 0.02, { color: [0.7, 0.7, 0.68] });
+      B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, y + 13.5, z], s: 1.4 }); addCircle(x, z, 0.25); }); }
+    entity('equipment_shed', () => { const x = x1 - 4.5, z = EZ + 5.5, y = gy(x, z); B.frame(x, y, z, Math.PI / 2); B.bbox('concrete', 0, -0.2, 0, 3.4, 0.3, 2.6, 0.02, { color: [0.7, 0.7, 0.68] });
       B.bbox('metalWall', 0, 0.1, 0, 3.0, 2.1, 2.2, 0.02, { color: [0.36, 0.5, 0.42] }); B.poly('roofMetal', [[-1.7, 2.3, -1.3], [1.7, 2.3, -1.3], [1.7, 2.1, 1.3], [-1.7, 2.1, 1.3]], [0, 1, 0.1], { color: [0.4, 0.42, 0.44] });
-      B.quad('dark', [-0.8, 0.1, 1.105], [0.8, 0.1, 1.105], [0.8, 1.95, 1.105], [-0.8, 1.95, 1.105], { color: [0.2, 0.24, 0.22] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.5, Math.PI / 2); navRect(x, z, 1.8, 2.0, 0, 2); }
+      B.quad('dark', [-0.8, 0.1, 1.105], [0.8, 0.1, 1.105], [0.8, 1.95, 1.105], [-0.8, 1.95, 1.105], { color: [0.2, 0.24, 0.22] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.5, Math.PI / 2); navRect(x, z, 1.8, 2.0, 0, 2); });
     // outside: the path from the gate to the south street, the lake park's path along the fence to it, benches beside it
     { const C = [[GX + 1.7, GZ - 0.2], [GX - 1.7, GZ - 0.2], [GX - 1.7, GZ - 2.6], [GX + 1.7, GZ - 2.6]], rid = regions.length; // the paved apron inside the gate
       regions.push({ kind: 'apron', pts: [[GX, GZ - 1.4]], connected: false, link: true }); apron(C, rid, { name: 'football ground gate' }); }
@@ -920,26 +921,26 @@ export function buildDanchi(ctx) {
       out.trees.push({ kind: k < 0.3 ? 'zelkova' : k < 0.5 ? 'leaf' : k < 0.66 ? 'sakura' : k < 0.82 ? 'oak' : 'maple', x: px, z: pz, scale: 0.65 + rng() * 0.3 });
     } }
   // ---- small builders used above
-  function pergola(x, z, yaw, L, D) { const y = gy(x, z); B.frame(x, y, z, yaw);
+  function pergola(x, z, yaw, L, D) { return entity('pergola', () => { const y = gy(x, z); B.frame(x, y, z, yaw);
     for (const ex of [-L / 2, L / 2]) for (const ez of [-D / 2, D / 2]) B.bbox('wood', ex, 0, ez, 0.16, 2.5, 0.16, 0.015, { color: [0.52, 0.38, 0.26] });
     for (const ez of [-D / 2, D / 2]) B.bbox('wood', 0, 2.5, ez, L + 0.6, 0.18, 0.12, 0.01, { color: [0.5, 0.36, 0.25] });
     for (let k = 0; k <= Math.round(L / 0.5); k++) B.box('wood', -L / 2 + k * L / Math.round(L / 0.5), 2.68, 0, 0.08, 0.1, D + 0.5, { color: [0.54, 0.4, 0.28] });
     B.frame(0, 0, 0, 0);
     for (let k = 0; k < 6; k++) out.bushes.push({ x: x + (rng() - 0.5) * L, y: y + 2.55, z: z + (rng() - 0.5) * D, s: 0.8, sx: 1.4, r: rng() * 6, c: new THREE.Color().setHSL(0.72 + rng() * 0.04, 0.45, 0.62) }); // wisteria
     for (const ex of [-L / 2, L / 2]) for (const ez of [-D / 2, D / 2]) { const p = [x + Math.cos(yaw) * ex + Math.sin(yaw) * ez, z - Math.sin(yaw) * ex + Math.cos(yaw) * ez]; addCircle(p[0], p[1], 0.12); }
-    occRect(x, z, L / 2 + 0.4, D / 2 + 0.4, yaw, 1); }
-  function sandPit(x, z) { const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('wood', 0, -0.05, 0, 4.2, 0.3, 3.4, 0.02, { color: [0.58, 0.44, 0.3] }); B.box('ballast', 0, 0.2, 0, 3.8, 0.01, 3.0, { color: [1.0, 0.9, 0.72], uv: 2 });
+    occRect(x, z, L / 2 + 0.4, D / 2 + 0.4, yaw, 1); }); }
+  function sandPit(x, z) { return entity('sandpit', () => { const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('wood', 0, -0.05, 0, 4.2, 0.3, 3.4, 0.02, { color: [0.58, 0.44, 0.3] }); B.box('ballast', 0, 0.2, 0, 3.8, 0.01, 3.0, { color: [1.0, 0.9, 0.72], uv: 2 });
     for (const [sx, sz] of [[-2, -1.6], [2, -1.6], [2, 1.6], [-2, 1.6]]) B.cyl('steel', sx, 0, sz, 0.05, 0.05, 2.6, 8, { color: [0.7, 0.7, 0.72] });
     B.poly('plastic', [[-2.1, 2.6, -1.7], [2.1, 2.3, -1.7], [2.1, 2.6, 1.7], [-2.1, 2.3, 1.7]], [0, 1, 0], { color: [0.96, 0.9, 0.78] }); B.poly('plastic', [[2.1, 2.3, -1.7], [-2.1, 2.6, -1.7], [-2.1, 2.3, 1.7], [2.1, 2.6, 1.7]], [0, -1, 0], { color: [0.9, 0.84, 0.72] });
-    B.frame(0, 0, 0, 0); }
-  function springRider(x, z, col) { const y = gy(x, z) + 0.05; B.frame(x, y, z, rng() * 6); B.cyl('steel', 0, 0, 0, 0.1, 0.1, 0.4, 10, { color: [0.4, 0.4, 0.42] }); B.bbox('plastic', 0, 0.4, 0, 0.3, 0.45, 0.8, 0.08, { color: col }); B.cyl('plastic', 0, 0.85, 0.35, 0.12, 0.1, 0.25, 10, { color: col, cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.35); }
-  function toilet(x, z, yaw) { const y = gy(x, z); B.frame(x, y, z, yaw);
+    B.frame(0, 0, 0, 0); }); }
+  function springRider(x, z, col) { return entity('spring_rider', () => { const y = gy(x, z) + 0.05; B.frame(x, y, z, rng() * 6); B.cyl('steel', 0, 0, 0, 0.1, 0.1, 0.4, 10, { color: [0.4, 0.4, 0.42] }); B.bbox('plastic', 0, 0.4, 0, 0.3, 0.45, 0.8, 0.08, { color: col }); B.cyl('plastic', 0, 0.85, 0.35, 0.12, 0.1, 0.25, 10, { color: col, cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.35); }); }
+  function toilet(x, z, yaw) { return entity('public_toilet', () => { const y = gy(x, z); B.frame(x, y, z, yaw);
     { const P = (lx, lz) => { const w = B.P([lx, 0, lz]); return [w[0], w[2]]; }, C = [P(2.5, 1.62), P(-2.5, 1.62), P(-2.5, 3.2), P(2.5, 3.2)]; // the paved apron at its doors
       const rid = regions.length; regions.push({ kind: 'apron', pts: [[(C[0][0] + C[2][0]) / 2, (C[0][1] + C[2][1]) / 2]], connected: false, link: true }); apron(C, rid, { name: 'park toilet' }); }
     B.bbox('concrete', 0, -0.2, 0, 5.2, 0.3, 3.4, 0.02, { color: [0.7, 0.7, 0.68] }); B.bbox('tiles', 0, 0.1, 0, 4.8, 2.8, 3.0, 0.02, { color: [0.78, 0.7, 0.62], uv: 2 });
     B.bbox('roofMetal', 0, 2.9, 0, 5.6, 0.18, 3.8, 0.02, { color: [0.36, 0.42, 0.46] });
     for (const sx of [-1.3, 1.3]) { B.quad('dark', [sx - 0.5, 0.15, 1.51], [sx + 0.5, 0.15, 1.51], [sx + 0.5, 2.2, 1.51], [sx - 0.5, 2.2, 1.51], { color: [0.15, 0.15, 0.15] }); }
-    B.box('lamp', 0, 2.6, 1.55, 0.4, 0.1, 0.06); B.frame(0, 0, 0, 0); addBox(x, z, 2.5, 1.6, yaw); occRect(x, z, 3.2, 2.4, yaw, 1); lampPoints.push({ p: B.frame(x, y, z, yaw).P([0, 2.5, 1.8]), s: 0.4 }); B.frame(0, 0, 0, 0); }
+    B.box('lamp', 0, 2.6, 1.55, 0.4, 0.1, 0.06); B.frame(0, 0, 0, 0); addBox(x, z, 2.5, 1.6, yaw); occRect(x, z, 3.2, 2.4, yaw, 1); lampPoints.push({ p: B.frame(x, y, z, yaw).P([0, 2.5, 1.8]), s: 0.4 }); B.frame(0, 0, 0, 0); }); }
   // street lamps: at their spacing along the footway's back, but never in the mouth of a path, a driveway or a
   // crossing — such a lamp slides along the street to the nearest clear spot
   for (const L of lampQ) { const { n, side, W } = L;

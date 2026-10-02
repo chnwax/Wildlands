@@ -7,7 +7,7 @@
 //    broadleaf, spreading oak / camphor, airy birch, vase-shaped zelkova, layered maple, weeping willow, sakura, bamboo)
 // Normals are smoothed toward each blob / the whole crown, so every tree reads as a soft painted shape with one bright
 // sunlit side and one cool shaded side.
-import { THREE, S, Q, mulberry32, lerp, clamp, phTex, Scatter, addCircle } from './core.js';
+import { withScatterMeta, THREE, S, Q, mulberry32, lerp, clamp, phTex, Scatter, addCircle } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { windPatch } from './terrain.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
@@ -644,6 +644,7 @@ function materials(kind) {
     if (sway) windPatch(M.trunk, 'toonTrunk' + kind, sway);
     if (D.noSolid) { M.trunkDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); if (sway) windPatch(M.trunkDepth, 'toonTrunkDepth' + kind, sway); }
   }
+  if (M.solid) M.solid.name = kind + '_foliage'; if (M.cards) M.cards.name = kind + '_leaves'; if (M.trunk) M.trunk.name = kind + '_bark'; // (material library names, world/layer.js)
   return (mats[kind] = M);
 }
 
@@ -710,6 +711,9 @@ function speciesParts(sp, M, g, lod) {
   if (trunk && M.trunk) p.push({ geometry: trunk, material: M.trunk, tint: sp.trunkTint ? true : 'bc', castShadow: near || (!far && !!M.trunkDepth), depth: M.trunkDepth });
   return p;
 }
+// prefab names of the species in world files (world/<map>/prefabs.json)
+const TREE_PREFAB = { young: 'tree_young_fir', spruce: 'tree_spruce', tall: 'tree_cedar', old: 'tree_old_fir', pine: 'tree_pine', jpine: 'tree_japanese_pine', sapling: 'sapling', snag: 'dead_tree', broken: 'broken_tree',
+  twigs: 'twigs', leaf: 'tree_broadleaf', oak: 'tree_oak', birch: 'tree_birch', zelkova: 'tree_zelkova', maple: 'tree_maple', willow: 'tree_willow', sakura: 'tree_sakura', bamboo: 'bamboo' };
 // trees: [{kind, v?, x, y, z, s (height, m), sx?, r?, tilt?, tilt2?, c (foliage / dead-wood tint), bc? (bark tint)}]
 // -> LOD'd, cell-culled instanced sets (one per species variant) with trunk colliders. Past the mid LOD, trees switch
 // to a far version instead of disappearing, so forests never thin out with distance.
@@ -728,7 +732,7 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
     const lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
     if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) });
     if ((MATS[sp.mat] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true; // wind-swayed: shadows redrawn near (sky.js)
-    new Scatter(list, lods, sp.tiny ? 128 : cell);
+    withScatterMeta({ prefab: TREE_PREFAB[kind] || 'tree_' + kind, category: 'vegetation', field: sp.tiny || kind === 'twigs' ? 'forest_floor' : null }, () => new Scatter(list, lods, sp.tiny ? 128 : cell));
     if (colliders && sp.trunk) for (const t of list) { const r = sp.trunk * t.s * (t.sx || 1); if (r > 0.07) addCircle(t.x, t.z, r + 0.05); }
   }
 }
@@ -742,7 +746,7 @@ export function buildLogs(logs, dist = () => Q.rocks * 0.6) {
   const M = materials('log');
   const items = logs.map(l => ({ x: l.x, y: l.y, z: l.z, s: 1, sx: l.len, sy: l.rad, sz: l.rad, r: l.r, tilt: l.tilt || 0, tilt2: l.tilt2 || 0, c: l.c }));
   const lods = [0, 1].map(l => ({ dist: l ? dist : () => dist() * 0.4, parts: [{ geometry: logGeo(l, 7).trunk, material: M.trunk, tint: true, castShadow: true, depth: M.trunkDepth }] }));
-  new Scatter(items, lods, 96);
+  withScatterMeta({ prefab: 'log', category: 'vegetation', field: 'forest_floor' }, () => new Scatter(items, lods, 96));
   for (const l of logs) { const n = Math.max(1, Math.round(l.len / 1.2)), c = Math.cos(l.r), s = Math.sin(l.r);
     for (let k = 0; k < n; k++) { const t = (k + 0.5) / n - 0.5; addCircle(l.x + c * t * l.len * 0.9, l.z - s * t * l.len * 0.9, l.rad * 0.85, l.y - 1, l.y + l.rad * 1.6); } }
 }
@@ -877,7 +881,7 @@ export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * (
   const sp = { mat: kind, cardShadow: kind !== 'hydra' };
   const lods = [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }];
   if ((MATS[kind] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true;
-  new Scatter(bushes, lods, 192);
+  withScatterMeta({ prefab: { hydra: 'hydrangea' }[kind] || kind, category: 'vegetation', field: kind === 'hedge' || kind === 'ivy' ? 'hedgerow' : null }, () => new Scatter(bushes, lods, 192));
   if (collide) for (const b of bushes) if (b.s > 1.2 && kind !== 'ivy') addCircle(b.x, b.z, 0.35 * b.s * (kind === 'hedge' ? 0.6 : 1));
 }
 

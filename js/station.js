@@ -9,6 +9,7 @@
 import { THREE, scene, clamp, lerp, addBox, addCircle, addPlatform } from './core.js';
 import { canvasTex, signMesh, JP_FONT, lampPoints, bicycles, clockPole } from './townkit.js';
 import { inFrame, wallFill, reveals, windowUnit, doorUnit, hipRoof, flatRoof, acUnit } from './building.js';
+import { entity } from './world/capture.js';
 
 const TAU = Math.PI * 2;
 const mul = (c, k) => c.map(v => v * k);
@@ -65,7 +66,7 @@ function place(mesh, B, p, turn = 0) { const w = B.P(p); mesh.position.set(w[0],
 
 // ---------------------------------------------------------------- the station building
 // (x0, y0, z0): centre of the footprint at ground level; the entrance faces +Z (the forecourt), the platform door -Z
-export function stationBuilding(B, x0, y0, z0, rng) {
+export function stationBuilding(B, x0, y0, z0, rng) { return entity('station_building', () => {
   const W = 18, D = 8, T = 0.22, FL = 0.22, CEIL = 3.6, H = 4.6, PT = 1.35;
   const TILE = [0.7, 0.54, 0.46], ST = [0.97, 0.95, 0.89], IN = [0.95, 0.94, 0.91], FRM = [0.74, 0.76, 0.78], GREEN = [0.16, 0.38, 0.3];
   const OUT = [['tiles', TILE, 0.9, FL, 1.0], ['stucco', ST, 3, 1.0, H]], INB = [['plaster', IN, 3, FL, CEIL]], REV = ['plain', [0.93, 0.92, 0.89]];
@@ -242,7 +243,7 @@ export function stationBuilding(B, x0, y0, z0, rng) {
   inFrame(B, [W / 2, 0, 0], Math.PI / 2, () => { acUnit(B, -2.95, FL, rng); acUnit(B, -2.05, FL, rng); });
   B.frame(0, 0, 0, 0);
   return { W, D, FL, PT };
-}
+}); }
 
 // ---------------------------------------------------------------- police box (交番) on the square
 // local frame: +Z is the front (door, red lamp, sign under a canopy)
@@ -280,7 +281,7 @@ function disc(B, mat, cx, cy, cz, r, n, sx, color, half = false) {
   for (let i = 0; i < m; i++) { const a0 = i / n * TAU, a1 = (i + 1) / n * TAU;
     B.poly(mat, [[cx, cy, cz], [cx, cy + Math.sin(a0) * r, cz + Math.cos(a0) * r], [cx, cy + Math.sin(a1) * r, cz + Math.cos(a1) * r]], [sx, 0, 0], { color }); }
 }
-export function routeBus(B, x, y, z, r, dest = '桜川循環 学校前') {
+export function routeBus(B, x, y, z, r, dest = '桜川循環 学校前') { return entity('route_bus', () => {
   const L = 10.5, W = 2.49, WH = [0.95, 0.95, 0.93], PK = [0.86, 0.32, 0.5], GR = [0.16, 0.5, 0.36], hl = L / 2, hw = W / 2;
   B.frame(x, y, z, r);
   // body: skirt, glazing band with pillars, upper band, roof and its air-conditioning pod
@@ -318,7 +319,7 @@ export function routeBus(B, x, y, z, r, dest = '桜川循環 学校前') {
   B.bbox('dark', 0, 0.3, -hl, W - 0.1, 0.3, 0.1, 0.03);
   const p = B.P([0, 0, 0]); addBox(p[0], p[2], hw, hl, r, y - 1, y + 3.1);
   B.frame(0, 0, 0, 0);
-}
+}); }
 
 // ---------------------------------------------------------------- forecourt
 function kerbProfile(h) { return [[0, -0.08], [0, h - 0.02], [-0.02, h], [-0.2, h]]; }
@@ -328,7 +329,7 @@ function fan(B, mat, c, ring, y, color, uv) { // triangles from c to each ring e
     B.poly(mat, p.map(q => [q[0], y, q[1]]), [0, 1, 0], { color, uvs: p.map(q => [q[0] / uv, q[1] / uv]) });
   }
 }
-function plazaLamp(B, x, y, z, r, h = 6.2) {
+function plazaLamp(B, x, y, z, r, h = 6.2) { return entity('plaza_lamp', () => {
   B.frame(x, y, z, r);
   B.bbox('concrete', 0, -0.05, 0, 0.36, 0.12, 0.36, 0.02, { color: [0.7, 0.7, 0.68] });
   B.cyl('steel', 0, 0.05, 0, 0.085, 0.06, h, 16, { color: [0.44, 0.47, 0.5] });
@@ -338,7 +339,7 @@ function plazaLamp(B, x, y, z, r, h = 6.2) {
   lampPoints.push({ p: B.P([0, h - 0.4, 1.05]), s: 1 });
   const p = B.P([0, 0, 0]); addCircle(p[0], p[2], 0.12);
   B.frame(0, 0, 0, 0);
-}
+}); }
 function plazaBench(B, x, y, z, r) {
   B.frame(x, y, z, r);
   for (const sx of [-0.75, 0.75]) B.bbox('steel', sx, 0, 0, 0.06, 0.42, 0.44, 0.01, { color: [0.3, 0.32, 0.34] });

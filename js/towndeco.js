@@ -8,6 +8,7 @@ import { wallFill, reveals, windowUnit, inFrame } from './building.js';
 import { cropSet } from './crops.js';
 import { crowdMeshes } from './crowd.js';
 import { torii, shimenawa, toro, offeringBox } from './shrine.js';
+import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 const plantAt = (B, type, lx, ly, lz, rng, s = 1) => { const p = B.P([lx, ly, lz]); cropSet.add(type, p[0], p[1], p[2], B.F.r + rng() * Math.PI * 2, s * (0.85 + rng() * 0.3)); };
 const addPlatformAt = (p, hx, hz, r, top) => addPlatform(p[0], p[2], hx, hz, r, top);
@@ -41,7 +42,7 @@ const WHITE = [0.97, 0.97, 0.95];
 
 // ---------------------------------------------------------------- street furniture
 // nobori: tall cloth shop banner on a pole (local +Z faces the street)
-export function nobori(B, x, y, z, r, col) {
+function nobori_build(B, x, y, z, r, col) {
   B.frame(x, y, z, r);
   const pc = { color: [0.86, 0.87, 0.88] };
   B.box('concrete', 0, 0, 0, 0.32, 0.12, 0.32, { color: [0.3, 0.3, 0.32] });
@@ -56,7 +57,7 @@ export function nobori(B, x, y, z, r, col) {
   }
 }
 // A-frame standing signboard with a chalk menu panel
-export function standBoard(B, x, y, z, r, col) {
+function standBoard_build(B, x, y, z, r, col) {
   B.frame(x, y, z, r);
   for (const s of [-1, 1]) {
     const zz = s * 0.22, top = s * 0.03;
@@ -67,7 +68,7 @@ export function standBoard(B, x, y, z, r, col) {
   }
 }
 // red Japanese pillar post box
-export function postBox(B, x, y, z, r) {
+function postBox_build(B, x, y, z, r) {
   B.frame(x, y, z, r);
   const red = [0.86, 0.14, 0.1];
   B.bbox('concrete', 0, 0, 0, 0.5, 0.1, 0.5, 0.012, { color: [0.7, 0.7, 0.68] });
@@ -78,7 +79,7 @@ export function postBox(B, x, y, z, r) {
   const p = B.P([0, 0, 0]); addCircle(p[0], p[2], 0.3);
 }
 // bus stop: sign pole, timetable, shelter with a bench
-export function busStop(B, x, y, z, r, shelter = true) {
+function busStop_build(B, x, y, z, r, shelter = true) {
   B.frame(x, y, z, r);
   B.bbox('concrete', 0, 0, 0, 0.5, 0.15, 0.5, 0.012, { color: [0.6, 0.6, 0.6] });
   B.cyl('alu', 0, 0.15, 0, 0.035, 0.035, 2.35, 6, { color: [0.85, 0.86, 0.88] });
@@ -96,7 +97,7 @@ export function busStop(B, x, y, z, r, shelter = true) {
   const p = B.P([0, 0, -0.35]); addBox(p[0], p[2], 1.5, 0.3, r, y - 1, y + 2.4);
 }
 // garbage collection point: a folding green cage with a few bags
-export function garbagePoint(B, x, y, z, r, rng) {
+function garbagePoint_build(B, x, y, z, r, rng) {
   B.frame(x, y, z, r);
   const g = [0.28, 0.58, 0.38];
   for (const [sx, sz] of [[-0.8, -0.45], [0.8, -0.45], [-0.8, 0.45], [0.8, 0.45]]) B.box('alu', sx, 0, sz, 0.04, 0.95, 0.04, { color: g });
@@ -106,7 +107,7 @@ export function garbagePoint(B, x, y, z, r, rng) {
   for (let k = 0; k < n; k++) B.box('plain', -0.5 + k * 0.33, 0.02, (rng() - 0.5) * 0.3, 0.3, 0.3 + rng() * 0.15, 0.3, { color: rng() < 0.6 ? [0.95, 0.95, 0.9] : [0.95, 0.86, 0.45] });
 }
 // drying rack (monohoshi) with laundry, local +X along the poles
-export function dryingRack(B, x, y, z, r, rng, len = 2.4) {
+function dryingRack_build(B, x, y, z, r, rng, len = 2.4) {
   B.frame(x, y, z, r);
   const c = { color: [0.72, 0.74, 0.76] };
   for (const sx of [-len / 2, len / 2]) { B.box('concrete', sx, 0, 0, 0.3, 0.15, 0.3, { color: [0.6, 0.6, 0.6] }); B.box('alu', sx, 0, 0, 0.05, 1.8, 0.05, c); B.box('alu', sx, 1.72, 0, 0.05, 0.05, 0.9, c); }
@@ -118,14 +119,14 @@ export function dryingRack(B, x, y, z, r, rng, len = 2.4) {
     B.quad('plain', [cx + w / 2, 1.7 - h, sz], [cx - w / 2, 1.7 - h, sz], [cx - w / 2, 1.7, sz], [cx + w / 2, 1.7, sz], { color: col });
   }
 }
-export function mailbox(B, x, y, z, r, col) {
+function mailbox_build(B, x, y, z, r, col) {
   B.frame(x, y, z, r);
   B.bbox('alu', 0, 0, 0, 0.06, 0.95, 0.06, 0.012, { color: [0.4, 0.4, 0.42] });
   B.bbox('plain', 0, 0.95, 0, 0.36, 0.34, 0.22, 0.012, { color: col });
   B.bbox('dark', 0, 1.18, 0.112, 0.22, 0.03, 0.01, 0.012);
   B.bbox('plain', 0, 1.02, 0.112, 0.2, 0.08, 0.01, 0.012, { color: WHITE }); // name plate
 }
-export function waterTank(B, x, y, z, rng) {
+function waterTank_build(B, x, y, z, rng) {
   B.frame(x, y, z, 0);
   const c = pick(rng, [[0.92, 0.92, 0.9], [0.4, 0.6, 0.82], [0.85, 0.86, 0.88]]);
   for (const [sx, sz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) B.box('alu', sx, 0, sz, 0.08, 0.7, 0.08, { color: [0.5, 0.5, 0.52] });
@@ -134,7 +135,7 @@ export function waterTank(B, x, y, z, rng) {
 }
 // a house going up on a lot (local +Z faces the street): timber frame on a concrete footing, scaffolding wrapped in mesh
 // sheeting, a site fence along the street with a gate, cones, a portable toilet and the builder's sign board
-export function constructionSite(B, x, y, z, r, LW, LD, rng, extras) {
+function constructionSite_build(B, x, y, z, r, LW, LD, rng, extras) {
   B.frame(x, y, z, r);
   const W = Math.min(LW - 3, 9), D = Math.min(LD - 5, 8), hz = -LD / 2 + D / 2 + 1.2;
   B.box('concrete', 0, -0.05, hz, W, 0.45, D, { color: [0.78, 0.78, 0.76], uv: 3 });
@@ -203,7 +204,7 @@ export function excavator(B, rng) {
 // and katsuogi), a straw rope with paper streamers, a pair of small stone lanterns, a vermilion torii in front, an
 // offering box, sakaki vases and a sake cup — and, at some, a stone jizo in a red bib.
 const HOKORA_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
-export function streetShrine(B, x, y, z, r, rng = Math.random) {
+function streetShrine_build(B, x, y, z, r, rng = Math.random) {
   B.frame(x, y, z, r);
   const M = HOKORA_M, GRAN = [0.66, 0.65, 0.62], CEDAR = [0.62, 0.44, 0.3], DARK = [0.34, 0.24, 0.17], COP = [0.36, 0.56, 0.5];
   // gravel pad edged with stone kerbs
@@ -277,7 +278,7 @@ export function crosswalk(B, x, y, z, dx, dz, W, band = 3.2) {
 // gym, horizontal bars at three heights, spring riders, a seesaw, a shaded sandbox — a wisteria pergola with benches,
 // a drinking fountain, a clock, park lights, bins and a notice board, the toilet block, a bike rack by the gate, trees
 // round the edge. Local frame: the gate is at +z (D / 2). Returns { lawn: [x0, z0, x1, z1] } (local) for the ground mask.
-export function playground(B, x, y, z, r, W, D, rng, trees, extras, lampPts = null, bikes = null) {
+function playground_build(B, x, y, z, r, W, D, rng, trees, extras, lampPts = null, bikes = null) {
   B.frame(x, y, z, r);
   const F = B.F, at = (lx, lz, rr = 0) => { B.F = F; B.frame(...B.P([lx, 0, lz]), r + rr); };
   const red = [0.9, 0.25, 0.2], yel = [1, 0.8, 0.2], blu = [0.25, 0.5, 0.9], grn = [0.3, 0.72, 0.4], org = [0.95, 0.52, 0.18];
@@ -436,7 +437,7 @@ function schoolClock(x, y, z, r) {
   const m = new THREE.Mesh(new THREE.CircleGeometry(1.1, 32), clockMat);
   m.position.set(x, y, z); m.rotation.y = r; scene.add(m);
 }
-export function school(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
+function school_build(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   chainMaterial();
   B.frame(cx, y, cz, r);
   const F = B.F, at = (lx, lz, rr = 0) => { B.F = F; B.frame(...B.P([lx, 0, lz]), r + rr); };
@@ -840,7 +841,7 @@ export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null,
 
 // municipal tennis courts (市民テニスコート): two sand-filled artificial-grass courts inside a 4 m chain-link cage, nets on
 // winding posts, floodlights, a judge's chair, benches, a storage shed, worn baselines, and a gate onto the road side
-export function tennisCourts(B, x, y, z, r, rng, extras, lampPts) {
+function tennisCourts_build(B, x, y, z, r, rng, extras, lampPts) {
   // y is the highest ground under the courts: everything stands on a raised concrete slab, so the terrain never breaks
   // through, and the surfacing is laid as non-overlapping pieces (surround strips + one panel per court) with the worn
   // patches and the lines each a few millimetres higher — no two coplanar layers to fight
@@ -919,3 +920,18 @@ export function tennisCourts(B, x, y, z, r, rng, extras, lampPts) {
   B.frame(0, 0, 0, 0);
   return { top: TOP, slab: SL };
 }
+
+// ---------------------------------------------------------------- placed objects (world/capture.js: each call is one editable world object)
+export const nobori = placeable('nobori_banner', nobori_build, atXYZR);
+export const standBoard = placeable('stand_board', standBoard_build, atXYZR);
+export const postBox = placeable('post_box', postBox_build, atXYZR);
+export const busStop = placeable('bus_stop', busStop_build, atXYZR);
+export const garbagePoint = placeable('garbage_point', garbagePoint_build, atXYZR);
+export const dryingRack = placeable('drying_rack', dryingRack_build, atXYZR);
+export const mailbox = placeable('mailbox', mailbox_build, atXYZR);
+export const waterTank = placeable('water_tank', waterTank_build, (B, x, y, z) => [x, y, z, 0]);
+export const constructionSite = placeable('construction_site', constructionSite_build, atXYZR);
+export const streetShrine = placeable('street_shrine', streetShrine_build, atXYZR);
+export const playground = placeable('playground', playground_build, atXYZR);
+export const school = placeable('school', school_build, atXYZR);
+export const tennisCourts = placeable('tennis_courts', tennisCourts_build, atXYZR);

@@ -1,13 +1,13 @@
 // "Sakuragawa" — a small Japanese town in a valley: station and level crossings, commuter trains, traffic,
 // houses and shops, utility poles, a river with concrete banks, rice paddies and cedar-covered hills.
 import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, flushProps,
-  Scatter, addBox, addCircle, addPlatform, colliders, decimate } from './core.js';
+  Scatter, addBox, addCircle, addPlatform, colliders, decimate, withScatterMeta } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt, pondWaterMaterial, flowWaterMaterial, foamMaterial } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js';
 import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
-import { GeoBuilder as LGeo, lantern, bench, flushLandmarks } from './landmarks.js';
+import { GeoBuilder as LGeo, lantern, bench, flushLandmarks, landmarkMaterials } from './landmarks.js';
 import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, field, inFrame, shedRoof } from './building.js';
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
@@ -15,13 +15,15 @@ import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { buildCrops, updateCrops } from './crops.js';
 import { loadCrowd } from './crowd.js';
 import { setTownGlow } from './sky.js';
-import { GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
+import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin, canvasTex } from './townkit.js';
 import { RAIL, buildRailway, railFences, trackside, buildCrossing, pedCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads } from './roads.js';
 import { DANCHI, DANCHI_ROADS, danchiGround, inDanchi, buildDanchi } from './danchi.js';
 import { perf } from './perf.js';
+import { startCapture, stopCapture, entity } from './world/capture.js';
+import { finalizeWorld } from './world/layer.js';
 
 export const meta = { name: 'Sakuragawa 桜川', startHour: 16.6, sunAzimuth: 2.6 };
 const Y0 = 6;
@@ -63,6 +65,20 @@ const BAMBOO_SITES = [[-60, -364, 15], [-103, -336, 9], [-18, -342, 10], [riverX
   [riverX(-446) - 42, -446, 10], [-455, -150, 12], [-458, 196, 11], [-236, 356, 12], [42, 360, 10], [168, -345, 9]].map(([x, z, R]) => ({ x, z, R }));
 const SHRINE_M = { lac: 'plastic', dark: 'plastic', wood: 'wood', stone: 'concrete', roof: 'roofMetal', glow: 'lamp', paper: 'plain', rope: 'plain', metal: 'steel', water: 'glass' };
 
+// areas of the town (world object ids are <prefab>_<area>_<n>; world files are split by area)
+function townArea(x, z) {
+  if (inDanchi(x, z, 6)) return 'danchi';
+  if (Math.abs(x - riverX(z)) < 34) return 'river';
+  if (Math.hypot(x - SHRINE.x, z - SHRINE.z + 15) < 45) return 'shrine';
+  if (x > -150 && x < -28 && z > 188 && z < 258) return 'school';
+  if (x > -130 && x < 160 && z > -75 && z < 32) return 'station';
+  if (Math.abs(x) > 470 || Math.abs(z) > 350) return 'hills';
+  if (inPaddyZone(x, z)) return 'paddies';
+  if (z > 258 || x > 262 || x < -415) return 'farmland';
+  if (x < -250 || (z < -110 && x < 0)) return 'oldtown';
+  if (z > 140 || x > 150) return 'newtown';
+  return 'midtown';
+}
 function paddyCell(x, z) { // returns {inside (0..1), levee} for the paddy grid
   const cx = ((x % 30) + 30) % 30, cz = ((z % 20) + 20) % 20;
   const e = Math.min(cx, 30 - cx, cz, 20 - cz);
@@ -355,7 +371,9 @@ function nearestOnRoad(R, x, z) {
   return best;
 }
 
-export async function build(progress) {
+export async function build(progress, opts = {}) {
+  const SIM = !opts.editor; // the world editor builds the town without its simulation (moving traffic, trains, pedestrians)
+  keepArrays.on = !!opts.editor; startCapture(); // every placed object is recorded for the world data layer (world/)
   const reflected = new Set(scene.children); // sky, clouds, lights... (terrain + forest are added below)
   const MT = materials();
   MT.paddyWater = new THREE.MeshStandardMaterial({ color: 0x3b3a2a, roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.72, depthWrite: false, envMapIntensity: 1.3 });
@@ -757,14 +775,14 @@ export async function build(progress) {
   const kLot = { x: 134, z: 0, hw: 20, hd: 16 };
   reserve(kLot.x, kLot.z, kLot.hw, kLot.hd, 0);
   konbini(B, { x: kb.x, y: Y0, z: 7, r: Math.PI, w: 22, d: 13 }, rng, extras);
-  { // the konbini's pole sign at the corner of the lot
+  entity('konbini_pole_sign', () => { // the konbini's pole sign at the corner of the lot
     const px = 151.5, pz = -17.2;
     B.frame(px, Y0 + 0.08, pz, 0); B.cyl('steel', 0, 0, 0, 0.16, 0.14, 6.2, 16, { color: [0.85, 0.86, 0.88] }); B.bbox('concrete', 0, -0.1, 0, 0.8, 0.3, 0.8, 0.03, { color: [0.72, 0.72, 0.7] });
     B.bbox('plastic', 0, 6.1, 0, 2.3, 1.6, 0.5, 0.05, { color: [0.95, 0.95, 0.95] }); B.frame(0, 0, 0, 0); addCircle(px, pz, 0.25);
     for (const e of [-1, 1]) { const m = signMesh(2.1, 1.4, (g, W2, H2) => { g.fillStyle = '#fff'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#0a8a4b'; g.fillRect(0, 0, W2, H2 * 0.2); g.fillStyle = '#1a5fb4'; g.fillRect(0, H2 * 0.8, W2, H2 * 0.2); g.fillStyle = '#f08a14'; g.fillRect(0, H2 * 0.2, W2, H2 * 0.08);
       g.fillStyle = '#0a4f8f'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H2 * 0.24}px Arial`; g.fillText('SUNNY', W2 / 2, H2 * 0.42); g.fillText('MART', W2 / 2, H2 * 0.66); }, 1.4);
       m.position.set(px, Y0 + 0.08 + 6.9, pz + e * 0.26); m.rotation.y = e > 0 ? 0 : Math.PI; scene.add(m); }
-  }
+  });
   B.frame(0, 0, 0, 0); B.box('asphalt', 134.4, Y0 - 0.1, -9.6, 38.8, 0.18, 18.8, { uv: 4, skip: 'ny' });
   for (let i = 0; i < 7; i++) {
     RN.decal(B, 'paint', [118.5 + i * 5, -2.3], [0, 1], 2.5, 0.06, { color: [0.92, 0.92, 0.9], y: () => Y0 + 0.08, lift: 0.004, road: false });
@@ -799,7 +817,7 @@ export async function build(progress) {
   for (const sp of danchi.carSpots) carSpots.push(sp);
   for (const b of danchi.bikes) bikeList.push(b);
   for (const g of danchi.groves) BAMBOO_SITES.push({ ...g, H: [9, 13] });
-  { // covered bicycle park beside the station forecourt (駐輪場): steel frames, a long mono-pitch roof, racks, bikes
+  entity('bicycle_park', () => { // covered bicycle park beside the station forecourt (駐輪場): steel frames, a long mono-pitch roof, racks, bikes
     const bx = 37, z0 = -62, z1 = -34, y = hf.groundAt(bx, (z0 + z1) / 2), L = z1 - z0;
     reserve(bx, (z0 + z1) / 2, 4.6, L / 2 + 0.5, 0);
     B.frame(bx, y, (z0 + z1) / 2, 0);
@@ -811,7 +829,7 @@ export async function build(progress) {
       for (let zz = -L / 2 + 0.8; zz < L / 2 - 0.5; zz += 0.62) { B.box('steel', sx, 0, zz, 0.03, 0.35, 0.03, { color: [0.7, 0.7, 0.72] }); if (drng() < 0.72) bikeList.push({ x: bx + sx * 1.6, y, z: (z0 + z1) / 2 + zz, r: sx > 0 ? 0 : Math.PI }); } }
     B.frame(0, 0, 0, 0);
     hf.paint2(2, bx - 5, z0 - 1, bx + 5, z1 + 1, () => 1);
-  }
+  });
   const SCH = { x: -89.75, z: 223, w: 113, d: 64 }, PK = { x: -212, z: 69.5, w: 42, d: 32 };
   reserve(SCH.x, SCH.z, SCH.w / 2 + 1, SCH.d / 2 + 1, 0);
   school(B, SCH.x, hf.groundAt(SCH.x, SCH.z), SCH.z, Math.PI, SCH.w, SCH.d, drng, schoolSak, bikeList, extras);
@@ -980,12 +998,12 @@ export async function build(progress) {
       shopBuilding(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: Math.min(lot.d, 12), old: lot.district === 'old' || lot.era === 'old' }, rng, extras);
       hf.paint2(2, lot.x - 9, lot.z - 9, lot.x + 9, lot.z + 9, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z; return Math.abs(dx * c - dz * s) < lot.w / 2 && Math.abs(dx * s + dz * c) < lot.d / 2 ? 1 : 0; });
       if (rng() < 0.18) vend.push({ lot, off: [lot.w / 2 - 0.6, Math.min(lot.d, 12) / 2 + 0.6] });
-      if (srng() < 0.45) { // flower planter by the shop door
+      if (srng() < 0.45) entity('shop_planter', () => { // flower planter by the shop door
         const fz = Math.min(lot.d, 12) / 2 + 0.45, lx = -lot.w / 2 + 1.1;
         B.frame(lot.x, y, lot.z, lot.r); B.box('wood', lx, 0, fz, 1.3, 0.42, 0.5, { color: [0.62, 0.44, 0.3] });
         const [px, pz] = lotW(lot, lx, fz); addBox(px, pz, 0.65, 0.25, lot.r, y - 1, y + 0.5);
         for (const o of [-0.35, 0.35]) { const [hx, hz] = lotW(lot, lx + o, fz); hydras.push({ x: hx, y: y + 0.36, z: hz, s: 0.62 + srng() * 0.15, sx: 1, r: srng() * 6.28, c: hydraColor(srng) }); }
-      }
+      });
       // shopfront clutter: a pair of nobori banners, a chalk signboard, customers' bicycles
       const sfz = Math.min(lot.d, 12) / 2;
       if (drng() < 0.5) { const col = [[0.86, 0.18, 0.14], [0.18, 0.4, 0.78], [0.98, 0.78, 0.2], [0.22, 0.62, 0.42], [0.95, 0.5, 0.65]][Math.floor(drng() * 5)];
@@ -1095,9 +1113,9 @@ export async function build(progress) {
         const cx = x0 + l[0] * u, cz = z0 + l[1] * u, yf = onWalk ? topY : surfaceY;
         const kind = urng(), sz = kind < 0.4 ? 0.2 : kind < 0.75 ? 0.3 : 0.45, col = kind < 0.4 ? [0.3, 0.32, 0.36] : kind < 0.75 ? [0.95, 0.78, 0.12] : [0.38, 0.36, 0.34];
         B.detail(2, () => RN.decal(B, 'metal', [cx, cz], q.d, sz, sz, { color: col, lift: 0.006, y: yf, road: false, cell: 1 }));
-        if (onWalk && urng() < 0.25) { const hx = x0 + l[0] * side * (n.hw + n.walk - 0.35), hz = z0 + l[1] * side * (n.hw + n.walk - 0.35), hy = topY(hx, hz);
+        if (onWalk && urng() < 0.25) entity('fire_hydrant', () => { const hx = x0 + l[0] * side * (n.hw + n.walk - 0.35), hz = z0 + l[1] * side * (n.hw + n.walk - 0.35), hy = topY(hx, hz);
           B.frame(hx, hy, hz, 0); B.cyl('plastic', 0, -0.02, 0, 0.1, 0.1, 0.6, 12, { color: [0.85, 0.12, 0.1] }); B.cyl('plastic', 0, 0.58, 0, 0.12, 0.05, 0.12, 12, { color: [0.85, 0.12, 0.1], cap: true });
-          for (const e of [-1, 1]) B.cyl('steel', e * 0.1, 0.35, 0, 0.035, 0.035, 0.08, 8, { color: [0.7, 0.7, 0.68], cap: true }); B.frame(0, 0, 0, 0); addCircle(hx, hz, 0.14); }
+          for (const e of [-1, 1]) B.cyl('steel', e * 0.1, 0.35, 0, 0.035, 0.035, 0.08, 8, { color: [0.7, 0.7, 0.68], cap: true }); B.frame(0, 0, 0, 0); addCircle(hx, hz, 0.14); });
       }
     }
   }
@@ -1106,8 +1124,8 @@ export async function build(progress) {
   for (let x = -430; x < 430; x += 13) for (const sd of [-1, 1]) {
     if (x > -268 && x < 205 || Math.abs(x - riverX(-25)) < 32 || nearInter(x, -25, ROADS[0], 5)) continue;
     const z = -25 + sd * 4.4, ty = topY(x, z); streetTrees.push({ x, y: ty + 0.02, z, s: lerp(7, 8.5, drng()), sx: 0.9, r: drng() * 6.28, c: leafColor(drng) });
-    B.frame(x, ty - 0.06, z, 0); B.bbox('concrete', 0, 0, 0, 0.92, 0.14, 0.92, 0.02, { color: [0.8, 0.8, 0.77], skip: 'ny' }); B.box('plain', 0, 0.02, 0, 0.8, 0.1, 0.8, { color: [0.3, 0.23, 0.18] });
-    for (const [gx, gz, gw, gd] of [[0, 0.33, 0.8, 0.14], [0, -0.33, 0.8, 0.14], [0.33, 0, 0.14, 0.52], [-0.33, 0, 0.14, 0.52]]) B.box('metal', gx, 0.12, gz, gw, 0.012, gd, { color: [0.22, 0.22, 0.23] }); // tree grate
+    entity('tree_planter', () => { B.frame(x, ty - 0.06, z, 0); B.bbox('concrete', 0, 0, 0, 0.92, 0.14, 0.92, 0.02, { color: [0.8, 0.8, 0.77], skip: 'ny' }); B.box('plain', 0, 0.02, 0, 0.8, 0.1, 0.8, { color: [0.3, 0.23, 0.18] });
+    for (const [gx, gz, gw, gd] of [[0, 0.33, 0.8, 0.14], [0, -0.33, 0.8, 0.14], [0.33, 0, 0.14, 0.52], [-0.33, 0, 0.14, 0.52]]) B.box('metal', gx, 0.12, gz, gw, 0.012, gd, { color: [0.22, 0.22, 0.23] }); }); // tree grate
   }
   // bus stops, post boxes, garbage points
   for (const [x, sd] of [[-205, 1], [58, -1], [300, 1]]) { const z = -25 + sd * 5.55; busStop(B, x, topY(x, z), z, sd > 0 ? Math.PI : 0); }
@@ -1122,15 +1140,15 @@ export async function build(progress) {
     }
   }
   // festival lantern strings across the shopping street
-  for (let x = -252; x < 190; x += 21) {
-    if (nearInter(x, -25, ROADS[0], 5) || Math.abs(x - riverX(-25)) < 26) continue;
+  for (let x = -252; x < 190; x += 21) { entity('lantern_string', () => {
+    if (nearInter(x, -25, ROADS[0], 5) || Math.abs(x - riverX(-25)) < 26) return;
     B.frame(x, Y0, -25, 0);
     for (const sd of [-1, 1]) { B.box('wood', 0, 0.1, sd * 5.75, 0.15, 5.35, 0.15, { color: [0.52, 0.37, 0.26] }); B.box('wood', 0, 5.4, sd * 5.75, 0.2, 0.08, 0.2, { color: [0.3, 0.22, 0.16] }); addCircle(x, -25 + sd * 5.75, 0.16); }
     const N = 10, pt = i => { const t = i / N; return [0, 5.2 - 0.75 * 4 * t * (1 - t), -5.75 + 11.5 * t]; };
     for (let i = 0; i < N; i++) B.beam('dark', pt(i), pt(i + 1), 0.025, 0.025);
     for (let i = 1; i < N; i++) { const p = pt(i); B.box('dark', 0, p[1] - 0.16, p[2], 0.015, 0.16, 0.015); chochin(B, 0, p[1] - 0.62, p[2], i % 2 ? [1, 0.3, 0.2] : [1, 0.88, 0.7], 0.8); }
     lampPoints.push({ p: [x, 4.4, -25], s: 0.6 });
-  }
+  }); }
   // colliders from buildings/walls
   for (const e of extras) {
     if (e.t === 'box') addBox(e.p[0], e.p[2], e.hx, e.hz, e.r, e.p[1] - 1, e.p[1] + (e.h || 20));
@@ -1387,15 +1405,15 @@ export async function build(progress) {
   // ---------------------------------------------------------------- scanned props (gardens, shops)
   const [shrub, potted, planter, crate, ubox, weed, manhole] = await modelsP;
   const prng = mulberry32(99);
-  const scatterModel = (model, items, byHeight, dist, shadow = true, split = false) => {
+  const scatterModel = (model, items, byHeight, dist, shadow = true, split = false, meta = null) => withScatterMeta(meta, () => {
     if (!model || !items.length) return;
     const parts = extractParts(model);
     // scanned props are dense: full detail up close, a clustered low-poly copy beyond ~35 m
     const lods = ps => [{ dist: () => Math.min(35, dist()), parts: ps.map(p => ({ ...p, castShadow: shadow })) }, { dist, parts: ps.map(p => ({ ...p, geometry: decimate(p.geometry, 7), castShadow: shadow })) }];
     if (!split) { normalizeParts(parts, byHeight); new Scatter(items, lods(parts), 128); return; }
     // asset sheets with several plants side by side: every plant becomes its own instanced model
-    parts.forEach((p, i) => { normalizeParts([p], byHeight); const mine = items.filter((_, k) => k % parts.length === i); if (mine.length) new Scatter(mine, lods([p]), 128); });
-  };
+    parts.forEach((p, i) => { normalizeParts([p], byHeight); const mine = items.filter((_, k) => k % parts.length === i); if (mine.length) withScatterMeta(meta && { ...meta, prefab: meta.prefab + '_' + (i + 1) }, () => new Scatter(mine, lods([p]), 128)); });
+  });
   // the district's rocks (danchi.js, danchipark.js): each stone of the scanned rock set is its own instanced model,
   // the boulder another; every stone sits on the lowest ground under it, sunk by the fraction its record asks
   { const [rockSet, boulderM] = await rockModelsP, stones = [];
@@ -1409,8 +1427,8 @@ export async function build(progress) {
     // painted like the town's other stone (toon.js): the scan's brightness evened out, its hue kept a little, the
     // instance tint deciding the colour of each stone
     for (const M of [...stones, bould]) if (M) for (const p of M.parts) { p.material = p.material.clone(); p.material.userData.toonNorm = 0.5; }
-    for (const [M, items] of groups) new Scatter(items, [{ dist: () => 110, parts: M.parts.map(p => ({ ...p, castShadow: true, tint: true })) },
-      { dist: () => 360, parts: M.parts.map(p => ({ ...p, geometry: decimate(p.geometry, 10), castShadow: true, tint: true })) }], 96); }
+    for (const [M, items] of groups) withScatterMeta({ prefab: M === bould ? 'boulder' : 'rock_' + (stones.indexOf(M) + 1), category: 'rock' }, () => new Scatter(items, [{ dist: () => 110, parts: M.parts.map(p => ({ ...p, castShadow: true, tint: true })) },
+      { dist: () => 360, parts: M.parts.map(p => ({ ...p, geometry: decimate(p.geometry, 10), castShadow: true, tint: true })) }], 96)); }
   const shrubs = [], pots = [], weeds = [], crates = [], boxes = [];
   for (const lot of lots) {
     const c = Math.cos(lot.r), s = Math.sin(lot.r), W = (lx, lz) => [lot.x + lx * c + lz * s, lot.z - lx * s + lz * c];
@@ -1422,7 +1440,7 @@ export async function build(progress) {
     for (let k = 0; k < 4; k++) if (prng() < 0.25) { const [x, z] = W((prng() - 0.5) * lot.w, lot.d / 2 - 0.15); weeds.push({ x, y: hf.groundAt(x, z), z, s: 0.25 + prng() * 0.3, r: prng() * 6.28 }); }
     if (prng() < 0.05) { const [x, z] = W(lot.w / 2 - 0.5, lot.d / 2 + 0.4); boxes.push({ x, y: hf.groundAt(x, z), z, s: 1.3, r: lot.r }); addCircle(x, z, 0.4); }
   }
-  scatterModel(shrub, shrubs, true, () => Q.props, true, true);
+  scatterModel(shrub, shrubs, true, () => Q.props, true, true, { prefab: 'shrub', category: 'vegetation' });
   buildBushes(bushes, 'bush');
   buildBushes(hydras, 'hydra');
   buildBushes(green.hedges, 'hedge', { collide: false });
@@ -1436,10 +1454,10 @@ export async function build(progress) {
   greenTrees.push(shrineTree);
   buildTrees(greenTrees);
   bicycles(bikeList, drng);
-  scatterModel(potted, [...pots, ...green.pots], true, () => Q.props * 0.35);
-  scatterModel(weed, [...weeds, ...green.weeds], true, () => Q.props * 0.3, false, true);
-  scatterModel(crate, crates, true, () => Q.props * 0.4);
-  scatterModel(ubox, boxes, true, () => Q.props * 0.6);
+  scatterModel(potted, [...pots, ...green.pots], true, () => Q.props * 0.35, true, false, { prefab: 'potted_plant', category: 'prop' });
+  scatterModel(weed, [...weeds, ...green.weeds], true, () => Q.props * 0.3, false, true, { prefab: 'weed', category: 'vegetation', field: 'weeds' });
+  scatterModel(crate, crates, true, () => Q.props * 0.4, true, false, { prefab: 'crate', category: 'prop' });
+  scatterModel(ubox, boxes, true, () => Q.props * 0.6, true, false, { prefab: 'utility_box', category: 'prop' });
   // sewer manholes: flush cast-iron covers on the sewer line, which runs a little off the crown in one lane
   for (const R of ROADS) if (R.kind !== 'path') for (const [a, b] of roadSegs(R)) {
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], off = (R.w / 2) * (0.25 + 0.2 * prng()) * (prng() < 0.5 ? -1 : 1);
@@ -1492,7 +1510,7 @@ export async function build(progress) {
     R.stops.sort((a, b) => a.s - b.s);
   });
   const moving = [];
-  loops.forEach((L, i) => { for (let k = 0; k < L.n; k++) moving.push({ route: routes[i], s: routes[i].len * (k + crng() * 0.5) / L.n, spec: randomCar(crng) }); });
+  if (SIM) loops.forEach((L, i) => { for (let k = 0; k < L.n; k++) moving.push({ route: routes[i], s: routes[i].len * (k + crng() * 0.5) / L.n, spec: randomCar(crng) }); });
   const fleet = new Fleet([...parked.map(p => p.spec), ...moving.map(m => m.spec)]);
   parked.forEach((p, i) => { const car = fleet.cars[i], T = carDims(car.type), sp = p.sp;
     // bays with a wheel stop: back the car in until its rear tyres touch it (sp.stop: bay point to the stop's face)
@@ -1504,16 +1522,19 @@ export async function build(progress) {
   moving.forEach((m, i) => traffic.add(fleet.cars[parked.length + i], m.route, m.s));
   fleet.commit();
   // trains
-  const trains = [new Train(Y0), new Train(Y0)];
-  trains[0].start(1, 2); trains[1].start(-1, 40);
+  const trains = SIM ? [new Train(Y0), new Train(Y0)] : [];
+  if (SIM) { trains[0].start(1, 2); trains[1].start(-1, 40); }
 
   flushProps(); // instanced props (core.js)
   // town geometry, props, vehicles are not reflected by the river (keeps the reflection pass cheap)
   for (const o of scene.children) if (!reflected.has(o)) o.traverse(c => c.layers.set(1));
 
+  // ---------------------------------------------------------------- world data: object ids, the edits in world/town/edits (world/layer.js)
+  stopCapture();
+  const layer = await finalizeWorld({ map: opts.map || 'town', editor: !!opts.editor, progress, areaOf: townArea, materialSets: { town: MT, landmark: landmarkMaterials() } });
   // ---------------------------------------------------------------- night lighting: every fixture lights its surroundings (citylights.js)
   const cropInfo = buildCrops();
-  const cityLights = buildCityLights(lampPoints);
+  const cityLights = buildCityLights(layer.activeLamps());
   setTownGlow(-140, -5, 330, 0.035);
 
   // people on the streets: sidewalks of the main road, lane shoulders, the riverside walkways and the shrine approach
@@ -1528,8 +1549,8 @@ export async function build(progress) {
   walkPaths.push({ pts: [[-2.5, -30.2], [-2.5, -62.8]], off: 1.1, lift: null, w: 2 }, { pts: [[-1, -48.5], [12.7, -48.5], [12.7, -32]], off: 0.4, lift: null });
   // nobody steps onto a level crossing while its bells ring or its booms are down
   const xingClosed = (x0, z0, x1, z1) => Math.abs(z1 + 80) < 7.2 && Math.abs(z0 + 80) >= 7.2 - 1e-3 && crossings.some(c => (c.active || c.down > 0.01) && Math.abs(x1 - c.x) < c.roadW / 2 + 3);
-  let crowd = null; try { crowd = await loadCrowd(); } catch (e) { console.warn('crowd models failed, box figures instead', e); }
-  const people = pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 300, 21, { blocked: xingClosed, crowd });
+  let crowd = null; if (SIM) try { crowd = await loadCrowd(); } catch (e) { console.warn('crowd models failed, box figures instead', e); }
+  const people = !SIM ? { update() {}, collide() {} } : pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 300, 21, { blocked: xingClosed, crowd });
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3(), _pl = { x: 0, y: 0, z: 0 };
   const PW = { lights: perf.id('world: lights'), lod: perf.id('world: building LOD'), crops: perf.id('world: crops'), props: perf.id('world: props'), people: perf.id('world: pedestrians'),
@@ -1578,6 +1599,7 @@ export async function build(progress) {
       perf.begin(PW.lod); updateLod(cam); perf.end(PW.lod);
       perf.begin(PW.crops); updateCrops(cam); perf.end(PW.crops);
       perf.begin(PW.props); landmarks.update(); parkBenches.update(); danchiBenches.update(); perf.end(PW.props);
+      if (!SIM) { fleet.commit(cam.position, cam); cityLightU.uCLI.value = smoothstep(0.2, 0.5, night.value); return; } // editor: static scenery only
       perf.begin(PW.people); people.update(dt); perf.end(PW.people);
       const pl = _pl; pl.x = cam.position.x; pl.y = cam.position.y - 1.6; pl.z = cam.position.z;
       perf.begin(PW.trains);
@@ -1606,6 +1628,7 @@ export async function build(progress) {
     perf.end(PW.signs); };
   people.update(0);
   world.cityLights = Object.assign(cityLights, { materials: enableCityLights(scene) });
+  world.layer = layer; layer.attach(world);
   world.people = people;
   return world;
 }

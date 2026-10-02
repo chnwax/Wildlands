@@ -317,6 +317,8 @@ export function prepareShadowCache(root) {
   });
   cacheReady = true;
 }
+// after objects were added, removed or moved (the world editor): rebuild the caster lists and redraw every cascade
+export function refreshShadowCasters() { if (!cacheReady) return; prepareShadowCache(scene); for (const C of shadowCache) if (C) { C.front && C.front.dispose(); C.back && C.back.dispose(); } shadowCache.length = 0; }
 // (three r170 filters shadow casters by the layers of the camera handed to the shadow render: a stand-in that accepts
 // every layer, since the lists already select the casters)
 const smRender = renderer.shadowMap.render, noClear = () => {}, castCam = { layers: new THREE.Layers() };

@@ -10,6 +10,7 @@
 //                 buildings together, a parents' pergola garden, a ball lawn, shade trees, benches, bins, a fountain
 import { THREE, addPlatform, clamp } from './core.js';
 import { lampPoints } from './townkit.js';
+import { entity } from './world/capture.js';
 
 // the lake's outline (a lobed ellipse round LAKE_C), its inlet channel and the spring pool; the ground under them is
 // dug out (danchiGround) so the water lies in a real basin: shelving gently at the beach, steeper under the deck
@@ -65,16 +66,16 @@ export function buildParks(K) {
   const AZALEA = [col(0.93, 0.62, 0.62), col(0.97, 0.7, 0.72), col(0.0, 0.0, 0.93), col(0.88, 0.55, 0.58)], HYDRANGEA = [col(0.62, 0.45, 0.6), col(0.72, 0.4, 0.62), col(0.58, 0.5, 0.66)];
   const GREEN = () => col(0.26 + rng() * 0.06, 0.45, 0.3 + rng() * 0.08);
   // ornamental lamp: a fluted post with a lantern head (formal spaces), or the plain park lamp
-  const lamp = (x0, z0, ornate = true) => { const q = K.freeSpot(x0, z0, 0.3); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0);
+  const lamp = (x0, z0, ornate = true) => { return entity('park_lamp', () => { const q = K.freeSpot(x0, z0, 0.3); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0);
     if (ornate) { B.cyl('metal', 0, 0, 0, 0.16, 0.13, 0.5, 12, { color: [0.18, 0.2, 0.2] }); B.cyl('metal', 0, 0.5, 0, 0.07, 0.055, 3.4, 12, { color: [0.18, 0.2, 0.2] });
       B.cyl('metal', 0, 3.9, 0, 0.1, 0.18, 0.12, 12, { color: [0.18, 0.2, 0.2], cap: true }); B.cyl('lamp', 0, 4.02, 0, 0.2, 0.2, 0.42, 12, {}); B.cyl('metal', 0, 4.44, 0, 0.26, 0.04, 0.2, 12, { color: [0.18, 0.2, 0.2], cap: true });
       lampPts.push({ p: [x, y + 4.2, z], s: 0.7 }); }
     else { B.cyl('steel', 0, 0, 0, 0.06, 0.05, 3.2, 10, { color: [0.3, 0.32, 0.34] }); B.cyl('metal', 0, 3.2, 0, 0.16, 0.2, 0.08, 14, { color: [0.28, 0.3, 0.32], cap: true }); B.cyl('lamp', 0, 3.02, 0, 0.14, 0.14, 0.18, 12, {}); lampPts.push({ p: [x, y + 2.9, z], s: 0.45 }); }
-    B.frame(0, 0, 0, 0); addCircle(x, z, 0.12); navRect(x, z, 0.4, 0.4, 0, 2); };
-  const bollard = (x, z, lit = true) => { const y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.1, 0.1, 0.8, 12, { color: [0.2, 0.22, 0.22], cap: !lit });
+    B.frame(0, 0, 0, 0); addCircle(x, z, 0.12); navRect(x, z, 0.4, 0.4, 0, 2); }); };
+  const bollard = (x, z, lit = true) => { return entity('bollard', () => { const y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.1, 0.1, 0.8, 12, { color: [0.2, 0.22, 0.22], cap: !lit });
     if (lit) { B.cyl('lamp', 0, 0.62, 0, 0.1, 0.1, 0.12, 12, {}); B.cyl('metal', 0, 0.74, 0, 0.12, 0.12, 0.06, 12, { color: [0.2, 0.22, 0.22], cap: true }); lampPts.push({ p: [x, y + 0.7, z], s: 0.15 }); }
-    B.frame(0, 0, 0, 0); addCircle(x, z, 0.1); };
-  const bin = (x0, z0, c = [0.26, 0.42, 0.34]) => { const q = K.freeSpot(x0, z0, 0.32); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.26, 0.24, 0.85, 14, { color: c }); B.cyl('metal', 0, 0.85, 0, 0.28, 0.2, 0.1, 14, { color: [0.3, 0.32, 0.33], cap: true }); B.cyl('dark', 0, 0.9, 0, 0.1, 0.1, 0.06, 10, { color: [0.1, 0.1, 0.1], cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.28); navRect(x, z, 0.35, 0.35, 0, 2); };
+    B.frame(0, 0, 0, 0); addCircle(x, z, 0.1); }); };
+  const bin = (x0, z0, c = [0.26, 0.42, 0.34]) => { return entity('litter_bin', () => { const q = K.freeSpot(x0, z0, 0.32); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.26, 0.24, 0.85, 14, { color: c }); B.cyl('metal', 0, 0.85, 0, 0.28, 0.2, 0.1, 14, { color: [0.3, 0.32, 0.33], cap: true }); B.cyl('dark', 0, 0.9, 0, 0.1, 0.1, 0.06, 10, { color: [0.1, 0.1, 0.1], cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.28); navRect(x, z, 0.35, 0.35, 0, 2); }); };
   // a bench with a bin at one end, the pair set back from a path edge (yaw: the way the seat faces)
   const seat = (x, z, yaw, withBin = false) => { const q = benchAt(x, z, yaw); if (q && withBin) bin(q[0] + Math.cos(yaw) * 1.3, q[1] - Math.sin(yaw) * 1.3); };
   // rocks: scanned stones and boulders (instanced in town.js) placed by the rules of a real outcrop — never on paving,
@@ -113,7 +114,7 @@ export function buildParks(K) {
   const blockPoly = (P, m = 0) => { const xs = P.map(p => p[0]), zs = P.map(p => p[1]);
     for (let z = Math.floor(Math.min(...zs)) - 1; z <= Math.max(...zs) + 1; z++) for (let x = Math.floor(Math.min(...xs)) - 1; x <= Math.max(...xs) + 1; x++) if (inPolyW(P, x + 0.5, z + 0.5)) navRect(x + 0.5, z + 0.5, 0.5 + m, 0.5 + m, 0, 2); };
   // play-yard fence: steel posts and rails with pickets, gaps with gate frames at `gates` (distances along the run)
-  const fence = (pts, color, gates = [], h = 0.9) => {
+  const fence = (pts, color, gates = [], h = 0.9) => { return entity('fence', () => {
     B.frame(0, 0, 0, 0); let s = 0;
     for (let i = 0; i + 1 < pts.length; i++) { const [ax, az] = pts[i], [bx, bz] = pts[i + 1], L = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / L, uz = (bz - az) / L;
       const open = t => gates.some(g => Math.abs(s + t - g) < 0.75);
@@ -124,7 +125,7 @@ export function buildParks(K) {
       for (const g of gates) if (g >= s && g <= s + L) for (const e of [-0.78, 0.78]) { const t = g - s + e, x = ax + ux * t, z = az + uz * t; B.box('metal', x, gy(x, z) - 0.2, z, 0.08, h + 0.5, 0.08, { color }); }
       for (let t = 0; t < L; t += 0.5) if (!open(t + 0.25)) navRect(ax + ux * (t + 0.25), az + uz * (t + 0.25), 0.3, 0.3, 0, 2);
       s += L; }
-  };
+  }); };
 
   // ================================================================ 噴水広場: the fountain park
   function fountainPark() {
@@ -145,7 +146,7 @@ export function buildParks(K) {
     // water: a plume from the finial falling back in a crown onto the upper bowl, a sheet off its lip into the lower bowl,
     // eight spouts from the lower bowl's scallops arching into the basin, sixteen jets from the basin's rim arching in to
     // meet them; white water where every fall lands; lights set in the basin floor and under the bowls
-    { const y = gy(cx, cz), N = 96, RB = a => 5.15 + 0.32 * Math.cos(8 * a), GR = [0.66, 0.64, 0.61], GRD = [0.5, 0.49, 0.47], CAP = [0.78, 0.76, 0.72], CS = [0.84, 0.82, 0.77];
+    entity('fountain', () => { const y = gy(cx, cz), N = 96, RB = a => 5.15 + 0.32 * Math.cos(8 * a), GR = [0.66, 0.64, 0.61], GRD = [0.5, 0.49, 0.47], CAP = [0.78, 0.76, 0.72], CS = [0.84, 0.82, 0.77];
       const P = (a, r, h) => [Math.cos(a) * r, h, Math.sin(a) * r];
       B.frame(cx, y, cz, 0);
       for (let k = 0; k < N; k++) { const a0 = k / N * Math.PI * 2, a1 = (k + 1) / N * Math.PI * 2, am = (a0 + a1) / 2, r0 = RB(a0), r1 = RB(a1), o = [Math.cos(am), 0, Math.sin(am)];
@@ -208,13 +209,13 @@ export function buildParks(K) {
       // light: a ring of lamps in the basin floor, uplights under the lower bowl
       for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, rr = RB(a) - 1.1; B.cyl('lamp', Math.cos(a) * rr, 0.065, Math.sin(a) * rr, 0.1, 0.1, 0.02, 10, { cap: true }); }
       for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; B.cyl('lamp', Math.cos(a) * 1.0, 0.62, Math.sin(a) * 1.0, 0.08, 0.08, 0.02, 8, { cap: true }); lampPts.push({ p: [cx + Math.cos(a) * 3.6, WL + 0.5, cz + Math.sin(a) * 3.6], s: 0.6 }); lampPts.push({ p: [cx + Math.cos(a) * 0.9, y + 1.2, cz + Math.sin(a) * 0.9], s: 0.35 }); }
-      B.frame(0, 0, 0, 0); addCircle(cx, cz, 5.6); navRect(cx, cz, 5.8, 5.8, 0, 2); }
+      B.frame(0, 0, 0, 0); addCircle(cx, cz, 5.6); navRect(cx, cz, 5.8, 5.8, 0, 2); });
     // four round granite planters on the diagonals, clipped box balls and seasonal flowers in them
-    for (const a of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4]) { const px = cx + Math.cos(a) * 7.2, pz = cz + Math.sin(a) * 7.2, py = gy(px, pz); B.frame(px, py, pz, 0);
+    for (const a of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4]) { entity('planter_round', () => { const px = cx + Math.cos(a) * 7.2, pz = cz + Math.sin(a) * 7.2, py = gy(px, pz); B.frame(px, py, pz, 0);
       B.cyl('stone', 0, 0, 0, 0.85, 0.78, 0.55, 24, { color: [0.62, 0.6, 0.57] }); B.cyl('stone', 0, 0.55, 0, 0.9, 0.9, 0.06, 24, { color: [0.72, 0.7, 0.66] }); B.cyl('plain', 0, 0.56, 0, 0.74, 0.74, 0.02, 24, { color: [0.3, 0.24, 0.18], cap: true });
       B.frame(0, 0, 0, 0); out.bushes.push({ x: px, y: py + 0.55, z: pz, s: 0.9, sx: 1, r: 0, c: col(0.3, 0.45, 0.24), keep: true });
       for (let k = 0; k < 7; k++) { const t = k / 7 * Math.PI * 2; out.bushes.push({ x: px + Math.cos(t) * 0.56, y: py + 0.55, z: pz + Math.sin(t) * 0.56, s: 0.3, sx: 1.2, r: t, c: AZALEA[k % 2].clone(), keep: true }); }
-      addCircle(px, pz, 0.9); navRect(px, pz, 1.0, 1.0, 0, 2); }
+      addCircle(px, pz, 0.9); navRect(px, pz, 1.0, 1.0, 0, 2); }); }
     // benches round the plaza facing the water, between the axes, each with a lamp behind and bins at the quarters
     for (let k = 0; k < 8; k++) { const a = Math.PI / 2 * Math.floor(k / 2) + (k % 2 ? Math.PI / 3 : Math.PI / 6), c = Math.cos(a), s = Math.sin(a);
       seat(cx + c * 8.6, cz + s * 8.6, Math.atan2(-c, -s), false); if (k % 2) lamp(cx + Math.cos(a + 0.13) * (R - 0.45), cz + Math.sin(a + 0.13) * (R - 0.45)); }
@@ -244,18 +245,18 @@ export function buildParks(K) {
     for (const x of [x0 - 5, x0 - 12, x1 + 2.5]) for (const e of [-1, 1]) { const z = cz + e * 3.3; tree('zelkova', x, z, 0.62);
       const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.box('metal', 0, 0.005, 0, 1.4, 0.01, 1.4, { color: [0.22, 0.22, 0.23] }); B.frame(0, 0, 0, 0); }
     // exedra: a curved seat wall of granite closing the north axis, a flower bed behind it, a lamp either end
-    { const ex = cx, ez = z1 - 1.0, Rr = 2.6; B.frame(0, 0, 0, 0);
+    entity('seat_wall', () => { const ex = cx, ez = z1 - 1.0, Rr = 2.6; B.frame(0, 0, 0, 0);
       for (let k = 0; k < 12; k++) { const a0 = Math.PI * (0.05 + 0.9 * k / 12), a1 = Math.PI * (0.05 + 0.9 * (k + 1) / 12), am = (a0 + a1) / 2, px = ex + Math.cos(am) * Rr, pz = ez - 1.4 + Math.sin(am) * Rr;
         B.frame(px, gy(px, pz), pz, Math.atan2(Math.cos(am), Math.sin(am))); B.bbox('stone', 0, 0, 0, 0.5, 0.46, Rr * Math.PI * 0.9 / 12 + 0.04, 0.02, { color: [0.62, 0.6, 0.57] });
         B.bbox('stone', 0, 0.46, 0, 0.56, 0.06, Rr * Math.PI * 0.9 / 12 + 0.06, 0.01, { color: [0.7, 0.68, 0.65] }); }
       B.frame(0, 0, 0, 0); for (let k = 0; k < 14; k++) { const a = Math.PI * (0.05 + 0.9 * k / 13); bush(ex + Math.cos(a) * (Rr + 0.8), ez - 1.4 + Math.sin(a) * (Rr + 0.8), 0.55, AZALEA[k % 2]); }
       for (const e of [-1, 1]) lamp(ex + e * (Rr + 0.2), ez - 1.6);
-      navRect(ex, ez - 0.3, Rr + 0.6, 1.4, 0, 2); }
+      navRect(ex, ez - 0.3, Rr + 0.6, 1.4, 0, 2); });
     // south axis end: a bronze sculpture on a plinth in a round bed
-    { const sx = cx, sz = z0 + 1.2, y = gy(sx, sz); B.frame(sx, y, sz, 0); B.cyl('stone', 0, 0, 0, 1.3, 1.3, 0.35, 24, { color: [0.62, 0.6, 0.57] }); B.cyl('plain', 0, 0.35, 0, 1.2, 1.2, 0.02, 24, { color: [0.3, 0.24, 0.18], cap: true });
+    entity('sculpture', () => { const sx = cx, sz = z0 + 1.2, y = gy(sx, sz); B.frame(sx, y, sz, 0); B.cyl('stone', 0, 0, 0, 1.3, 1.3, 0.35, 24, { color: [0.62, 0.6, 0.57] }); B.cyl('plain', 0, 0.35, 0, 1.2, 1.2, 0.02, 24, { color: [0.3, 0.24, 0.18], cap: true });
       B.bbox('stone', 0, 0.35, 0, 0.7, 0.9, 0.7, 0.03, { color: [0.7, 0.68, 0.64] });
       B.cyl('metal', 0, 1.25, 0, 0.18, 0.28, 0.9, 12, { color: [0.36, 0.3, 0.2] }); B.cyl('metal', 0, 2.15, 0, 0.3, 0.12, 0.6, 12, { color: [0.36, 0.3, 0.2] }); B.cyl('metal', 0.1, 2.75, 0, 0.16, 0.05, 0.4, 10, { color: [0.36, 0.3, 0.2], cap: true });
-      B.frame(0, 0, 0, 0); for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; bush(sx + Math.cos(a) * 0.95, sz + Math.sin(a) * 0.95, 0.35, FL[k % 3]); } addCircle(sx, sz, 1.3); navRect(sx, sz, 1.4, 1.4, 0, 2); }
+      B.frame(0, 0, 0, 0); for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; bush(sx + Math.cos(a) * 0.95, sz + Math.sin(a) * 0.95, 0.35, FL[k % 3]); } addCircle(sx, sz, 1.3); navRect(sx, sz, 1.4, 1.4, 0, 2); });
     // the edges: a low clipped hedge along the car park and the ends, bollards at the promenade's mouths
     hedge([x0, z0 - 0.3], [cx - 2.2, z0 - 0.3], 0.8); hedge([cx + 2.2, z0 - 0.3], [x1, z0 - 0.3], 0.8);
     for (const x of [x0 - 0.4, x1 + 0.4]) { hedge([x, z0 - 0.3], [x, cz - 2.6], 0.8); hedge([x, cz + 2.6], [x, z1], 0.8); for (const e of [-1.9, 1.9]) bollard(x, cz + e); }
@@ -399,7 +400,7 @@ export function buildParks(K) {
       B.tri('plain', [px + Math.cos(t) * w, wy, pz + Math.sin(t) * w], [px - Math.cos(t) * w, wy, pz - Math.sin(t) * w], [px + lx, wy + h, pz + lz], { color: c });
       if (rng() < 0.25) B.cyl('plain', px + lx * 0.95, wy + h * 0.82, pz + lz * 0.95, 0.03, 0.025, 0.2, 5, { color: [0.4, 0.28, 0.18] }); } }
   // arched timber bridge in vermilion between two points (the path's ends either side), deck rising to the middle
-  function bridge(ax, az, bx, bz, w) {
+  function bridge(ax, az, bx, bz, w) { return entity('park_bridge', () => {
     const L = Math.hypot(bx - ax, bz - az), r = Math.atan2(bx - ax, bz - az), y0 = gy(ax, az) + 0.05, y1 = gy(bx, bz) + 0.05, rise = 0.55, VER = [0.78, 0.22, 0.14];
     B.frame(ax, 0, az, r); const n = 12, yAt = t => lerp(y0, y1, t) + Math.sin(t * Math.PI) * rise;
     for (let k = 0; k < n; k++) { const t0 = k / n, t1 = (k + 1) / n;
@@ -415,7 +416,7 @@ export function buildParks(K) {
     if (K.area) { const ux = (bx - ax) / L, uz = (bz - az) / L, nx = -uz * w / 2, nz = ux * w / 2;                                                     // the paths meet its ends
       K.area([[ax - nx, az - nz], [bx - nx, bz - nz], [bx + nx, bz + nz], [ax + nx, az + nz]], (x, z) => yAt(clamp(((x - ax) * ux + (z - az) * uz) / L, 0, 1))); }
     navRect((ax + bx) / 2, (az + bz) / 2, w / 2, L / 2, r, 1);
-  }
+  }); }
 
   // ================================================================ 児童遊園: the playground in the court of the U
   function playground() {
@@ -466,7 +467,7 @@ export function buildParks(K) {
   }
   // combination play tower: two decks joined by a rope bridge, roofs, a wide slide, a wavy slide, a climbing wall,
   // a ladder and a pole
-  function combo(x, z, yaw) { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw);
+  function combo(x, z, yaw) { return entity('play_structure', () => { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw);
     const post = (px, pz, h, c) => B.cyl('steel', px, 0, pz, 0.065, 0.065, h, 10, { color: c }), BLU = [0.2, 0.5, 0.74], YEL = [0.96, 0.78, 0.2], RED = [0.86, 0.28, 0.22], GRN = [0.24, 0.66, 0.4];
     const tower = (tx, dh, roof) => { for (const sx of [-1, 1]) for (const sz of [-1, 1]) post(tx + sx * 0.8, sz * 0.8, dh + 1.6, BLU);
       B.bbox('plastic', tx, dh, 0, 1.7, 0.08, 1.7, 0.02, { color: YEL });
@@ -488,35 +489,35 @@ export function buildParks(K) {
     for (let k = 0; k < 5; k++) B.box('steel', -3.2 - k * 0.12, 0.3 + k * 0.28, 0, 0.05, 0.05, 0.8, { color: [0.7, 0.7, 0.72] });
     for (const e of [-0.42, 0.42]) B.beam('steel', [-3.9, 0, e], [-3.05, 1.5, e], 0.06, 0.06, { color: [0.7, 0.7, 0.72] });
     B.cyl('steel', 1.2, 0, 1.2, 0.035, 0.035, 2.6, 8, { color: [0.8, 0.8, 0.8] });
-    B.frame(0, 0, 0, 0); addBox(x, z, 3.3, 1.0, yaw, y - 1, y + 4.4); }
-  function swings4(x, z, yaw) { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw); const C = [0.86, 0.3, 0.24];
+    B.frame(0, 0, 0, 0); addBox(x, z, 3.3, 1.0, yaw, y - 1, y + 4.4); }); }
+  function swings4(x, z, yaw) { return entity('swings', () => { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw); const C = [0.86, 0.3, 0.24];
     for (const sx of [-3.6, 0, 3.6]) for (const sz of [-1, 1]) B.beam('steel', [sx, 0, sz * 1.2], [sx, 2.5, 0], 0.08, 0.08, { color: C });
     B.beam('steel', [-3.7, 2.5, 0], [3.7, 2.5, 0], 0.1, 0.1, { color: C });
     for (const sx of [-2.6, -1.0, 1.0, 2.6]) { for (const e of [-0.22, 0.22]) B.beam('steel', [sx + e, 2.48, 0], [sx + e, 0.52, 0], 0.012, 0.012, { color: [0.6, 0.6, 0.6] }); B.bbox('plastic', sx, 0.46, 0, 0.5, 0.06, 0.24, 0.01, { color: [0.12, 0.14, 0.16] }); }
     B.bbox('steel', 0, 0, 2.6, 7.6, 0.55, 0.06, 0.01, { color: [0.95, 0.8, 0.2] }); for (const sx of [-3.8, 3.8]) B.box('steel', sx, 0, 2.6, 0.08, 0.55, 0.08, { color: [0.95, 0.8, 0.2] });     // safety rail in front
-    B.frame(0, 0, 0, 0); addBox(x, z, 3.8, 0.4, yaw, y - 1, y + 2.6); addBox(x + Math.sin(yaw) * 2.6, z + Math.cos(yaw) * 2.6, 3.8, 0.05, yaw, y - 1, y + 0.6); }
-  function seesaw(x, z, yaw) { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw);
+    B.frame(0, 0, 0, 0); addBox(x, z, 3.8, 0.4, yaw, y - 1, y + 2.6); addBox(x + Math.sin(yaw) * 2.6, z + Math.cos(yaw) * 2.6, 3.8, 0.05, yaw, y - 1, y + 0.6); }); }
+  function seesaw(x, z, yaw) { return entity('seesaw', () => { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw);
     B.bbox('steel', 0, 0, 0, 0.5, 0.45, 0.6, 0.02, { color: [0.3, 0.5, 0.76] }); B.cyl('steel', 0, 0.45, -0.3, 0.06, 0.06, 0.6, 8, { color: [0.7, 0.7, 0.72] });
     B.beam('plastic', [-1.9, 0.26, 0], [1.9, 0.72, 0], 0.26, 0.08, { color: [0.95, 0.74, 0.2] });
     for (const [sx, sy] of [[-1.7, 0.3], [1.7, 0.7]]) { B.bbox('plastic', sx, sy + 0.04, 0, 0.36, 0.06, 0.34, 0.01, { color: [0.86, 0.3, 0.24] }); B.box('steel', sx + (sx < 0 ? 0.3 : -0.3), sy, 0, 0.04, 0.4, 0.04, { color: [0.7, 0.7, 0.72] }); B.box('steel', sx + (sx < 0 ? 0.3 : -0.3), sy + 0.38, 0, 0.04, 0.04, 0.34, { color: [0.7, 0.7, 0.72] }); }
     for (const sx of [-1.8, 1.8]) B.cyl('dark', sx, 0, 0, 0.2, 0.2, 0.14, 10, { color: [0.12, 0.12, 0.12], cap: true });
-    B.frame(0, 0, 0, 0); addBox(x, z, 2, 0.3, yaw, y - 1, y + 0.9); }
-  function bars(x, z, yaw) { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw); const hs = [0.9, 1.1, 1.35], C = [[0.3, 0.62, 0.86], [0.95, 0.72, 0.2], [0.86, 0.3, 0.24]];
+    B.frame(0, 0, 0, 0); addBox(x, z, 2, 0.3, yaw, y - 1, y + 0.9); }); }
+  function bars(x, z, yaw) { return entity('horizontal_bars', () => { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw); const hs = [0.9, 1.1, 1.35], C = [[0.3, 0.62, 0.86], [0.95, 0.72, 0.2], [0.86, 0.3, 0.24]];
     for (let i = 0; i <= 3; i++) B.cyl('steel', -1.8 + i * 1.2, 0, 0, 0.05, 0.05, (hs[Math.min(i, 2)] + (i ? hs[i - 1] : hs[0])) / 2 + 0.1, 10, { color: C[Math.min(i, 2)], cap: true });
     for (let i = 0; i < 3; i++) B.beam('steel', [-1.8 + i * 1.2, hs[i], 0], [-0.6 + i * 1.2, hs[i], 0], 0.03, 0.03, { color: [0.8, 0.8, 0.8] });
-    B.frame(0, 0, 0, 0); addBox(x, z, 1.9, 0.1, yaw, y - 1, y + 1.4); }
-  function dome(x, z, R) { const y = gy(x, z) + 0.06; B.frame(x, y, z, 0); const C = [0.2, 0.62, 0.42];
+    B.frame(0, 0, 0, 0); addBox(x, z, 1.9, 0.1, yaw, y - 1, y + 1.4); }); }
+  function dome(x, z, R) { return entity('climbing_dome', () => { const y = gy(x, z) + 0.06; B.frame(x, y, z, 0); const C = [0.2, 0.62, 0.42];
     for (let m = 0; m < 8; m++) { const a = m / 8 * Math.PI * 2; let p = [Math.cos(a) * R, 0, Math.sin(a) * R]; for (let k = 1; k <= 4; k++) { const e = k / 4 * Math.PI / 2, q = [Math.cos(a) * R * Math.cos(e), R * Math.sin(e), Math.sin(a) * R * Math.cos(e)]; B.beam('steel', p, q, 0.04, 0.04, { color: C }); p = q; } }
     for (const k of [1, 2, 3]) { const e = k / 4 * Math.PI / 2, r = R * Math.cos(e), h = R * Math.sin(e); for (let m = 0; m < 8; m++) { const a0 = m / 8 * Math.PI * 2, a1 = (m + 1) / 8 * Math.PI * 2; B.beam('steel', [Math.cos(a0) * r, h, Math.sin(a0) * r], [Math.cos(a1) * r, h, Math.sin(a1) * r], 0.035, 0.035, { color: [0.95, 0.74, 0.2] }); } }
-    B.frame(0, 0, 0, 0); addCircle(x, z, R); }
-  function playHouse(x, z, yaw) { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw);
+    B.frame(0, 0, 0, 0); addCircle(x, z, R); }); }
+  function playHouse(x, z, yaw) { return entity('play_house', () => { const y = gy(x, z) + 0.06; B.frame(x, y, z, yaw);
     for (const sx of [-0.8, 0.8]) for (const sz of [-0.7, 0.7]) B.box('wood', sx, 0, sz, 0.1, 1.3, 0.1, { color: [0.6, 0.44, 0.3] });
     B.bbox('wood', 0, 0.35, -0.7, 1.6, 0.6, 0.06, 0.01, { color: [0.96, 0.9, 0.8] }); B.bbox('wood', 0, 0.35, 0.7, 1.6, 0.6, 0.06, 0.01, { color: [0.96, 0.9, 0.8] });
     B.poly('plastic', [[-1.0, 1.3, -0.9], [1.0, 1.3, -0.9], [1.0, 1.85, 0], [-1.0, 1.85, 0]], [0, 1, -1], { color: [0.86, 0.3, 0.24] }); B.poly('plastic', [[1.0, 1.3, 0.9], [-1.0, 1.3, 0.9], [-1.0, 1.85, 0], [1.0, 1.85, 0]], [0, 1, 1], { color: [0.86, 0.3, 0.24] });
     B.bbox('wood', 0, 0.45, 0, 0.8, 0.05, 0.5, 0.01, { color: [0.6, 0.44, 0.3] });
-    B.frame(0, 0, 0, 0); addBox(x, z, 0.9, 0.8, yaw, y - 1, y + 1.9); }
-  function fountainTap(x0, z0) { const q = K.freeSpot(x0, z0, 0.45); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 0.4, 0.8, 0.4, 0.03, { color: [0.72, 0.72, 0.7] }); B.cyl('steel', 0, 0.8, 0, 0.22, 0.16, 0.08, 14, { color: [0.78, 0.8, 0.82], cap: true });
-    B.cyl('steel', 0.05, 0.86, 0, 0.02, 0.02, 0.12, 6, { color: [0.8, 0.8, 0.82], cap: true }); B.bbox('concrete', 0.35, 0, 0, 0.3, 0.45, 0.3, 0.02, { color: [0.72, 0.72, 0.7] }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.3); navRect(x, z, 0.5, 0.4, 0, 2); }
+    B.frame(0, 0, 0, 0); addBox(x, z, 0.9, 0.8, yaw, y - 1, y + 1.9); }); }
+  function fountainTap(x0, z0) { return entity('drinking_fountain', () => { const q = K.freeSpot(x0, z0, 0.45); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 0.4, 0.8, 0.4, 0.03, { color: [0.72, 0.72, 0.7] }); B.cyl('steel', 0, 0.8, 0, 0.22, 0.16, 0.08, 14, { color: [0.78, 0.8, 0.82], cap: true });
+    B.cyl('steel', 0.05, 0.86, 0, 0.02, 0.02, 0.12, 6, { color: [0.8, 0.8, 0.82], cap: true }); B.bbox('concrete', 0.35, 0, 0, 0.3, 0.45, 0.3, 0.02, { color: [0.72, 0.72, 0.7] }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.3); navRect(x, z, 0.5, 0.4, 0, 2); }); }
 
   // the hill foot: where the district's platform is let into the valley side, the steeper spots of the bank carry a few
   // stone groups (big stone downhill-leaning, the spill of small stones below it), never on a road, path or field edge

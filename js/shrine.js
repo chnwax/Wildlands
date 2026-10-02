@@ -6,6 +6,7 @@
 //  honden with chigi and katsuogi inside a tamagaki fence; ema and omikuji racks; a stone-paved sando.
 import { mulberry32, addPlatform } from './core.js';
 import { gableRoof, inFrame, wallFill, reveals, windowUnit, doorUnit } from './building.js';
+import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 const TAU = Math.PI * 2;
 const circle = (r, n = 8) => Array.from({ length: n }, (_, i) => [Math.cos(i / n * TAU) * r, Math.sin(i / n * TAU) * r]);
@@ -49,7 +50,7 @@ export function shimenawa(B, M, a, b, sag, rad, nShide) {
       B.quad(M.paper, [x0 + 0.06, y - 0.1, p[2] - 0.004], [x0 - 0.06, y - 0.1, p[2] - 0.004], [x0 - 0.06, y, p[2] - 0.004], [x0 + 0.06, y, p[2] - 0.004], { color: mul(WHITE, 0.85) }); }
   }
 }
-export function komainu(B, M, x, z, r, open) {
+function komainu_build(B, M, x, z, r, open) {
   inFrame(B, [x, 0, z], r, () => {
     B.bbox(M.stone, 0, 0, 0, 1.0, 0.24, 1.0, 0.02, { color: mul(STONE, 0.9) });
     B.bbox(M.stone, 0, 0.24, 0, 0.74, 0.72, 0.74, 0.025, { color: STONE });
@@ -67,7 +68,7 @@ export function komainu(B, M, x, z, r, open) {
   });
 }
 // kasuga-style stone lantern; returns the fire box position for a night light
-export function toro(B, M, x, z, s = 1) {
+function toro_build(B, M, x, z, s = 1) {
   return inFrame(B, [x, 0, z], 0, () => {
     const c = STONE, o = { color: c, cap: true, smooth: false };
     B.cyl(M.stone, 0, 0, 0, 0.44 * s, 0.4 * s, 0.16 * s, 6, { ...o, color: mul(c, 0.9) });
@@ -86,7 +87,7 @@ export function toro(B, M, x, z, s = 1) {
     return B.P([0, 1.3 * s, 0]);
   });
 }
-export function offeringBox(B, M, x, z, w = 1.3) {
+function offeringBox_build(B, M, x, z, w = 1.3) {
   inFrame(B, [x, 0, z], 0, () => {
     B.bbox(M.wood, 0, 0, 0, w, 0.62, 0.62, 0.015, { color: OLDWOOD });
     for (let i = 0; i < 7; i++) B.beam(M.wood, [-w / 2 + 0.05, 0.62, -0.25 + i * 0.08], [w / 2 - 0.05, 0.62, -0.25 + i * 0.08], 0.025, 0.05, { color: mul(OLDWOOD, 0.8) });
@@ -117,7 +118,7 @@ export function irimoyaRoof(B, M, { w, d, y, pitch, over, color, g = 0.5, t = 0.
   return { yR, ye };
 }
 // the worship hall; local +Z faces the approach
-export function haiden(B, M, x, z, r, { w = 8, d = 6, col = VERM, roofC = COPPER } = {}) {
+function haiden_build(B, M, x, z, r, { w = 8, d = 6, col = VERM, roofC = COPPER } = {}) {
   return inFrame(B, [x, 0, z], r, () => {
     const fl = 1.0, ch = 3.1;
     B.bbox(M.stone, 0, 0, 0, w + 2.0, 0.45, d + 2.0, 0.03, { color: STONE, uv: 2 });
@@ -165,7 +166,7 @@ export function haiden(B, M, x, z, r, { w = 8, d = 6, col = VERM, roofC = COPPER
   });
 }
 // main sanctuary (nagare-zukuri gable) with chigi and katsuogi
-export function honden(B, M, x, z, r, { w = 3.6, d = 3.2, col = VERM, roofC = COPPER } = {}) {
+function honden_build(B, M, x, z, r, { w = 3.6, d = 3.2, col = VERM, roofC = COPPER } = {}) {
   inFrame(B, [x, 0, z], r, () => {
     const fl = 1.2, ch = 2.4;
     B.bbox(M.stone, 0, 0, 0, w + 1.4, 0.6, d + 1.4, 0.03, { color: STONE, uv: 2 });
@@ -191,7 +192,7 @@ export function tamagaki(B, M, x, z, w, d, col = VERM) {
     run(-w / 2, -d / 2, w / 2, -d / 2); run(-w / 2, -d / 2, -w / 2, d / 2); run(w / 2, -d / 2, w / 2, d / 2); run(-w / 2, d / 2, -0.9, d / 2); run(0.9, d / 2, w / 2, d / 2);
   });
 }
-export function chozuya(B, M, x, z, r, { col = OLDWOOD, roofC = COPPER } = {}) {
+function chozuya_build(B, M, x, z, r, { col = OLDWOOD, roofC = COPPER } = {}) {
   inFrame(B, [x, 0, z], r, () => {
     B.bbox(M.stone, 0, 0, 0, 2.8, 0.14, 2.2, 0.02, { color: mul(STONE, 0.92) });
     B.bbox(M.stone, 0, 0.14, 0, 1.6, 0.26, 0.82, 0.03, { color: mul(STONE, 0.85) });
@@ -206,7 +207,7 @@ export function chozuya(B, M, x, z, r, { col = OLDWOOD, roofC = COPPER } = {}) {
     gableRoof(B, { w: 2.3, d: 1.7, y: 2.38, pitch: 0.55, over: 0.55, rake: 0.45, mat: M.roof, color: roofC, gutters: false, wallMat: M.wood, wallColor: mul(col, 0.9), t: 0.12 });
   });
 }
-export function emaRack(B, M, x, z, r, rng) {
+function emaRack_build(B, M, x, z, r, rng) {
   inFrame(B, [x, 0, z], r, () => {
     for (const s of [-1, 1]) B.bbox(M.wood, s * 1.0, 0, 0, 0.1, 2.0, 0.1, 0.01, { color: OLDWOOD });
     for (const yy of [0.9, 1.35, 1.8]) B.bbox(M.wood, 0, yy, 0, 2.1, 0.05, 0.06, 0.005, { color: OLDWOOD });
@@ -219,7 +220,7 @@ export function emaRack(B, M, x, z, r, rng) {
     gableRoof(B, { w: 2.2, d: 0.4, y: 2.0, pitch: 0.5, over: 0.2, rake: 0.1, mat: M.roof, color: [0.3, 0.3, 0.32], gutters: false, wallMat: M.wood, wallColor: OLDWOOD, t: 0.06 });
   });
 }
-export function omikuji(B, M, x, z, r, rng) {
+function omikuji_build(B, M, x, z, r, rng) {
   inFrame(B, [x, 0, z], r, () => {
     for (const s of [-1, 1]) B.bbox(M.wood, s * 1.1, 0, 0, 0.08, 1.7, 0.08, 0.01, { color: OLDWOOD });
     for (const yy of [1.0, 1.35, 1.65]) { B.beam(M.metal, [-1.1, yy, 0], [1.1, yy, 0], 0.012, 0.012, { color: [0.5, 0.5, 0.5] });
@@ -247,7 +248,7 @@ export function sacredRope(B, M, x, z, rad = 0.98, y = 1.9) {
       B.quad(M.paper, [xx - 0.06, yy - 0.1, 0], [xx + 0.06, yy - 0.1, 0], [xx + 0.06, yy, 0], [xx - 0.06, yy, 0], { color: WHITE }); B.quad(M.paper, [xx + 0.06, yy - 0.1, -0.004], [xx - 0.06, yy - 0.1, -0.004], [xx - 0.06, yy, -0.004], [xx + 0.06, yy, -0.004], { color: mul(WHITE, 0.85) }); } }); }
 }
 // town shrine compound; local +Z faces the approach, origin at the torii. Returns lamp points, colliders, tree spot
-export function shrineCompound(B, M, x, y, z, r, extras, rng) {
+function shrineCompound_build(B, M, x, y, z, r, extras, rng) {
   const lamps = [];
   B.frame(x, y, z, r);
   const circ = (lx, lz, rr) => extras.push({ t: 'circle', p: B.P([lx, 0, lz]), r: rr });
@@ -304,7 +305,7 @@ export function shrineCompound(B, M, x, y, z, r, extras, rng) {
   return { lamps, tree: B.P([6.8, 0, -19.2]), top: H.top };
 }
 // the small Wildlands shrine: torii with a rope, a raised hokora with chigi, two lanterns, an offering box
-export function wildShrine(B, M, x, y, z, r) {
+function wildShrine_build(B, M, x, y, z, r) {
   B.frame(x, y, z, r);
   const cols = torii(B, M, { span: 3.6, h: 4.5, rope: true });
   for (let k = 0; k < 7; k++) B.bbox(M.stone, (k % 2 - 0.5) * 0.15, -0.08, 2 - k * 1.2, 1.1, 0.14, 0.8, 0.02, { color: STONE });
@@ -313,3 +314,15 @@ export function wildShrine(B, M, x, y, z, r) {
   offeringBox(B, M, 0, -3.9, 0.9);
   return { cols: cols.map(([px, pz]) => B.P([px, 0, pz])), lamps, hall: B.P([0, 0, -6.2]) };
 }
+
+// ---------------------------------------------------------------- placed objects (world/capture.js: each call is one editable world object)
+export const shrineCompound = placeable('shrine_compound', shrineCompound_build, (B, M, x, y, z, r) => [x, y, z, r]);
+export const wildShrine = placeable('wayside_shrine', wildShrine_build, (B, M, x, y, z, r) => [x, y, z, r]);
+export const toro = placeable('stone_lantern_toro', toro_build, (B, M, x, z) => atLocal(B, x, 0, z));
+export const komainu = placeable('komainu', komainu_build, (B, M, x, z, r) => atLocal(B, x, 0, z, r));
+export const chozuya = placeable('chozuya', chozuya_build, (B, M, x, z, r) => atLocal(B, x, 0, z, r));
+export const haiden = placeable('haiden', haiden_build, (B, M, x, z, r) => atLocal(B, x, 0, z, r));
+export const honden = placeable('honden', honden_build, (B, M, x, z, r) => atLocal(B, x, 0, z, r));
+export const emaRack = placeable('ema_rack', emaRack_build, (B, M, x, z, r) => atLocal(B, x, 0, z, r));
+export const omikuji = placeable('omikuji_stand', omikuji_build, (B, M, x, z, r) => atLocal(B, x, 0, z, r));
+export const offeringBox = placeable('offering_box', offeringBox_build, (B, M, x, z) => atLocal(B, x, 0, z));

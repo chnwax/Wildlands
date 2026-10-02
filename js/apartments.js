@@ -12,6 +12,7 @@
 import { THREE, scene, clamp, lerp } from './core.js';
 import { lampPoints, signMesh, JP_FONT, materials } from './townkit.js';
 import { inFrame, windowUnit, doorUnit, flatRoof, hipRoof, acUnit, meterBox, downpipe, boxWalls, antenna, reveals, wallFill } from './building.js';
+import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
 const mul = (c, k) => c.map(v => v * k);
@@ -428,7 +429,7 @@ export function envelope(fam, o) {
 const courtW = (B, [x0, z0, x1, z1]) => [B.P([x0, 0, z0]), B.P([x1, 0, z0]), B.P([x1, 0, z1]), B.P([x0, 0, z1])].map(p => [p[0], p[2]]);
 
 // ---------------------------------------------------------------- 階段室型 walk-up slab
-export function walkupSlab(B, s, rng, ex) {
+function walkupSlab_build(B, s, rng, ex) {
   const { x, y, z, r, w, d = 9.6, floors = 5, pal = PALETTES.cream, no = 1, bal = 'solid' } = s, fh = 2.8, y0 = 0.35, H = y0 + floors * fh;
   const nU = Math.max(2, Math.round(w / 6.9 / 2) * 2), uw = w / nU, out = { entrances: [], lamps: [] };
   const cores = []; for (let k = 0; k < nU / 2; k++) cores.push(-w / 2 + (2 * k + 1) * uw);
@@ -529,7 +530,7 @@ export function walkupSlab(B, s, rng, ex) {
 }
 
 // ---------------------------------------------------------------- ポイント型 point tower
-export function pointTower(B, s, rng, ex) {
+function pointTower_build(B, s, rng, ex) {
   const { x, y, z, r, w = 18, d = 16, floors = 11, pal = PALETTES.white, no = 1 } = s, fh = 2.9, y0 = 0.4, H = y0 + floors * fh;
   const out = { entrances: [], lamps: [] }, wall = jit(rng, pal.wall, 0.02), WR = 3.2;                                      // WR: corner balconies wrap this far
   B.frame(x, y, z, r);
@@ -599,7 +600,7 @@ export function pointTower(B, s, rng, ex) {
 }
 
 // ---------------------------------------------------------------- modern mid-rise (マンション)
-export function mansion(B, s, rng, ex) {
+function mansion_build(B, s, rng, ex) {
   const { x, y, z, r, w, d = 11.5, floors = 8, pal = PALETTES.mocha, no = 1, podium = false, pilotis = 0, name = null } = s, fh = 3.0, y0 = podium ? 0.1 : 0.4, H = y0 + floors * fh;
   const nU = Math.max(3, Math.round(w / 6.6)), uw = w / nU, out = { entrances: [], lamps: [] }, wall = jit(rng, pal.wall, 0.02);
   const lift = s.lift ?? Math.round(nU / 2) - 1, liftX = -w / 2 + (lift + 1) * uw;                                        // lift at a unit boundary near the middle
@@ -765,7 +766,7 @@ export function mansion(B, s, rng, ex) {
 // corridors and lobbies face the court inside the L (+x +z). The tower rises two floors over the wings and carries
 // recessed loggias (balconies set into the building, walled both sides) on its two street faces, glazed corner rooms at
 // the top, a community room with a glazed front at street level, and the block's name on its crown.
-export function cornerBlock(B, s, rng, ex) {
+function cornerBlock_build(B, s, rng, ex) {
   const { x, y, z, r, wa = 30, wb = 26, floors = 7, pal = PALETTES.white, no = 1, name = 'グランコート桜川', gy } = s, C = 6.0, fh = 3.0, y0 = 0.4, CF = floors + 2, H = y0 + CF * fh;
   const P = (lx, lz) => { B.frame(x, y, z, r); return B.P([lx, 0, lz]); };
   const pa = P(C + wa / 2 - 0.3, 0), A = mansion(B, { x: pa[0], y, z: pa[2], r: r + Math.PI, w: wa, floors, pal, no, name: name + ' A棟', gy, lift: 0 }, rng, ex);
@@ -821,7 +822,7 @@ export function cornerBlock(B, s, rng, ex) {
 // mansion wings stand back on the podium roof, whose open parts are a planted terrace.
 const SHOPS = [['スーパーさくら', '#c8342c', '#fff', 0], ['ドラッグ桜川', '#1f5fa8', '#fff', 0], ['桜川クリニック', '#2a8a6a', '#fff', 3], ['ベーカリー こむぎ', '#8a5a30', '#fff3dc', 7],
   ['郵便局', '#d8302a', '#fff', 4], ['書店', '#333', '#f2e6c8', 6], ['カフェ はなみずき', '#5b7f3a', '#fff', 1], ['クリーニング', '#2f6ea6', '#fff', 3]];
-export function centreBlock(B, s, rng, ex) {
+function centreBlock_build(B, s, rng, ex) {
   const { x, y, z, r, wa = 58, wb = 40, dp = 17, pal = PALETTES.brick } = s, PH = 4.6, out = { entrances: [], lamps: [], shopFronts: [] };
   B.frame(x, y, z, r);
   const legs = [{ cx: wa / 2, cz: -dp / 2, w: wa, d: dp, face: 0 }, { cx: dp / 2, cz: -dp - (wb - dp) / 2, w: wb - dp, d: dp, face: 1 }];
@@ -891,7 +892,7 @@ export function centreBlock(B, s, rng, ex) {
 
 // ---------------------------------------------------------------- 2-storey terraced flats (アパート)
 const APATO = ['コーポ桜', 'ハイツ川辺', 'メゾン花水木', 'グリーンハイツ', 'コーポ田園', 'ハイム東雲', 'サンライズ桜川', 'レジデンス若葉'];
-export function lowRise(B, s, rng, ex) {
+function lowRise_build(B, s, rng, ex) {
   const { x, y, z, r, w, d = 8.2, pal = PALETTES.cream } = s, fh = 2.75, y0 = 0.45, H = y0 + 2 * fh, out = { entrances: [], lamps: [] };
   const nU = Math.max(3, Math.round(w / 6)), uw = w / nU, wall = jit(rng, pal.wall, 0.03), mat = rng() < 0.5 ? 'siding' : 'stucco';
   B.frame(x, y, z, r);
@@ -955,3 +956,11 @@ export function lowRise(B, s, rng, ex) {
   B.frame(0, 0, 0, 0);
   return out;
 }
+
+// ---------------------------------------------------------------- placed objects (world/capture.js: each call is one editable world object)
+export const walkupSlab = placeable('apartment_walkup', walkupSlab_build, atObj);
+export const pointTower = placeable('apartment_tower', pointTower_build, atObj);
+export const mansion = placeable('apartment_mansion', mansion_build, atObj);
+export const cornerBlock = placeable('apartment_corner', cornerBlock_build, atObj);
+export const centreBlock = placeable('apartment_centre', centreBlock_build, atObj);
+export const lowRise = placeable('apartment_lowrise', lowRise_build, atObj);

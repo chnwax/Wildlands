@@ -6,6 +6,7 @@ import { GeoBuilder } from './townkit.js';
 import { wildShrine } from './shrine.js';
 import { inFrame, wallFill, reveals, windowUnit, doorUnit, gableRoof } from './building.js';
 import { env } from './sky.js';
+import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 let M = null;
 function materials() {
@@ -35,7 +36,7 @@ function materials() {
 const J = (rng, c, a = 0.06) => c.map(v => Math.max(0, Math.min(1, v * (1 + (rng() - 0.5) * a))));
 
 // wooden dock from (x,z) along direction r (local +Z), deck at `top`; walkable
-export function dock(B, x, z, r, L, groundAt, top = 0.85) {
+function dock_build(B, x, z, r, L, groundAt, top = 0.85) {
   const rng = mulberry32(5), W = 2.4;
   B.frame(x, 0, z, r);
   for (let s = 0; s < L; s += 0.31) B.bbox('wood', 0, top - 0.07, s + 0.15, W - (rng() < 0.2 ? 0.1 : 0), 0.07, 0.28, 0.012, { color: J(rng, [1, 1, 1], 0.14), uv: 2 });
@@ -65,7 +66,7 @@ function gable(B, mat, w, d, y, rise, over, color) {
 }
 
 // stone lantern (toro)
-export function lantern(B, x, y, z, r = 0) {
+function lantern_build(B, x, y, z, r = 0) {
   B.frame(x, y, z, r);
   B.box('stone', 0, 0, 0, 0.62, 0.18, 0.62);
   B.cyl('stone', 0, 0.18, 0, 0.13, 0.11, 0.85, 8);
@@ -82,13 +83,13 @@ export function lantern(B, x, y, z, r = 0) {
 
 // vermilion torii with a roped hokora behind it (shrine.js kit); local +Z faces the approach
 export const KIT_M = { lac: 'lacq', dark: 'lacq', wood: 'woodW', stone: 'stoneW', roof: 'roofW', glow: 'glow', paper: 'plain', rope: 'plain', metal: 'steelW', water: 'waterW' };
-export function shrine(B, x, y, z, r) {
+function shrine_build(B, x, y, z, r) {
   const S = wildShrine(B, KIT_M, x, y, z, r);
   for (const p of S.cols) addCircle(p[0], p[2], 0.28);
   addBox(S.hall[0], S.hall[2], 1.6, 1.5, r, y - 1, y + 3);
 }
 // Ghibli cottage: white plaster between dark timbers, red tiled roof, chimney, flower boxes, fenced garden (+Z front)
-export function cottage(B, x, y, z, r, garden = true) {
+function cottage_build(B, x, y, z, r, garden = true) {
   const W = 6.4, D = 5.2, H = 2.9, rng = mulberry32(9);
   B.frame(x, y, z, r);
   B.bbox('stone', 0, -0.4, 0, W + 0.3, 0.62, D + 0.3, 0.04);
@@ -139,7 +140,7 @@ export function cottage(B, x, y, z, r, garden = true) {
 }
 
 // a simple wooden bench (local +Z: the side you sit facing)
-export function bench(B, x, y, z, r) {
+function bench_build(B, x, y, z, r) {
   B.frame(x, y, z, r);
   for (const sx of [-0.7, 0.7]) { B.bbox('woodDark', sx, 0, 0, 0.08, 0.45, 0.42, 0.012); B.bbox('woodDark', sx, 0.45, -0.22, 0.08, 0.45, 0.06, 0.012); B.bbox('woodDark', sx, 0.3, 0, 0.1, 0.05, 0.46, 0.01); }
   for (let k = 0; k < 3; k++) B.bbox('wood', 0, 0.45, -0.15 + k * 0.14, 1.7, 0.05, 0.12, 0.012);
@@ -149,7 +150,7 @@ export function bench(B, x, y, z, r) {
 
 // abandoned stone hut: broken dry-stone walls of uneven height, a doorway, fallen roof timbers and tumbled stones,
 // moss on the wall tops. groundAt keeps every course sitting on the slope.
-export function ruin(B, x, z, r, groundAt, seed = 1) {
+function ruin_build(B, x, z, r, groundAt, seed = 1) {
   const rng = mulberry32(seed), W = 6 + rng() * 2, D = 4.5 + rng() * 1.5, y0 = groundAt(x, z);
   B.frame(x, y0, z, r);
   const course = (ax, az, bx, bz, hMax, door) => {
@@ -176,7 +177,7 @@ export function ruin(B, x, z, r, groundAt, seed = 1) {
 }
 
 // hilltop viewpoint: a small timber deck with a rail on the view side, a bench and a wooden sign post
-export function viewpoint(B, x, z, r, groundAt) {
+function viewpoint_build(B, x, z, r, groundAt) {
   const y = groundAt(x, z), top = y + 0.35;
   B.frame(x, 0, z, r);
   for (let s = -1.6; s <= 1.6; s += 0.3) B.bbox('wood', 0, top - 0.06, s, 4.2, 0.06, 0.27, 0.01, { color: [0.95, 0.92, 0.88], uv: 2 });
@@ -198,7 +199,7 @@ export function viewpoint(B, x, z, r, groundAt) {
 }
 
 // roadside hokora: a tiny wooden shrine house on a stone plinth, with a red-bibbed stone Jizo beside it
-export function hokora(B, x, y, z, r) {
+function hokora_build(B, x, y, z, r) {
   B.frame(x, y, z, r);
   B.bbox('stone', 0, -0.1, 0, 0.9, 0.55, 0.8, 0.04, { color: [0.72, 0.72, 0.68] });
   B.bbox('stone', 0, 0.42, 0, 0.72, 0.05, 0.62, 0.015, { color: [0.66, 0.66, 0.62] });
@@ -225,7 +226,7 @@ function shimenawaMini(B, a, b) {
   for (const t of [0.33, 0.67]) { const p = pts[Math.round(t * 6)]; for (let j = 0; j < 3; j++) B.box('plain', p[0] + (j % 2 ? 0.02 : -0.02), p[1] - 0.06 - j * 0.045, p[2], 0.04, 0.045, 0.003, { color: [0.97, 0.96, 0.92] }); }
 }
 // a plank footbridge from (x0,z0) to (x1,z1) at deck height `top` (walkable), with low rails
-export function footbridge(B, x0, z0, x1, z1, top, groundAt) {
+function footbridge_build(B, x0, z0, x1, z1, top, groundAt) {
   const L = Math.hypot(x1 - x0, z1 - z0), r = Math.atan2(x1 - x0, z1 - z0);
   B.frame(x0, 0, z0, r);
   for (let s = 0.15; s < L; s += 0.3) B.bbox('wood', 0, top - 0.06, s, 1.6, 0.06, 0.27, 0.01, { color: [0.92, 0.88, 0.82], uv: 2 });
@@ -241,4 +242,15 @@ export function flushLandmarks(B) {
     update() { MT.glow.emissiveIntensity = 0.15 + 2.6 * env.night; MT.window.emissiveIntensity = 1.8 * env.night; },
   };
 }
-export { GeoBuilder };
+export { GeoBuilder, materials as landmarkMaterials };
+
+// ---------------------------------------------------------------- placed objects (world/capture.js: each call is one editable world object)
+export const dock = placeable('dock', dock_build, (B, x, z, r) => [x, 0, z, r]);
+export const lantern = placeable('stone_lantern', lantern_build, atXYZR);
+export const shrine = placeable('shrine_small', shrine_build, atXYZR);
+export const cottage = placeable('cottage', cottage_build, atXYZR);
+export const bench = placeable('bench', bench_build, atXYZR);
+export const ruin = placeable('ruin', ruin_build, (B, x, z, r, groundAt) => [x, groundAt(x, z), z, r]);
+export const viewpoint = placeable('viewpoint', viewpoint_build, (B, x, z, r, groundAt) => [x, groundAt(x, z), z, r]);
+export const hokora = placeable('hokora', hokora_build, atXYZR);
+export const footbridge = placeable('footbridge', footbridge_build, (B, x0, z0, x1, z1, top) => [(x0 + x1) / 2, top, (z0 + z1) / 2, Math.atan2(x1 - x0, z1 - z0)]);

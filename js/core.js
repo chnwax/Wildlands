@@ -314,6 +314,15 @@ export function noiseAt(u, v, c) {
   return lerp(lerp(at(ix, iy), at(ix + 1, iy), fx), lerp(at(ix, iy + 1), at(ix + 1, iy + 1), fx), fy) / 255;
 }
 
+// ---------------------------------------------------------------- world-object capture hooks
+// The world data layer (world/capture.js) listens here while the map is built, to learn which geometry, colliders and
+// props each placed object produced (so every object can be selected, moved and edited, and edits re-applied on load).
+export const capHooks = { bucket: null, collider: null, prop: null, frame: null };
+export const lampPoints = []; // light fixtures [{p: [x, y, z], s: strength, c?: colour}] (townkit.js, citylights.js)
+// per-scatter metadata (prefab, field) for the items of the Scatters created inside fn (world/capture.js)
+const scatterMetaStack = [];
+export function withScatterMeta(meta, fn) { scatterMetaStack.push(meta); try { return fn(); } finally { scatterMetaStack.pop(); } }
+
 // ---------------------------------------------------------------- collisions (circles + oriented boxes, spatial hash)
 const COL_CELL = 16;
 export const colliders = new Map();
@@ -325,7 +334,20 @@ function colKeys(minX, minZ, maxX, maxZ, fn) {
 }
 function colAdd(c, minX, minZ, maxX, maxZ) {
   colKeys(minX, minZ, maxX, maxZ, k => { if (!colliders.has(k)) colliders.set(k, []); colliders.get(k).push(c); });
+  if (capHooks.collider) capHooks.collider(c);
 }
+const colReach = c => c.t === 0 ? c.r : Math.hypot(c.hx, c.hz);
+// take a collider out of the hash / put it back (after its centre, size or angle changed): world edits move them
+export function colRemove(c) {
+  const R = colReach(c);
+  colKeys(c.x - R, c.z - R, c.x + R, c.z + R, k => { const l = colliders.get(k); if (!l) return; const i = l.indexOf(c); if (i >= 0) l.splice(i, 1); });
+}
+export function colInsert(c) {
+  const R = colReach(c);
+  colKeys(c.x - R, c.z - R, c.x + R, c.z + R, k => { if (!colliders.has(k)) colliders.set(k, []); colliders.get(k).push(c); });
+}
+// every collider currently in the hash, once
+export function allColliders() { const s = new Set(); for (const l of colliders.values()) for (const c of l) s.add(c); return s; }
 export function addCircle(x, z, r, y0 = -1e9, y1 = 1e9) { colAdd({ t: 0, x, z, r, y0, y1 }, x - r, z - r, x + r, z + r); }
 // box centred at (x,z), half extents hx,hz, rotated by angle a around Y, spanning heights y0..y1
 export function addBox(x, z, hx, hz, a = 0, y0 = -1e9, y1 = 1e9) {
@@ -512,6 +534,7 @@ export class Scatter {
   // items: {x,y,z,s,sx?,sy?,r?,tilt?,tilt2?,c?}; lods: [{dist: () => metres, parts: [{geometry, material, tint?, castShadow?, depth?, receiveShadow?}]}]
   constructor(items, lods, cellSize, origin = 4096) {
     this.items = items; this.lods = lods; this.id = scatters.length; this.multi = lods.length > 1;
+    this.meta = scatterMetaStack.length ? scatterMetaStack[scatterMetaStack.length - 1] : null; // world objects (world/capture.js)
     const N = items.length;
     this.mat = new Float32Array(N * 16); this.scale = new Float32Array(N);
     items.forEach((it, i) => {
@@ -693,6 +716,7 @@ export function addProp(kind, parts) { // parts: [{geometry, material, matrix (w
     item.parts.push({ group: g, instance: g.matrices.length, matrix: p.matrix.clone() });
     g.matrices.push(p.matrix.clone()); g.ids.push(id);
   }
+  if (capHooks.prop) capHooks.prop(id);
   return id;
 }
 export function flushProps() {
