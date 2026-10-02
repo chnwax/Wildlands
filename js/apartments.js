@@ -682,6 +682,12 @@ export function cornerBlock(B, s, rng, ex) {
   const P = (lx, lz) => { B.frame(x, y, z, r); return B.P([lx, 0, lz]); };
   const pa = P(C + wa / 2 - 0.3, 0), A = mansion(B, { x: pa[0], y, z: pa[2], r: r + Math.PI, w: wa, floors, pal, no, name: name + ' A棟', gy, lift: 0 }, rng, ex);
   const pb = P(0, C + wb / 2 - 0.3), Bw = mansion(B, { x: pb[0], y, z: pb[2], r: r - Math.PI / 2, w: wb, floors, pal, no: no + 1, name: name + ' B棟', gy, lift: 2 }, rng, ex);
+  // the wings' walks under their corridors that start at the tower meet in the court's inner corner (each wing's own
+  // would run on past its end, into the tower)
+  { const tc = P(0, 0), dt = q => Math.hypot(q[0] - tc[0], q[1] - tc[2]), near = L => L.reduce((b, k) => !b || dt(k[0]) < dt(b[0]) ? k : b, null), wA = near(A.walkways || []), wB = near(Bw.walkways || []);
+    if (wA && wB) { const [a, b] = wA, [c, e] = wB, r1 = [b[0] - a[0], b[1] - a[1]], r2 = [e[0] - c[0], e[1] - c[1]], den = r1[0] * r2[1] - r1[1] * r2[0];
+      if (Math.abs(den) > 1e-6) { const t = ((c[0] - a[0]) * r2[1] - (c[1] - a[1]) * r2[0]) / den, X = [a[0] + r1[0] * t, a[1] + r1[1] * t];
+        if (Math.hypot(X[0] - a[0], X[1] - a[1]) < 4 && Math.hypot(X[0] - c[0], X[1] - c[1]) < 4) { wA[0] = X; wB[0] = [X[0], X[1]]; } } } }
   const out = { entrances: A.entrances.concat(Bw.entrances), walkways: (A.walkways || []).concat(Bw.walkways || []), lamps: [], H };
   const cxA = C + wa / 2 - 0.3, czB = C + wb / 2 - 0.3, d = 11.5;
   out.boxes0 = [[[-C - 0.5, -C - 0.5], [C + 0.5, C + 0.5]], [[cxA - wa / 2 - 0.3, -d / 2 - 2], [cxA + wa / 2 + 3, d / 2 + 4.6]], [[-d / 2 - 2, czB - wb / 2 - 3], [d / 2 + 4.6, czB + wb / 2 + 0.3]]];

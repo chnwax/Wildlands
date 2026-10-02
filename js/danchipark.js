@@ -8,7 +8,7 @@
 //   playground    児童遊園 — family and practical: two fenced play yards (big-kid equipment on one, a toddler yard with
 //                 the sand pit on the other) on safety surfacing, a spine path and a cross path tying the surrounding
 //                 buildings together, a parents' pergola garden, a ball lawn, shade trees, benches, bins, a fountain
-import { THREE, addPlatform } from './core.js';
+import { THREE, addPlatform, clamp } from './core.js';
 import { lampPoints } from './townkit.js';
 
 // the lake's outline (a lobed ellipse round LAKE_C), its inlet channel and the spring pool; the ground under them is
@@ -45,6 +45,7 @@ export function buildParks(K) {
       B.poly(mat, p4, [0, 1, 0], { color, uvs: p4.map(v => [v[0] / uv, v[2] / uv]), attr: mat === 'pavement' ? { aPave: [[xa, za - z0 + 0.5], [xb, za - z0 + 0.5], [xb, zb - z0 + 0.5], [xa, zb - z0 + 0.5]] } : undefined }); }
     pave(x0 - 1, z0 - 1, x1 + 1, z1 + 1, (px, pz) => px > x0 - 0.15 && px < x1 + 0.15 && pz > z0 - 0.15 && pz < z1 + 0.15 ? 1 : 0);
     if (mat === 'pavement') K.coverRect(x0, z0, x1, z1);
+    if (K.area && yo < 0.06) K.area([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], (x, z) => gy(x, z) + yo);              // (paths meet it: the network joins them)
   };
   // annulus sector of paving round (cx, cz) laid in polar cells: its joints run round and across the rings
   const ring = (cx, cz, r0, r1, mat, color, yo, { a0 = 0, a1 = Math.PI * 2, seg = 48, rad = 1 } = {}) => {
@@ -55,6 +56,7 @@ export function buildParks(K) {
       const s0 = t0 * (q0 + q1) / 2, s1 = t1 * (q0 + q1) / 2;
       B.poly(mat, p4, [0, 1, 0], { color, uvs: p4.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: mat === 'pavement' ? { aPave: [[s0, q0 - r0 + 0.5], [s1, q0 - r0 + 0.5], [s1, q1 - r0 + 0.5], [s0, q1 - r0 + 0.5]] } : undefined }); }
     K.coverDisc(cx, cz, r1);
+    if (K.area && a1 - a0 > 6.28) K.area(Array.from({ length: 48 }, (_, k) => [cx + Math.cos(k / 48 * Math.PI * 2) * r1, cz + Math.sin(k / 48 * Math.PI * 2) * r1]), (x, z) => gy(x, z) + yo);
     pave(cx - r1 - 1, cz - r1 - 1, cx + r1 + 1, cz + r1 + 1, (px, pz) => { const r = Math.hypot(px - cx, pz - cz); if (r < r0 - 0.1 || r > r1 + 0.15) return 0; let a = Math.atan2(pz - cz, px - cx); while (a < a0) a += Math.PI * 2; return a <= a1 + 0.02 ? 1 : 0; });
   };
   const hedge = (a, b, h = 0.7) => { out.hedges.push({ a, b, h }); const L = Math.hypot(b[0] - a[0], b[1] - a[1]); navRect((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.45, L / 2, Math.atan2(b[0] - a[0], b[1] - a[1]), 2); };
@@ -305,6 +307,8 @@ export function buildParks(K) {
       [[511, 24], [521, 30], [526.5, 40], [526.5, 46.4], [545.6, 46.4]], [[482, 30.8], [482, 26.1]], [[494.5, -5.4], [494.5, -1.1]], [[524.6, 36], [516.5, 36]]]) {
       const spur = P.length === 2 && Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) < 9;                              // spurs end at a feature: never run on
       pathLine(P, spur ? 2.0 : 2.4, { ...GRV, lamps: P.length > 2 || Math.abs(P[1][1] - P[0][1]) > 10, link: spur }); }
+    // the south spur ends at a viewing place over the reed beds: a stone landing at the water's edge, a bench on it
+    if (K.lookout) K.lookout([[492.6, -1.4], [496.4, -1.4], [496.4, 1.6], [492.6, 1.6]]);
     // the spring: a tall standing stone at its head, big stones round the west half, a spill of small stones into the
     // water, reeds and ferns in the gaps; the east side opens into the channel
     rock(442.9, 14.4, 1.9, { part: 3, sink: 0.1, sy: 1.55, tilt: 0.1, force: true }); rock(441.8, 11.9, 1.7, { kind: 'b', sink: 0.16, force: true }); rock(444.2, 16.6, 1.2, { force: true });
@@ -345,6 +349,7 @@ export function buildParks(K) {
       if (rng() < 0.3) B.cyl('plastic', x, wy + 0.01, z, 0.06, 0.09, 0.07, 8, { color: [0.98, 0.84, 0.9], cap: true }); }
     // the viewing deck out over the water, north shore
     { const dz0 = cz + rOf(Math.PI / 2) + 1.6, dz1 = dz0 - 5.2, y = Math.max(gy(482, dz0) + 0.12, wy + 0.16); B.frame(0, 0, 0, 0);
+      if (K.area) K.area([[477.6, dz1], [486.4, dz1], [486.4, dz0], [477.6, dz0]], () => y);
       for (let x = 477.6; x < 486.4; x += 0.3) B.box('wood', x + 0.15, y - 0.08, (dz0 + dz1) / 2, 0.27, 0.06, dz0 - dz1, { color: [0.62, 0.48, 0.34] });
       B.box('wood', 482, y - 0.3, (dz0 + dz1) / 2, 8.8, 0.22, dz0 - dz1 - 0.2, { color: [0.45, 0.35, 0.26] });
       for (const x of [477.9, 482, 486.1]) for (const z of [dz1 + 0.3, (dz0 + dz1) / 2]) B.cyl('wood', x, wy - 0.6, z, 0.12, 0.12, y - wy + 0.3, 8, { color: [0.4, 0.3, 0.22] });
@@ -407,6 +412,8 @@ export function buildParks(K) {
     B.frame(0, 0, 0, 0);
     for (const e of [-1, 1]) { const px = ax + Math.cos(r) * e * (w / 2 + 0.02), pz = az - Math.sin(r) * e * (w / 2 + 0.02); addBox(px + Math.sin(r) * L / 2, pz + Math.cos(r) * L / 2, 0.06, L / 2, r, -1e9, Math.max(y0, y1) + rise + 1); }
     for (let k = 0; k < 12; k++) { const t = (k + 0.5) / 12; addPlat(ax + (bx - ax) * t, az + (bz - az) * t, w / 2, L / 24 + 0.02, r, yAt(t)); }                // walkable deck
+    if (K.area) { const ux = (bx - ax) / L, uz = (bz - az) / L, nx = -uz * w / 2, nz = ux * w / 2;                                                     // the paths meet its ends
+      K.area([[ax - nx, az - nz], [bx - nx, bz - nz], [bx + nx, bz + nz], [ax + nx, az + nz]], (x, z) => yAt(clamp(((x - ax) * ux + (z - az) * uz) / L, 0, 1))); }
     navRect((ax + bx) / 2, (az + bz) / 2, w / 2, L / 2, r, 1);
   }
 

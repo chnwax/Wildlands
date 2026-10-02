@@ -51,6 +51,7 @@ import { lampPoints, signMesh, JP_FONT, GeoBuilder } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
+import { PedNet, snapWidth, LIFT } from './pednet.js';
 
 // The ground a building really covers — walls, balconies, galleries, stair towers, canopies, steps, garden fences:
 // everything it builds above the paving, projected onto the ground. Measured by building it once off-site (its own
@@ -65,13 +66,18 @@ export function solidField(fam, o) {
   while (scene.children.length > sc) { const m = scene.children[scene.children.length - 1]; scene.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); } }
   let ux0 = 1e9, vz0 = 1e9, ux1 = -1e9, vz1 = -1e9;
   for (const [[a0, b0], [a1, b1]] of envelope(fam, o)) { ux0 = Math.min(ux0, a0); vz0 = Math.min(vz0, b0); ux1 = Math.max(ux1, a1); vz1 = Math.max(vz1, b1); }
-  const C = 0.25, x0 = ux0 - 4, z0 = vz0 - 4, nx = Math.ceil((ux1 - ux0 + 8) / C), nz = Math.ceil((vz1 - vz0 + 8) / C), occ = new Uint8Array(nx * nz);
-  const mark = (x, z) => { const i = Math.floor((x - x0) / C), j = Math.floor((z - z0) / C); if (i >= 0 && j >= 0 && i < nx && j < nz) occ[j * nx + i] = 1; };
+  // occ: everything above the paving; low: what stands on the ground in a walker's way — walls, doors, columns, posts,
+  // fences, railings, stair stringers (anything reaching from below 0.6 m to above 0.9 m), not the steps, landings and
+  // plinths underfoot nor galleries, balconies and canopies overhead: the ground a path cannot cross
+  const C = 0.25, x0 = ux0 - 4, z0 = vz0 - 4, nx = Math.ceil((ux1 - ux0 + 8) / C), nz = Math.ceil((vz1 - vz0 + 8) / C), occ = new Uint8Array(nx * nz), low = new Uint8Array(nx * nz);
+  let lowNow = false;
+  const mark = (x, z) => { const i = Math.floor((x - x0) / C), j = Math.floor((z - z0) / C); if (i >= 0 && j >= 0 && i < nx && j < nz) { occ[j * nx + i] = 1; if (lowNow) low[j * nx + i] = 1; } };
   for (const b of B.parts.values()) {
     const P = b.pos.a, I = b.idx.a, n = b.idx.length;
     for (let t = 0; t < n; t += 3) {
       const a = I[t] * 3, q = I[t + 1] * 3, c = I[t + 2] * 3;
       if (Math.max(P[a + 1], P[q + 1], P[c + 1]) < 0.12) continue;                                  // paving and ground decals
+      lowNow = Math.min(P[a + 1], P[q + 1], P[c + 1]) < 0.6 && Math.max(P[a + 1], P[q + 1], P[c + 1]) > 0.9;
       for (const [e, f] of [[a, q], [q, c], [c, a]]) { const L = Math.hypot(P[f] - P[e], P[f + 2] - P[e + 2]), k = Math.max(1, Math.ceil(L / 0.15));
         for (let m = 0; m <= k; m++) mark(P[e] + (P[f] - P[e]) * m / k, P[e + 2] + (P[f + 2] - P[e + 2]) * m / k); }
       const ex = P[q] - P[a], ez = P[q + 2] - P[a + 2], fx = P[c] - P[a], fz = P[c + 2] - P[a + 2], ar = ex * fz - ez * fx;
@@ -79,24 +85,27 @@ export function solidField(fam, o) {
         const i0 = Math.floor((Math.min(P[a], P[q], P[c]) - x0) / C), i1 = Math.floor((Math.max(P[a], P[q], P[c]) - x0) / C), j0 = Math.floor((Math.min(P[a + 2], P[q + 2], P[c + 2]) - z0) / C), j1 = Math.floor((Math.max(P[a + 2], P[q + 2], P[c + 2]) - z0) / C);
         for (let j = Math.max(0, j0); j <= Math.min(nz - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(nx - 1, i1); i++) {
           const px = x0 + (i + 0.5) * C - P[a], pz = z0 + (j + 0.5) * C - P[a + 2], u = (px * fz - pz * fx) / ar, v = (ex * pz - ez * px) / ar;
-          if (u >= 0 && v >= 0 && u + v <= 1) occ[j * nx + i] = 1; } }
+          if (u >= 0 && v >= 0 && u + v <= 1) { occ[j * nx + i] = 1; if (lowNow) low[j * nx + i] = 1; } } }
     }
   }
-  // what walls enclose is covered too: flood the open ground in from the grid's border
-  const out = new Uint8Array(nx * nz), st = [];
-  for (let i = 0; i < nx; i++) st.push(i, (nz - 1) * nx + i); for (let j = 0; j < nz; j++) st.push(j * nx, j * nx + nx - 1);
-  while (st.length) { const k = st.pop(); if (out[k] || occ[k]) continue; out[k] = 1; const i = k % nx, j = (k - i) / nx; if (i > 0) st.push(k - 1); if (i < nx - 1) st.push(k + 1); if (j > 0) st.push(k - nx); if (j < nz - 1) st.push(k + nx); }
-  const D = new Float32Array(nx * nz); for (let k = 0; k < D.length; k++) D[k] = out[k] ? 1e4 : 0;
-  const d1 = C, d2 = C * Math.SQRT2;                                                                    // chamfer distance transform
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const k = j * nx + i; let d = D[k];
-    if (i > 0) d = Math.min(d, D[k - 1] + d1); if (j > 0) { d = Math.min(d, D[k - nx] + d1); if (i > 0) d = Math.min(d, D[k - nx - 1] + d2); if (i < nx - 1) d = Math.min(d, D[k - nx + 1] + d2); } D[k] = d; }
-  for (let j = nz - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) { const k = j * nx + i; let d = D[k];
-    if (i < nx - 1) d = Math.min(d, D[k + 1] + d1); if (j < nz - 1) { d = Math.min(d, D[k + nx] + d1); if (i < nx - 1) d = Math.min(d, D[k + nx + 1] + d2); if (i > 0) d = Math.min(d, D[k + nx - 1] + d2); } D[k] = d; }
-  return { x0, z0, nx, nz, C, D };
+  // what walls enclose is covered too: flood the open ground in from the grid's border; then a chamfer distance transform
+  const field = occ => {
+    const out = new Uint8Array(nx * nz), st = [];
+    for (let i = 0; i < nx; i++) st.push(i, (nz - 1) * nx + i); for (let j = 0; j < nz; j++) st.push(j * nx, j * nx + nx - 1);
+    while (st.length) { const k = st.pop(); if (out[k] || occ[k]) continue; out[k] = 1; const i = k % nx, j = (k - i) / nx; if (i > 0) st.push(k - 1); if (i < nx - 1) st.push(k + 1); if (j > 0) st.push(k - nx); if (j < nz - 1) st.push(k + nx); }
+    const D = new Float32Array(nx * nz); for (let k = 0; k < D.length; k++) D[k] = out[k] ? 1e4 : 0;
+    const d1 = C, d2 = C * Math.SQRT2;
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const k = j * nx + i; let d = D[k];
+      if (i > 0) d = Math.min(d, D[k - 1] + d1); if (j > 0) { d = Math.min(d, D[k - nx] + d1); if (i > 0) d = Math.min(d, D[k - nx - 1] + d2); if (i < nx - 1) d = Math.min(d, D[k - nx + 1] + d2); } D[k] = d; }
+    for (let j = nz - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) { const k = j * nx + i; let d = D[k];
+      if (i < nx - 1) d = Math.min(d, D[k + 1] + d1); if (j < nz - 1) { d = Math.min(d, D[k + nx] + d1); if (i < nx - 1) d = Math.min(d, D[k + nx + 1] + d2); if (i > 0) d = Math.min(d, D[k + nx - 1] + d2); } D[k] = d; }
+    return D; };
+  const D = field(occ), G = new Float32Array(nx * nz); { const g = field(low); for (let k = 0; k < G.length; k++) G[k] = g[k]; }
+  return { x0, z0, nx, nz, C, D, G };
 }
-const fieldAt = (f, x, z, r, wx, wz) => { const c = Math.cos(r), s = Math.sin(r), dx = wx - x, dz = wz - z, u = dx * c - dz * s, v = dx * s + dz * c;
+const fieldAt = (f, x, z, r, wx, wz, low = false) => { const c = Math.cos(r), s = Math.sin(r), dx = wx - x, dz = wz - z, u = dx * c - dz * s, v = dx * s + dz * c;
   const i = Math.floor((u - f.x0) / f.C), j = Math.floor((v - f.z0) / f.C);
-  if (i >= 0 && j >= 0 && i < f.nx && j < f.nz) return f.D[j * f.nx + i];
+  if (i >= 0 && j >= 0 && i < f.nx && j < f.nz) return (low ? f.G : f.D)[j * f.nx + i];
   return 4 + Math.hypot(Math.max(f.x0 - u, 0, u - f.x0 - f.nx * f.C), Math.max(f.z0 - v, 0, v - f.z0 - f.nz * f.C)); }; // (the grid reaches 4 m past the envelope)
 
 // building groups by superblock: [family, x, z, yaw, options]. Yaw turns the building's front (balconies) to face
@@ -286,46 +295,58 @@ export function buildDanchi(ctx) {
   }
   const clear = (x, z, m = 1.0) => !blds.some(b => b.boxes.some(q => inRect(x, z, q.x, q.z, q.r, q.hw, q.hd, m)));
 
-  // ---- paved paths: pavers with concrete edging laid as one mitred ribbon (no notches or overlaps at the bends), draped
-  // on the ground in 1 m steps; where an end runs into a street's footway the path rises to meet the footway's back edge
-  // at its height (a gentle ramp, a concrete skirt along the raised part) and tucks under it. Lamps (short posts) along
-  // it. yo: height over the ground (designed paths lie a few millimetres above the branch paths that join them, so a
-  // branch's run-on end disappears under the path it meets instead of flickering with it)
-  const walkEdge = (pts, end) => { // where a path end inside a footway leaves it, walking back along the path
-    const [x0, z0] = end ? pts[pts.length - 1] : pts[0]; if (RN.walkY(x0, z0) === null) return null;
-    let px = x0, pz = z0, i = end ? pts.length - 1 : 0, d = end ? -1 : 1, left = 4;
-    while (left > 0 && i + d >= 0 && i + d < pts.length) { const [bx, bz] = pts[i + d], L = Math.hypot(bx - px, bz - pz);
-      for (let t = 0.05; t <= L; t += 0.05) { const x = px + (bx - px) * t / L, z = pz + (bz - pz) * t / L; if (RN.walkY(x, z) === null) { const q = t - 0.08, xi = px + (bx - px) * q / L, zi = pz + (bz - pz) * q / L; return { x, z, y: RN.walkY(xi, zi) ?? RN.walkY(px, pz) }; } }
-      left -= L; px = bx; pz = bz; i += d; }
-    return null; };
+  // ---- paved paths. Every path, apron and plaza is registered with the district's pedestrian network (pednet.js),
+  // which joins them into one graph — ends carried onto the path, footway or apron they reach, crossings given a node —
+  // and lays all their paving and edging from it at the end, on one height field. Here a path is only booked: its
+  // ground kept clear of grass, other planting and placements, its lamps set along it, pedestrians walking it.
+  // door: a building's own walk (it may end at its building)
+  const net = new PedNet({ gy, walkY: RN.walkY, roadAt: RN.roadAt, onBuilding: (x, z, m) => onBuilding(x, z, m) });
   const g0w = w => w >= 2.2 ? 2 : 1;                                                                                   // pedestrians: busier on the wider paths
-  const pathLine = (pts0, w = 2.4, { lamps = true, edge = true, mat = 'pavement', color = [0.84, 0.82, 0.78], link = false, yo = 0.05 } = {}) => {
-    const pts = []; for (const p of pts0) if (!pts.length || Math.hypot(p[0] - pts[pts.length - 1][0], p[1] - pts[pts.length - 1][1]) > 0.15) pts.push([p[0], p[1]]);
+  // the ground floor of a building (its walls, steps, columns, garden fences) within m of (x, z)
+  const bReach = blds.map((b, i) => { const f = fields[i], cu = f.x0 + f.nx * f.C / 2, cv = f.z0 + f.nz * f.C / 2, c = Math.cos(b.r), sn = Math.sin(b.r);
+    return { x: b.x + cu * c + cv * sn, z: b.z - cu * sn + cv * c, r: Math.hypot(f.nx, f.nz) * f.C / 2 }; });
+  const onBuilding = (x, z, m) => { for (let i = 0; i < blds.length; i++) { const R = bReach[i]; if ((x - R.x) ** 2 + (z - R.z) ** 2 > (R.r + m) ** 2) continue; const b = blds[i]; if (fieldAt(fields[i], b.x, b.z, b.r, x, z, true) <= m) return true; } return false; };
+  // a path never crosses a building: a stretch that would is laid round it instead — the shortest way on a half-metre
+  // grid that keeps its width plus 40 cm off every building and off the carriageways, straightened where it can be
+  const detour = (pts, w) => {
+    const blocked = (x, z) => onBuilding(x, z, w / 2 + 0.4) || !!RN.roadAt(x, z);
+    const hits = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 0.25)), nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L;
+      for (let k = 0; k <= n; k++) for (const e of [-w / 2 - 0.2, 0, w / 2 + 0.2]) { const x = a[0] + (b[0] - a[0]) * k / n + nx * e, z = a[1] + (b[1] - a[1]) * k / n + nz * e; if (onBuilding(x, z, 0)) return true; } return false; };
+    // (straightening: the full clearance, except within 4 m of the stretch's ends, where the path meets what it was laid to)
+    const clearLn = (a, b, A, Bq) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 0.25));
+      for (let k = 0; k <= n; k++) { const x = a[0] + (b[0] - a[0]) * k / n, z = a[1] + (b[1] - a[1]) * k / n, nearEnd = A && (Math.hypot(x - A[0], z - A[1]) < 4 || Math.hypot(x - Bq[0], z - Bq[1]) < 4);
+        if (nearEnd ? onBuilding(x, z, w / 2 + 0.05) || !!RN.roadAt(x, z) : blocked(x, z)) return false; } return true; };
+    const astar = (a, b) => { const C = 0.5, x0 = Math.min(a[0], b[0]) - 18, z0 = Math.min(a[1], b[1]) - 18, nx = Math.ceil((Math.abs(b[0] - a[0]) + 36) / C), nz = Math.ceil((Math.abs(b[1] - a[1]) + 36) / C);
+      const id = (x, z) => Math.round((z - z0) / C) * nx + Math.round((x - x0) / C), s0 = id(...a), s1 = id(...b), g = new Float32Array(nx * nz).fill(Infinity), from = new Int32Array(nx * nz).fill(-1), bad = new Int8Array(nx * nz).fill(-1);
+      const isBad = k => { if (bad[k] < 0) bad[k] = k === s0 || k === s1 ? 0 : blocked(x0 + (k % nx) * C, z0 + Math.floor(k / nx) * C) ? 1 : 0; return bad[k] === 1; };
+      const h = k => Math.hypot((k % nx) - (s1 % nx), Math.floor(k / nx) - Math.floor(s1 / nx)) * C, heap = [];
+      const push = (f, k) => { heap.push([f, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+      const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+      g[s0] = 0; push(h(s0), s0);
+      while (heap.length) { const [f, k] = pop(); if (f > g[k] + h(k) + 1e-4) continue;
+        if (k === s1) break; const i = k % nx, j = Math.floor(k / nx);
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
+          const kk = jj * nx + ii; if (isBad(kk)) continue; const ng = g[k] + (di && dj ? 1.414 : 1) * C; if (ng < g[kk]) { g[kk] = ng; from[kk] = k; push(ng + h(kk), kk); } } }
+      if (from[s1] < 0) return null; const cells = []; for (let k = s1; k >= 0; k = from[k]) cells.push([x0 + (k % nx) * C, z0 + Math.floor(k / nx) * C]); cells.reverse(); cells[0] = a; cells[cells.length - 1] = b;
+      const outp = [cells[0]]; let i = 0; while (i < cells.length - 1) { let j = cells.length - 1; while (j > i + 1 && !clearLn(cells[i], cells[j], a, b)) j--; outp.push(cells[j]); i = j; } return outp; };
+    // a corner that lies on a building is moved to the nearest spot clear of it first
+    pts = pts.map((p, i) => { if ((i === 0 || i === pts.length - 1) ? !onBuilding(p[0], p[1], 0) : !blocked(p[0], p[1])) return p;
+      for (let r = 0.5; r <= 14; r += 0.5) for (let a = 0; a < 6.283; a += 0.5 / r) { const x = p[0] + Math.cos(a) * r, z = p[1] + Math.sin(a) * r; if (!blocked(x, z)) return [x, z]; } return p; });
+    const out2 = [pts[0]];
+    for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], r = hits(a, b) ? astar(a, b) : null; if (r) out2.push(...r.slice(1)); else out2.push(b); }
+    return out2; };
+  const pathLine = (pts0, w0 = 2.4, { lamps = true, edge = true, mat = 'pavement', color = [0.84, 0.82, 0.78], link = false, door = false } = {}) => {
+    const w = snapWidth(w0); let pts = []; for (const p of pts0) if (!pts.length || Math.hypot(p[0] - pts[pts.length - 1][0], p[1] - pts[pts.length - 1][1]) > 0.15) pts.push([p[0], p[1]]);
+    if (!door && pts.length > 1) pts = detour(pts, w);
     const rid = regions.length; regions.push({ kind: 'path', pts: pts.map(p => [p[0], p[1]]), w, link, connected: false });
     if (pts.length < 2) return rid;
+    net.addChain(pts, { w, rid, mat, color, edge, door });
     const n = pts.length, seg = [], off = [];
     for (let i = 0; i + 1 < n; i++) { const [ax, az] = pts[i], [bx, bz] = pts[i + 1], L = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / L, uz = (bz - az) / L; seg.push({ ax, az, bx, bz, L, ux, uz, nx: -uz, nz: ux }); }
     for (let i = 0; i < n; i++) { const a = seg[Math.max(0, i - 1)], b = seg[Math.min(n - 2, i)]; let mx = a.nx + b.nx, mz = a.nz + b.nz; const ml = Math.hypot(mx, mz) || 1; mx /= ml; mz /= ml;
-      // a full mitre only where both legs are long enough to carry it (a short leg's corners would cross and fold)
       const short = i > 0 && i < n - 1 && Math.min(a.L, b.L) < w * 1.1, k = short ? 1 : 1 / Math.max(0.4, mx * b.nx + mz * b.nz); off.push([mx * k, mz * k]); }
-    const anchors = [walkEdge(pts, false), walkEdge(pts, true)].filter(Boolean);
-    const H = (x, z) => { let y = gy(x, z) + yo; for (const a of anchors) y = Math.max(y, a.y - 0.09 * Math.max(0, Math.hypot(x - a.x, z - a.z) - 0.3)); const wy = RN.walkY(x, z); return wy !== null ? Math.min(y, wy - 0.006) : y; };
-    B.frame(0, 0, 0, 0);
-    let s0 = 0;
     for (let i = 0; i + 1 < n; i++) {
-      const g = seg[i], N = Math.max(1, Math.ceil(g.L / 1.0));
-      const at = (f, e) => { const x = g.ax + (g.bx - g.ax) * f + (off[i][0] * (1 - f) + off[i + 1][0] * f) * e, z = g.az + (g.bz - g.az) * f + (off[i][1] * (1 - f) + off[i + 1][1] * f) * e; return [x, H(x, z), z]; };
-      for (let k = 0; k < N; k++) {
-        const f0 = k / N, f1 = (k + 1) / N, t0 = s0 + g.L * f0, t1 = s0 + g.L * f1;
-        const p4 = [at(f0, -w / 2), at(f1, -w / 2), at(f1, w / 2), at(f0, w / 2)];
-        B.poly(mat, p4, [0, 1, 0], { color, uvs: p4.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: mat === 'pavement' ? { aPave: [[t0, 0.5], [t1, 0.5], [t1, 0.5 + w], [t0, 0.5 + w]] } : undefined });
-        for (const e of [-1, 1]) {
-          const a = at(f0, e * (w / 2 + 0.05)), b = at(f1, e * (w / 2 + 0.05)), ga = gy(a[0], a[2]), gb = gy(b[0], b[2]);
-          if (edge) edgeQ.push({ a, b, rid });
-          if (a[1] - ga > yo + 0.03 || b[1] - gb > yo + 0.03) { const c = at(f0, e * (w / 2 + 0.1)), d = at(f1, e * (w / 2 + 0.1));      // skirt under a raised end
-            B.poly('concrete', [[c[0], ga - 0.06, c[2]], [d[0], gb - 0.06, d[2]], [d[0], b[1] - 0.02, d[2]], [c[0], a[1] - 0.02, c[2]]], [g.nx * e, 0, g.nz * e], { color: [0.72, 0.72, 0.7] }); }
-        }
-      }
+      const g = seg[i];
       // grass off the paving: the segment's mitred quad, a little wider
       coverPoly([[g.ax - off[i][0] * w / 2, g.az - off[i][1] * w / 2], [g.bx - off[i + 1][0] * w / 2, g.bz - off[i + 1][1] * w / 2], [g.bx + off[i + 1][0] * w / 2, g.bz + off[i + 1][1] * w / 2], [g.ax + off[i][0] * w / 2, g.az + off[i][1] * w / 2]], rid);
       const q = [[g.ax - off[i][0] * (w / 2 + 0.2), g.az - off[i][1] * (w / 2 + 0.2)], [g.bx - off[i + 1][0] * (w / 2 + 0.2), g.bz - off[i + 1][1] * (w / 2 + 0.2)], [g.bx + off[i + 1][0] * (w / 2 + 0.2), g.bz + off[i + 1][1] * (w / 2 + 0.2)], [g.ax + off[i][0] * (w / 2 + 0.2), g.az + off[i][1] * (w / 2 + 0.2)]];
@@ -333,25 +354,18 @@ export function buildDanchi(ctx) {
       pave(Math.min(...q.map(v => v[0])) - 0.5, Math.min(...q.map(v => v[1])) - 0.5, Math.max(...q.map(v => v[0])) + 0.5, Math.max(...q.map(v => v[1])) + 0.5, (px, pz) => inQ(px, pz) ? 1 : 0);
       occRect((g.ax + g.bx) / 2, (g.az + g.bz) / 2, w / 2 + 0.3, g.L / 2 + 0.3, Math.atan2(g.bx - g.ax, g.bz - g.az), 1, 1, rid);
       if (lamps) for (let t = 6; t < g.L - 2; t += 16) { const x = g.ax + g.ux * t + g.nx * (w / 2 + 0.6), z = g.az + g.uz * t + g.nz * (w / 2 + 0.6); if (clear(x, z, 0.3) && !poles.some(p => Math.hypot(p[0] - x, p[1] - z) < 8)) { const q = freeSpot(x, z, 0.35); if (q && Math.hypot(q[0] - x, q[1] - z) < 1.2) pathLamp(q[0], q[1]); } }
-      s0 += g.L;
     }
     out.walkPaths.push({ pts: pts.map(p => [p[0], p[1]]), off: 0, lift: null, w: g0w(w) });
     return rid;
   };
-  // a paved forecourt (an entrance's apron) on four world corners, laid on the ground in ~1 m cells
-  const apron = (C, rid = -1, yo = 0.044, color = [0.8, 0.78, 0.74]) => {
-    const [a, b, c, d] = C, L1 = Math.hypot(b[0] - a[0], b[1] - a[1]), L2 = Math.hypot(d[0] - a[0], d[1] - a[1]), nu = Math.max(1, Math.ceil(L1)), nv = Math.max(1, Math.ceil(L2));
-    const at = (u, v) => { const x = a[0] + (b[0] - a[0]) * u + (d[0] - a[0]) * v, z = a[1] + (b[1] - a[1]) * u + (d[1] - a[1]) * v; return [x, gy(x, z) + yo, z]; };
-    B.frame(0, 0, 0, 0);
-    for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) { const u0 = i / nu, u1 = (i + 1) / nu, v0 = j / nv, v1 = (j + 1) / nv, p4 = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
-      B.poly('pavement', p4, [0, 1, 0], { color, uvs: p4.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: { aPave: [[u0 * L1, v0 * L2 + 0.5], [u1 * L1, v0 * L2 + 0.5], [u1 * L1, v1 * L2 + 0.5], [u0 * L1, v1 * L2 + 0.5]] } }); }
+  // a paved forecourt (an entrance's apron) on four world corners (C[0]-C[1] against the building), laid by the network
+  const apron = (C, rid = -1, door = null, color = [0.8, 0.78, 0.74]) => {
+    const [a, b, , d] = C, L1 = Math.hypot(b[0] - a[0], b[1] - a[1]), L2 = Math.hypot(d[0] - a[0], d[1] - a[1]);
+    net.addArea(C, { rid, door, color });
     coverPoly(C, rid);
-    for (const [p, q] of [[b, c], [c, d], [d, a]]) { const L = Math.hypot(q[0] - p[0], q[1] - p[1]), m = Math.max(1, Math.ceil(L / 1)), ox = (q[1] - p[1]) / L * 0.06, oz = -(q[0] - p[0]) / L * 0.06;
-      for (let k = 0; k < m; k++) { const x0 = p[0] + (q[0] - p[0]) * k / m + ox, z0 = p[1] + (q[1] - p[1]) * k / m + oz, x1 = p[0] + (q[0] - p[0]) * (k + 1) / m + ox, z1 = p[1] + (q[1] - p[1]) * (k + 1) / m + oz;
-        edgeQ.push({ a: [x0, gy(x0, z0) + yo + 0.004, z0], b: [x1, gy(x1, z1) + yo + 0.004, z1], rid }); } }
     const xs = C.map(p => p[0]), zs = C.map(p => p[1]), inC = (px, pz) => { for (let j = 0; j < 4; j++) { const [x1, z1] = C[j], [x2, z2] = C[(j + 1) % 4]; if ((x2 - x1) * (pz - z1) - (z2 - z1) * (px - x1) < -0.2 * Math.hypot(x2 - x1, z2 - z1)) return false; } return true; };
     pave(Math.min(...xs) - 1, Math.min(...zs) - 1, Math.max(...xs) + 1, Math.max(...zs) + 1, (px, pz) => inC(px, pz) ? 1 : 0);
-    const cx = (a[0] + c[0]) / 2, cz = (a[1] + c[1]) / 2, r = Math.atan2(b[0] - a[0], b[1] - a[1]);
+    const cx = (a[0] + C[2][0]) / 2, cz = (a[1] + C[2][1]) / 2, r = Math.atan2(b[0] - a[0], b[1] - a[1]);
     occRect(cx, cz, L2 / 2, L1 / 2, r, 1, 1, rid);
   };
   const poles = [];
@@ -577,11 +591,10 @@ export function buildDanchi(ctx) {
   const freeSpot = (x, z, r) => { const ok = (px, pz) => { for (let a = 0; a < 6.28; a += 0.785) { const qx = px + Math.cos(a) * r, qz = pz + Math.sin(a) * r; if (onWalk(qx, qz) || wet(qx, qz)) return false; } return !onWalk(px, pz) && !wet(px, pz); };
     if (ok(x, z)) return [x, z]; for (let d = 0.25; d <= 3; d += 0.25) for (let a = 0; a < 6.28; a += 0.5 / d) { const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d; if (ok(px, pz)) return [px, pz]; } return null; };
   const tree = (kind, x, z, scale = 1, inPlanter = false) => { if (inPlanter) { out.trees.push({ kind, x, z, scale, planter: true }); navRect(x, z, 0.6, 0.6, 0, 2); return; } if (clear(x, z, 1.2) && !wet(x, z) && !wet(x + 1.5, z) && !wet(x - 1.5, z) && !wet(x, z + 1.5) && !wet(x, z - 1.5) && !paved(x, z) && !paved(x + 0.6, z) && !paved(x - 0.6, z) && !paved(x, z + 0.6) && !paved(x, z - 0.6)) { out.trees.push({ kind, x, z, scale }); navRect(x, z, 0.6, 0.6, 0, 2); } };
-  const plaza = (x0, z0, x1, z1, color = [0.82, 0.8, 0.76]) => { B.frame(0, 0, 0, 0);
-    for (let x = x0; x < x1 - 1e-3; x += 4) for (let z = z0; z < z1 - 1e-3; z += 4) { const xa = x, xb = Math.min(x1, x + 4), za = z, zb = Math.min(z1, z + 4), q = (px, pz) => [px, gy(px, pz) + 0.05, pz];
-      B.poly('pavement', [q(xa, za), q(xb, za), q(xb, zb), q(xa, zb)], [0, 1, 0], { color, uvs: [[xa / 1.2, za / 1.2], [xb / 1.2, za / 1.2], [xb / 1.2, zb / 1.2], [xa / 1.2, zb / 1.2]], attr: { aPave: [[xa, za - z0 + 0.5], [xb, za - z0 + 0.5], [xb, zb - z0 + 0.5], [xa, zb - z0 + 0.5]] } }); }
+  const plaza = (x0, z0, x1, z1, color = [0.82, 0.8, 0.76]) => {
     pave(x0 - 1, z0 - 1, x1 + 1, z1 + 1, (px, pz) => px > x0 - 0.15 && px < x1 + 0.15 && pz > z0 - 0.15 && pz < z1 + 0.15 ? 1 : 0);
     const rid = regions.length; regions.push({ kind: 'plaza', pts: [[(x0 + x1) / 2, (z0 + z1) / 2]], connected: false }); coverRect(x0, z0, x1, z1, rid);
+    net.addArea([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], { rid, color });
     occRect((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2, 0, 1, 1, rid); };
   // C1 south-west: a lawn court under a group of big zelkovas, a curving path between the two slabs, a wisteria pergola
   { const pts = []; for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push([lerp(366, 410, t), lerp(96, 114, t) + Math.sin(t * Math.PI * 2) * 3.5]); } pathLine(pts, 2.0);
@@ -590,11 +603,18 @@ export function buildDanchi(ctx) {
   // C2, C3, C6: the playground, the fountain park and the lake park are designed spaces of their own (danchipark.js)
   const parkFrom = { bushes: out.bushes.length, hedges: out.hedges.length, trees: out.trees.length, rocks: (out.rocks || []).length, regions: regions.length };
   buildParks({ B, gy, rng, out, pathLine, pave, paint, occRect, navRect, tree, benchAt, addBox, addCircle, pergola, toilet, sandPit, springRider, coverRect, coverDisc, paved, freeSpot, clear, sd: danchiSD,
+    area: (poly, y) => net.addArea(poly, { draw: false, y }),
+    // a stone landing at a path's end (a viewing place), a bench on its far edge facing toward (fx, fz)
+    lookout: (C, fx = 482, fz = 15) => { const rid = regions.length, cx = C.reduce((a, p) => a + p[0], 0) / 4, cz = C.reduce((a, p) => a + p[1], 0) / 4;
+      regions.push({ kind: 'plaza', pts: [[cx, cz]], connected: false, link: true }); net.addArea(C, { rid, color: [0.72, 0.71, 0.68] }); coverPoly(C, rid);
+      pave(Math.min(...C.map(p => p[0])) - 1, Math.min(...C.map(p => p[1])) - 1, Math.max(...C.map(p => p[0])) + 1, Math.max(...C.map(p => p[1])) + 1, (x, z) => x > Math.min(...C.map(p => p[0])) - 0.15 && x < Math.max(...C.map(p => p[0])) + 0.15 && z > Math.min(...C.map(p => p[1])) - 0.15 && z < Math.max(...C.map(p => p[1])) + 0.15 ? 1 : 0);
+      const yaw = Math.atan2(fx - cx, fz - cz), bx = cx + Math.sin(yaw) * 0.6, bz = cz + Math.cos(yaw) * 0.6; ctx.bench(ctx.LB, bx, gy(bx, bz) + LIFT, bz, yaw); navRect(bx, bz, 1.0, 0.45, yaw, 2); },
     nearRoad: (x, z, r) => { for (let a = 0; a < 6.28; a += 0.8) if (RN.roadAt(x + Math.cos(a) * r, z + Math.sin(a) * r) || RN.walkY(x + Math.cos(a) * r, z + Math.sin(a) * r) !== null) return true; return false; } });
   parkFrom.regionsTo = regions.length;
   // C4 north-west: a shaded bosque of trees on gravel between the tower and the slab, benches under it; a bamboo grove
   // closes the court to the north against the hill foot
   { const x0 = 440, z0 = 238; paint(0, x0 - 2, z0 - 2, x0 + 22, z0 + 24, () => 1); paint(2, x0 - 2, z0 - 2, x0 + 22, z0 + 24, () => 0.7);
+    net.addArea([[x0 - 2, z0 - 2], [x0 + 22, z0 - 2], [x0 + 22, z0 + 24], [x0 - 2, z0 + 24]], { draw: false, y: (x, z) => gy(x, z) + 0.01 }); // (its gravel floor: the paths meet it flush)
     for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) tree(j % 2 ? 'oak' : 'zelkova', x0 + i * 6 + (rng() - 0.5), z0 + j * 6.5 + (rng() - 0.5), 0.6);
     for (const [x, z, r] of [[443, 244, 0], [455, 250, Math.PI], [449, 258, Math.PI / 2]]) benchAt(x, z, r);
     out.groves.push({ x: 443, z: 302, R: 7 }); }
@@ -735,6 +755,8 @@ export function buildDanchi(ctx) {
       B.bbox('metalWall', 0, 0.1, 0, 3.0, 2.1, 2.2, 0.02, { color: [0.36, 0.5, 0.42] }); B.poly('roofMetal', [[-1.7, 2.3, -1.3], [1.7, 2.3, -1.3], [1.7, 2.1, 1.3], [-1.7, 2.1, 1.3]], [0, 1, 0.1], { color: [0.4, 0.42, 0.44] });
       B.quad('dark', [-0.8, 0.1, 1.105], [0.8, 0.1, 1.105], [0.8, 1.95, 1.105], [-0.8, 1.95, 1.105], { color: [0.2, 0.24, 0.22] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.5, Math.PI / 2); navRect(x, z, 1.8, 2.0, 0, 2); }
     // outside: the path from the gate to the south street, the lake park's path along the fence to it, benches beside it
+    { const C = [[GX + 1.7, GZ - 0.2], [GX - 1.7, GZ - 0.2], [GX - 1.7, GZ - 2.6], [GX + 1.7, GZ - 2.6]], rid = regions.length; // the paved apron inside the gate
+      regions.push({ kind: 'apron', pts: [[GX, GZ - 1.4]], connected: false, link: true }); apron(C, rid, { name: 'football ground gate' }); }
     pathLine([[GX, GZ - 1.5], [GX, 51.7]], 3.0, { lamps: false, link: true });
     pathLine([[545.2, 46.4], [GX + 0.8, 46.4]], 2.4, { lamps: true, link: true, mat: 'gravelPath', color: [0.9, 0.84, 0.74] });
     for (const x of [563, 571, 579, 587]) benchAt(x, 48.2, Math.PI);
@@ -755,7 +777,7 @@ export function buildDanchi(ctx) {
   // pedestrian links through the blocks (緑道): between the park and the centre, and across the north-west block
   // (the park path meets the south street's footway; the link goes on from the far footway: people cross at the corner)
   pathLine([[440, 60.6], [440, 70], [454.5, 84.5], [454.5, 89.8]], 2.6);
-  pathLine([[415, 60.6], [415, 64], [412, 90]], 2.2);
+  pathLine([[411.5, 60.6], [411.5, 90]], 2.2);
   pathLine([[520, 60.6], [520, 89.5], [498.2, 89.5]], 2.2);
   pathLine([[404.6, 232], [416, 232]], 2.2); pathLine([[440, 262], [452, 268]], 2.2);
 
@@ -770,17 +792,17 @@ export function buildDanchi(ctx) {
     b.own = new Set();
     for (const e of b.entrances || []) { if (!e.court) continue;
       const rid = regions.length; regions.push({ kind: 'apron', pts: [[(e.court[0][0] + e.court[2][0]) / 2, (e.court[0][1] + e.court[2][1]) / 2]], connected: false, link: true }); b.own.add(rid);
-      apron(e.court, rid);
+      apron(e.court, rid, { b: blds.indexOf(b), name: `${b.fam} ${b.name || b.no || ''} ${e.kind}` });
       for (const q of e.block || []) { const R = quadRect(q); navRect(R.cx, R.cz, R.hw, R.hd, R.r, 2); } }
     if (b.fam === 'R' && b.walk) { const { w, d } = b.walk, f = d / 2;
-      b.own.add(pathLine([Wd(-w / 2 - 0.4, f + 0.85), Wd(w / 2 + 1.95, f + 0.85), Wd(w / 2 + 1.95, f - 3.95), Wd(w / 2 + 0.7, f - 3.95)], 1.3, { lamps: false, edge: false, link: true, yo: 0.048 }));
+      b.own.add(pathLine([Wd(-w / 2 - 0.4, f + 0.85), Wd(w / 2 + 1.95, f + 0.85), Wd(w / 2 + 1.95, f - 3.95), Wd(w / 2 + 0.7, f - 3.95)], 1.3, { lamps: false, edge: false, link: true, door: true }));
       for (const e of b.entrances) if (e.kind === 'gallery') { e.from = Wd(0, f + 0.85); const q = Wd(0, f + 1.95); e.p = [q[0], 0, q[1]]; } }
-    for (const wk of b.walkways || []) b.own.add(pathLine(wk, 1.5, { lamps: false, edge: false, link: true, yo: 0.047 }));
+    for (const wk of b.walkways || []) b.own.add(pathLine(wk, 1.5, { lamps: false, edge: false, link: true, door: true }));
     if (b.fam === 'S') { const st = (b.entrances || []).filter(e => e.kind === 'stair' && e.front);
       if (st.length > 1) { const ax = [-c, sn], pr = e => (e.front[0] - b.x) * ax[0] + (e.front[2] - b.z) * ax[1]; st.sort((p, q) => pr(p) - pr(q));
         const f0 = st[0].front, f1 = st[st.length - 1].front, L = Math.hypot(f1[0] - f0[0], f1[2] - f0[2]), ux = (f1[0] - f0[0]) / L, uz = (f1[2] - f0[2]) / L;
         const pts = [[f0[0] - ux * 2.2, f0[2] - uz * 2.2], [f1[0] + ux * 2.2, f1[2] + uz * 2.2]];
-        b.backWalk = { pts, rid: pathLine(pts, 1.8, { lamps: true, link: true, yo: 0.047 }), u: [ux, uz], out: st[0].out }; b.own.add(b.backWalk.rid);
+        b.backWalk = { pts, rid: pathLine(pts, 1.8, { lamps: true, link: true, door: true }), u: [ux, uz], out: st[0].out }; b.own.add(b.backWalk.rid);
         for (const e of st) e.viaWalk = true; } }
   }
 
@@ -817,7 +839,7 @@ export function buildDanchi(ctx) {
   const finish = (pts, k, w, lamps) => { // run on half a metre into what it joins, so the paving overlaps rather than butts
     const a = pts[pts.length - 2], b = pts[pts.length - 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; pts[pts.length - 1] = [b[0] + (b[0] - a[0]) / L * 0.5, b[1] + (b[1] - a[1]) / L * 0.5];
     if (k >= 0 && REG[k] >= 0) regions[REG[k]].connected = true;
-    pathLine(pts, w, { lamps, link: true, yo: 0.046 }); regions[regions.length - 1].connected = true; return true; };
+    pathLine(pts, w, { lamps, link: true }); regions[regions.length - 1].connected = true; return true; };
   const link = (x, z, own, w, maxCost, from = null) => { const cells = route(x, z, own, maxCost); if (!cells) return false;
     const end = cells[cells.length - 1], pts = toLine(cells, [x, z]); if (from) pts.unshift(from);
     return finish(pts, end, w, Math.hypot(pts[pts.length - 1][0] - x, pts[pts.length - 1][1] - z) > 10); };
@@ -825,13 +847,16 @@ export function buildDanchi(ctx) {
   // out and then square to one side (an L), whichever is shortest and clear for its full width; the grid router only
   // where neither will do. Clean right-angled branches read as laid out, not as wandering desire lines.
   const clearRun = (x, z, dx, dz, t1, hw) => { for (let t = 0; t <= t1 + 1e-6; t += 0.5) for (const e of [-hw, 0, hw]) { const k = navI(x + dx * t - dz * e, z + dz * t + dx * e); if (k < 0 || NAV[k] === 2 || NAV[k] === 4) return false; } return true; };
-  const rayHit = (x, z, dx, dz, own, maxL, hw) => { for (let t = 0.5; t <= maxL; t += 0.5) { const k = navI(x + dx * t, z + dz * t); if (k < 0) return null; const v = NAV[k];
+  // (a ray that would run along its own start's paving for more than ownMax metres finds nothing: the branch would lie
+  // on top of the walk it leaves)
+  const rayHit = (x, z, dx, dz, own, maxL, hw, ownMax = 1e9) => { let ownRun = 0; for (let t = 0.5; t <= maxL; t += 0.5) { const k = navI(x + dx * t, z + dz * t); if (k < 0) return null; const v = NAV[k];
+    if (v === 1 && REG[k] >= 0 && own.has(REG[k]) && (ownRun += 0.5) > ownMax) return null;
     if (v === 3 || (v === 1 && REG[k] >= 0 && !own.has(REG[k]))) return clearRun(x, z, dx, dz, Math.max(0, t - 1), hw) ? { t, k } : null; if (v === 2 || v === 4) return null; } return null; };
   const linkOrtho = (x, z, dx, dz, own, w, from = null, maxL = 45) => {
     const hw = w / 2 + 0.15; let best = null;
     const s1 = rayHit(x, z, dx, dz, own, maxL, hw); if (s1) best = { pts: [[x, z], [x + dx * s1.t, z + dz * s1.t]], cost: s1.t, k: s1.k };
     for (let d1 = 0.5; d1 <= 22; d1 += 0.5) { if (best && d1 >= best.cost) break; if (!clearRun(x, z, dx, dz, d1, hw)) break; const cx = x + dx * d1, cz = z + dz * d1;
-      for (const sg of [-1, 1]) { const ex = -dz * sg, ez = dx * sg, h = rayHit(cx, cz, ex, ez, own, 55, hw); if (!h) continue; const cost = d1 + h.t + 5;
+      for (const sg of [-1, 1]) { const ex = -dz * sg, ez = dx * sg, h = rayHit(cx, cz, ex, ez, own, 55, hw, 3.0); if (!h) continue; const cost = d1 + h.t + 5;
         // a turn right at the apron's edge: the branch simply leaves along it from inside the apron (no stub of a first leg)
         const pts = d1 < w * 1.25 ? [[x - dx * 0.4, z - dz * 0.4], [x - dx * 0.4 + ex * (h.t + 0.2), z - dz * 0.4 + ez * (h.t + 0.2)]] : [[x, z], [cx, cz], [cx + ex * h.t, cz + ez * h.t]];
         if (!best || cost < best.cost) best = { pts, cost, k: h.k }; } }
@@ -857,7 +882,7 @@ export function buildDanchi(ctx) {
       if (h) finish([[q[0] - dx * 0.5, q[1] - dz * 0.5], [q[0] + dx * h.t, q[1] + dz * h.t]], h.k, 1.8, false); } }
   for (const b of blds) for (const e of b.entrances || []) {
     const [x, , z] = e.p; if (e.kind === 'shop') continue;
-    if (!e.viaWalk) { const wd = e.kind === 'lobby' ? 2.6 : e.kind === 'gallery' ? 1.6 : 2.0;
+    if (!e.viaWalk) { const wd = e.kind === 'gallery' ? 1.6 : 2.0;
       const back = e.from ? 0 : 0.6; linkOrtho(x - e.out[0] * back, z - e.out[1] * back, e.out[0], e.out[1], b.own, wd, e.from || null); }
     for (const sd of [-1, 1]) { const px = x + e.out[0] * 1.6 - e.out[1] * sd * 2.6, pz = z + e.out[1] * 1.6 + e.out[0] * sd * 2.6, k = navI(px, pz);
       if (clear(px, pz, 0.2) && k >= 0 && NAV[k] === 0) for (let q = 0; q < 3; q++) out.bushes.push({ x: px + (rng() - 0.5) * 1.2, y: gy(px, pz) - 0.05, z: pz + (rng() - 0.5) * 1.2, s: 0.6 + rng() * 0.3, sx: 1, r: rng() * 6.28, c: new THREE.Color().setHSL(0.26 + rng() * 0.06, 0.45, 0.32 + rng() * 0.08) }); }
@@ -902,6 +927,8 @@ export function buildDanchi(ctx) {
     B.frame(0, 0, 0, 0); }
   function springRider(x, z, col) { const y = gy(x, z) + 0.05; B.frame(x, y, z, rng() * 6); B.cyl('steel', 0, 0, 0, 0.1, 0.1, 0.4, 10, { color: [0.4, 0.4, 0.42] }); B.bbox('plastic', 0, 0.4, 0, 0.3, 0.45, 0.8, 0.08, { color: col }); B.cyl('plastic', 0, 0.85, 0.35, 0.12, 0.1, 0.25, 10, { color: col, cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.35); }
   function toilet(x, z, yaw) { const y = gy(x, z); B.frame(x, y, z, yaw);
+    { const P = (lx, lz) => { const w = B.P([lx, 0, lz]); return [w[0], w[2]]; }, C = [P(2.5, 1.62), P(-2.5, 1.62), P(-2.5, 3.2), P(2.5, 3.2)]; // the paved apron at its doors
+      const rid = regions.length; regions.push({ kind: 'apron', pts: [[(C[0][0] + C[2][0]) / 2, (C[0][1] + C[2][1]) / 2]], connected: false, link: true }); apron(C, rid, { name: 'park toilet' }); }
     B.bbox('concrete', 0, -0.2, 0, 5.2, 0.3, 3.4, 0.02, { color: [0.7, 0.7, 0.68] }); B.bbox('tiles', 0, 0.1, 0, 4.8, 2.8, 3.0, 0.02, { color: [0.78, 0.7, 0.62], uv: 2 });
     B.bbox('roofMetal', 0, 2.9, 0, 5.6, 0.18, 3.8, 0.02, { color: [0.36, 0.42, 0.46] });
     for (const sx of [-1.3, 1.3]) { B.quad('dark', [sx - 0.5, 0.15, 1.51], [sx + 0.5, 0.15, 1.51], [sx + 0.5, 2.2, 1.51], [sx - 0.5, 2.2, 1.51], { color: [0.15, 0.15, 0.15] }); }
@@ -914,6 +941,26 @@ export function buildDanchi(ctx) {
       for (let a = 0; a < 6.28 && !bad; a += 0.785) for (const r of [0.6, 1.2]) { const k = covI(e.x + Math.cos(a) * r, e.z + Math.sin(a) * r); if (k >= 0 && (COV[k] >= 0 || COV2[k] >= 0)) { bad = true; break; } }
       if (!bad && RN.cuts.some(c => c.id === n.R.id && c.side === side && sv > c.s0 - 1.5 && sv < c.s1 + 1.5)) bad = true;
       if (bad) continue; streetLamp(e.x, e.z, Math.atan2(-e.l[0] * side, -e.l[1] * side)); break; } }
+  // ---- the pedestrian network: joined, laid and checked (every door must reach a street; the generator is right when
+  // the check reports nothing). Where a path climbs to a footway the lawn beside it is raised to meet it.
+  { net.solve();
+    const raiseQ = [];
+    net.build(B, { cover: (x, z, rid) => { if (RN.walkY(x, z) !== null || RN.roadAt(x, z)) return true; const k = covI(x, z); return k >= 0 && ((COV[k] >= 0 && COV[k] !== rid) || (COV2[k] >= 0 && COV2[k] !== rid)); },
+      raise: (x, z, y) => raiseQ.push([x, z, y]) });
+    const doors = [];
+    for (const [ai, A] of net.areas.entries()) if (A.door) doors.push({ area: ai, name: A.door.name });
+    for (const b of blds) for (const e of b.entrances || []) { if (e.court) continue;
+      const [x, z] = e.from || [e.p[0] + e.out[0] * 0.6, e.p[2] + e.out[1] * 0.6]; doors.push({ x, z, name: `${b.fam} ${b.name || b.no || ''} ${e.kind}` }); }
+    const issues = net.validate({ onBuilding, doors });
+    out.pathAudit = issues; out.net = net; out.netCtx = { onBuilding, doors };
+    if (issues.length) console.warn(`danchi paths: ${issues.length} issue(s)\n` + issues.join('\n')); else console.info('danchi paths: one connected network, every door reached, no dead ends, gaps, steps, steep slopes or overlaps');
+    // the lawn raised beside paths that climb to a footway: never under a street or a building
+    const { HN, HALF, CELL, H } = hf; out.H0 = H.slice(); // (the ground as it was, for re-checking the network)
+    for (const [x, z, y] of raiseQ) { const R = 2.4, i0 = Math.floor((x - R + HALF) / CELL), i1 = Math.ceil((x + R + HALF) / CELL), j0 = Math.floor((z - R + HALF) / CELL), j1 = Math.ceil((z + R + HALF) / CELL);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const vx = -HALF + i * CELL, vz = -HALF + j * CELL, d = Math.hypot(vx - x, vz - z); if (d > R) continue;
+        const t = y - 0.075 * Math.max(0, d - 0.7), k = j * HN + i; if (t <= H[k]) continue;
+        let ok = true; for (const [ox, oz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) if (RN.roadAt(vx + ox, vz + oz) || RN.walkY(vx + ox, vz + oz) !== null) { ok = false; break; }
+        if (ok && !onBuilding(vx, vz, 1.0)) H[k] = t; } } }
   flushEdges();
   // final sweep: shrubs, stones and trees that ended up on a walking surface (planted before a later path or apron
   // crossed their spot) are taken out
