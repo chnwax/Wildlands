@@ -87,6 +87,80 @@ function guard(B, kind, ax, az, bx, bz, fy, { color = [0.9, 0.88, 0.84], trim = 
     }
   });
 }
+// ---------------------------------------------------------------- stairs
+// a closed six-sided solid from its corners (a0..a3 one end ring, b0..b3 the other, in the same order), every face
+// turned outward: sloped stringers, rails and parapets that a beam would leave open-ended
+function hexa(B, mat, c, opt = {}) {
+  const m = [0, 1, 2].map(i => c.reduce((s, p) => s + p[i], 0) / 8);
+  for (const f of [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]) {
+    const P = f.map(i => c[i]), fc = [0, 1, 2].map(i => P.reduce((s, p) => s + p[i], 0) / 4);
+    B.poly(mat, P, [fc[0] - m[0], fc[1] - m[1], fc[2] - m[2]], opt); }
+}
+// a square bar of side s from a to b (closed at both ends)
+function bar(B, mat, a, b, s, opt = {}) {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...d) || 1; d.forEach((v, i) => d[i] = v / L);
+  let u = Math.abs(d[1]) > 0.99 ? [1, 0, 0] : [d[2], 0, -d[0]]; const ul = Math.hypot(...u); u = u.map(v => v / ul * s / 2);
+  const v = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
+  const ring = p => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => [p[0] + u[0] * i + v[0] * j, p[1] + u[1] * i + v[1] * j, p[2] + u[2] * i + v[2] * j]);
+  hexa(B, mat, [...ring(a), ...ring(b)], opt);
+}
+// the rise and going of a flight climbing H over a run (first riser to the landing's edge): n risers of equal height,
+// n - 1 treads of equal going, the landing the last tread — risers at most 20 cm, treads at least 22 cm where the run
+// allows, as near the comfortable 2R + G = 63 cm as can be
+function stairSteps(H, run) {
+  let best = null;
+  for (let k = Math.max(2, Math.ceil(H / 0.2 - 1e-6)); k <= Math.ceil(H / 0.13) + 1; k++) { const R = H / k, G = run / (k - 1), e = Math.abs(2 * R + G - 0.63) + Math.max(0, 0.22 - G) * 6;
+    if (!best || e < best.e) best = { n: k, R, G, e }; }
+  return best;
+}
+// a flight in the current frame: rising along +z from its first riser at z = 0 (floor y0) to the landing's edge at
+// z = run (landing top y1), centred on x = 0, w wide; base: how low its body goes (into the ground, or the underside of
+// the slab it starts from).
+//   'concrete': cast with a waist slab — treads with a dark anti-slip nosing, risers, the sawtooth on both open sides,
+//               a sloped soffit under it
+//   'steel':    checker-plate treads and closed riser plates between two plate stringers
+// Returns the steps and pitch(z): the height of the nosing line over z (rails run 0.85-0.9 m above it).
+function stairFlight(B, { w, y0, y1, run, base = null, style = 'concrete', body = [0.78, 0.78, 0.76], tread = [0.84, 0.83, 0.8], nose = [0.26, 0.26, 0.27] }) {
+  const S = stairSteps(y1 - y0, run), { n, R, G } = S, hw = w / 2, pitch = z => y0 + R + clamp(z, 0, run - G) * R / G, yb = base ?? y0 - 0.16;
+  if (style === 'steel') {
+    const t = 0.035, iw = w - 0.12;
+    for (let k = 0; k < n - 1; k++) { const y = y0 + (k + 1) * R; B.box('metal', 0, y - t, (k + 0.5) * G, iw, t, G + 0.02, { color: tread }); }
+    for (let k = 0; k < n; k++) B.box('metal', 0, y0 + k * R, k * G - 0.006, iw, R - (k < n - 1 ? t : 0), 0.012, { color: body });
+    for (const e of [-1, 1]) { const xo = e * hw, xi = e * (hw - 0.05), top = z => y0 + R + z * R / G + 0.06, depth = 0.27;
+      hexa(B, 'metal', [[xi, top(0) - depth, 0], [xo, top(0) - depth, 0], [xo, top(0), 0], [xi, top(0), 0], [xi, top(run) - depth, run], [xo, top(run) - depth, run], [xo, top(run), run], [xi, top(run), run]], { color: body }); }
+  } else {
+    const t = 0.2, cs = G / Math.hypot(G, R), sof = z => y0 + R + z * R / G - t / cs, zs = clamp((yb - (y0 + R - t / cs)) * G / R, 0, run);
+    for (let k = 0; k < n - 1; k++) { const y = y0 + (k + 1) * R, za = k * G, zb = (k + 1) * G;
+      B.poly('concrete', [[-hw, y, za], [hw, y, za], [hw, y, zb], [-hw, y, zb]], [0, 1, 0], { color: tread, uv: 0.9 });
+      B.box('plain', 0, y, za + 0.025, w - 0.06, 0.004, 0.04, { color: nose }); }
+    for (let k = 0; k < n; k++) { const z = k * G; B.poly('concrete', [[-hw, y0 + k * R, z], [hw, y0 + k * R, z], [hw, y0 + (k + 1) * R, z], [-hw, y0 + (k + 1) * R, z]], [0, 0, -1], { color: mul(body, 0.96) }); }
+    const bot = z => Math.max(yb, sof(z));
+    for (const e of [-1, 1]) { const x = e * hw;
+      for (let k = 0; k < n - 1; k++) { const za = k * G, zb = (k + 1) * G, y = y0 + (k + 1) * R, cuts = [za, ...(zs > za && zs < zb ? [zs] : []), zb];
+        for (let i = 0; i + 1 < cuts.length; i++) { const a = cuts[i], b = cuts[i + 1]; B.poly('concrete', [[x, bot(a), a], [x, bot(b), b], [x, y, b], [x, y, a]], [e, 0, 0], { color: body, uv: 1.2 }); } } }
+    if (yb < y0) B.poly('concrete', [[-hw, yb, 0], [hw, yb, 0], [hw, y0, 0], [-hw, y0, 0]], [0, 0, -1], { color: body });
+    if (zs > 0) B.poly('concrete', [[-hw, yb, 0], [hw, yb, 0], [hw, yb, zs], [-hw, yb, zs]], [0, -1, 0], { color: mul(body, 0.8) });
+    B.poly('concrete', [[-hw, sof(zs), zs], [hw, sof(zs), zs], [hw, sof(run), run], [-hw, sof(run), run]], [0, -G, R], { color: mul(body, 0.86), uv: 1.2 });
+    B.poly('concrete', [[-hw, sof(run), run], [hw, sof(run), run], [hw, y1, run], [-hw, y1, run]], [0, 0, 1], { color: body });
+  }
+  return { ...S, pitch };
+}
+// railing along a flight side at x, from z0 to z1 (flight frame), following the nosing line pitch(z) (flat beyond the
+// flight's ends at the floor or landing height there): 'balustrade' — posts, a top rail 0.9 m up, a knee rail and
+// balusters 11 cm apart (steel stairs); 'handrail' — a round-section rail 0.85 m up on posts; 'parapet' — a raking solid
+// wall 1.1 m up, coped (concrete stairs' open sides)
+function stairRail(B, kind, x, z0, z1, pitch, { color = [0.62, 0.64, 0.66], wall = [0.88, 0.87, 0.84], below = 0.3 } = {}) {
+  const L = z1 - z0; if (L < 0.1) return;
+  if (kind === 'parapet') { const T = 0.12, ya = pitch(z0), yb = pitch(z1);
+    hexa(B, 'tiles', [[x - T / 2, ya - below, z0], [x + T / 2, ya - below, z0], [x + T / 2, ya + 1.1, z0], [x - T / 2, ya + 1.1, z0], [x - T / 2, yb - below, z1], [x + T / 2, yb - below, z1], [x + T / 2, yb + 1.1, z1], [x - T / 2, yb + 1.1, z1]], { color: wall, uv: 2.5 });
+    bar(B, 'concrete', [x, ya + 1.12, z0], [x, yb + 1.12, z1], 0.16, { color: mul(wall, 0.9) }); return; }
+  const h = kind === 'handrail' ? 0.85 : 0.9, m = Math.max(1, Math.round(L / 1.2));
+  bar(B, 'steel', [x, pitch(z0) + h, z0], [x, pitch(z1) + h, z1], kind === 'handrail' ? 0.045 : 0.05, { color });
+  for (let k = 0; k <= m; k++) { const z = z0 + L * k / m; B.box('steel', x, pitch(z) - 0.02, z, 0.05, h + 0.02, 0.05, { color }); }
+  if (kind === 'balustrade') { bar(B, 'steel', [x, pitch(z0) + 0.12, z0], [x, pitch(z1) + 0.12, z1], 0.03, { color });
+    B.detail(1, () => { for (let z = z0 + 0.11; z < z1 - 0.05; z += 0.11) B.box('steel', x, pitch(z) + 0.12, z, 0.018, h - 0.14, 0.018, { color }); }); }
+}
+
 // balcony run along the current (wall) frame: x0..x1, floor level fy, depth dp; kind 'solid' | 'rail' | 'glass';
 // partitions at `parts`; laundry and AC units on some. ends [left, right]: close that end with a return guard back to
 // the wall (off where a fin, a wall or another run already closes it)
@@ -619,6 +693,7 @@ export function mansion(B, s, rng, ex) {
       out.entrances.push({ p: B.P([ap.foot[0], 0, ap.foot[1]]), out: [B.N([0, 0, 1])[0], B.N([0, 0, 1])[2]], kind: 'lobby', court: courtW(B, ap.court), block: (ap.block || []).map(q => courtW(B, q)) });
       // walks from the ground-floor doors under the corridor, round the lobby's glazed sides, into the apron's side
       { const [xa, za, xb, zb] = ap.court, zm = (za + zb) / 2 + 0.3; out.walkways = [];
+        // (on the stair tower's side it ends on the stair's foot)
         for (const e of [-1, 1]) { const sideX = e < 0 ? xa : xb, cx2 = e * Math.max(Math.abs(sideX) + 1.1, LW / 2 + 0.95), endX = e * (w / 2 + 0.3) + (-X);
           if (e * endX < e * cx2 + 1) continue;
           out.walkways.push([[endX, -LD + 0.85], [cx2, -LD + 0.85], [cx2, zm], [sideX - e * 0.6, zm]].map(([lx, lz]) => { const q = B.P([lx, 0, lz]); return [q[0], q[2]]; })); } }
@@ -626,27 +701,40 @@ export function mansion(B, s, rng, ex) {
   });
   B.frame(x, y, z, r);
   // stair: an open stair tower against the far gable, at the access corridor's end: a landing level with the corridor
-  // on every floor, a half landing against the outer face, two flights a storey, solid parapets on every open side and
-  // along the flights. (local x: -2.25 at the building's back, where the corridor comes in, to +2.25; z: 0 at the
-  // gable wall to 2.6 out)
-  inFrame(B, [-w / 2, 0, -d / 2 + 0.65], -Math.PI / 2, () => {
-    const top = H + 1.2, SC = [0.8, 0.8, 0.78], pc = pal.parapet, g = { color: pc, trim: pal.trim };
-    for (const cx2 of [-2.1, 2.1]) B.bbox('tiles', cx2, 0, 2.45, 0.3, top, 0.3, 0.02, { color: mul(wall, 0.95) });
+  // on every upper floor, a half landing against the outer face, two concrete flights a storey (8 risers of 18.75 cm,
+  // 25 cm treads), the first from the ground (paved where the walk under the corridor arrives) to the first half
+  // landing, the last arriving at the top floor; solid parapets on every open side and raking ones along the outer
+  // flights, handrails along the inner. (local x: -2.25 at the building's back, where the corridor comes in, to +2.25;
+  // z: 0 at the gable wall to 2.6 out)
+  // (stairTower: false — a wing whose stair end abuts another block's mass, reaching a stair along its corridor)
+  if (s.stairTower !== false) inFrame(B, [-w / 2, 0, -d / 2 + 0.65], -Math.PI / 2, () => {
+    const top = H + 1.2, SC = [0.8, 0.8, 0.78], pc = pal.parapet, g = { color: pc, trim: pal.trim }, LX = 0.875, RAIL = [0.6, 0.62, 0.64];
+    const gl = (lx, lz) => { if (!s.gy) return 0; const p = B.P([lx, 0, lz]); return s.gy(p[0], p[2]) - B.F.y; };
+    for (const cx2 of [-2.1, 2.1]) B.bbox('tiles', cx2, Math.min(0, gl(cx2, 2.45)) - 0.3, 2.45, 0.3, top - Math.min(0, gl(cx2, 2.45)) + 0.3, 0.3, 0.02, { color: mul(wall, 0.95) });
+    // flight in the tower frame from (xa, ya) to (xb, yb) along z = zc, 1.2 wide
+    const flight = (xa, xb, ya, yb, zc, base) => { const dir = Math.sign(xb - xa); let S;
+      inFrame(B, [xa, 0, zc], dir * Math.PI / 2, () => { S = stairFlight(B, { w: 1.2, y0: ya, y1: yb, run: Math.abs(xb - xa), base, body: SC, tread: [0.86, 0.85, 0.82] }); });
+      return S; };
+    const rail = (kind, xa, xb, zr, S) => { const dir = Math.sign(xb - xa); inFrame(B, [xa, 0, zr], dir * Math.PI / 2, () => stairRail(B, kind, 0, -0.15, Math.abs(xb - xa) + 0.15, S.pitch, { color: RAIL, wall: pc })); };
     for (let f = 0; f < floors; f++) {
-      const fy = y0 + f * fh, hy = fy + fh / 2;
-      if (f > 0) { B.bbox('concrete', -1.5, fy - 0.16, 1.3, 1.5, 0.16, 2.6, 0.01, { color: SC });
-        guard(B, 'solid', -0.75, 2.54, -2.19, 2.54, fy, g); guard(B, 'solid', -2.19, 2.54, -2.19, 0.02, fy, g); }
-      B.bbox('concrete', 1.5, hy - 0.16, 1.3, 1.5, 0.16, 2.6, 0.01, { color: SC });
-      guard(B, 'solid', 2.19, 0.02, 2.19, 2.54, hy, g); guard(B, 'solid', 2.19, 2.54, 0.75, 2.54, hy, g);
-      // flights: up along the wall to the half landing, back along the outer face to the next floor; the outer one
-      // carries a raking parapet, the inner a steel handrail
-      if (f < floors - 1 || true) {
-        B.beam('concrete', [-0.75, fy - 0.1, 0.65], [0.75, hy - 0.1, 0.65], 1.2, 0.2, { color: SC });
-        if (f < floors - 1) { B.beam('concrete', [0.75, hy - 0.1, 1.95], [-0.75, fy + fh - 0.1, 1.95], 1.2, 0.2, { color: SC });
-          B.beam('tiles', [0.75, hy + 0.55, 2.54], [-0.75, fy + fh + 0.55, 2.54], 0.12, 1.1, { color: pc });
-          B.detail(1, () => B.beam('steel', [0.75, hy + 0.85, 1.32], [-0.75, fy + fh + 0.85, 1.32], 0.04, 0.04, { color: [0.6, 0.62, 0.64] })); }
-        B.detail(1, () => B.beam('steel', [-0.75, fy + 0.85, 1.28], [0.75, hy + 0.85, 1.28], 0.04, 0.04, { color: [0.6, 0.62, 0.64] }));
-      }
+      const fy = y0 + f * fh, hy = fy + fh / 2, last = f === floors - 1;
+      if (f > 0) { B.bbox('concrete', -(2.25 + LX) / 2, fy - 0.16, 1.3, 2.25 - LX, 0.16, 2.6, 0.01, { color: SC });
+        guard(B, 'solid', -LX, 2.54, -2.19, 2.54, fy, g); guard(B, 'solid', -2.19, 2.54, -2.19, 0.02, fy, g); }
+      if (last) continue;                                                                                                // (the stair ends at the top floor)
+      B.bbox('concrete', (2.25 + LX) / 2, hy - 0.16, 1.3, 2.25 - LX, 0.16, 2.6, 0.01, { color: SC });
+      guard(B, 'solid', 2.19, 0.02, 2.19, 2.54, hy, g); guard(B, 'solid', 2.19, 2.54, LX, 2.54, hy, g);
+      // up along the wall to the half landing (from the ground: a longer flight starting further back), back along the
+      // outer face to the next floor
+      let xa = -LX, ya = fy, base = fy - 0.16;
+      // (on a podium the stair starts from the podium's roof terrace, which is the wing's ground)
+      if (f === 0) { ya = podium ? 0.06 : Math.max(gl(-LX, 0.65), gl(-2.0, 0.65), gl(LX, 0.65)) + 0.05; const n0 = Math.ceil((hy - ya) / 0.19 - 1e-6); xa = Math.max(-2.25 + 0.75, LX - (n0 - 1) * 0.25); base = ya - (podium ? 0.06 : 0.35); }
+      const SA = flight(xa, LX, ya, hy, 0.65, base), SB = flight(LX, -LX, hy, fy + fh, 1.95, hy - 0.16);
+      B.detail(1, () => { rail('handrail', xa, LX, 1.22, SA); rail('handrail', xa, LX, 0.09, SA); rail('handrail', LX, -LX, 1.38, SB); });
+      rail('parapet', LX, -LX, 2.54, SB);
+      // the stair's foot: a paved landing the corridor's width, from under the corridor's end to past the first step
+      // (its far part runs on under the first treads), which the walk under the corridor joins
+      if (f === 0 && !podium) out.entrances.push({ p: B.P([(xa - 2.25) / 2, 0, 0.65]), out: [B.N([-1, 0, 0])[0], B.N([-1, 0, 0])[2]], kind: 'stair foot', viaWalk: true,
+        court: [[-0.65, -1.0], [-0.65, 1.3], [-2.25, 1.3], [-2.25, -1.0]].map(([lx, lz]) => { const q = B.P([lx, 0, lz]); return [q[0], q[2]]; }) });
     }
     B.bbox('concrete', 0, top, 1.3, 4.7, 0.16, 2.9, 0.02, { color: pal.trim });
   });
@@ -681,7 +769,7 @@ export function cornerBlock(B, s, rng, ex) {
   const { x, y, z, r, wa = 30, wb = 26, floors = 7, pal = PALETTES.white, no = 1, name = 'グランコート桜川', gy } = s, C = 6.0, fh = 3.0, y0 = 0.4, CF = floors + 2, H = y0 + CF * fh;
   const P = (lx, lz) => { B.frame(x, y, z, r); return B.P([lx, 0, lz]); };
   const pa = P(C + wa / 2 - 0.3, 0), A = mansion(B, { x: pa[0], y, z: pa[2], r: r + Math.PI, w: wa, floors, pal, no, name: name + ' A棟', gy, lift: 0 }, rng, ex);
-  const pb = P(0, C + wb / 2 - 0.3), Bw = mansion(B, { x: pb[0], y, z: pb[2], r: r - Math.PI / 2, w: wb, floors, pal, no: no + 1, name: name + ' B棟', gy, lift: 2 }, rng, ex);
+  const pb = P(0, C + wb / 2 - 0.3), Bw = mansion(B, { x: pb[0], y, z: pb[2], r: r - Math.PI / 2, w: wb, floors, pal, no: no + 1, name: name + ' B棟', gy, lift: 2, stairTower: false }, rng, ex);
   // the wings' walks under their corridors that start at the tower meet in the court's inner corner (each wing's own
   // would run on past its end, into the tower)
   { const tc = P(0, 0), dt = q => Math.hypot(q[0] - tc[0], q[1] - tc[2]), near = L => L.reduce((b, k) => !b || dt(k[0]) < dt(b[0]) ? k : b, null), wA = near(A.walkways || []), wB = near(Bw.walkways || []);
@@ -821,8 +909,8 @@ export function lowRise(B, s, rng, ex) {
   inFrame(B, [0, 0, d / 2], 0, () => {
     for (const h of front) { if (h.door) { doorUnit(B, h, { color: jit(rng, [0.62, 0.55, 0.46], 0.08), mat: 'metal' }); doorFurniture(B, h.x1 + 0.16, h.y0); } else windowUnit(B, h, { rng, grille: true, frosted: rng() < 0.5 }); }
     const gy = y0 + fh, gc = pick(rng, [[0.3, 0.32, 0.36], [0.55, 0.3, 0.26], [0.86, 0.85, 0.82]]);
-    // the gallery runs on past the end wall to the stair landing
-    B.bbox('concrete', 0.6, gy - 0.16, 0.65, w + 1.2, 0.16, 1.3, 0.01, { color: [0.78, 0.78, 0.76] });
+    // the gallery runs on past the end wall over the stair's landing
+    B.bbox('concrete', 0.65, gy - 0.16, 0.65, w + 1.3, 0.16, 1.3, 0.01, { color: [0.78, 0.78, 0.76] });
     // its railing runs the whole front, past the end wall to the stair landing, and returns to the wall at both ends
     const rail = (ax, az, bx, bz) => inFrame(B, [ax, 0, az], Math.atan2(-(bz - az), bx - ax), () => { const L = Math.hypot(bx - ax, bz - az);
       B.bbox('metal', L / 2, gy + 1.02, 0, L + 0.06, 0.06, 0.06, 0.008, { color: gc }); B.box('metal', L / 2, gy + 0.08, 0, L, 0.04, 0.04, { color: gc });
@@ -830,12 +918,16 @@ export function lowRise(B, s, rng, ex) {
       B.detail(1, () => { for (let xx = 0.12; xx < L - 0.05; xx += 0.12) B.box('metal', xx, gy + 0.1, 0, 0.02, 0.92, 0.02, { color: gc }); }); });
     rail(-w / 2 + 0.03, 0.05, -w / 2 + 0.03, 1.28); rail(-w / 2 + 0.03, 1.28, w / 2 + 1.27, 1.28); rail(w / 2 + 1.27, 1.28, w / 2 + 1.27, 0.3);
     for (let xx = -w / 2 + 0.1; xx <= w / 2; xx += w / Math.ceil(w / 4)) B.box('metal', xx, 0, 1.25, 0.09, gy, 0.09, { color: gc });
-    // stair: one straight flight along the gable end, rising from behind toward the gallery; steel stringers and treads
-    const sx = w / 2 + 0.7, n = 14, zs = -3.4;
-    for (let i = 0; i < n; i++) B.box('metal', sx, (i + 1) * gy / n - 0.04, zs + (i + 0.5) * 0.26, 1.0, 0.04, 0.26, { color: mul(gc, 1.1) });
-    for (const e of [-0.52, 0.52]) { B.beam('metal', [sx + e, 0.02, zs], [sx + e, gy, zs + n * 0.26], 0.04, 0.2, { color: gc }); B.beam('metal', [sx + e, 0.92, zs], [sx + e, gy + 0.92, zs + n * 0.26], 0.03, 0.03, { color: gc }); }
-    B.box('metal', sx, gy - 0.12, 0.3 + 0.35, 1.2, 0.12, 1.3, { color: gc });                                        // landing
-    B.box('metal', sx + 0.55, 0, 1.25, 0.08, gy, 0.08, { color: gc });
+    // stair: one straight steel flight along the gable end, rising from behind to a landing on the gallery's end:
+    // risers under 20 cm, 25 cm checker-plate treads, closed riser plates, plate stringers, balustrades both sides
+    // (the outer one running on round the landing). It starts from the end of the front walk, which runs round the
+    // gable to its foot.
+    const sx = w / 2 + 0.7, foot = s.gy ? (p => s.gy(p[0], p[2]) - B.F.y)(B.P([sx, 0, -3.6])) + 0.05 : 0.05;
+    const nS = Math.ceil((gy - foot) / 0.2 - 1e-6), run = (nS - 1) * 0.25;
+    inFrame(B, [sx, 0, -run], 0, () => { const S = stairFlight(B, { w: 1.0, y0: foot, y1: gy, run, style: 'steel', body: gc, tread: mul(gc, 1.1) });
+      stairRail(B, 'balustrade', 0.47, -0.05, run + 0.3, S.pitch, { color: gc }); stairRail(B, 'balustrade', -0.47, -0.05, run, S.pitch, { color: gc }); });
+    B.box('metal', sx + 0.55, 0, 1.25, 0.08, gy - 0.16, 0.08, { color: gc });                                          // the landing's post
+    out.stairRun = run;
     for (let u = 0; u < nU; u++) { B.box('lamp', -w / 2 + (u + 0.5) * uw - 1.1, gy + 2.35, 0.2, 0.18, 0.12, 0.08); lampPoints.push({ p: B.P([-w / 2 + (u + 0.5) * uw - 1.1, gy + 2.2, 0.4]), s: 0.25 });
       meterBox(B, -w / 2 + (u + 0.5) * uw - 1.9, y0 + 1.4, 'power'); }
     plate(B, -w / 2 + 1.4, 1.6, 0.03, 0, 1.4, 0.36, (g, W2, H2) => { g.fillStyle = '#f5f1e6'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#4a3a2c'; g.font = `bold ${H2 * 0.55}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s.name || pick(rng, APATO), W2 / 2, H2 * 0.55); }, 0.15, 256);
@@ -858,7 +950,7 @@ export function lowRise(B, s, rng, ex) {
       balconyRun(B, rng, cx - uw / 2, cx + uw / 2, y0, 1.0, { ground: true, trim: [0.55, 0.56, 0.56], ends: [u === nU - 1, true] }); }
   });
   ex.push({ t: 'box', p: B.P([0, 0, 0.3]), hx: w / 2 + 1.2, hz: d / 2 + 1.3, r, h: H + 1 });
-  out.footprint = [[-w / 2 - 1.3, -d / 2 - 2.2], [w / 2 + 1.3, d / 2 + 1.4]]; out.H = H; out.walk = { w, d };
+  out.footprint = [[-w / 2 - 1.3, -d / 2 - 2.2], [w / 2 + 1.3, d / 2 + 1.4]]; out.H = H; out.walk = { w, d, foot: out.stairRun + 0.25 };
   for (const e of out.lamps) lampPoints.push(e);
   B.frame(0, 0, 0, 0);
   return out;

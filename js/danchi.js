@@ -794,8 +794,8 @@ export function buildDanchi(ctx) {
       const rid = regions.length; regions.push({ kind: 'apron', pts: [[(e.court[0][0] + e.court[2][0]) / 2, (e.court[0][1] + e.court[2][1]) / 2]], connected: false, link: true }); b.own.add(rid);
       apron(e.court, rid, { b: blds.indexOf(b), name: `${b.fam} ${b.name || b.no || ''} ${e.kind}` });
       for (const q of e.block || []) { const R = quadRect(q); navRect(R.cx, R.cz, R.hw, R.hd, R.r, 2); } }
-    if (b.fam === 'R' && b.walk) { const { w, d } = b.walk, f = d / 2;
-      b.own.add(pathLine([Wd(-w / 2 - 0.4, f + 0.85), Wd(w / 2 + 1.95, f + 0.85), Wd(w / 2 + 1.95, f - 3.95), Wd(w / 2 + 0.7, f - 3.95)], 1.3, { lamps: false, edge: false, link: true, door: true }));
+    if (b.fam === 'R' && b.walk) { const { w, d, foot = 3.95 } = b.walk, f = d / 2;
+      b.own.add(pathLine([Wd(-w / 2 - 0.4, f + 0.85), Wd(w / 2 + 1.95, f + 0.85), Wd(w / 2 + 1.95, f - foot), Wd(w / 2 + 0.7, f - foot)], 1.3, { lamps: false, edge: false, link: true, door: true }));
       for (const e of b.entrances) if (e.kind === 'gallery') { e.from = Wd(0, f + 0.85); const q = Wd(0, f + 1.95); e.p = [q[0], 0, q[1]]; } }
     for (const wk of b.walkways || []) b.own.add(pathLine(wk, 1.5, { lamps: false, edge: false, link: true, door: true }));
     if (b.fam === 'S') { const st = (b.entrances || []).filter(e => e.kind === 'stair' && e.front);
@@ -884,6 +884,7 @@ export function buildDanchi(ctx) {
     const [x, , z] = e.p; if (e.kind === 'shop') continue;
     if (!e.viaWalk) { const wd = e.kind === 'gallery' ? 1.6 : 2.0;
       const back = e.from ? 0 : 0.6; linkOrtho(x - e.out[0] * back, z - e.out[1] * back, e.out[0], e.out[1], b.own, wd, e.from || null); }
+    if (e.kind === 'stair foot') continue;
     for (const sd of [-1, 1]) { const px = x + e.out[0] * 1.6 - e.out[1] * sd * 2.6, pz = z + e.out[1] * 1.6 + e.out[0] * sd * 2.6, k = navI(px, pz);
       if (clear(px, pz, 0.2) && k >= 0 && NAV[k] === 0) for (let q = 0; q < 3; q++) out.bushes.push({ x: px + (rng() - 0.5) * 1.2, y: gy(px, pz) - 0.05, z: pz + (rng() - 0.5) * 1.2, s: 0.6 + rng() * 0.3, sx: 1, r: rng() * 6.28, c: new THREE.Color().setHSL(0.26 + rng() * 0.06, 0.45, 0.32 + rng() * 0.08) }); }
     if (e.kind !== 'gallery' && rng() < 0.8) for (const sd of rng() < 0.5 ? [-1, 1] : [1, -1]) { const px = x + e.out[0] * 5 - e.out[1] * sd * 6, pz = z + e.out[1] * 5 + e.out[0] * sd * 6, yaw = Math.atan2(e.out[0], e.out[1]) + Math.PI / 2;
