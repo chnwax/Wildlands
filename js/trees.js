@@ -157,20 +157,55 @@ function meshBuilder() {
     },
   };
 }
-function trunkGeo(pts, segs, vScale = 6) { // tapered tube along a polyline [{p, r}]
-  const parts = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1], len = a.p.distanceTo(b.p);
-    const c = new THREE.CylinderGeometry(b.r, a.r, len, segs, 1, true);
-    c.translate(0, len / 2, 0);
-    c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), b.p.clone().sub(a.p).normalize()));
-    c.translate(a.p.x, a.p.y, a.p.z);
-    const uv = c.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * 2, uv.getY(k) * len * vScale);
-    parts.push(c);
+// a tapered tube swept along a polyline [{p, r}] as one closed surface: a ring of vertices at every point, on frames
+// carried along the line without twisting, so each bend is a single ring shared by the pieces either side of it (cut on
+// the bend's mitre, widened across it to keep the tube's thickness) and no seam or gap can open there; the ends are
+// closed by low domes (the base: buried in the ground or inside the limb it grows from; the tip: rounded off, or flat
+// where a stem is snapped). Normals follow the taper; the bark's v runs on along the whole tube (vScale per unit length).
+// cap: { base, tip } — the cap's height as a fraction of the end's radius (0: flat; false: left open, for a root buried
+// in the stem it grows from)
+function trunkGeo(pts, segs, vScale = 6, cap = {}) {
+  // a trunk standing on the ground goes on below it (so on a slope no gap opens under its downhill side), uncapped
+  if (cap.base === undefined && pts[0].p.y === 0) { pts = [{ p: V(pts[0].p.x, -0.05, pts[0].p.z), r: pts[0].r }, ...pts.slice(1)]; cap = { ...cap, base: false }; }
+  const n = pts.length, P = [], N = [], UV = [], I = [], s = [0], T = [];
+  for (let i = 1; i < n; i++) s.push(s[i - 1] + pts[i].p.distanceTo(pts[i - 1].p));
+  for (let i = 0; i < n; i++) T.push(pts[Math.min(n - 1, i + 1)].p.clone().sub(pts[Math.max(0, i - 1)].p).normalize());
+  let nr = Math.abs(T[0].y) < 0.9 ? V(0, 1, 0).cross(T[0]).normalize() : V(1, 0, 0).cross(T[0]).normalize();
+  const q = new THREE.Quaternion(), dir = V(0, 0, 0), m = V(0, 0, 0), nn = V(0, 0, 0), pp = V(0, 0, 0);
+  const ring = [];
+  for (let i = 0; i < n; i++) {
+    if (i) { q.setFromUnitVectors(T[i - 1], T[i]); nr.applyQuaternion(q).addScaledVector(T[i], -nr.dot(T[i])).normalize(); }
+    const bi = T[i].clone().cross(nr).normalize(), { p, r } = pts[i];
+    // mitre: across a bend the ring is the tube's oblique section, longer along the bend by 1 / cos(half the angle)
+    let mc = 1; m.set(0, 0, 0);
+    if (i > 0 && i < n - 1) { const d0 = p.clone().sub(pts[i - 1].p).normalize(); mc = Math.max(0.5, d0.dot(T[i])); m.copy(pts[i + 1].p).sub(p).normalize().sub(d0); m.addScaledVector(T[i], -m.dot(T[i])); if (m.lengthSq() > 1e-10) m.normalize(); }
+    const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1), drds = (pts[i1].r - pts[i0].r) / Math.max(1e-6, s[i1] - s[i0]);
+    const row = [];
+    for (let k = 0; k <= segs; k++) {
+      const a = k / segs * TAU; dir.copy(nr).multiplyScalar(Math.cos(a)).addScaledVector(bi, Math.sin(a));
+      pp.copy(dir); if (mc < 1) pp.addScaledVector(m, pp.dot(m) * (1 / mc - 1));
+      nn.copy(dir).addScaledVector(T[i], -drds).normalize();
+      P.push(p.x + pp.x * r, p.y + pp.y * r, p.z + pp.z * r); N.push(nn.x, nn.y, nn.z); UV.push(k / segs * 2, s[i] * vScale);
+      row.push(P.length / 3 - 1);
+    }
+    ring.push(row);
   }
-  return mergeGeometries(parts);
+  for (let i = 0; i + 1 < n; i++) for (let k = 0; k < segs; k++) { const a = ring[i][k], b = ring[i][k + 1], c = ring[i + 1][k + 1], d = ring[i + 1][k]; I.push(a, b, d, b, c, d); }
+  // end caps: a low cone from the end ring to a pole on the axis
+  const dome = (i, sg, h) => { const { p, r } = pts[i]; if (r < 1e-4 || h === false) return; const t = T[i].clone().multiplyScalar(sg), row0 = ring[i];
+    P.push(p.x + t.x * r * h, p.y + t.y * r * h, p.z + t.z * r * h); N.push(t.x, t.y, t.z); UV.push(1, s[i] * vScale + sg * 0.05); const pole = P.length / 3 - 1;
+    for (let k = 0; k < segs; k++) { if (sg > 0) I.push(row0[k], row0[k + 1], pole); else I.push(row0[k + 1], row0[k], pole); } };
+  dome(n - 1, 1, cap.tip ?? 0.8); dome(0, -1, cap.base ?? 0.5);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+  g.setIndex(I); g.computeBoundingSphere();
+  return g;
 }
+const ROOTED = { base: false };   // (a limb: its root is buried in the stem)
 const merge = list => { const l = list.filter(Boolean); return l.length ? (l.length > 1 ? mergeGeometries(l) : l[0]) : null; };
+// the axis of a polyline [{p, r}] at height y (and its radius there): where a limb grows from, so its root is buried in
+// the stem whatever way the stem bends
+const axisAt = (pts, y) => { for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1]; if (y <= b.p.y || i + 2 === pts.length) { const f = clamp((y - a.p.y) / Math.max(1e-6, b.p.y - a.p.y), 0, 1); return { p: a.p.clone().lerp(b.p, f), r: lerp(a.r, b.r, f) }; } } return { p: pts[0].p.clone(), r: pts[0].r }; };
 // smooth lumpy displacement on the unit sphere (same position -> same offset, so shared corners stay welded)
 const lump = (d, s) => 0.11 * Math.sin(3.1 * d.x + s) * Math.sin(2.7 * d.y + 1.3 * s) * Math.sin(3.4 * d.z + 0.7 * s) + 0.05 * Math.sin(7.3 * d.x + 2.1 * d.z + s);
 
@@ -273,8 +308,8 @@ export function coniferGeo(lod = 0, seed = 3, form = 'spruce') {
       : [{ p: V(0, 0, 0), r: 0.036 }, { p: V(-bx * bend * 0.5, top * 0.35, -bz * bend * 0.5), r: 0.029 },
         { p: V(bx * bend, top * 0.7, bz * bend), r: 0.02 }, { p: V(bx * bend * 1.6, top, bz * bend * 1.6), r: 0.01 }];
     const parts = [trunkGeo(pts, segs)];
-    if (lod < 2) for (const L of limbs) { const y0 = Math.min(L.y - 0.06, top * 0.95), f = y0 / top, sx = bx * bend * f * 1.2, sz = bz * bend * f * 1.2;
-      parts.push(trunkGeo([{ p: V(sx, y0, sz), r: garden ? 0.016 : 0.011 }, { p: L, r: 0.005 }], lod ? 3 : 4)); }
+    if (lod < 2) for (const L of limbs) { const A = axisAt(pts, Math.min(L.y - 0.06, top * 0.95));
+      parts.push(trunkGeo([{ p: A.p, r: Math.min(garden ? 0.016 : 0.011, A.r * 0.7) }, { p: L, r: 0.005 }], lod ? 3 : 4, 6, ROOTED)); }
     trunk = merge(parts);
   } else {
     const [r0, r1, top] = P.tr, b = P.bend || 0, bx = Math.cos(la) * b, bz = Math.sin(la) * b;
@@ -311,18 +346,18 @@ export function deadGeo(lod = 0, seed = 3, broken = false) {
   const at = y => V(bx * lean * y * y, y, bz * lean * y * y);
   const r0 = broken ? 0.046 : 0.034, rT = broken ? 0.03 : 0.004;
   const pts = [{ p: V(0, 0, 0), r: r0 * 1.35 }, { p: V(0, 0.03, 0), r: r0 }, { p: at(top * 0.45), r: lerp(r0, rT, 0.4) }, { p: at(top), r: rT }];
-  const parts = [trunkGeo(pts, segs)];
+  const parts = [trunkGeo(pts, segs, 6, { tip: broken ? 0.12 : 0.8 })];   // (a snapped top is near flat)
   if (broken) { // splinters standing up from the break
     const tp = at(top);
     for (let k = 0; k < (lod ? 2 : 4); k++) { const a = rng() * TAU, h = 0.03 + rng() * 0.06;
-      parts.push(trunkGeo([{ p: V(tp.x + Math.cos(a) * rT * 0.5, tp.y - 0.01, tp.z + Math.sin(a) * rT * 0.5), r: rT * 0.45 }, { p: V(tp.x + Math.cos(a) * rT * 0.8, tp.y + h, tp.z + Math.sin(a) * rT * 0.8), r: 0.001 }], 3)); }
+      parts.push(trunkGeo([{ p: V(tp.x + Math.cos(a) * rT * 0.5, tp.y - 0.01, tp.z + Math.sin(a) * rT * 0.5), r: rT * 0.45 }, { p: V(tp.x + Math.cos(a) * rT * 0.8, tp.y + h, tp.z + Math.sin(a) * rT * 0.8), r: 0.001 }], 3, 6, ROOTED)); }
   }
   if (lod < 2) { // stub branches, shorter toward the top, drooping or kinked up
     const n = lod ? 5 : 11;
     for (let k = 0; k < n; k++) {
       const y = lerp(0.3, 0.94, k / n + rng() * 0.05) * (broken ? top / 0.96 : 1); if (y > top - 0.02) continue;
-      const a = rng() * TAU, L = (0.05 + rng() * 0.1) * (1.1 - y * 0.8), dy = (rng() - 0.6) * L * 0.8, p0 = at(y);
-      parts.push(trunkGeo([{ p: p0, r: 0.006 }, { p: V(p0.x + Math.cos(a) * L, p0.y + dy, p0.z + Math.sin(a) * L), r: 0.0015 }], 3));
+      const a = rng() * TAU, L = (0.05 + rng() * 0.1) * (1.1 - y * 0.8), dy = (rng() - 0.6) * L * 0.8, p0 = axisAt(pts, y).p;
+      parts.push(trunkGeo([{ p: p0, r: 0.006 }, { p: V(p0.x + Math.cos(a) * L, p0.y + dy, p0.z + Math.sin(a) * L), r: 0.0015 }], 3, 6, ROOTED));
     }
   }
   return { trunk: merge(parts) };
@@ -335,7 +370,7 @@ export function twigGeo(lod = 0, seed = 5) {
     const p0 = V(x0, 0.03, z0), p1 = V(x0 + Math.cos(a) * L, 0.03 + rng() * 0.04, z0 + Math.sin(a) * L);
     parts.push(trunkGeo([{ p: p0, r: 0.03 }, { p: p1, r: 0.008 }], 4, 2));
     for (let j = 0; j < 3; j++) { const t = 0.25 + rng() * 0.6, b = a + (rng() < 0.5 ? 1 : -1) * (0.4 + rng() * 0.6), l2 = L * (0.2 + rng() * 0.25), q = p0.clone().lerp(p1, t);
-      parts.push(trunkGeo([{ p: q, r: 0.012 }, { p: V(q.x + Math.cos(b) * l2, q.y + rng() * 0.06, q.z + Math.sin(b) * l2), r: 0.003 }], 3, 2)); }
+      parts.push(trunkGeo([{ p: q, r: 0.012 }, { p: V(q.x + Math.cos(b) * l2, q.y + rng() * 0.06, q.z + Math.sin(b) * l2), r: 0.003 }], 3, 2, ROOTED)); }
   }
   return { trunk: merge(parts) };
 }
@@ -356,7 +391,7 @@ export function logGeo(lod = 0, seed = 7) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
   const parts = [g];
-  if (lod === 0) for (let k = 0; k < 3; k++) { const x = -0.3 + rng() * 0.6, a = rng() * TAU, stub = trunkGeo([{ p: V(x, Math.cos(a) * 0.8, Math.sin(a) * 0.8), r: 0.18 }, { p: V(x + 0.05, Math.cos(a) * 1.9, Math.sin(a) * 1.9), r: 0.04 }], 4, 1);
+  if (lod === 0) for (let k = 0; k < 3; k++) { const x = -0.3 + rng() * 0.6, a = rng() * TAU, stub = trunkGeo([{ p: V(x, Math.cos(a) * 0.8, Math.sin(a) * 0.8), r: 0.18 }, { p: V(x + 0.05, Math.cos(a) * 1.9, Math.sin(a) * 1.9), r: 0.04 }], 4, 1, ROOTED);
     const c = []; for (let i = 0; i < stub.attributes.position.count; i++) c.push(1, 1, 1); stub.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); parts.push(stub); }
   return { trunk: mergeGeometries(parts.map(p => p.index ? p : p)) };
 }
@@ -450,29 +485,31 @@ export function broadleafGeo(lod = 0, seed = 7, shape = 'leaf') {
   if (shape === 'bush' || shape === 'hydra' || shape === 'hedge' || shape === 'ivy') return { solid, cards: B.geometry(true), trunk: null };
   const tseg = hi ? 8 : 5, lseg = hi ? 5 : 3, ring = blobs.slice(1);
   let trunkParts;
-  const limbs = (from, r0, list, reach = 0.85, lift = -0.04) => list.forEach(b => trunkParts.push(trunkGeo([{ p: from.clone(), r: r0 }, { p: V(b.c.x * 0.5, lerp(from.y, b.c.y, 0.55), b.c.z * 0.5), r: r0 * 0.6 }, { p: V(b.c.x * reach, b.c.y + lift, b.c.z * reach), r: r0 * 0.3 }], lseg)));
+  let stem; const trunkOf = pts => { stem = pts; return trunkGeo(pts, tseg); };
+  const limbs = (y, r0, list, reach = 0.85, lift = -0.04) => { const A = axisAt(stem, y), from = A.p, r = Math.min(r0, A.r * 0.75);
+    list.forEach(b => trunkParts.push(trunkGeo([{ p: from.clone(), r }, { p: V(b.c.x * 0.5, lerp(from.y, b.c.y, 0.55), b.c.z * 0.5), r: r * 0.6 }, { p: V(b.c.x * reach, b.c.y + lift, b.c.z * reach), r: r * 0.3 }], lseg, 6, ROOTED))); };
   if (shape === 'sakura') { // short stout trunk forking into dark spreading limbs that show under the blossom
-    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.05 }, { p: V(0.02, 0.22, 0), r: 0.04 }, { p: V(0, 0.34, 0.01), r: 0.034 }], tseg)];
-    limbs(V(0, 0.32, 0), 0.022, ring.slice(0, hi ? 6 : 3), 0.9);
+    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.05 }, { p: V(0.02, 0.22, 0), r: 0.04 }, { p: V(0, 0.34, 0.01), r: 0.034 }])];
+    limbs(0.32, 0.022, ring.slice(0, hi ? 6 : 3), 0.9);
   } else if (shape === 'oak') {
-    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.058 }, { p: V(0, 0.03, 0), r: 0.045 }, { p: V(0.015, 0.26, 0), r: 0.036 }, { p: V(0, 0.42, 0.01), r: 0.03 }], tseg)];
-    limbs(V(0, 0.38, 0), 0.022, ring.slice(0, hi ? 6 : 3), 0.8);
+    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.058 }, { p: V(0, 0.03, 0), r: 0.045 }, { p: V(0.015, 0.26, 0), r: 0.036 }, { p: V(0, 0.42, 0.01), r: 0.03 }])];
+    limbs(0.38, 0.022, ring.slice(0, hi ? 6 : 3), 0.8);
   } else if (shape === 'birch') {
     const lx = (rng() - 0.5) * 0.04;
-    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.022 }, { p: V(lx, 0.45, 0), r: 0.016 }, { p: V(lx * 0.3, 0.9, 0), r: 0.005 }], tseg)];
-    if (hi) limbs(V(lx, 0.5, 0), 0.008, ring.slice(0, 4), 0.8);
+    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.022 }, { p: V(lx, 0.45, 0), r: 0.016 }, { p: V(lx * 0.3, 0.9, 0), r: 0.005 }])];
+    if (hi) limbs(0.5, 0.008, ring.slice(0, 4), 0.8);
   } else if (shape === 'zelkova') { // the trunk forks low into many ascending limbs
-    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.05 }, { p: V(0, 0.03, 0), r: 0.04 }, { p: V(0, 0.28, 0), r: 0.033 }], tseg)];
-    limbs(V(0, 0.26, 0), 0.02, ring.slice(0, hi ? 8 : 4), 0.75, -0.08);
+    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.05 }, { p: V(0, 0.03, 0), r: 0.04 }, { p: V(0, 0.28, 0), r: 0.033 }])];
+    limbs(0.26, 0.02, ring.slice(0, hi ? 8 : 4), 0.75, -0.08);
   } else if (shape === 'maple') {
-    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.04 }, { p: V(0.01, 0.22, 0), r: 0.03 }], tseg)];
-    limbs(V(0.01, 0.2, 0), 0.018, ring.slice(0, hi ? 7 : 4), 0.85);
+    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.04 }, { p: V(0.01, 0.22, 0), r: 0.03 }])];
+    limbs(0.2, 0.018, ring.slice(0, hi ? 7 : 4), 0.85);
   } else if (shape === 'willow') {
-    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.055 }, { p: V(0.03, 0.25, 0), r: 0.042 }, { p: V(0.02, 0.5, 0.01), r: 0.032 }], tseg)];
-    limbs(V(0.02, 0.48, 0.01), 0.018, ring.slice(0, hi ? 6 : 3), 0.8);
+    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.055 }, { p: V(0.03, 0.25, 0), r: 0.042 }, { p: V(0.02, 0.5, 0.01), r: 0.032 }])];
+    limbs(0.48, 0.018, ring.slice(0, hi ? 6 : 3), 0.8);
   } else {
-    trunkParts = [trunkGeo([{ p: V(0, 0, 0), r: 0.036 }, { p: V(0.01, 0.3, 0.005), r: 0.026 }, { p: V(0, 0.62, 0), r: 0.016 }], tseg)];
-    if (hi) for (const b of ring.slice(0, 4)) trunkParts.push(trunkGeo([{ p: V(0, 0.42 + rng() * 0.12, 0), r: 0.013 }, { p: b.c.clone().multiplyScalar(0.8), r: 0.006 }], 5));
+    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.036 }, { p: V(0.01, 0.3, 0.005), r: 0.026 }, { p: V(0, 0.62, 0), r: 0.016 }])];
+    if (hi) for (const b of ring.slice(0, 4)) { const A = axisAt(stem, 0.42 + rng() * 0.12); trunkParts.push(trunkGeo([{ p: A.p, r: Math.min(0.013, A.r * 0.75) }, { p: b.c.clone().multiplyScalar(0.8), r: 0.006 }], 5, 6, ROOTED)); }
   }
   return { solid, cards: B.geometry(true), trunk: mergeGeometries(trunkParts) };
 }
@@ -503,17 +540,20 @@ export function bambooGeo(lod = 0, seed = 9, edge = false) {
     const at = t => { const k = Math.max(0, t - 0.66) / 0.34, off = h * (lean * t + arch * k * k); return V(bx + ox * off, h * t - h * arch * 0.3 * k * k * k, bz + oz * off); };
     const r0 = (0.0038 + rng() * 0.0014) * (c ? 0.85 : 1), rad = t => r0 * (1 - 0.66 * Math.pow(t, 1.5));
     const ts = lod === 0 ? [0, 0.18, 0.36, 0.52, 0.64, 0.74, 0.82, 0.89, 0.95, 1] : lod === 1 ? [0, 0.4, 0.66, 0.84, 1] : [0, 0.62, 1];
-    culms.push(trunkGeo(ts.map(t => ({ p: at(t), r: rad(t) })), lod === 0 ? 6 : lod === 1 ? 4 : 3, 36));
+    const cp = ts.map(t => ({ p: at(t), r: rad(t) }));
+    culms.push(trunkGeo(cp, lod === 0 ? 6 : lod === 1 ? 4 : 3, 36));
+    // (branches grow from the culm as built — its polyline — not from the curve it samples)
+    const onCulm = t => { let j = 0; while (j + 2 < ts.length && ts[j + 1] < t) j++; return cp[j].p.clone().lerp(cp[j + 1].p, clamp((t - ts[j]) / (ts[j + 1] - ts[j]), 0, 1)); };
     // culms on a grove's sunlit rim (edge) carry leafy branches much lower down, closing the stand's side
     const axis = at(0.8), t0 = edge ? 0.16 + rng() * 0.1 : 0.42 + rng() * 0.1, nodes = Math.round((lod === 0 ? 20 : lod === 1 ? 12 : 7) * (edge ? 1.4 : 1)), big = lod === 0 ? 1 : lod === 1 ? 1.5 : 2.1;
     let side = la + Math.PI / 2;
     for (let k = 0; k < nodes; k++) {
-      const t = t0 + (0.96 - t0) * (k + 0.3 + rng() * 0.4) / nodes, p = at(t), f = (t - t0) / (0.96 - t0);
+      const t = t0 + (0.96 - t0) * (k + 0.3 + rng() * 0.4) / nodes, p = onCulm(t), f = (t - t0) / (0.96 - t0);
       side += Math.PI + (rng() - 0.5) * 1.2;                                                  // branches alternate
       const bl = h * (0.048 + rng() * 0.035) * (0.8 + 0.55 * Math.sin(Math.PI * Math.min(1, f * 1.2))) * (edge && t < 0.45 ? 0.75 : 1); // crown widest a little above its middle
       const out = V(Math.cos(side), 0, Math.sin(side)), dir = V(out.x, 0.5 + rng() * 0.35, out.z).normalize();
       const tip = p.clone().addScaledVector(dir, bl); tip.y -= bl * 0.25 * f;
-      if (lod === 0) culms.push(trunkGeo([{ p, r: r0 * 0.2 }, { p: p.clone().lerp(tip, 0.5).add(V(0, bl * 0.06, 0)), r: r0 * 0.14 }, { p: tip, r: r0 * 0.06 }], 3, 36));
+      if (lod === 0) culms.push(trunkGeo([{ p, r: r0 * 0.2 }, { p: p.clone().lerp(tip, 0.5).add(V(0, bl * 0.06, 0)), r: r0 * 0.14 }, { p: tip, r: r0 * 0.06 }], 3, 36, ROOTED));
       const ns = lod === 0 ? 4 : 2, ao = 0.56 + 0.44 * f;
       for (let q = 0; q < ns; q++) spray(p.clone().lerp(tip, (q + 0.7) / ns), out, h * (0.06 + rng() * 0.025) * big, ao * (0.92 + rng() * 0.08), axis);
       if (lod < 2 && rng() < 0.55) spray(p.clone().lerp(tip, 0.3), out.clone().negate(), h * 0.05 * big, ao * 0.85, axis); // a small spray on the node
