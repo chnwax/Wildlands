@@ -47,10 +47,57 @@ export function danchiGround(x, z, h, Y0) {
 
 // ---------------------------------------------------------------- building the district
 import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle } from './core.js';
-import { lampPoints, signMesh, JP_FONT } from './townkit.js';
+import { lampPoints, signMesh, JP_FONT, GeoBuilder } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
-import { buildParks, lakeDepth } from './danchipark.js';
+import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
+
+// The ground a building really covers — walls, balconies, galleries, stair towers, canopies, steps, garden fences:
+// everything it builds above the paving, projected onto the ground. Measured by building it once off-site (its own
+// frame, a scratch builder, its signs and lamps discarded) and returned as a distance field over a 0.25 m grid: D[i]
+// is how far (m) that cell is from the nearest covered one, 0 inside. at(f, x, z, wx, wz, r): the field at a world point
+// for the building standing at (x, z) turned r.
+const GEN = { S: walkupSlab, T: pointTower, M: mansion, L: centreBlock, K: cornerBlock, R: lowRise };
+export function solidField(fam, o) {
+  const pal = PALETTES[o.pal] || PALETTES.cream, B = new GeoBuilder(1e5), lp = lampPoints.length, sc = scene.children.length;
+  GEN[fam](B, { ...o, x: 0, y: 0, z: 0, r: 0, pal, gy: () => -0.02 }, mulberry32(1), []);
+  lampPoints.length = lp;
+  while (scene.children.length > sc) { const m = scene.children[scene.children.length - 1]; scene.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); } }
+  let ux0 = 1e9, vz0 = 1e9, ux1 = -1e9, vz1 = -1e9;
+  for (const [[a0, b0], [a1, b1]] of envelope(fam, o)) { ux0 = Math.min(ux0, a0); vz0 = Math.min(vz0, b0); ux1 = Math.max(ux1, a1); vz1 = Math.max(vz1, b1); }
+  const C = 0.25, x0 = ux0 - 4, z0 = vz0 - 4, nx = Math.ceil((ux1 - ux0 + 8) / C), nz = Math.ceil((vz1 - vz0 + 8) / C), occ = new Uint8Array(nx * nz);
+  const mark = (x, z) => { const i = Math.floor((x - x0) / C), j = Math.floor((z - z0) / C); if (i >= 0 && j >= 0 && i < nx && j < nz) occ[j * nx + i] = 1; };
+  for (const b of B.parts.values()) {
+    const P = b.pos.a, I = b.idx.a, n = b.idx.length;
+    for (let t = 0; t < n; t += 3) {
+      const a = I[t] * 3, q = I[t + 1] * 3, c = I[t + 2] * 3;
+      if (Math.max(P[a + 1], P[q + 1], P[c + 1]) < 0.12) continue;                                  // paving and ground decals
+      for (const [e, f] of [[a, q], [q, c], [c, a]]) { const L = Math.hypot(P[f] - P[e], P[f + 2] - P[e + 2]), k = Math.max(1, Math.ceil(L / 0.15));
+        for (let m = 0; m <= k; m++) mark(P[e] + (P[f] - P[e]) * m / k, P[e + 2] + (P[f + 2] - P[e + 2]) * m / k); }
+      const ex = P[q] - P[a], ez = P[q + 2] - P[a + 2], fx = P[c] - P[a], fz = P[c + 2] - P[a + 2], ar = ex * fz - ez * fx;
+      if (Math.abs(ar) > C * C) { // faces seen from above (slabs, roofs, treads): filled
+        const i0 = Math.floor((Math.min(P[a], P[q], P[c]) - x0) / C), i1 = Math.floor((Math.max(P[a], P[q], P[c]) - x0) / C), j0 = Math.floor((Math.min(P[a + 2], P[q + 2], P[c + 2]) - z0) / C), j1 = Math.floor((Math.max(P[a + 2], P[q + 2], P[c + 2]) - z0) / C);
+        for (let j = Math.max(0, j0); j <= Math.min(nz - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(nx - 1, i1); i++) {
+          const px = x0 + (i + 0.5) * C - P[a], pz = z0 + (j + 0.5) * C - P[a + 2], u = (px * fz - pz * fx) / ar, v = (ex * pz - ez * px) / ar;
+          if (u >= 0 && v >= 0 && u + v <= 1) occ[j * nx + i] = 1; } }
+    }
+  }
+  // what walls enclose is covered too: flood the open ground in from the grid's border
+  const out = new Uint8Array(nx * nz), st = [];
+  for (let i = 0; i < nx; i++) st.push(i, (nz - 1) * nx + i); for (let j = 0; j < nz; j++) st.push(j * nx, j * nx + nx - 1);
+  while (st.length) { const k = st.pop(); if (out[k] || occ[k]) continue; out[k] = 1; const i = k % nx, j = (k - i) / nx; if (i > 0) st.push(k - 1); if (i < nx - 1) st.push(k + 1); if (j > 0) st.push(k - nx); if (j < nz - 1) st.push(k + nx); }
+  const D = new Float32Array(nx * nz); for (let k = 0; k < D.length; k++) D[k] = out[k] ? 1e4 : 0;
+  const d1 = C, d2 = C * Math.SQRT2;                                                                    // chamfer distance transform
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const k = j * nx + i; let d = D[k];
+    if (i > 0) d = Math.min(d, D[k - 1] + d1); if (j > 0) { d = Math.min(d, D[k - nx] + d1); if (i > 0) d = Math.min(d, D[k - nx - 1] + d2); if (i < nx - 1) d = Math.min(d, D[k - nx + 1] + d2); } D[k] = d; }
+  for (let j = nz - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) { const k = j * nx + i; let d = D[k];
+    if (i < nx - 1) d = Math.min(d, D[k + 1] + d1); if (j < nz - 1) { d = Math.min(d, D[k + nx] + d1); if (i < nx - 1) d = Math.min(d, D[k + nx + 1] + d2); if (i > 0) d = Math.min(d, D[k + nx - 1] + d2); } D[k] = d; }
+  return { x0, z0, nx, nz, C, D };
+}
+const fieldAt = (f, x, z, r, wx, wz) => { const c = Math.cos(r), s = Math.sin(r), dx = wx - x, dz = wz - z, u = dx * c - dz * s, v = dx * s + dz * c;
+  const i = Math.floor((u - f.x0) / f.C), j = Math.floor((v - f.z0) / f.C);
+  if (i >= 0 && j >= 0 && i < f.nx && j < f.nz) return f.D[j * f.nx + i];
+  return 4 + Math.hypot(Math.max(f.x0 - u, 0, u - f.x0 - f.nx * f.C), Math.max(f.z0 - v, 0, v - f.z0 - f.nz * f.C)); }; // (the grid reaches 4 m past the envelope)
 
 // building groups by superblock: [family, x, z, yaw, options]. Yaw turns the building's front (balconies) to face
 // (sin r, cos r); most face the sun (south, -z) but every group has buildings turned to close a courtyard, follow the
@@ -159,27 +206,71 @@ export function buildDanchi(ctx) {
   // rules the building is walked away from the conflict (half a metre at a time along the mean direction from the
   // offending ground to its centre) until it fits; one that cannot be fitted within 12 m is not built.
   const CLR = 0.8, placed = [];
+  // The parks are designed spaces with fixed layouts: their planting (bushes, hedges, trees, stones), paths and the
+  // fountain park's ground are surveyed first by a dry run of their layout, and every building's envelope keeps clear
+  // of them — VEG_CLR from any plant or stone, PATH_CLR from a park path, PARK_CLR from the fountain park's edge
+  const VEG_CLR = 1.0, PATH_CLR = 0.6, PARK_CLR = 1.5, parkKeep = { veg: new Map(), paths: [], bounds: [[FOUNTAIN.x0 - 0.5, FOUNTAIN.z0 - 0.5, FOUNTAIN.x1 + 0.5, FOUNTAIN.z1]] };
+  {
+    const noop = () => {}, pout = { trees: [], hedges: [], bushes: [], rocks: [], bikes: [], walkPaths: [], lamps: [], benches: [], groves: [] }, fix = [];
+    const pB = new Proxy({}, { get: (t, k) => k === 'P' || k === 'N' ? l => [l[0], l[1], l[2]] : k === 'detail' ? (n, fn) => fn() : () => pB });
+    buildParks({ probe: true, B: pB, gy, rng: mulberry32(777), out: pout, sd: danchiSD, lampPoints: [], addPlatform: noop,
+      pathLine: (pts, w = 2.4) => { parkKeep.paths.push({ pts, w }); return -1; }, pave: noop, paint: noop, occRect: noop, navRect: noop, addBox: noop, addCircle: noop,
+      coverRect: noop, coverDisc: noop, paved: () => false, freeSpot: (x, z) => [x, z], clear: () => true, nearRoad: () => false,
+      tree: (kind, x, z) => pout.trees.push({ x, z }), benchAt: (x, z) => { fix.push({ x, z, r: 1.3 }); return [x, z]; },
+      pergola: (x, z, yaw, w = 5, d = 3) => fix.push({ x, z, r: Math.hypot(w, d) / 2 }), toilet: (x, z) => fix.push({ x, z, r: 3 }), sandPit: noop, springRider: noop });
+    const add = (x, z, r) => { const k = Math.floor(x / 8) + ',' + Math.floor(z / 8); if (!parkKeep.veg.has(k)) parkKeep.veg.set(k, []); parkKeep.veg.get(k).push({ x, z, r }); };
+    for (const b of pout.bushes) add(b.x, b.z, 0.5 * b.s * (b.sx || 1) + 0.15);                       // (+ the jitter of clumped planting)
+    for (const t of pout.trees) add(t.x, t.z, 0.8);                                                     // trunk and root flare
+    for (const q of pout.rocks) add(q.x, q.z, 0.45 * q.s);
+    for (const f of fix) add(f.x, f.z, f.r);
+    for (const h of pout.hedges) { const [ax, az] = h.a, [bx, bz] = h.b, L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(L / 0.5)); for (let k = 0; k <= n; k++) add(ax + (bx - ax) * k / n, az + (bz - az) * k / n, 0.5); }
+  }
+  // the park plant, stone, fixture, path or ground a building standing at (x, z) turned r comes too close to (its real
+  // covered ground, sf, against each of them), null when it keeps clear of all of them
+  const pathEnd = (P, x, z) => { const a = P.pts[0], b = P.pts[P.pts.length - 1]; return Math.hypot(x - a[0], z - a[1]) < 2.5 || Math.hypot(x - b[0], z - b[1]) < 2.5; };
+  const parkHit = (sf, x, z, r) => { const R = Math.hypot(sf.nx, sf.nz) * sf.C / 2 + 2, cx = x, cz = z, d = (wx, wz) => fieldAt(sf, x, z, r, wx, wz);
+    for (let i = Math.floor((cx - R) / 8); i <= Math.floor((cx + R) / 8); i++) for (let j = Math.floor((cz - R) / 8); j <= Math.floor((cz + R) / 8); j++)
+      for (const v of parkKeep.veg.get(i + ',' + j) || []) if (d(v.x, v.z) < v.r + VEG_CLR) return [v.x, v.z];
+    // (a park path may end at a building — the playground's cross path at the mid-rise's lobby: its last metres are free)
+    for (const P of parkKeep.paths) for (let i = 0; i + 1 < P.pts.length; i++) { const [ax, az] = P.pts[i], [bx, bz] = P.pts[i + 1], L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(L / 0.5));
+      if (Math.min(ax, bx) > cx + R || Math.max(ax, bx) < cx - R || Math.min(az, bz) > cz + R || Math.max(az, bz) < cz - R) continue;
+      for (let k = 0; k <= n; k++) { const px = ax + (bx - ax) * k / n, pz = az + (bz - az) * k / n; if (pathEnd(P, px, pz)) continue; if (d(px, pz) < P.w / 2 + PATH_CLR) return [px, pz]; } }
+    for (const [x0, z0, x1, z1] of parkKeep.bounds) { if (x0 > cx + R || x1 < cx - R || z0 > cz + R || z1 < cz - R) continue;
+      for (let px = x0; px <= x1 + 1e-6; px += 0.5) for (let pz = z0; pz <= z1 + 1e-6; pz += 0.5) if (d(px, pz) < PARK_CLR) return [px, pz]; }
+    return null; };
   const envWorld = (fam, o, x, z, r) => { const c = Math.cos(r), sn = Math.sin(r);
     return envelope(fam, o).map(([[a0, b0], [a1, b1]]) => { const cx = (a0 + a1) / 2, cz = (b0 + b1) / 2; return { x: x + cx * c + cz * sn, z: z - cx * sn + cz * c, hw: (a1 - a0) / 2, hd: (b1 - b0) / 2, r }; }); };
   const onStreet = (px, pz) => { if (RN.roadAt(px, pz) || RN.walkY(px, pz) !== null) return true;
     for (let a = 0; a < 6.28; a += 1.05) if (RN.roadAt(px + Math.cos(a) * CLR, pz + Math.sin(a) * CLR) || RN.walkY(px + Math.cos(a) * CLR, pz + Math.sin(a) * CLR) !== null) return true; return false; };
-  const conflicts = (rects, street, first = false) => { const bad = [];
+  const conflicts = (rects, street, first = false, sol = null, pending = null) => { const bad = [];
+    if (sol) { const h = parkHit(sol.f, sol.x, sol.z, sol.r); if (h) { bad.push(h); if (first) return bad; } }
     for (const q of rects) { const c = Math.cos(q.r), sn = Math.sin(q.r), nu = Math.max(1, Math.ceil(q.hw * 2)), nv = Math.max(1, Math.ceil(q.hd * 2));
       for (let i = 0; i <= nu; i++) for (let j = 0; j <= nv; j++) { const u = -q.hw + 2 * q.hw * i / nu, v = -q.hd + 2 * q.hd * j / nv, px = q.x + u * c + v * sn, pz = q.z - u * sn + v * c;
-        if (!inDanchi(px, pz, 30) || (street && onStreet(px, pz)) || placed.some(P => P.some(E => inRect(px, pz, E.x, E.z, E.r, E.hw, E.hd, 1.0)))) { bad.push([px, pz]); if (first) return bad; } } }
+        if (!inDanchi(px, pz, 30) || (street && onStreet(px, pz)) || placed.some(P => P.some(E => inRect(px, pz, E.x, E.z, E.r, E.hw, E.hd, 1.0)))
+          || (pending && pending.some(P => P.some(E => inRect(px, pz, E.x, E.z, E.r, E.hw, E.hd, 1.0))))) { bad.push([px, pz]); if (first) return bad; } } }
     return bad; };
-  // walk away from the conflict first (it keeps a building close to its plan); if that stalls, search outward on a
-  // spiral for the nearest spot where the whole envelope fits
-  const fit = (fam, o, x, z, r) => { let px = x, pz = z;
-    for (let it = 0; it < 30; it++) { const bad = conflicts(envWorld(fam, o, px, pz, r), fam !== 'L'); if (!bad.length) return [px, pz];
-      let dx = 0, dz = 0; for (const [bx, bz] of bad) { const l = Math.hypot(px - bx, pz - bz) || 1; dx += (px - bx) / l; dz += (pz - bz) / l; } const l = Math.hypot(dx, dz) || 1; px += dx / l * 0.5; pz += dz / l * 0.5; }
-    for (let rad = 1; rad <= 24; rad += 1) for (let k = 0, n = Math.ceil(rad * 2 * Math.PI / 1.5); k < n; k++) { const a = k / n * Math.PI * 2, qx = x + Math.cos(a) * rad, qz = z + Math.sin(a) * rad;
-      if (!conflicts(envWorld(fam, o, qx, qz, r), fam !== 'L', true).length) return [qx, qz]; }
+  // a building that does not fit at its planned spot is moved the smallest distance that makes its whole envelope fit,
+  // keeping its design and orientation: rings of growing radius are searched in every direction, those leading straight
+  // away from what is in the way first, and the first spot that fits is refined to 5 cm along its direction
+  // (a moved building also keeps out of the planned ground of the buildings still to be placed, `pending`)
+  const fit = (fam, o, x, z, r, sf, pending) => {
+    const ok = (px, pz, pend = pending) => !conflicts(envWorld(fam, o, px, pz, r), fam !== 'L', true, { f: sf, x: px, z: pz, r }, pend).length;
+    if (ok(x, z, null)) return [x, z];
+    const bad = conflicts(envWorld(fam, o, x, z, r), fam !== 'L', false, { f: sf, x, z, r }); let ax = 0, az = 0;
+    for (const [bx, bz] of bad) { const l = Math.hypot(x - bx, z - bz) || 1; ax += (x - bx) / l; az += (z - bz) / l; }
+    const away = Math.atan2(az, ax), N = 48, dirs = Array.from({ length: N }, (_, k) => away + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI * 2 / N);
+    for (let d = 0.25; d <= 24; d += 0.25) for (const a of dirs) {
+      if (!ok(x + Math.cos(a) * d, z + Math.sin(a) * d)) continue;
+      let lo = Math.max(0, d - 0.25), hi = d; while (hi - lo > 0.05) { const m = (lo + hi) / 2; if (ok(x + Math.cos(a) * m, z + Math.sin(a) * m)) hi = m; else lo = m; }
+      return [x + Math.cos(a) * hi, z + Math.sin(a) * hi];
+    }
     return null; };
   const blds = [];
-  for (const [fam, x0, z0, r, o] of BUILDINGS) {
-    const at = fit(fam, o, x0, z0, r); if (!at) { console.warn("danchi: no room for", fam, x0, z0); continue; }
-    const [x, z] = at; placed.push(envWorld(fam, o, x, z, r));
+  const fields = [];
+  for (const [bi, [fam, x0, z0, r, o]] of BUILDINGS.entries()) {
+    const sf = solidField(fam, o), pending = BUILDINGS.slice(bi + 1).map(([f2, x2, z2, r2, o2]) => envWorld(f2, o2, x2, z2, r2));
+    const at = fit(fam, o, x0, z0, r, sf, pending); if (!at) { console.warn("danchi: no room for", fam, x0, z0, JSON.stringify(conflicts(envWorld(fam, o, x0, z0, r), fam !== 'L', false, { f: sf, x: x0, z: z0, r }).slice(0, 8).map(p => p.map(v => +v.toFixed(1))))); continue; }
+    const [x, z] = at; placed.push(envWorld(fam, o, x, z, r)); fields.push(sf);
     const y = gy(x, z) + 0.02, pal = PALETTES[o.pal] || PALETTES.cream, s = { ...o, x, y, z, r, pal, gy };
     const info = fam === 'S' ? walkupSlab(B, s, rng, extras) : fam === 'T' ? pointTower(B, s, rng, extras) : fam === 'M' ? mansion(B, s, rng, extras) : fam === 'L' ? centreBlock(B, s, rng, extras) : fam === 'K' ? cornerBlock(B, s, rng, extras) : lowRise(B, s, rng, extras);
     info.fam = fam; info.x = x; info.z = z; info.r = r; info.y = y; info.x0 = x0; info.z0 = z0; info.wa = o.wa; blds.push(info);
@@ -497,8 +588,10 @@ export function buildDanchi(ctx) {
     for (const [x, z, s] of [[375, 106, 1.0], [392, 99, 0.9], [404, 110, 0.85], [383, 113, 0.75]]) tree('zelkova', x, z, s);
     pergola(396, 104, 0.12, 5.4, 3.0); benchAt(371, 101, Math.PI * 0.5); benchAt(398, 108.5, Math.PI); benchAt(407, 102, -Math.PI / 2); }
   // C2, C3, C6: the playground, the fountain park and the lake park are designed spaces of their own (danchipark.js)
-  buildParks({ B, gy, rng, out, pathLine, pave, paint, occRect, navRect, tree, benchAt, addBox, addCircle, pergola, toilet, sandPit, springRider, coverRect, coverDisc, paved, freeSpot, sd: danchiSD,
+  const parkFrom = { bushes: out.bushes.length, hedges: out.hedges.length, trees: out.trees.length, rocks: (out.rocks || []).length, regions: regions.length };
+  buildParks({ B, gy, rng, out, pathLine, pave, paint, occRect, navRect, tree, benchAt, addBox, addCircle, pergola, toilet, sandPit, springRider, coverRect, coverDisc, paved, freeSpot, clear, sd: danchiSD,
     nearRoad: (x, z, r) => { for (let a = 0; a < 6.28; a += 0.8) if (RN.roadAt(x + Math.cos(a) * r, z + Math.sin(a) * r) || RN.walkY(x + Math.cos(a) * r, z + Math.sin(a) * r) !== null) return true; return false; } });
+  parkFrom.regionsTo = regions.length;
   // C4 north-west: a shaded bosque of trees on gravel between the tower and the slab, benches under it; a bamboo grove
   // closes the court to the north against the hill foot
   { const x0 = 440, z0 = 238; paint(0, x0 - 2, z0 - 2, x0 + 22, z0 + 24, () => 1); paint(2, x0 - 2, z0 - 2, x0 + 22, z0 + 24, () => 0.7);
@@ -829,5 +922,32 @@ export function buildDanchi(ctx) {
   out.trees = out.trees.filter(t => t.pit || t.planter || (!paved(t.x, t.z) && lakeDepth(t.x, t.z) < 0.02));
   B.frame(0, 0, 0, 0);
   out.buildings = blds;
+  out.buildings = blds; out.envelopes = placed; // (the district audit and debugging read them)
+  // ---- audit: every building against the parks (their planting, paths and ground), every plant and stone in the
+  // district, the streets, the river and the other buildings. Reported on the console; the generator is right when it
+  // reports nothing
+  { const issues = [], rectD = (q, x, z) => { const c = Math.cos(q.r), sn = Math.sin(q.r), dx = x - q.x, dz = z - q.z, u = dx * c - dz * sn, v = dx * sn + dz * c; return Math.hypot(Math.max(Math.abs(u) - q.hw, 0), Math.max(Math.abs(v) - q.hd, 0)); };
+    const veg = (from, solidOnly) => { const L = [];
+      for (const b of out.bushes.slice(from ? parkFrom.bushes : 0)) if (!b.keep || !solidOnly) L.push({ x: b.x, z: b.z, r: 0.5 * b.s * (b.sx || 1), what: 'bush' });
+      for (const t of out.trees.slice(from ? parkFrom.trees : 0)) L.push({ x: t.x, z: t.z, r: 0.6, what: 'tree' });
+      for (const q of (out.rocks || []).slice(from ? parkFrom.rocks : 0)) L.push({ x: q.x, z: q.z, r: 0.45 * q.s, what: 'stone' });
+      for (const h of out.hedges.slice(from ? parkFrom.hedges : 0)) { const [ax, az] = h.a, [bx, bz] = h.b, n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5)); for (let k = 0; k <= n; k++) L.push({ x: ax + (bx - ax) * k / n, z: az + (bz - az) * k / n, r: 0.45, what: 'hedge' }); }
+      return L; };
+    const parkVeg = veg(true, false), allVeg = veg(false, true);
+    blds.forEach((b, i) => { const env = placed[i], tag = `${b.fam}#${i} (${b.x.toFixed(1)}, ${b.z.toFixed(1)})`, D = (x, z) => fieldAt(fields[i], b.x, b.z, b.r, x, z);
+      for (const v of parkVeg) if (D(v.x, v.z) < v.r + VEG_CLR - 0.05) { issues.push(`${tag}: park ${v.what} at (${v.x.toFixed(1)}, ${v.z.toFixed(1)}) within ${VEG_CLR} m`); break; }
+      for (const v of allVeg) if (D(v.x, v.z) < v.r * 0.5) { issues.push(`${tag}: ${v.what} at (${v.x.toFixed(1)}, ${v.z.toFixed(1)}) standing in the building`); break; }
+      for (const g of regions.slice(parkFrom.regions, parkFrom.regionsTo)) if (g.kind === 'path') { let hit = null;
+        for (let k = 0; k + 1 < g.pts.length && !hit; k++) { const [ax, az] = g.pts[k], [bx, bz] = g.pts[k + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5)); for (let t = 0; t <= n; t++) { const x = ax + (bx - ax) * t / n, z = az + (bz - az) * t / n; if (!pathEnd(g, x, z) && D(x, z) < g.w / 2 + PATH_CLR - 0.05) { hit = [x, z]; break; } } }
+        if (hit) { issues.push(`${tag}: park path at (${hit[0].toFixed(1)}, ${hit[1].toFixed(1)})`); break; } }
+      { const [x0, z0, x1, z1] = parkKeep.bounds[0]; let near = false; for (let x = x0; x <= x1 && !near; x += 0.5) for (let z = z0; z <= z1; z += 0.5) if (D(x, z) < PARK_CLR - 0.05) { near = true; break; } if (near) issues.push(`${tag}: within ${PARK_CLR} m of the fountain park`); }
+      const pts = []; for (const q of env) { const c = Math.cos(q.r), sn = Math.sin(q.r); for (let u = -q.hw; u <= q.hw + 1e-6; u += q.hw / Math.ceil(q.hw)) for (let v = -q.hd; v <= q.hd + 1e-6; v += q.hd / Math.ceil(q.hd)) pts.push([q.x + u * c + v * sn, q.z - u * sn + v * c]); }
+      if (b.fam !== 'L' && pts.some(([x, z]) => onStreet(x, z))) issues.push(`${tag}: envelope on a street or footway`);
+      if (ctx.riverX && pts.some(([x, z]) => Math.abs(x - ctx.riverX(z)) < 20)) issues.push(`${tag}: envelope in the river corridor`);
+      blds.forEach((o, j) => { if (j <= i) return; if (pts.some(([x, z]) => placed[j].some(E => inRect(x, z, E.x, E.z, E.r, E.hw, E.hd)))) issues.push(`${tag}: envelope overlaps ${o.fam}#${j}`); });
+      if (Math.hypot(b.x - b.x0, b.z - b.z0) > 0.01) console.info(`danchi: ${tag} moved ${Math.hypot(b.x - b.x0, b.z - b.z0).toFixed(2)} m from its plan (${b.x0}, ${b.z0}) to fit`);
+    });
+    out.audit = issues;
+    if (issues.length) console.warn(`danchi audit: ${issues.length} issue(s)\n` + issues.join('\n')); else console.info('danchi audit: every building clear of the parks, the planting, the streets, the river and each other'); }
   return out;
 }

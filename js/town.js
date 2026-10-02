@@ -1554,6 +1554,7 @@ export async function build(progress) {
     normalAt: (x, z, out) => { const rd = x - riverX(z); if (Math.abs(rd) > 12.2 && Math.abs(rd) <= 14.55 && Math.abs(z) <= RIVER_END) { const l = Math.hypot(REV_K, 1); return out.set(-Math.sign(rd) * REV_K / l, 1 / l, 0); } return hf.normalAt(x, z, out); },
     waterAt: (x, z) => Math.abs(x - riverX(z)) < 16 ? RIVER_LV : -1e9,
     waterLevel: RIVER_LV,
+    district: danchi,
     surfaceAt(x, z, y) {
       if (y !== undefined && y > Y0 + 0.9 && Math.abs(z + 80) < 8) return 'asphalt';
       if (Math.abs(z + 80) < 5.6 && y < Y0 + 0.6) return 'gravel';

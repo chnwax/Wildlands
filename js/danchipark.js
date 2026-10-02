@@ -27,8 +27,13 @@ export function lakeDepth(x, z) {
   return d;
 }
 
+// the fountain park's ground (also the keep-out its neighbours respect, danchi.js)
+export const FOUNTAIN = { cx: 578, cz: 134, R: 10.5, x0: 553, x1: 603, z0: 120.6, z1: 147.6 };
+// K.probe: a dry run that only records where the parks plant, pave and furnish (no geometry, no side effects), so the
+// buildings can be placed clear of them before the parks are laid out
 export function buildParks(K) {
   const { B, gy, rng, out, pathLine, pave, paint, occRect, navRect, tree, benchAt, addBox, addCircle } = K;
+  const lampPts = K.lampPoints || lampPoints, addPlat = K.addPlatform || addPlatform;
   const V = (x, z, yo = 0) => [x, gy(x, z) + yo, z];
   const col = (h, s, l) => new THREE.Color().setHSL(h, s, l);
   const lerp = (a, b, t) => a + (b - a) * t, mul = (c, k) => c.map(v => v * k);
@@ -61,11 +66,11 @@ export function buildParks(K) {
   const lamp = (x0, z0, ornate = true) => { const q = K.freeSpot(x0, z0, 0.3); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0);
     if (ornate) { B.cyl('metal', 0, 0, 0, 0.16, 0.13, 0.5, 12, { color: [0.18, 0.2, 0.2] }); B.cyl('metal', 0, 0.5, 0, 0.07, 0.055, 3.4, 12, { color: [0.18, 0.2, 0.2] });
       B.cyl('metal', 0, 3.9, 0, 0.1, 0.18, 0.12, 12, { color: [0.18, 0.2, 0.2], cap: true }); B.cyl('lamp', 0, 4.02, 0, 0.2, 0.2, 0.42, 12, {}); B.cyl('metal', 0, 4.44, 0, 0.26, 0.04, 0.2, 12, { color: [0.18, 0.2, 0.2], cap: true });
-      lampPoints.push({ p: [x, y + 4.2, z], s: 0.7 }); }
-    else { B.cyl('steel', 0, 0, 0, 0.06, 0.05, 3.2, 10, { color: [0.3, 0.32, 0.34] }); B.cyl('metal', 0, 3.2, 0, 0.16, 0.2, 0.08, 14, { color: [0.28, 0.3, 0.32], cap: true }); B.cyl('lamp', 0, 3.02, 0, 0.14, 0.14, 0.18, 12, {}); lampPoints.push({ p: [x, y + 2.9, z], s: 0.45 }); }
+      lampPts.push({ p: [x, y + 4.2, z], s: 0.7 }); }
+    else { B.cyl('steel', 0, 0, 0, 0.06, 0.05, 3.2, 10, { color: [0.3, 0.32, 0.34] }); B.cyl('metal', 0, 3.2, 0, 0.16, 0.2, 0.08, 14, { color: [0.28, 0.3, 0.32], cap: true }); B.cyl('lamp', 0, 3.02, 0, 0.14, 0.14, 0.18, 12, {}); lampPts.push({ p: [x, y + 2.9, z], s: 0.45 }); }
     B.frame(0, 0, 0, 0); addCircle(x, z, 0.12); navRect(x, z, 0.4, 0.4, 0, 2); };
   const bollard = (x, z, lit = true) => { const y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.1, 0.1, 0.8, 12, { color: [0.2, 0.22, 0.22], cap: !lit });
-    if (lit) { B.cyl('lamp', 0, 0.62, 0, 0.1, 0.1, 0.12, 12, {}); B.cyl('metal', 0, 0.74, 0, 0.12, 0.12, 0.06, 12, { color: [0.2, 0.22, 0.22], cap: true }); lampPoints.push({ p: [x, y + 0.7, z], s: 0.15 }); }
+    if (lit) { B.cyl('lamp', 0, 0.62, 0, 0.1, 0.1, 0.12, 12, {}); B.cyl('metal', 0, 0.74, 0, 0.12, 0.12, 0.06, 12, { color: [0.2, 0.22, 0.22], cap: true }); lampPts.push({ p: [x, y + 0.7, z], s: 0.15 }); }
     B.frame(0, 0, 0, 0); addCircle(x, z, 0.1); };
   const bin = (x0, z0, c = [0.26, 0.42, 0.34]) => { const q = K.freeSpot(x0, z0, 0.32); if (!q) return; const [x, z] = q, y = gy(x, z); B.frame(x, y, z, 0); B.cyl('metal', 0, 0, 0, 0.26, 0.24, 0.85, 14, { color: c }); B.cyl('metal', 0, 0.85, 0, 0.28, 0.2, 0.1, 14, { color: [0.3, 0.32, 0.33], cap: true }); B.cyl('dark', 0, 0.9, 0, 0.1, 0.1, 0.06, 10, { color: [0.1, 0.1, 0.1], cap: true }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.28); navRect(x, z, 0.35, 0.35, 0, 2); };
   // a bench with a bin at one end, the pair set back from a path edge (yaw: the way the seat faces)
@@ -121,7 +126,7 @@ export function buildParks(K) {
 
   // ================================================================ 噴水広場: the fountain park
   function fountainPark() {
-    const cx = 578, cz = 134, R = 10.5, x0 = 553, x1 = 603, z0 = 120.6, z1 = 147.6;
+    const { cx, cz, R, x0, x1, z0, z1 } = FOUNTAIN;
     // the long axis: a promenade from the west street's footway to the east's, through the plaza (the plaza lies over it)
     pathLine([[533.2, cz], [609.8, cz]], 4.0, { lamps: false, color: [0.82, 0.8, 0.76] });
     // the plaza: granite bands and light pavers in rings round the basin, the outer band darker
@@ -200,7 +205,7 @@ export function buildParks(K) {
         arc(P(a, rr, 0.46), P(a, 3.7, 0.43), 0.75, 0.035, 10); foam(Math.cos(a) * 3.7, Math.sin(a) * 3.7, 0.437, 0.22); }
       // light: a ring of lamps in the basin floor, uplights under the lower bowl
       for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, rr = RB(a) - 1.1; B.cyl('lamp', Math.cos(a) * rr, 0.065, Math.sin(a) * rr, 0.1, 0.1, 0.02, 10, { cap: true }); }
-      for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; B.cyl('lamp', Math.cos(a) * 1.0, 0.62, Math.sin(a) * 1.0, 0.08, 0.08, 0.02, 8, { cap: true }); lampPoints.push({ p: [cx + Math.cos(a) * 3.6, WL + 0.5, cz + Math.sin(a) * 3.6], s: 0.6 }); lampPoints.push({ p: [cx + Math.cos(a) * 0.9, y + 1.2, cz + Math.sin(a) * 0.9], s: 0.35 }); }
+      for (let k = 0; k < 4; k++) { const a = k / 4 * Math.PI * 2 + 0.4; B.cyl('lamp', Math.cos(a) * 1.0, 0.62, Math.sin(a) * 1.0, 0.08, 0.08, 0.02, 8, { cap: true }); lampPts.push({ p: [cx + Math.cos(a) * 3.6, WL + 0.5, cz + Math.sin(a) * 3.6], s: 0.6 }); lampPts.push({ p: [cx + Math.cos(a) * 0.9, y + 1.2, cz + Math.sin(a) * 0.9], s: 0.35 }); }
       B.frame(0, 0, 0, 0); addCircle(cx, cz, 5.6); navRect(cx, cz, 5.8, 5.8, 0, 2); }
     // four round granite planters on the diagonals, clipped box balls and seasonal flowers in them
     for (const a of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4]) { const px = cx + Math.cos(a) * 7.2, pz = cz + Math.sin(a) * 7.2, py = gy(px, pz); B.frame(px, py, pz, 0);
@@ -347,9 +352,9 @@ export function buildParks(K) {
         const L = Math.hypot(bx - ax, bz - az), n = Math.ceil(L / 1.5); for (let k = 0; k <= n; k++) { const t = k / n; B.box('wood', lerp(ax, bx, t), y - 0.05, lerp(az, bz, t), 0.1, 1.05, 0.1, { color: [0.5, 0.38, 0.27] }); } };
       rail(477.65, dz0 - 1.6, 477.65, dz1 + 0.05); rail(477.65, dz1 + 0.05, 486.35, dz1 + 0.05); rail(486.35, dz1 + 0.05, 486.35, dz0 - 1.6);
       for (const x of [480, 484]) benchAt(x, dz1 + 1.6, Math.PI);
-      for (const x of [477.9, 486.1]) { B.cyl('lamp', x, y + 1.0, dz0 - 1.7, 0.06, 0.06, 0.12, 8, { cap: true }); lampPoints.push({ p: [x, y + 1.1, dz0 - 1.7], s: 0.15 }); }
+      for (const x of [477.9, 486.1]) { B.cyl('lamp', x, y + 1.0, dz0 - 1.7, 0.06, 0.06, 0.12, 8, { cap: true }); lampPts.push({ p: [x, y + 1.1, dz0 - 1.7], s: 0.15 }); }
       addBox(477.65, (dz0 + dz1) / 2, 0.05, (dz0 - dz1) / 2, 0, -1e9, y + 1); addBox(486.35, (dz0 + dz1) / 2, 0.05, (dz0 - dz1) / 2, 0, -1e9, y + 1); addBox(482, dz1, 4.4, 0.05, 0, -1e9, y + 1);
-      addPlatform(482, (dz0 + dz1) / 2, 4.4, (dz0 - dz1) / 2, 0, y - 0.02); }
+      addPlat(482, (dz0 + dz1) / 2, 4.4, (dz0 - dz1) / 2, 0, y - 0.02); }
     // the gazebo (東屋) on the south shore: four posts, a hipped roof, benches round a table
     { const gx = 494.5, gz = 1.2, y = gy(gx, gz), S = 2.3; B.frame(gx, y, gz, 0.08);
       B.bbox('stone', 0, -0.2, 0, 5.4, 0.32, 5.4, 0.03, { color: [0.64, 0.62, 0.58] });
@@ -361,7 +366,7 @@ export function buildParks(K) {
       B.cyl('roofTile', 0, top - 0.05, 0, 0.18, 0.08, 0.35, 8, { color: [0.3, 0.28, 0.28], cap: true });
       for (const [bx, bz, r] of [[0, -S + 0.35, 0], [-S + 0.35, 0, Math.PI / 2], [S - 0.35, 0, -Math.PI / 2]]) { B.frame(...B.P([bx, 0.12, bz]), 0.08 + r); B.bbox('wood', 0, 0.3, 0, 3.4, 0.08, 0.42, 0.01, { color: [0.62, 0.48, 0.34] }); for (const e of [-1.4, 0, 1.4]) B.box('wood', e, 0, 0, 0.08, 0.3, 0.36, { color: [0.45, 0.34, 0.24] }); B.frame(gx, y, gz, 0.08); }
       B.bbox('wood', 0, 0.12, 0.2, 1.2, 0.7, 0.8, 0.02, { color: [0.58, 0.44, 0.3] });
-      B.box('lamp', 0, 2.62, 0, 0.3, 0.05, 0.3); lampPoints.push({ p: B.P([0, 2.4, 0]), s: 0.4 });
+      B.box('lamp', 0, 2.62, 0, 0.3, 0.05, 0.3); lampPts.push({ p: B.P([0, 2.4, 0]), s: 0.4 });
       B.frame(0, 0, 0, 0); for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const p = [gx + sx * S * Math.cos(0.08) + sz * S * Math.sin(0.08), gz - sx * S * Math.sin(0.08) + sz * S * Math.cos(0.08)]; addCircle(p[0], p[1], 0.12); }
       navRect(gx, gz, 2.9, 2.9, 0.08, 2); for (const c of HYDRANGEA) clump(gx + (rng() - 0.5) * 6, gz - 3.8, 3, 1.0, c, [0.55, 0.8]); }
     // planting: black pines leaning over the rocky west shore, maples by the bridge, a cherry grove east, big shade
@@ -401,7 +406,7 @@ export function buildParks(K) {
     for (const t of [0.3, 0.7]) for (const e of [-1, 1]) B.cyl('wood', e * (w / 2 - 0.2), gy(ax, az) - 0.6, t * L, 0.1, 0.1, yAt(t) - gy(ax, az) + 0.4, 8, { color: [0.35, 0.26, 0.2] });
     B.frame(0, 0, 0, 0);
     for (const e of [-1, 1]) { const px = ax + Math.cos(r) * e * (w / 2 + 0.02), pz = az - Math.sin(r) * e * (w / 2 + 0.02); addBox(px + Math.sin(r) * L / 2, pz + Math.cos(r) * L / 2, 0.06, L / 2, r, -1e9, Math.max(y0, y1) + rise + 1); }
-    for (let k = 0; k < 12; k++) { const t = (k + 0.5) / 12; addPlatform(ax + (bx - ax) * t, az + (bz - az) * t, w / 2, L / 24 + 0.02, r, yAt(t)); }                // walkable deck
+    for (let k = 0; k < 12; k++) { const t = (k + 0.5) / 12; addPlat(ax + (bx - ax) * t, az + (bz - az) * t, w / 2, L / 24 + 0.02, r, yAt(t)); }                // walkable deck
     navRect((ax + bx) / 2, (az + bz) / 2, w / 2, L / 2, r, 1);
   }
 
@@ -512,9 +517,9 @@ export function buildParks(K) {
     const hr = [], grad = (x, z) => Math.hypot(gy(x + 1, z) - gy(x - 1, z), gy(x, z + 1) - gy(x, z - 1)) / 2;
     for (let k = 0; k < 3000 && hr.length < 11; k++) {
       const x = 330 + rng() * 340, z = -20 + rng() * 380, d = K.sd(x, z); if (d < 5 || d > 24) continue;
-      const g = grad(x, z); if (g < 0.09 || K.paved(x, z) || K.nearRoad(x, z, 6) || hr.some(q => Math.hypot(q[0] - x, q[1] - z) < 30)) continue;
+      const g = grad(x, z); if (g < 0.09 || K.paved(x, z) || K.nearRoad(x, z, 6) || !K.clear(x, z, 8) || hr.some(q => Math.hypot(q[0] - x, q[1] - z) < 30)) continue;
       const dx = gy(x + 1, z) - gy(x - 1, z), dz = gy(x, z + 1) - gy(x, z - 1); hr.push([x, z]);
       rockGroup(x, z, 2.2 + rng() * 1.1, { dir: Math.atan2(-dz, -dx), spread: 1.1 }); }
   }
-  fountainPark(); lakePark(); playground(); hillFoot();
+  fountainPark(); lakePark(); playground(); if (!K.probe) hillFoot(); // (the hill-foot outcrops keep off the buildings themselves)
 }
