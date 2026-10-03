@@ -136,6 +136,55 @@
       "origin": [53.712, 5.971, -47.491]
     },
     {
+      "id": "house_station_024",
+      "slots": {
+        "wood#0": { "offset": [-4.2347, 0, -0.1158] }
+      },
+      "origin": [-63.341, 6.078, 22.369]
+    },
+    {
+      "id": "house_station_036",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [14.518, 5.996, 21.303]
+    },
+    {
+      "id": "house_station_037",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [27.872, 6.015, 5.077]
+    },
+    {
+      "id": "house_station_038",
+      "slots": {
+        "wood#0": { "offset": [-0.0087, 0, -0.1165] }
+      },
+      "origin": [47.078, 6.001, 6.228]
+    },
+    {
+      "id": "house_station_039",
+      "slots": {
+        "alu#3": { "offset": [0.0002, 0, 0.0033] }
+      },
+      "origin": [56.379, 5.997, 7.188]
+    },
+    {
+      "id": "house_station_043",
+      "slots": {
+        "wood#0": { "offset": [-0.0095, 0, -0.1263] }
+      },
+      "origin": [53.868, 6.005, 24.698]
+    },
+    {
+      "id": "house_station_044",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [66.896, 5.989, 6.92]
+    },
+    {
       "id": "house_station_047",
       "slots": {
         "wood": { "offset": [-0.4666, -8.6707, -0.0187], "rotate": [0, 0, -90], "scale": [2.4672, 1.0212, 1] }

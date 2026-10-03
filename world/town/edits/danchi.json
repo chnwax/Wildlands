@@ -5,6 +5,16 @@
   "area": "danchi",
   "objects": [
     {
+      "id": "apartment_centre_danchi_001",
+      "slots": {
+        "concrete#1": { "scale": [1.007, 1, 1] },
+        "concrete#3": { "offset": [-0.0007, 0, -0.7004], "scale": [1, 1, 1.033] },
+        "concrete#4": { "offset": [0, 0, -1.1831], "scale": [1, 1, 1.0184] },
+        "pavement#1": { "scale": [1, 1, 1.1179] }
+      },
+      "origin": [459, 6.02, 190]
+    },
+    {
       "id": "apartment_lowrise_danchi_008",
       "slots": {
         "plain#0": { "scale": [1, 1, 1.0144] }
@@ -71,20 +81,32 @@
         "tiles#19": { "offset": [-0.0068, -5.1074, 0.0126], "scale": [1, 1.4684, 1] },
         "tiles#19.0": { "offset": [0.0104, -4.0709, 0], "scale": [1, 1.3449, 1] },
         "tiles#19.7": { "offset": [0, -10.8282, 0], "scale": [1, 2.1428, 1] },
-        "tiles#20": { "offset": [0.0703, -3.8001, -0.0147], "scale": [1, 1.3218, 1] }
+        "tiles#20": { "offset": [0.0703, -3.9578, -0.0147], "scale": [1, 1.3218, 1] }
       },
       "origin": [466, 10.62, 157]
     },
     {
+      "id": "apartment_mansion_danchi_003",
+      "slots": {
+        "concrete#176": { "offset": [16.356, -1.3493, 0], "scale": [12.3149, 1, 1] },
+        "tiles#30": { "offset": [0.017, -1.2405, 0.0122] },
+        "tiles#31": { "offset": [0.0418, -1.3081, -0.0206] }
+      },
+      "origin": [450, 6.02, 114]
+    },
+    {
       "id": "apartment_mansion_danchi_004",
       "slots": {
+        "concrete#235": { "offset": [23.0885, -1.3999, 0], "scale": [17.0028, 1, 1] },
         "concrete#236": { "offset": [0, 0, 0.0123] },
         "concrete#237": { "offset": [-0.1789, 0, -0.2057] },
         "concrete#238": { "offset": [-0.0149, 0, 0.0117] },
         "concrete#239": { "offset": [-0.0074, 0, -0.0149] },
+        "metal#57": { "offset": [0, 0, -0.0039] },
         "plain#258": { "offset": [-0.0176, 0, -0.0058] },
-        "tiles#36": { "offset": [0.0002, 0, -0.0069] },
-        "tiles#37": { "offset": [0.0125, 0, -0.0104] }
+        "tiles#35": { "offset": [0, 0.0039, 0] },
+        "tiles#36": { "offset": [0.0002, -1.441, -0.0069] },
+        "tiles#37": { "offset": [0.0125, -1.3578, -0.0104] }
       },
       "origin": [568, 6.02, 84]
     },
@@ -92,6 +114,7 @@
       "id": "apartment_mansion_danchi_005",
       "slots": {
         "concrete#190": { "offset": [19.581, -1.4121, 0.1214], "scale": [14.6207, 1, 1] },
+        "tiles#29": { "offset": [0, 0.0047, 0] },
         "tiles#30": { "offset": [0.0421, -1.2641, 0.0197] },
         "tiles#31": { "offset": [0.0385, -1.2855, -0.0163] }
       },
@@ -141,11 +164,26 @@
         "concrete#152": { "offset": [0.005, 0, 0.0002] },
         "concrete#153": { "offset": [-0.009, 0, -0.0164] },
         "concrete#153.2": { "offset": [-0.0082, 0, -0.0083] },
+        "concrete#96": { "offset": [0.0018, 0, -0.0352] },
+        "metal#31": { "offset": [0.0008, 0, -0.0164] },
         "plain#174": { "offset": [-0.002, 0, 0.0403] },
+        "tiles#25": { "offset": [0, 0.0001, 0] },
         "tiles#26": { "offset": [0, -1.2409, 0] },
         "tiles#27": { "offset": [0, -1.2437, 0] }
       },
       "origin": [543.722, 6.022, 177.315]
+    },
+    {
+      "id": "apartment_tower_danchi_002",
+      "slots": {
+        "alu#1314": { "offset": [0.0008, 0, 0.0021] },
+        "alu#1315": { "offset": [0.0004, 0, 0.0011] },
+        "alu#1316": { "offset": [0.2803, 0, -0.0024], "scale": [0.5478, 1, 1] },
+        "concrete#95": { "offset": [0.147, 0, 0.0028] },
+        "metal#4": { "offset": [-0.0086, 0, -0.0235] },
+        "shopwindow#13": { "offset": [0.0004, 0, 0.001] }
+      },
+      "origin": [576.122, 6.051, 162.782]
     },
     {
       "id": "apartment_tower_danchi_003",
@@ -155,9 +193,17 @@
       "origin": [428, 6.02, 236]
     },
     {
+      "id": "apartment_tower_danchi_004",
+      "slots": {
+        "metal#4": { "offset": [-0.0046, 0, -0.0109] }
+      },
+      "origin": [547.938, 6.239, 235.758]
+    },
+    {
       "id": "apartment_tower_danchi_005",
       "slots": {
         "alu#14": { "offset": [0.0098, 0, 0] },
+        "concrete#89": { "offset": [0, 0, 0.0094] },
         "pavement#2": { "offset": [0, 0, 0.4606], "scale": [1, 1, 1.3056] }
       },
       "origin": [425, 6.025, 300]
@@ -187,7 +233,11 @@
       "id": "apartment_walkup_danchi_004",
       "slots": {
         "alu#916": { "offset": [0, -3.1329, 0] },
-        "alu#917": { "offset": [0, -3.1939, 0] }
+        "alu#917": { "offset": [0, -3.1939, 0] },
+        "concrete#38": { "offset": [0, 0, 0.0051] },
+        "metal#11": { "offset": [0, 0, -0.0036] },
+        "metal#15": { "offset": [0, 0, -0.0033] },
+        "metal#7": { "offset": [0, 0, -0.0095] }
       },
       "origin": [476, 6.02, 80]
     },
@@ -224,9 +274,19 @@
       "id": "apartment_walkup_danchi_008",
       "slots": {
         "alu#470": { "offset": [0, -3.0622, 0] },
-        "alu#471": { "offset": [0, -3.1406, 0] }
+        "alu#471": { "offset": [0, -3.1406, 0] },
+        "metal#3": { "offset": [0.0058, 0, -0.0093] },
+        "metal#7": { "offset": [0.0048, 0, -0.0078] }
       },
       "origin": [468, 6.077, 280]
+    },
+    {
+      "id": "apartment_walkup_danchi_009",
+      "slots": {
+        "metal#3": { "offset": [0, 0, -0.0081] },
+        "metal#7": { "offset": [0, 0, -0.0092] }
+      },
+      "origin": [365, 6.02, 21.5]
     },
     {
       "id": "bench_danchi_001",
@@ -377,6 +437,11 @@
       "position": [481.58, 6.05, 157.01],
       "scale": [1, 1, 1.0135],
       "origin": [481.58, 6.05, 157]
+    },
+    {
+      "id": "detail_m169_t7914",
+      "position": [574.154, 6.089, 176.226],
+      "origin": [574.15, 6.089, 176.226]
     },
     {
       "id": "detail_m170_t42457",

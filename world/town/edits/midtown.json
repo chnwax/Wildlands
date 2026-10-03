@@ -12,6 +12,56 @@
       "origin": [33.264, 6.067, -242.317]
     },
     {
+      "id": "house_midtown_026",
+      "slots": {
+        "wood#0": { "offset": [0.0129, 0, -0.129] }
+      },
+      "origin": [-201.232, 6.04, 5.588]
+    },
+    {
+      "id": "house_midtown_031",
+      "slots": {
+        "wood#0": { "offset": [0.0056, -3.101, -0.1284] }
+      },
+      "origin": [-179.159, 6.035, 4.151]
+    },
+    {
+      "id": "house_midtown_034",
+      "slots": {
+        "wood#0": { "offset": [0.0051, -2.9589, -0.1163] }
+      },
+      "origin": [-188.084, 6.044, 22.359]
+    },
+    {
+      "id": "house_midtown_035",
+      "slots": {
+        "wood#0": { "offset": [0.0058, 0, -0.1335] }
+      },
+      "origin": [-178.791, 6.044, 22.568]
+    },
+    {
+      "id": "house_midtown_037",
+      "slots": {
+        "wood#0": { "offset": [0.0054, -3.4362, -0.1245] }
+      },
+      "origin": [-158.954, 6.052, 22.023]
+    },
+    {
+      "id": "house_midtown_038",
+      "slots": {
+        "wood#0": { "hidden": true, "offset": [0, -3.7247, 0] },
+        "wood#1": { "offset": [0, 0.0064, 0], "scale": [1, 1.0353, 1] }
+      },
+      "origin": [-143.111, 6.078, 2.678]
+    },
+    {
+      "id": "house_midtown_040",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-132.638, 6.109, 20.319]
+    },
+    {
       "id": "house_midtown_059",
       "slots": {
         "wood": { "offset": [-0.0067, -3.5367, -0.1291] }
@@ -80,6 +130,11 @@
         "wood": { "hidden": true }
       },
       "origin": [77.51, 6.019, -249.727]
+    },
+    {
+      "id": "tree_sakura_midtown_018",
+      "position": [41.392, 5.765, -108.799],
+      "origin": [40.011, 5.765, -109.338]
     }
   ]
 }
