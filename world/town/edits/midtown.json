@@ -104,6 +104,13 @@
       "origin": [97.199, 6.061, -262.5]
     },
     {
+      "id": "house_midtown_111",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [123.21, 6.041, 139.165]
+    },
+    {
       "id": "house_midtown_115",
       "slots": {
         "wood": { "offset": [0, -1.4089, -0.1192], "scale": [1, 0.5011, 1] }
