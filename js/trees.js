@@ -654,7 +654,7 @@ export function zelkovaGeo(lod = 0, seed = 29) {
   const solid = mergeGeometries(clumps.map(k => clumpSolid(k, crownC, crownR, hi && k.R > 0.105 ? 2 : 1)));
   if (far) return { solid, trunk: mergeGeometries(wood) };
   const B = meshBuilder();
-  for (const k of clumps) clumpCards(B, rng, k, crownC, crownR, hi ? Math.round(10 + k.R * 60) : 5);
+  for (const k of clumps) clumpCards(B, rng, k, crownC, crownR, hi ? Math.round(8 + k.R * 50) : 5);
   return { solid, cards: B.geometry(true), trunk: mergeGeometries(wood) };
 }
 
@@ -858,7 +858,7 @@ const SPECIES = {
   leaf:    { mat: 'leaf', n: 2, geo: (l, v) => broadleafGeo(l, 7 + v * 6, 'leaf'), trunk: 0.034 },
   oak:     { mat: 'oak', n: 1, geo: (l, v) => broadleafGeo(l, 19 + v * 5, 'oak'), trunk: 0.045 },
   birch:   { mat: 'birch', n: 1, geo: (l, v) => broadleafGeo(l, 23 + v * 9, 'birch'), trunk: 0.022 },
-  zelkova: { mat: 'zelkova', n: 3, geo: (l, v) => zelkovaGeo(l, 29 + v * 17), trunk: 0.05 },
+  zelkova: { mat: 'zelkova', n: 3, geo: (l, v) => zelkovaGeo(l, 29 + v * 17), trunk: 0.05, hiScale: 0.55 }, // (its mid LOD keeps the skeleton and masses: the detailed set need only be near)
   maple:   { mat: 'maple', n: 1, geo: (l, v) => broadleafGeo(l, 31 + v * 8, 'maple'), trunk: 0.035 },
   willow:  { mat: 'willow', n: 1, geo: (l, v) => broadleafGeo(l, 37, 'willow'), trunk: 0.05 },
   sakura:  { mat: 'sakura', n: 2, geo: (l, v) => broadleafGeo(l, 13 + v * 8, 'sakura'), trunk: 0.05, cardShadow: false },
