@@ -1162,21 +1162,27 @@ function grassMaterial(hf, grassTex, gu, ru, card, baked) {
 export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e', mid = '#2398be', shallow = '#52d6c4', waves = 4.0, strength = 0.4, active = () => true, bank = '' } = {}) {
   const mirrorCam = new THREE.PerspectiveCamera();
   mirrorCam.layers.set(0); // objects moved to layer 1 are not reflected (cheap reflection pass)
+  // The height of the mirror plane the reflection is rendered for: the level of the water surface that matters most in
+  // the current view (renderReflection) — the river, or a pond, the lake or a fountain basin standing higher. Every
+  // surface looks its reflection up at its own point mirrored through this plane, which lands exactly where that point
+  // is on screen: in range for every visible pixel (before, ponds mirrored through y = 0 while the image was rendered
+  // for the river's level, so their lookups ran off the texture and the reflection stopped along a hard line).
+  const mirrorY = { value: level };
   const textureMatrix = new THREE.Matrix4();
   const reflDepth = new THREE.DepthTexture(512, 512); reflDepth.type = THREE.FloatType; // 32F: pairs with reversed-Z
   const reflRT = new THREE.WebGLRenderTarget(512, 512, { type: THREE.HalfFloatType, depthTexture: reflDepth });
   const mat = new THREE.ShaderMaterial({
     transparent: true, fog: true, depthWrite: true, defines: bank ? { WATER_BANK: '' } : {},
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-      tRefl: { value: null }, tNormal: { value: null }, textureMatrix: { value: null }, uLevel: { value: level },
+      tRefl: { value: null }, tNormal: { value: null }, textureMatrix: { value: null }, uLevel: { value: level }, uMirrorY: { value: level },
       uDeep: { value: new THREE.Color(deep) }, uMid: { value: new THREE.Color(mid) }, uShallow: { value: new THREE.Color(shallow) }, uWaves: { value: waves }, uStrength: { value: strength },
     }]),
     vertexShader: /* glsl */`
-      uniform mat4 textureMatrix; varying vec4 vMirror; varying vec3 vW;
+      uniform mat4 textureMatrix; uniform float uMirrorY; varying vec4 vMirror; varying vec3 vW;
       #include <common>
       #include <fog_pars_vertex>
       void main(){
-        vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vMirror = textureMatrix * wp;
+        vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vMirror = textureMatrix * vec4(wp.x, 2.0 * uMirrorY - wp.y, wp.z, 1.0);
         vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,
@@ -1199,10 +1205,16 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
         vec4 nz = getNoise(vW.xz * uWaves) * 0.5 - 1.0;
         vec3 sn = normalize(nz.xzy * vec3(uStrength, 1.0, uStrength));
         sn = normalize(mix(sn, vec3(0.0, 1.0, 0.0), smoothstep(40.0, 1800.0, dist) * 0.75));
-        vec2 distortion = sn.xz * (0.001 + 1.0 / dist) * 2.0;
-        vec3 refl = texture2D(tRefl, vMirror.xy / vMirror.w + distortion).rgb;
+        vec2 distortion = sn.xz * (0.001 + 1.0 / dist) * 1.2; // (gentle: the mirror image wavers, it does not break up)
+        // (a ripple can push the lookup a little past the image's edge: there the painted sky takes over softly)
+        vec2 ruv = vMirror.xy / vMirror.w + distortion;
+        float edgeW = smoothstep(0.0, 0.035, min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y)));
+        vec3 skyF = mix(uAmb * 1.5 + 0.04, uAmb * 0.85 + vec3(0.02, 0.05, 0.12), clamp(reflect(-eyeDir, sn).y * 1.6, 0.0, 1.0));
+        vec3 refl = mix(skyF, texture2D(tRefl, clamp(ruv, 0.0, 1.0)).rgb, edgeW);
         float cosT = max(dot(eyeDir, sn), 0.0);
-        float fres = 0.06 + 0.62 * pow(max(1.0 - cosT, 1e-4), 4.0);
+        // a painted Fresnel: stronger than glass-like water at middle angles, so the banks, sky and clouds read in the
+        // water across the whole surface (not only toward the far edge) while looking straight down still shows the body
+        float fres = 0.1 + 0.72 * pow(max(1.0 - cosT, 1e-4), 3.0);
         vec3 rd = reflect(-uLightDir, sn);
         float sd = max(dot(eyeDir, rd), 1e-4);
         // sparkles: the sharpest ripple reflections of the sun become little star glints
@@ -1217,6 +1229,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
         vec3 body = mix(uShallow, uMid, smoothstep(0.0, 0.55, dd));
         body = mix(body, uDeep, smoothstep(0.5, 1.0, dd));
         body *= uAmb * 0.75 + uSunCol * max(uLightDir.y, 0.0) * 0.22 + 0.04;
+        body *= 0.86 + 0.28 * smoothstep(-0.25, 0.25, sn.x * 0.6 + sn.z * 0.8); // (the ripples shade the body: never one flat colour)
         vec3 col = mix(body, refl * mix(vec3(1.0), uShallow * 1.6, 0.18), fres) + spec;
         float alpha = clamp(1.0 - exp(-depth * 2.2), 0.0, 1.0);
         alpha = max(alpha, fres * smoothstep(0.0, 0.2, depth));
@@ -1236,12 +1249,12 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
       }`,
   });
   Object.assign(mat.uniforms, hf.U, { tNoise: S.tNoise, uTime: S.uTime, uSunDir: S.uSunDir, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
-  mat.uniforms.tRefl.value = reflRT.texture; mat.uniforms.tNormal.value = normals; mat.uniforms.textureMatrix.value = textureMatrix;
+  mat.uniforms.tRefl.value = reflRT.texture; mat.uniforms.tNormal.value = normals; mat.uniforms.textureMatrix.value = textureMatrix; mat.uniforms.uMirrorY = mirrorY;
   // (subdivided: a two-triangle plane 40 km across, its centre under the camera, is clipped unreliably near the eye — one
   // whole triangle of it could vanish from a viewpoint just above the surface)
   const water = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000, 64, 64).rotateX(-Math.PI / 2), mat);
   water.position.y = level; water.renderOrder = 2; water.userData.dynamic = true; // follows the camera
-  const _vpm = new THREE.Matrix4(), _fr = new THREE.Frustum(), _cp = new THREE.Vector4(), _crop = new THREE.Matrix4(), hideVis = [];
+  const _vpm = new THREE.Matrix4(), _fr = new THREE.Frustum(), hideVis = [];
   // occlusion queries round the draws of the water and of every pond surface linked to its reflection (watchVisibility)
   const occl = (() => {
     const gl = renderer.getContext(), Q = gl.ANY_SAMPLES_PASSED_CONSERVATIVE, pool = [], open = [], last = [];
@@ -1272,7 +1285,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
     water.updateMatrixWorld();
     mirrorPos.setFromMatrixPosition(water.matrixWorld); camPos.setFromMatrixPosition(cam.matrixWorld);
     view.subVectors(mirrorPos, camPos);
-    if (!force && (view.dot(normal) > 0 || !active(camPos))) return;
+    if (!force && !water.userData.regions && (view.dot(normal) > 0 || !active(camPos))) return;
     // hidden water: every surface that samples the reflection carries an occlusion query in the scene pass; when none of
     // them drew a single sample last frame (behind buildings or the terrain), the mirror image is not needed. It is
     // still refreshed every few frames, so the frame a surface comes into view never shows an old image for long.
@@ -1281,31 +1294,29 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
     occl.skipped = 0;
     // no water surface in view: the mirror image would never be sampled (userData.regions: boxes round every surface
     // that samples this reflection — the river channel, ponds, fountains; unset = always render)
-    // The mirror pass is also cropped to the part of the screen those surfaces cover, plus a margin for the ripple
-    // distortion: it culls against that smaller frustum and draws only
-    // that rectangle of the reflection target; the rest of the target is never sampled.
+    // Region boxes still let us skip the pass when no water is visible. Do not crop the reflection target to their
+    // projected rectangle: ripple distortion, near-plane crossings and a camera standing inside a long river box can
+    // sample well outside that estimate, which used to leave a hard half-screen strip of stale/empty reflection.
+    // Rendering the complete target whenever water is visible keeps the projected lookup valid over the full viewport.
     const R = water.userData.regions;
     let x0 = -1, x1 = 1, y0 = -1, y1 = 1;
-    if (!force && R) {
+    if (R) {
+      // the surface the mirror is set for: the nearest water in view (a region box carries its surface level; the
+      // river's boxes the river's). A little hysteresis keeps it from switching back and forth between two.
       _vpm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _fr.setFromProjectionMatrix(_vpm);
-      let any = false, full = false; x0 = y0 = 1e9; x1 = y1 = -1e9;
+      let best = null, bd = Infinity, cur = Infinity;
       for (const b of R) {
-        if (!_fr.intersectsBox(b)) continue;
-        any = true;
-        for (let k = 0; k < 8 && !full; k++) { // (a pond's mirrored lookup lands on its own screen position: its box is enough)
-          const cy = k & 2 ? b.max.y : b.min.y;
-          _cp.set(k & 1 ? b.max.x : b.min.x, cy, k & 4 ? b.max.z : b.min.z, 1).applyMatrix4(_vpm);
-          if (_cp.w < 0.05) { full = true; break; }
-          const px = _cp.x / _cp.w, py = _cp.y / _cp.w;
-          x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
-        }
-        if (full) break;
+        if (!(b.containsPoint(camPos) || _fr.intersectsBox(b))) continue;
+        const lv = b.level ?? level, d = b.distanceToPoint(camPos);
+        if (lv > camPos.y - 0.05) continue; // (a surface above the eye shows no reflection from here)
+        if (d < bd) { bd = d; best = lv; }
+        if (Math.abs(lv - mirrorY.value) < 0.01) cur = Math.min(cur, d);
       }
-      if (!any) return;
-      if (full) { x0 = y0 = -1; x1 = y1 = 1; }
-      else { x0 = Math.max(-1, x0 - 0.25); x1 = Math.min(1, x1 + 0.25); y0 = Math.max(-1, y0 - 0.25); y1 = Math.min(1, y1 + 0.25); }
-      if (x1 <= x0 || y1 <= y0) return;
+      if (best === null || bd > 420) { if (!force) return; } // (no water in view, or only far off: no mirror pass)
+      else if (!(cur < bd + 3)) mirrorY.value = best;
     }
+    mirrorPos.set(camPos.x, mirrorY.value, camPos.z); view.subVectors(mirrorPos, camPos);
+    if (view.dot(normal) > 0 && !force) return;
     view.reflect(normal).negate().add(mirrorPos);
     rot.extractRotation(cam.matrixWorld);
     look.set(0, 0, -1).applyMatrix4(rot).add(camPos);
@@ -1317,11 +1328,6 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
     mirrorCam.projectionMatrix.copy(cam.projectionMatrix);
     textureMatrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
     textureMatrix.multiply(mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
-    if (x0 > -1 || x1 < 1 || y0 > -1 || y1 < 1) { // crop: the rectangle's frustum drawn into the same rectangle of the target
-      const sx = 2 / (x1 - x0), sy = 2 / (y1 - y0);
-      _crop.set(sx, 0, 0, -(x0 + x1) / (x1 - x0), 0, sy, 0, -(y0 + y1) / (y1 - y0), 0, 0, 1, 0, 0, 0, 0, 1);
-      mirrorCam.projectionMatrix.premultiply(_crop);
-    }
     const W = reflRT.width, H = reflRT.height, vx = Math.floor((x0 + 1) / 2 * W), vy = Math.floor((y0 + 1) / 2 * H);
     reflRT.viewport.set(vx, vy, Math.ceil((x1 + 1) / 2 * W) - vx, Math.ceil((y1 + 1) / 2 * H) - vy); reflRT.scissor.copy(reflRT.viewport); reflRT.scissorTest = true;
     mirrorPlane.setFromNormalAndCoplanarPoint(normal, mirrorPos).applyMatrix4(mirrorCam.matrixWorldInverse);
@@ -1347,7 +1353,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
   watch(water); water.userData.watchVisibility = watch; // (maps add their ponds and fountains)
   water.userData.resize = () => { const rw = Math.max(256, Math.round(Math.min(innerWidth, 1920) * Q.refl)); reflRT.setSize(rw, Math.round(rw * innerHeight / innerWidth)); };
   water.userData.resize(); onResize(water.userData.resize);
-  water.userData.hide = hide;
+  water.userData.hide = hide; water.userData.reflRT = reflRT; water.userData.mirrorY = mirrorY; // (inspection)
   scene.add(water);
   return water;
 }
@@ -1363,15 +1369,15 @@ export function pondWaterMaterial(hf, normals, { deep = '#173f49', mid = '#2b6a6
   const mat = new THREE.ShaderMaterial({
     transparent: true, fog: true, depthWrite: true, vertexColors: true,
     defines: fixedDepth > 0 ? { FIXED_DEPTH: fixedDepth.toFixed(3) } : {},
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tRefl: { value: null }, tNormal: { value: null }, textureMatrix: { value: new THREE.Matrix4() }, uReflOn: { value: 0 },
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tRefl: { value: null }, tNormal: { value: null }, textureMatrix: { value: new THREE.Matrix4() }, uReflOn: { value: 0 }, uMirrorY: { value: 0 },
       uDeep: { value: new THREE.Color(deep) }, uMid: { value: new THREE.Color(mid) }, uShallow: { value: new THREE.Color(shallow) } }]),
     vertexShader: /* glsl */`
-      uniform mat4 textureMatrix; varying vec4 vMirror; varying vec3 vW; varying vec3 vTint;
+      uniform mat4 textureMatrix; uniform float uMirrorY; varying vec4 vMirror; varying vec3 vW; varying vec3 vTint;
       #include <common>
       #include <fog_pars_vertex>
       void main(){
         vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vTint = color;
-        vMirror = textureMatrix * vec4(wp.x, -wp.y, wp.z, 1.0);
+        vMirror = textureMatrix * vec4(wp.x, 2.0 * uMirrorY - wp.y, wp.z, 1.0); // (mirrored through the plane the image was rendered for)
         vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,
@@ -1398,8 +1404,8 @@ export function pondWaterMaterial(hf, normals, { deep = '#173f49', mid = '#2b6a6
         vec3 sky = mix(uAmb * 1.5 + 0.04, uAmb * 0.85 + vec3(0.02, 0.05, 0.12), clamp(R.y * 1.6, 0.0, 1.0));
         vec3 refl = sky;
         if (uReflOn > 0.5) { vec2 ruv = vMirror.xy / vMirror.w + sn.xz * 0.05;
-          float inR = step(0.001, ruv.x) * step(ruv.x, 0.999) * step(0.001, ruv.y) * step(ruv.y, 0.999); refl = mix(sky, texture2D(tRefl, ruv).rgb, inR); }
-        float cosT = max(dot(eyeDir, sn), 0.0), fres = 0.025 + 0.975 * pow(1.0 - cosT, 5.0);
+          float inR = smoothstep(0.0, 0.035, min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y))); refl = mix(sky, texture2D(tRefl, clamp(ruv, 0.0, 1.0)).rgb, inR); }
+        float cosT = max(dot(eyeDir, sn), 0.0), fres = 0.05 + 0.9 * pow(1.0 - cosT, 3.2);
         float dd = 1.0 - exp(-depth * 1.7);
         vec3 body = mix(uShallow, uMid, smoothstep(0.0, 0.55, dd)); body = mix(body, uDeep, smoothstep(0.45, 1.0, dd));
         body *= vTint * (uAmb * 0.85 + uSunCol * max(uLightDir.y, 0.0) * 0.32 + 0.03);
@@ -1422,7 +1428,7 @@ export function pondWaterMaterial(hf, normals, { deep = '#173f49', mid = '#2b6a6
   Object.assign(mat.uniforms, hf.U, { uTime: S.uTime, uLightDir: S.uLightDir, uSunCol: S.uSunCol, uAmb: S.uAmb });
   mat.uniforms.tNormal.value = normals;
   // take the river's mirror image once it exists
-  mat.userData.linkReflection = water => { mat.uniforms.tRefl.value = water.material.uniforms.tRefl.value; mat.uniforms.textureMatrix.value = water.material.uniforms.textureMatrix.value; mat.uniforms.uReflOn.value = 1; };
+  mat.userData.linkReflection = water => { mat.uniforms.tRefl.value = water.material.uniforms.tRefl.value; mat.uniforms.textureMatrix.value = water.material.uniforms.textureMatrix.value; mat.uniforms.uMirrorY = water.material.uniforms.uMirrorY; mat.uniforms.uReflOn.value = 1; };
   return mat;
 }
 

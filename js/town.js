@@ -1398,7 +1398,7 @@ export async function build(progress, opts = {}) {
   // flush all static geometry
   progress('Merging geometry', 0.82); await tick();
   for (const m of B.flush(MT, { paint: false, stopLegend: false, cycleLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, pondWater: false, fountainWater: false, waterFlow: false, waterFoam: false, turf: false, net: false, lamp: false, chain: false, poly: false }))
-    if (m.material === MT.pondWater || m.material === MT.fountainWater) { m.geometry.computeBoundingBox(); water.userData.regions.push(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld).expandByScalar(0.5)); water.userData.watchVisibility(m); }
+    if (m.material === MT.pondWater || m.material === MT.fountainWater) { m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld), box = bb.clone().expandByScalar(0.5); box.level = bb.max.y; water.userData.regions.push(box); water.userData.watchVisibility(m); }
   Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
   const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg), danchiBenches = flushLandmarks(LBd);
 
@@ -1526,8 +1526,17 @@ export async function build(progress, opts = {}) {
   if (SIM) { trains[0].start(1, 2); trains[1].start(-1, 40); }
 
   flushProps(); // instanced props (core.js)
-  // town geometry, props, vehicles are not reflected by the river (keeps the reflection pass cheap)
-  for (const o of scene.children) if (!reflected.has(o)) o.traverse(c => c.layers.set(1));
+  // Town geometry, props and vehicles are mostly left out of the mirror pass (keeps it cheap) — except the big masonry,
+  // walls and roofs standing by the water: the revetments, bridges, embankments, the lake's terraces and the houses on
+  // the banks, without which the river would mirror only sky beside walls that rise straight out of it. Fine detail
+  // (window frames, rails, props) stays out: below the reflection's resolution it would cost without showing.
+  const nearWater = water.userData.regions.map(b => b.clone().expandByScalar(24)), _sph = new THREE.Sphere();
+  const REFLECT_MATS = new Set(['concrete', 'stone', 'block', 'plain', 'roofTile', 'roofMetal', 'siding', 'plaster', 'stucco', 'tiles', 'wood', 'woodDark', 'metalWall']);
+  for (const o of scene.children) if (!reflected.has(o)) o.traverse(c => {
+    const b = c.userData && c.userData.bucket, g = c.geometry;
+    if (b && REFLECT_MATS.has(b.mat) && !b.lod && g && g.boundingSphere && (_sph.copy(g.boundingSphere).applyMatrix4(c.matrixWorld), nearWater.some(r => r.intersectsSphere(_sph)))) { c.layers.enable(0); c.layers.enable(1); return; }
+    c.layers.set(1);
+  });
 
   // ---------------------------------------------------------------- world data: object ids, the edits in world/town/edits (world/layer.js)
   stopCapture();
