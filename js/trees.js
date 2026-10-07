@@ -611,24 +611,25 @@ const intoEnvelope = (p, c, rx, ry, rz) => { const x = (p.x - c.x) / rx, y = (p.
 // lod 2: eight masses on the limb ends and a plain trunk (same silhouette, a tenth of the triangles).
 export function zelkovaGeo(lod = 0, seed = 29) {
   const rng = mulberry32(seed), hi = lod === 0, far = lod >= 2;
-  const crownC = V(0, 0.66, 0), crownR = 0.46, ENV = [0.47, 0.33, 0.47];
+  const crownC = V(0, 0.6, 0), crownR = 0.46, ENV = [0.47, 0.4, 0.47];
   const la = rng() * TAU, lean = 0.012 + rng() * 0.018, fork = 0.23 + rng() * 0.06, lx = Math.cos(la) * lean, lz = Math.sin(la) * lean;
-  const stem = [{ p: V(0, 0, 0), r: 0.062 }, { p: V(lx * 0.25, 0.05, lz * 0.25), r: 0.05 }, { p: V(lx * 0.7, fork * 0.6, lz * 0.7), r: 0.043 }, { p: V(lx, fork + 0.02, lz), r: 0.038 }];
-  const wood = [trunkGeo(stem, [10, 6, 4][lod])];
-  if (hi) for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + rng() * 0.4, L = 0.08 + rng() * 0.05;   // root flare
-    wood.push(trunkGeo([{ p: V(0, 0.05, 0), r: 0.034 }, { p: V(Math.cos(a) * L * 0.5, 0.014, Math.sin(a) * L * 0.5), r: 0.017 }, { p: V(Math.cos(a) * L, -0.01, Math.sin(a) * L), r: 0.003 }], 5, 6, ROOTED)); }
+  // the trunk runs on up into the fork, thinning, and the limbs grow out of it from well below the fork, as wide as the
+  // trunk there: the bark flows from trunk into limbs without a ledge (a stem ending in a cap with thinner limbs set on
+  // top of it showed as a step all round the fork)
+  const stem = [{ p: V(0, 0, 0), r: 0.056 }, { p: V(lx * 0.25, 0.05, lz * 0.25), r: 0.047 }, { p: V(lx * 0.7, fork * 0.6, lz * 0.7), r: 0.042 }, { p: V(lx, fork - 0.01, lz), r: 0.034 }];
+  const wood = [trunkGeo(stem, [10, 6, 4][lod], 6, { tip: 0.5 })]; // (its end hidden among the limbs' roots)
   const clumps = [], nP = 6 + (rng() < 0.45 ? 1 : 0);
   let az = rng() * TAU;
   for (let i = 0; i < nP; i++) {
     az += TAU / nP * (0.78 + rng() * 0.44);
     const tilt = 0.38 + rng() * 0.3, L = 0.5 + rng() * 0.16, dx = Math.cos(az), dz = Math.sin(az);
-    const base = V(lx, fork - 0.025 + rng() * 0.05, lz);
+    const base = V(lx + dx * 0.004, fork - 0.1 + rng() * 0.02, lz + dz * 0.004), up = base.clone().add(V(dx * 0.012, 0.085, dz * 0.012)); // (its open root end stays inside the trunk)
     const tip = intoEnvelope(base.clone().add(V(dx * Math.sin(tilt) * L * 1.15, Math.cos(tilt) * L, dz * Math.sin(tilt) * L * 1.15)), crownC, ENV[0] * 0.92, ENV[1] * 1.15, ENV[2] * 0.92);
     const ctrl = base.clone().add(V(dx * Math.sin(tilt) * L * 0.3, Math.cos(tilt) * L * 0.72, dz * Math.sin(tilt) * L * 0.3)).add(V((rng() - 0.5) * 0.04, 0, (rng() - 0.5) * 0.04));
-    const pts = bez(base, ctrl, tip, Math.min(0.027, 0.02 + rng() * 0.008), 0.005, far ? 3 : hi ? 7 : 4);
+    const r0 = 0.027 + rng() * 0.004, pts = [{ p: base, r: r0 }, ...bez(up, ctrl, tip, r0 * 0.92, 0.005, far ? 3 : hi ? 7 : 4)]; // (rising out of the trunk first)
     wood.push(trunkGeo(pts, [7, 4, 3][lod], 6, ROOTED));
-    clumps.push({ c: tip.clone().add(V(dx * 0.02, 0.035, dz * 0.02)), R: (far ? 0.17 : 0.125) + rng() * 0.035, s: rng() * 10, sc: V(1.05, 0.76, 1.05) });
-    if (!far) { const F = along(pts, 0.72); clumps.push({ c: F.p.clone().add(V(dx * 0.05, 0.05, dz * 0.05)), R: 0.1 + rng() * 0.03, s: rng() * 10, sc: V(1, 0.8, 1), dark: 0.36 }); } // filling the fan between the limb ends
+    clumps.push({ c: tip.clone().add(V(dx * 0.02, 0.035, dz * 0.02)), R: (far ? 0.17 : 0.125) + rng() * 0.035, s: rng() * 10, sc: V(1.04, 0.9, 1.04) });
+    if (!far) { const F = along(pts, 0.72); clumps.push({ c: F.p.clone().add(V(dx * 0.05, 0.05, dz * 0.05)), R: 0.1 + rng() * 0.03, s: rng() * 10, sc: V(1, 0.9, 1), dark: 0.36 }); } // filling the fan between the limb ends
     if (far) continue;
     const nS = hi ? 3 : 2;
     for (let j = 0; j < nS; j++) {
@@ -637,17 +638,19 @@ export function zelkovaGeo(lod = 0, seed = 29) {
       const send = intoEnvelope(P.p.clone().addScaledVector(sd, sl), crownC, ENV[0], ENV[1], ENV[2]), smid = P.p.clone().lerp(send, 0.5).add(V(0, sl * 0.1, 0));
       const spts = bez(P.p, smid, send, Math.min(P.r * 0.72, 0.012), 0.0025, hi ? 4 : 3);
       wood.push(trunkGeo(spts, hi ? 5 : 3, 6, ROOTED));
-      clumps.push({ c: send.clone().add(V(0, 0.03, 0)), R: 0.098 + rng() * 0.035, s: rng() * 10, sc: V(1, 0.78, 1) });
+      clumps.push({ c: send.clone().add(V(0, 0.03, 0)), R: 0.098 + rng() * 0.035, s: rng() * 10, sc: V(1, 0.9, 1) });
       if (hi) for (const e of [-1, 1]) { // twigs fanning off the branch end, one of them with a small mass
         const tq = along(spts, 0.55 + rng() * 0.2), td = V(Math.cos(saz + e * 0.9) * 0.7, 0.55 + rng() * 0.3, Math.sin(saz + e * 0.9) * 0.7).normalize(), tl = 0.06 + rng() * 0.04;
         const tend = intoEnvelope(tq.p.clone().addScaledVector(td, tl), crownC, ENV[0], ENV[1], ENV[2]);
         wood.push(trunkGeo([{ p: tq.p, r: Math.min(tq.r * 0.7, 0.005) }, { p: tend, r: 0.0015 }], 3, 6, ROOTED));
-        if (e === (j % 2 ? 1 : -1)) clumps.push({ c: tend.clone().add(V(0, 0.02, 0)), R: 0.07 + rng() * 0.03, s: rng() * 10, sc: V(1, 0.8, 1) });
+        if (e === (j % 2 ? 1 : -1)) clumps.push({ c: tend.clone().add(V(0, 0.02, 0)), R: 0.07 + rng() * 0.03, s: rng() * 10, sc: V(1, 0.92, 1) });
       }
     }
   }
   // the crown's top: a few masses over the leaders where the fan closes
-  if (!far) for (let k = 0; k < (hi ? 4 : 2); k++) { const a = rng() * TAU, r = rng() * 0.16; clumps.push({ c: V(Math.cos(a) * r, crownC.y + ENV[1] * (0.62 + rng() * 0.22), Math.sin(a) * r), R: 0.11 + rng() * 0.035, s: rng() * 10, sc: V(1, 0.8, 1) }); }
+  // (a rounded dome, not a flat lid: the masses up there are as tall as they are wide and stand higher in the middle)
+  if (!far) for (let k = 0; k < (hi ? 6 : 3); k++) { const a = k / (hi ? 6 : 3) * TAU + rng() * 0.6, r = k ? 0.1 + rng() * 0.12 : rng() * 0.04;
+    clumps.push({ c: V(Math.cos(a) * r, crownC.y + ENV[1] * (0.86 - r * 1.6 + rng() * 0.08), Math.sin(a) * r), R: 0.11 + rng() * 0.035, s: rng() * 10, sc: V(1, 1, 1) }); }
   const solid = mergeGeometries(clumps.map(k => clumpSolid(k, crownC, crownR, hi && k.R > 0.105 ? 2 : 1)));
   if (far) return { solid, trunk: mergeGeometries(wood) };
   const B = meshBuilder();

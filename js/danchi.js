@@ -423,7 +423,7 @@ export function buildDanchi(ctx) {
         g.lineWidth = 7 * k; for (const hx of [70, 132]) { g.beginPath(); g.arc(hx * k, 158 * k, 21 * k, 0, 7); g.stroke(); }
         g.beginPath(); g.moveTo(70 * k, 158 * k); g.lineTo(100 * k, 158 * k); g.lineTo(92 * k, 124 * k); g.lineTo(70 * k, 158 * k); g.moveTo(100 * k, 158 * k); g.lineTo(124 * k, 124 * k); g.lineTo(92 * k, 124 * k); g.moveTo(124 * k, 124 * k); g.lineTo(132 * k, 158 * k); g.moveTo(124 * k, 124 * k); g.lineTo(120 * k, 112 * k); g.stroke();
         g.lineWidth = 11 * k; g.beginPath(); g.arc(178 * k, 86 * k, 13 * k, 0, 7); g.fill(); g.beginPath(); g.moveTo(178 * k, 106 * k); g.lineTo(178 * k, 150 * k); g.moveTo(178 * k, 116 * k); g.lineTo(160 * k, 140 * k); g.moveTo(178 * k, 116 * k); g.lineTo(196 * k, 140 * k);
-        g.moveTo(178 * k, 150 * k); g.lineTo(164 * k, 190 * k); g.moveTo(178 * k, 150 * k); g.lineTo(192 * k, 190 * k); g.stroke(); }, 0.2, 256);
+        g.moveTo(178 * k, 150 * k); g.lineTo(164 * k, 190 * k); g.moveTo(178 * k, 150 * k); g.lineTo(192 * k, 190 * k); g.stroke(); }, 0.2, 256, { back: 'flat', alpha: 0.5 }); // (a round plate: its grey back is the mesh below)
       if (!signBack) signBack = new THREE.MeshStandardMaterial({ color: 0x9ea2a6, roughness: 0.5, metalness: 0.3, alphaMap: signProto.material.map, alphaTest: 0.5 });
       signsAt.push([x, z]);
       for (const face of [0, Math.PI]) { const m = face ? new THREE.Mesh(signProto.geometry, signBack) : signProto.parent ? signProto.clone() : signProto;
@@ -444,9 +444,14 @@ export function buildDanchi(ctx) {
         for (let s = 18; s < len - 6; s += 40) { if (!ok(s - 1.2) || !ok(s + 1.2)) continue;
           const c = edgePt(n, s, side, W * 0.5), f = side > 0 ? [-c.d[0], -c.d[1]] : [c.d[0], c.d[1]];
           RN.decal(B, 'cycleLegend', [c.x, c.z], f, 0.8, W / 2 - 0.2, { y: yW, road: false, uv01: true, cell: 0.8 }); }
-        // signs at each stretch's start in the direction of travel, and about every 180 m
-        const s0s = []; for (let s = 6; s < len - 6; s += 1) if (ok(s) && !ok(s + side)) s0s.push(s);
-        for (let s = 6; s < len - 6; s += 180) if (ok(s)) s0s.push(s);
+        // A sign only where the shared footway really begins: at the start (in the direction of travel) of a stretch at
+        // least 80 m long, and never within 150 m of the previous one on that side. The blue line and the painted
+        // pictograms carry the route between them; a sign at every driveway and bus-stop break (every ~10 m before) said
+        // nothing the paint did not, and cluttered the footway.
+        const s0s = [], dir = -side, starts = [];
+        for (let s = 6; s < len - 6; s += 1) if (ok(s) && !ok(s + side)) starts.push(s);
+        for (const s0 of starts) { let run = 0; for (let s = s0; s > 6 && s < len - 6 && ok(s) && run < 80; s += dir) run++;
+          if (run >= 80 && !s0s.some(q => Math.abs(q - s0) < 150)) s0s.push(s0); }
         for (const s of s0s) { const e = edgePt(n, s, side, W - 0.3); if (!clear(e.x, e.z, 0.3)) continue;
           if (poles.some(q => Math.hypot(q[0] - e.x, q[1] - e.z) < 1.4) || out.trees.some(t => Math.hypot(t.x - e.x, t.z - e.z) < 1.2)) continue;
           cycleSign(e.x, e.z, Math.atan2(e.d[0], e.d[1]) + (side > 0 ? 0 : Math.PI)); }

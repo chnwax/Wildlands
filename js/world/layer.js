@@ -691,8 +691,11 @@ export class WorldLayer {
         if (!P || !I) continue;
         const near = [];
         for (let t = 0; t < I.length / 3; t++) {
-          let d = Infinity;
-          for (let j = 0; j < 3; j++) { const v = I[t * 3 + j] * 3; d = Math.min(d, Math.hypot(P[v] - rec.origin[0], P[v + 2] - rec.origin[2])); }
+          // distance from the origin to the triangle's footprint (its corners can lie metres away on a long piece — a
+          // 6 m wall has no vertex near its middle)
+          let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+          for (let j = 0; j < 3; j++) { const v = I[t * 3 + j] * 3; x0 = Math.min(x0, P[v]); x1 = Math.max(x1, P[v]); z0 = Math.min(z0, P[v + 2]); z1 = Math.max(z1, P[v + 2]); }
+          const d = Math.hypot(Math.max(x0 - rec.origin[0], 0, rec.origin[0] - x1), Math.max(z0 - rec.origin[2], 0, rec.origin[2] - z1));
           if (d < 2.5) near.push([d, t]);
         }
         near.sort((a, b) => a[0] - b[0]);
