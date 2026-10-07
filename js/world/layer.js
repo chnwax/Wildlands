@@ -178,7 +178,7 @@ export class WorldLayer {
       for (let v = s.v0; v < s.v1; v++) { _v.set(pa[v * 3], pa[v * 3 + 1], pa[v * 3 + 2]); box.expandByPoint(_v); any = true; }
     }
     for (const pid of cap.props) for (const p of props.items[pid].parts) { const g = p.group.geometry; if (!g.boundingBox) g.computeBoundingBox(); box.union(_bb.copy(g.boundingBox).applyMatrix4(p.matrix)); any = true; }
-    for (const o of cap.meshes) { if (!o.geometry) continue; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); o.updateMatrixWorld(); box.union(_bb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld)); any = true; }
+    for (const o0 of cap.meshes) { o0.updateMatrixWorld(); o0.traverse(o => { if (!o.geometry) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); box.union(_bb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld)); any = true; }); }
     return any ? box : null;
   }
   baseMatrix(ent, out = new THREE.Matrix4()) {
@@ -195,7 +195,7 @@ export class WorldLayer {
       for (const s of src.cap.segs) { const pa = s.b.mesh && s.b.mesh.geometry.attributes.position.array; if (!pa) continue;
         for (let v = s.v0; v < s.v1; v++) { _v.set(pa[v * 3], pa[v * 3 + 1], pa[v * 3 + 2]).applyMatrix4(inv); box.expandByPoint(_v); } }
       for (const pid of src.cap.props) for (const p of props.items[pid].parts) { const g = p.group.geometry; if (!g.boundingBox) g.computeBoundingBox(); box.union(wb.copy(g.boundingBox).applyMatrix4(_m.multiplyMatrices(inv, p.matrix))); }
-      for (const o of src.cap.meshes) if (o.geometry) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); o.updateMatrixWorld(); box.union(wb.copy(o.geometry.boundingBox).applyMatrix4(_m.multiplyMatrices(inv, o.matrixWorld))); }
+      for (const o0 of src.cap.meshes) { o0.updateMatrixWorld(); o0.traverse(o => { if (!o.geometry) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); box.union(wb.copy(o.geometry.boundingBox).applyMatrix4(_m.multiplyMatrices(inv, o.matrixWorld))); }); }
     } else if (src && src.kind === 'scatter') for (const p of src.set.lods[0].parts) { const g = p.geometry; if (!g.boundingBox) g.computeBoundingBox(); box.union(g.boundingBox); }
     if (box.isEmpty()) box.set(_v.set(-0.5, 0, -0.5), _v2.set(0.5, 1, 0.5));
     return (ent.lb = box);
@@ -257,8 +257,11 @@ export class WorldLayer {
       for (const o of src.cap.meshes) {
         o.updateMatrixWorld();
         const c = o.clone(); _m.multiplyMatrices(inv, o.matrixWorld).decompose(c.position, c.quaternion, c.scale); c.matrixAutoUpdate = true; c.userData = { ...o.userData, loose: true };
-        group.add(c); parts.push({ mesh: c, slot: null, baseMat: c.material, loose: true });
-        if (collapse) { o.userData.layers0 = o.layers.mask; o.layers.mask = 0; }
+        group.add(c);
+        // (a captured group — a clock head, a model — is drawn by its meshes: each is a part with its own material, and
+        // hiding the original means every mesh in it, as three.js tests layers per object, not per subtree)
+        c.traverse(q => { if (q.isMesh) parts.push({ mesh: q, slot: null, baseMat: q.material, loose: true }); });
+        if (collapse) o.traverse(q => { q.userData.layers0 = q.layers.mask; q.layers.mask = 0; });
       }
     } else if (src.kind === 'scatter') {
       const s = src.set, i = src.i;

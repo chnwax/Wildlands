@@ -2,7 +2,7 @@
 // tested against their own triangles inside those buffers, instanced ones (trees, rocks, bikes) against their part
 // geometry at their instance transform, detached / added ones through their own meshes. The terrain is ray-marched
 // with the world's ground height, so clicks on open ground hit the ground (placement) and nothing behind it.
-import { THREE, camera } from '../core.js';
+import { THREE, camera, props } from '../core.js';
 
 const ray = new THREE.Raycaster(), _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
 const _box = new THREE.Box3(), _hit = new THREE.Vector3(), tmpMesh = new THREE.Mesh();
@@ -44,11 +44,11 @@ export class Picker {
   pick(x, y, opts = {}) { return this.pickAlong(this.setFromClient(x, y).clone(), opts); }
   // nearest object hit by a ray (world space): { id, ent, point, normal, distance } or null
   pickRay(r, ignore = null) { return this.pickAlong(r, { ignore }).hit; }
-  pickAlong(r, { ignore = null } = {}) {
+  pickAlong(r, { ignore = null, details = false } = {}) {
     const gr = this.ground(r), far = gr ? gr[0] + 0.5 : 3000;
     const cands = [];
     for (const ent of this.L.geo) { if (ignore && ignore.has(ent.id)) continue; const b = this.box(ent); const t = r.intersectBox(b, _v) ? _v.distanceTo(r.origin) : (b.containsPoint(r.origin) ? 0 : -1); if (t >= 0 && t < far) cands.push([t, ent]); }
-    for (const ent of this.L.ents.values()) if (ent.kind !== 'geo' && ent.det && !(ignore && ignore.has(ent.id))) { const b = this.box(ent); if (r.intersectBox(b, _v)) { const t = _v.distanceTo(r.origin); if (t < far) cands.push([t, ent]); } }
+    for (const ent of this.L.ents.values()) if ((ent.kind !== 'geo' || ent.detail) && ent.det && !(ignore && ignore.has(ent.id))) { const b = this.box(ent); if (r.intersectBox(b, _v)) { const t = _v.distanceTo(r.origin); if (t < far) cands.push([t, ent]); } }
     // instanced objects: a sphere per item, cached per set
     for (const s of this.L.sets) {
       const S = this.sphereSet(s), n = s.items.length, ox = r.origin.x, oy = r.origin.y, oz = r.origin.z, dx = r.direction.x, dy = r.direction.y, dz = r.direction.z;
@@ -63,6 +63,13 @@ export class Picker {
     }
     cands.sort((a, b) => a[0] - b[0]);
     let best = null;
+    if (details) {
+      // small loose pieces that belong to no object (wheel stops, kerb blocks, little signs...): the nearest merged
+      // triangle under the cursor, if it is not part of an object, becomes a "detail" object of its own
+      ray.ray.copy(r); let dh = null;
+      for (let i = 0; i < this.L.buckets.length; i++) { const m = this.L.buckets[i]; if (!m.visible) continue; const hits = []; m.raycast(ray, hits); if (hits.length && hits[0].distance < far && (!dh || hits[0].distance < dh.distance)) dh = { ...hits[0], mi: i }; }
+      if (dh) { const ent = this.L.detailAt(dh.mi, dh.faceIndex); if (ent && !(ignore && ignore.has(ent.id))) cands.unshift([0, ent]); }
+    }
     for (const [t0, ent] of cands) {
       if (best && t0 > best.distance) break;
       if (!this.visible(ent)) continue;
@@ -101,7 +108,12 @@ export class Picker {
         if (r.intersectTriangle(_a, _b, _c, false, _hit)) { const d = _hit.distanceTo(r.origin); if (!best || d < best.distance) best = { distance: d, point: _hit.clone(), normal: _b.sub(_a).cross(_c.sub(_a)).normalize().clone() }; }
       }
     }
-    for (const o of ent.cap.meshes) { if (!o.geometry || !o.layers.mask) continue; ray.ray.copy(r); const hits = []; o.raycast(ray, hits); if (hits.length && (!best || hits[0].distance < best.distance)) best = { distance: hits[0].distance, point: hits[0].point, normal: null }; }
+    for (const o0 of ent.cap.meshes) o0.traverse(o => { if (!o.geometry || !o.layers.mask) return; o.updateMatrixWorld(); ray.ray.copy(r); const hits = []; o.raycast(ray, hits); if (hits.length && (!best || hits[0].distance < best.distance)) best = { distance: hits[0].distance, point: hits[0].point, normal: null }; }); // (loose meshes, and the meshes of captured groups)
+    // instanced props of the object (sign plates, machine bodies)
+    for (const pid of ent.cap.props) for (const p of props.items[pid].parts) {
+      ray.ray.copy(r); tmpMesh.geometry = p.group.geometry; tmpMesh.material = p.group.material; tmpMesh.matrixWorld.copy(p.matrix); const hits = []; tmpMesh.raycast(ray, hits);
+      if (hits.length && (!best || hits[0].distance < best.distance)) best = { distance: hits[0].distance, point: hits[0].point, normal: null };
+    }
     return best;
   }
   // objects whose centre projects into the screen rectangle [x0,y0]-[x1,y1] (client pixels)

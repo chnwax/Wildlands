@@ -7,7 +7,7 @@
 // long canopy, a taxi rank, a planted bed and a monument. Kerbs are swept along rounded outlines, crossings are raised
 // tables with zebra bars, and tactile paving leads from the ticket hall across to the bus berths.
 import { THREE, scene, clamp, lerp, addBox, addCircle, addPlatform } from './core.js';
-import { canvasTex, signMesh, JP_FONT, lampPoints, bicycles, clockPole } from './townkit.js';
+import { canvasTex, signMesh, JP_FONT, lampPoints, bicycles, clockPole, clockHead } from './townkit.js';
 import { inFrame, wallFill, reveals, windowUnit, doorUnit, hipRoof, flatRoof, acUnit } from './building.js';
 import { entity } from './world/capture.js';
 
@@ -36,22 +36,7 @@ function course(B, x0, x1, y, holes, color) {
   let x = x0;
   for (const [a, b] of [...cut, [x1, x1]]) { if (a > x + 0.05) B.bbox('concrete', (x + a) / 2, y, 0.03, a - x, 0.08, 0.06, 0.012, { color }); x = Math.max(x, b); }
 }
-function clockMesh(r) {
-  const face = canvasTex(256, 256, (g, W, H) => {
-    g.fillStyle = '#fbfbf6'; g.beginPath(); g.arc(W / 2, H / 2, 124, 0, 7); g.fill();
-    g.fillStyle = '#222'; for (let i = 0; i < 60; i++) { const a = i / 60 * TAU, l = i % 5 ? 8 : 22, w = i % 5 ? 3 : 8; g.save(); g.translate(W / 2, H / 2); g.rotate(a); g.fillRect(-w / 2, -112, w, l); g.restore(); }
-    g.lineCap = 'round'; g.strokeStyle = '#222'; g.lineWidth = 11; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 + 46, H / 2 + 34); g.stroke();
-    g.lineWidth = 7; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 - 22, H / 2 - 92); g.stroke();
-    g.strokeStyle = '#c0392b'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(W / 2, H / 2 + 20); g.lineTo(W / 2 + 70, H / 2 - 70); g.stroke();
-  });
-  const grp = new THREE.Group();
-  const d = new THREE.Mesh(new THREE.CircleGeometry(r, 48), new THREE.MeshStandardMaterial({ map: face, roughness: 0.25 }));
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.07, 10, 48), new THREE.MeshStandardMaterial({ color: 0x2c3136, roughness: 0.35, metalness: 0.8 }));
-  const back = new THREE.Mesh(new THREE.CylinderGeometry(r, r, r * 0.16, 48).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3a4046, roughness: 0.5, metalness: 0.6 }));
-  d.position.z = 0.002; back.position.z = -r * 0.08; rim.castShadow = back.castShadow = true;
-  grp.add(back, d, rim);
-  return grp;
-}
+function clockMesh(r) { const g = clockHead(r, { faces: 1, depth: r * 0.3, color: 0x3a4046 }); g.children[0].position.z = r * 0.15; for (const c of g.children.slice(1)) c.position.z += r * 0.15; return g; } // (its back against the wall)
 const posters = [['さくらまつり', '#f7c6d4', '#b8325a'], ['桜川温泉', '#cfe6f2', '#1f5e86'], ['夏まつり', '#fde2a8', '#c24d1a'], ['ハイキング', '#d8efcf', '#2f6e3b']];
 function poster(i, w, h) {
   const [t, bg, fg] = posters[i % posters.length];

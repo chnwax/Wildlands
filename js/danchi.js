@@ -47,7 +47,7 @@ export function danchiGround(x, z, h, Y0) {
 
 // ---------------------------------------------------------------- building the district
 import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle, buildCompound, addCompound } from './core.js';
-import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed } from './townkit.js';
+import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed, clockPole } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
@@ -457,8 +457,8 @@ export function buildDanchi(ctx) {
     const y = gy(x, z); B.frame(x, y, z, yaw);
     B.bbox('stone', 0, -0.3, 0, 6.4, 1.6, 0.7, 0.03, { color: [0.62, 0.6, 0.56] }); B.bbox('stone', 0, 1.3, 0, 6.6, 0.12, 0.8, 0.02, { color: [0.56, 0.54, 0.5] });
     B.box('plain', 0, -0.2, 0.9, 6.2, 0.35, 0.9, { color: [0.3, 0.24, 0.18] }); B.frame(0, 0, 0, 0);
-    const sg = signMesh(5.4, 0.9, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#f1ece0'; g.font = `bold ${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('桜川ニュータウン', W2 / 2, H2 * 0.42); g.font = `${H2 * 0.22}px Arial`; g.fillText('SAKURAGAWA NEW TOWN', W2 / 2, H2 * 0.82); }, 0.35, 512);
-    sg.material.transparent = true; sg.material.alphaTest = 0.3; sg.position.set(...B.frame(x, y, z, yaw).P([0, 0.75, 0.37])); sg.rotation.y = yaw; scene.add(sg); B.frame(0, 0, 0, 0);
+    const sg = signMesh(5.4, 0.9, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#f1ece0'; g.font = `bold ${H2 * 0.5}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('桜川ニュータウン', W2 / 2, H2 * 0.42); g.font = `${H2 * 0.22}px Arial`; g.fillText('SAKURAGAWA NEW TOWN', W2 / 2, H2 * 0.82); }, 0.35, 512, { back: 'flat', alpha: 0.3, transparent: true }); // (letters fixed to the stone)
+    sg.position.set(...B.frame(x, y, z, yaw).P([0, 0.75, 0.37])); sg.rotation.y = yaw; scene.add(sg); B.frame(0, 0, 0, 0);
     for (let k = -2; k <= 2; k++) out.bushes.push({ x: x + Math.cos(yaw) * k * 1.3 + Math.sin(yaw) * 0.9, y: y - 0.05, z: z - Math.sin(yaw) * k * 1.3 + Math.cos(yaw) * 0.9, s: 0.7, sx: 1, r: k, c: new THREE.Color(0.36, 0.56, 0.3) });
     addBox(x, z, 3.2, 0.4, yaw);
   }
@@ -500,8 +500,8 @@ export function buildDanchi(ctx) {
       B.bbox('metal', 0, 1.58, 0.02, 0.74, 0.54, 0.03, 0.006, { color: [0.62, 0.64, 0.66] });                     // back plate
       sg.position.set(...B.P([0, 1.85, -0.001])); sg.rotation.y = yaw + Math.PI; scene.add(sg);
       B.frame(cx, y, cz, yaw); }
-    for (const vp of visitorBays.splice(0)) { const m = signMesh(1.2, 0.5, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#e8eee6'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H2 * 0.8}px ${JP_FONT}`; g.fillText('来客', W2 / 2, H2 * 0.55); }, 0.05, 128);
-      m.material.transparent = true; m.material.alphaTest = 0.4; m.material.roughness = 0.62; m.position.set(vp[0], vp[1] + 0.001, vp[2]); m.rotation.set(-Math.PI / 2, 0, yaw + Math.PI / 2, 'YXZ'); scene.add(m); }
+    for (const vp of visitorBays.splice(0)) { const m = signMesh(1.2, 0.5, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#e8eee6'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H2 * 0.8}px ${JP_FONT}`; g.fillText('来客', W2 / 2, H2 * 0.55); }, 0.05, 128, { back: 'flat', alpha: 0.4, transparent: true, roughness: 0.62 }); // (painted on the bay)
+      m.position.set(vp[0], vp[1] + 0.001, vp[2]); m.rotation.set(-Math.PI / 2, 0, yaw + Math.PI / 2, 'YXZ'); scene.add(m); }
     // driveway apron through the kerb line of the street, and a lamp at the court's far corners
     B.bbox('concrete', 0, -0.1, -len / 2 - 0.8, 6.2, 0.12, 1.6, 0.01, { color: [0.74, 0.74, 0.72], skip: 'ny' });
     B.frame(0, 0, 0, 0);
@@ -817,10 +817,8 @@ export function buildDanchi(ctx) {
   // C8 the centre plaza between the avenue and the shops: pavers, trees in planters, a clock, benches, bike racks
   { plaza(442, 142, 457.5, 192, [0.84, 0.8, 0.74]);
     for (const [x, z] of [[447, 150], [447, 166], [447, 182]]) { tree('zelkova', x, z, 0.6, true); const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 2.2, 0.5, 2.2, 0.03, { color: [0.76, 0.75, 0.72] }); B.box('plain', 0, 0.46, 0, 1.9, 0.04, 1.9, { color: [0.3, 0.24, 0.18] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.1, 0, y - 1, y + 0.55); navRect(x, z, 1.2, 1.2, 0, 2); }
-    const cy = gy(452, 158); B.frame(452, cy + 0.05, 158, 0); B.cyl('steel', 0, 0, 0, 0.09, 0.07, 3.6, 12, { color: [0.24, 0.3, 0.28] }); B.cyl('metal', 0, 3.6, 0, 0.42, 0.42, 0.18, 20, { color: [0.24, 0.3, 0.28], cap: true }); B.frame(0, 0, 0, 0);
-    for (const face of [0, Math.PI]) { const m = signMesh(0.76, 0.76, (g, W2, H2) => { g.fillStyle = '#f4f2ea'; g.beginPath(); g.arc(W2 / 2, H2 / 2, W2 * 0.48, 0, 7); g.fill(); g.strokeStyle = '#222'; g.lineWidth = 4; g.stroke(); g.lineWidth = 6; g.beginPath(); g.moveTo(W2 / 2, H2 / 2); g.lineTo(W2 / 2, H2 * 0.2); g.moveTo(W2 / 2, H2 / 2); g.lineTo(W2 * 0.72, H2 * 0.56); g.stroke(); }, 0.2, 128);
-      m.position.set(452 + Math.sin(face) * 0.1, cy + 3.69, 158 + Math.cos(face) * 0.19); m.rotation.y = face; scene.add(m); }
-    addCircle(452, 158, 0.15);
+    clockPole(B, 452, gy(452, 158) + 0.05, 158, Math.PI / 2);
+
     for (const [x, z, r] of [[451, 172, Math.PI / 2], [451, 144, Math.PI / 2], [453, 187, Math.PI / 2]]) benchAt(x, z, r); }
   // bus stops on F at the centre, both directions
   for (const [x, z, yaw] of BUS) ctx.busStop(B, x, gy(x, z), z, yaw); B.frame(0, 0, 0, 0);

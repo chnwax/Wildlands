@@ -3,7 +3,7 @@
 // drying racks, mailboxes, rooftop tanks, and people walking the streets (instanced, animated in the vertex shader).
 import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle, addPlatform } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { canvasTex, signMesh, JP_FONT, lampPoints, materials } from './townkit.js';
+import { canvasTex, signMesh, JP_FONT, lampPoints, materials, clockHead } from './townkit.js';
 import { wallFill, reveals, windowUnit, inFrame } from './building.js';
 import { cropSet } from './crops.js';
 import { crowdMeshes } from './crowd.js';
@@ -423,19 +423,8 @@ function playground_build(B, x, y, z, r, W, D, rng, trees, extras, lampPts = nul
 const circ = (rad, n) => Array.from({ length: n }, (_, i) => [Math.cos(i / n * Math.PI * 2) * rad, Math.sin(i / n * Math.PI * 2) * rad]);
 
 // ---------------------------------------------------------------- elementary school (local +Z faces the entrance road)
-let clockMat = null;
-function schoolClock(x, y, z, r) {
-  if (!clockMat) {
-    const t = canvasTex(256, 256, (g, W, H) => {
-      g.fillStyle = '#fbfaf2'; g.beginPath(); g.arc(W / 2, H / 2, 120, 0, 7); g.fill(); g.strokeStyle = '#2f3a48'; g.lineWidth = 10; g.stroke();
-      g.fillStyle = '#2f3a48'; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g.fillRect(W / 2 + Math.sin(a) * 96 - 4, H / 2 - Math.cos(a) * 96 - 10, 8, 20); }
-      g.lineCap = 'round'; g.lineWidth = 10; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 + 40, H / 2 - 50); g.stroke();
-      g.lineWidth = 6; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 - 10, H / 2 - 90); g.stroke();
-    });
-    clockMat = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5 });
-  }
-  const m = new THREE.Mesh(new THREE.CircleGeometry(1.1, 32), clockMat);
-  m.position.set(x, y, z); m.rotation.y = r; scene.add(m);
+function schoolClock(x, y, z, r) { // a wall clock on the school's front, its case standing proud of the plaster
+  const m = clockHead(1.0, { faces: 1, depth: 0.22, color: 0x34495a, rim: 0xd8d6cf }); m.position.set(x + Math.sin(r) * 0.11, y, z + Math.cos(r) * 0.11); m.rotation.y = r; scene.add(m);
 }
 function school_build(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   chainMaterial();
@@ -513,8 +502,7 @@ function school_build(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
       const np = B.P([0.6, RY + 0.2, bd / 2 + RD - 0.2 + 0.011]); nm.position.set(...np); nm.rotation.y = r; scene.add(nm);
       const cr = signMesh(0.62, 0.62, (g, W, Hh) => { g.clearRect(0, 0, W, Hh); g.save(); g.translate(W / 2, Hh / 2);
         for (let k = 0; k < 5; k++) { g.rotate(Math.PI * 2 / 5); g.fillStyle = '#e8a6b8'; g.beginPath(); g.ellipse(0, -W * 0.25, W * 0.15, W * 0.22, 0, 0, Math.PI * 2); g.fill(); }
-        g.fillStyle = '#f7f1e4'; g.beginPath(); g.arc(0, 0, W * 0.16, 0, Math.PI * 2); g.fill(); g.fillStyle = '#6b5a3a'; g.font = `bold ${W * 0.2}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('桜', 0, W * 0.01); g.restore(); }, 0.3, 128);
-      cr.material.transparent = false; cr.material.alphaTest = 0.5;
+        g.fillStyle = '#f7f1e4'; g.beginPath(); g.arc(0, 0, W * 0.16, 0, Math.PI * 2); g.fill(); g.fillStyle = '#6b5a3a'; g.font = `bold ${W * 0.2}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('桜', 0, W * 0.01); g.restore(); }, 0.3, 128, { back: 'flat', alpha: 0.5 }); // (the crest fixed to the fascia)
       const cp2 = B.P([-PW / 2 + 0.2, RY + 0.2, bd / 2 + RD - 0.2 + 0.012]); cr.position.set(...cp2); cr.rotation.y = r; scene.add(cr); }
     // brick planters with flowers either side of the steps
     for (const [cx, w2] of [[-6.3, 2.4], [6.5, 2.0]]) {

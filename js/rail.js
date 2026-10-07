@@ -396,9 +396,8 @@ export function trackside(B, groundAt, y0, { gaps = [], crossX = [], x0 = -600, 
     if (!free(x, 2)) continue;
     const g = groundAt(x, z);
     B.frame(0, 0, 0, 0); B.cyl('steel', x, g - 0.2, z, 0.04, 0.04, 2.4, 8, { color: [0.8, 0.8, 0.78] });
-    const sb = signMesh(0.5, 0.36, (c, w, hh) => { c.fillStyle = '#f7d21a'; c.fillRect(0, 0, w, hh); c.fillStyle = '#111'; c.font = `bold ${hh * 0.7}px Arial`; c.textAlign = 'center'; c.fillText('45', w / 2, hh * 0.78); }, 0.2);
+    const sb = signMesh(0.5, 0.36, (c, w, hh) => { c.fillStyle = '#f7d21a'; c.fillRect(0, 0, w, hh); c.fillStyle = '#111'; c.font = `bold ${hh * 0.7}px Arial`; c.textAlign = 'center'; c.fillText('45', w / 2, hh * 0.78); }, 0.2, 256, { back: 'both' }); // (one double-faced plate, read from trains both ways)
     sb.position.set(x, g + 2.0, z); sb.rotation.y = face; scene.add(sb);
-    const sb2 = sb.clone(); sb2.rotation.y = face + Math.PI; sb2.position.x += face > 0 ? -0.01 : 0.01; scene.add(sb2);
   }
   // ATS beacons (地上子): yellow boxes on the sleepers between the rails, ahead of the station signals
   for (const [x, tz] of [[stationX - platformLen / 2 - 30, RAIL.z[1]], [stationX - platformLen / 2 - 90, RAIL.z[1]], [stationX + platformLen / 2 + 30, RAIL.z[0]], [stationX + platformLen / 2 + 90, RAIL.z[0]]]) {

@@ -356,15 +356,35 @@ function fitText(g, text, x, y, maxW, size, font = JP_FONT, weight = 'bold') {
   while (g.measureText(text).width > maxW && s > 8) { s -= 2; g.font = `${weight} ${s}px ${font}`; }
   g.fillText(text, x, y);
 }
-// a lit sign mesh (canvas texture), glowing at night
-export function signMesh(w, h, draw, glow = 0.8, px = 256) {
-  const t = canvasTex(Math.round(px * w / h), px, draw);
-  // Freestanding shop, platform, park and information panels are physical boards, not infinitely thin one-sided cards.
-  // A shallow slab supplies separate outward-facing front/back surfaces and visible edges without globally disabling
-  // back-face culling. Dedicated road signs still use their own shaped front plus modelled grey backing.
-  const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0 });
+// A lit sign (canvas texture, glowing at night) as the physical thing it is, centred on its own origin, front +z:
+//   back 'panel' (default) a board: the design on the front, a plain painted back and edges (opts.backColor)
+//        'both'   a double-faced board: the design readable from either side, painted edges
+//        'cut'    cut-out lettering (opts.alpha): the letters seen from behind are their mirrored backs, no edges
+//        'flat'   a single face for things painted or stuck flush on a surface (road markings, wall lettering)
+// One material, one geometry: the back and edges sample a strip of solid paint below the design on the same canvas, so
+// a sign stays a single draw and can be instanced (pole ads) like any other prop.
+export function signMesh(w, h, draw, glow = 0.8, px = 256, opts = {}) {
+  const kind = opts.back || 'panel', d = opts.depth ?? Math.min(0.035, Math.max(0.014, Math.min(w, h) * 0.035));
+  const S = kind === 'panel' || kind === 'both' ? Math.max(8, Math.round(px / 16)) : 0, vs = S / (px + S), sv = vs / 2;
+  const t = canvasTex(Math.round(px * w / h), px + S, (g, cw) => { draw(g, cw, px); if (S) { g.fillStyle = opts.backColor || '#5f6263'; g.fillRect(0, px, cw, S); } });
+  const m = new THREE.MeshStandardMaterial({ map: t, roughness: opts.roughness ?? 0.5, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0 });
+  if (opts.alpha) { m.alphaTest = opts.alpha; m.transparent = !!opts.transparent; }
   m.userData.glow = glow; glowMats.push(m);
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, Math.min(0.035, Math.max(0.014, Math.min(w, h) * 0.035))), m);
+  const P = [], N = [], U = [], I = [], hw = w / 2, hh = h / 2, hd = kind === 'flat' ? 0 : d / 2;
+  const quad = (a, b, c, e, n, uv) => { const o = P.length / 3; P.push(...a, ...b, ...c, ...e); for (let k = 0; k < 4; k++) N.push(...n); U.push(...uv); I.push(o, o + 1, o + 2, o, o + 2, o + 3); };
+  const design = (u0, u1) => [u0, vs, u1, vs, u1, 1, u0, 1], paint = [0.5, sv, 0.5, sv, 0.5, sv, 0.5, sv];
+  quad([-hw, -hh, hd], [hw, -hh, hd], [hw, hh, hd], [-hw, hh, hd], [0, 0, 1], design(0, 1));                                   // front
+  if (kind !== 'flat') quad([hw, -hh, -hd], [-hw, -hh, -hd], [-hw, hh, -hd], [hw, hh, -hd], [0, 0, -1], kind === 'both' ? design(0, 1) : kind === 'cut' ? design(1, 0) : paint);
+  if (kind === 'panel' || kind === 'both') {
+    quad([hw, -hh, hd], [hw, -hh, -hd], [hw, hh, -hd], [hw, hh, hd], [1, 0, 0], paint);
+    quad([-hw, -hh, -hd], [-hw, -hh, hd], [-hw, hh, hd], [-hw, hh, -hd], [-1, 0, 0], paint);
+    quad([-hw, hh, hd], [hw, hh, hd], [hw, hh, -hd], [-hw, hh, -hd], [0, 1, 0], paint);
+    quad([-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd], [-hw, -hh, hd], [0, -1, 0], paint);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  g.setIndex(I); g.computeBoundingSphere();
+  const mesh = new THREE.Mesh(g, m);
   mesh.castShadow = false; mesh.receiveShadow = true;
   return mesh;
 }
@@ -569,7 +589,7 @@ const mirrorRim = new THREE.TorusGeometry(0.425, 0.04, 8, 36).scale(1, 1, 1.8);
 const mirrorVisorMat = new THREE.MeshStandardMaterial({ color: 0xf07818, roughness: 0.45, side: THREE.DoubleSide });
 // rain visor: an arc over the top of the rim (after rotateX(90) the cylinder's angle PI points up)
 const mirrorVisor = new THREE.CylinderGeometry(0.47, 0.47, 0.16, 24, 1, true, Math.PI * 0.6, Math.PI * 0.8);
-const mirrorPlate = new THREE.PlaneGeometry(0.16, 0.06), mirrorTab = new THREE.BoxGeometry(0.05, 0.12, 0.03), mirrorPlateMat = new THREE.MeshStandardMaterial({ color: 0xf4f4ee, roughness: 0.6 });
+const mirrorPlate = new THREE.BoxGeometry(0.16, 0.06, 0.008), mirrorTab = new THREE.BoxGeometry(0.05, 0.12, 0.03), mirrorPlateMat = new THREE.MeshStandardMaterial({ color: 0xf4f4ee, roughness: 0.6 });
 
 function curveMirror_build(B, x, y, z, r, heads = 1) {
   B.frame(x, y, z, r);
@@ -735,6 +755,9 @@ export function chochin(B, x, y, z, col = [1, 0.3, 0.2], s = 1) {
   B.cyl('lamp', x, y + 0.12 * s, z, 0.19 * s, 0.19 * s, 0.24 * s, 10, { color: col });
   B.cyl('lamp', x, y, z, 0.11 * s, 0.19 * s, 0.12 * s, 10, { color: col });
   B.cyl('dark', x, y - 0.04 * s, z, 0.1 * s, 0.1 * s, 0.05 * s, 8);
+  // the bottom ring's wooden base, seen from below (the lantern is a closed body, not an open shell)
+  for (let i = 0; i < 8; i++) { const a0 = i / 8 * Math.PI * 2, a1 = (i + 1) / 8 * Math.PI * 2, r = 0.1 * s;
+    B.poly('dark', [[x, y - 0.04 * s, z], [x + Math.cos(a0) * r, y - 0.04 * s, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, y - 0.04 * s, z + Math.sin(a1) * r]], [0, -1, 0]); }
 }
 // ---------------------------------------------------------------- bicycles (mamachari with front basket), instanced
 const bikeGeo = [];
@@ -809,19 +832,46 @@ export function bicycles(list, rng) { // list: [{x,y,z,r}]
   withScatterMeta({ prefab: 'bicycle', category: 'vehicle' }, () => new Scatter(items, [{ dist: () => 30 * (Q.lodScale || 1), parts: parts(0) }, { dist: () => Infinity, parts: parts(1) }], 128));
   return items;
 }
-function clockPole_build(B, x, y, z) {
-  B.frame(x, y, z, 0);
-  B.cyl('metal', 0, 0, 0, 0.07, 0.06, 3.6, 8, { color: [0.3, 0.32, 0.33] });
-  const face = canvasTex(256, 256, (g, W, H) => {
-    g.fillStyle = '#fbfbf6'; g.beginPath(); g.arc(W / 2, H / 2, 120, 0, 7); g.fill(); g.strokeStyle = '#333'; g.lineWidth = 8; g.stroke();
-    g.fillStyle = '#222'; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g.fillRect(W / 2 + Math.sin(a) * 100 - 4, H / 2 - Math.cos(a) * 100 - 10, 8, 20); }
-    g.lineCap = 'round'; g.lineWidth = 9; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 + 50, H / 2 + 30); g.stroke();
-    g.lineWidth = 6; g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 - 20, H / 2 - 88); g.stroke();
-  });
-  const m = new THREE.MeshStandardMaterial({ map: face, transparent: true, alphaTest: 0.5, roughness: 0.3, side: THREE.DoubleSide });
-  const d = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), m); d.position.set(x, y + 3.9, z); scene.add(d);
-  const d2 = d.clone(); d2.rotation.y = Math.PI; d2.position.z -= 0.02; scene.add(d2);
-  addCircle(x, z, 0.12);
+// A clock as a whole object: a round painted-metal case, a bezel round each dial, and one dial (on a wall) or two
+// (hanging or on a post, back to back), the dials softly lit at night. Centred on its own origin, dial(s) along +z (and
+// -z). The dial: a cream face, minute and hour marks, numerals at the quarters, dark hands at ten past ten.
+const clockDial = canvasTex(512, 512, (g, W, H) => {
+  const c = W / 2; g.fillStyle = '#fbf8ee'; g.beginPath(); g.arc(c, c, c - 2, 0, 7); g.fill();
+  const rg = g.createRadialGradient(c, c, c * 0.55, c, c, c); rg.addColorStop(0, 'rgba(0,0,0,0)'); rg.addColorStop(1, 'rgba(120,110,90,0.18)'); g.fillStyle = rg; g.fill();
+  g.fillStyle = '#2a2b2e';
+  for (let i = 0; i < 60; i++) { const a = i / 60 * Math.PI * 2, l = i % 5 ? 14 : 38, w = i % 5 ? 4 : 13; g.save(); g.translate(c, c); g.rotate(a); g.fillRect(-w / 2, -c + 22, w, l); g.restore(); }
+  g.font = `bold ${W * 0.12}px Arial`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  [['12', 0], ['3', 1], ['6', 2], ['9', 3]].forEach(([t, k]) => { const a = k * Math.PI / 2; g.fillText(t, c + Math.sin(a) * c * 0.63, c - Math.cos(a) * c * 0.63 + 4); });
+  const hand = (a, len, w) => { g.save(); g.translate(c, c); g.rotate(a); g.beginPath(); g.moveTo(-w / 2, len * 0.18); g.lineTo(-w * 0.35, -len); g.lineTo(w * 0.35, -len); g.lineTo(w / 2, len * 0.18); g.closePath(); g.fill(); g.restore(); };
+  hand((10 + 10 / 60) / 12 * Math.PI * 2, c * 0.5, 22); hand(10 / 60 * Math.PI * 2, c * 0.76, 14);
+  g.fillStyle = '#c0392b'; g.save(); g.translate(c, c); g.rotate(0.6); g.fillRect(-2.5, -c * 0.8, 5, c * 0.98); g.restore();
+  g.fillStyle = '#2a2b2e'; g.beginPath(); g.arc(c, c, 14, 0, 7); g.fill();
+});
+let clockFaceMat = null;
+const clockMats = {};
+export function clockHead(r, { faces = 2, depth = r * 0.34, color = 0x2f3a36, rim = 0x8a8f8c } = {}) {
+  if (!clockFaceMat) { clockFaceMat = new THREE.MeshStandardMaterial({ map: clockDial, roughness: 0.35, emissive: 0xffffff, emissiveMap: clockDial, emissiveIntensity: 0 }); clockFaceMat.userData.glow = 0.35; glowMats.push(clockFaceMat); }
+  const key = color + '|' + rim;
+  const M = clockMats[key] || (clockMats[key] = { body: new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.35 }), rim: new THREE.MeshStandardMaterial({ color: rim, roughness: 0.32, metalness: 0.7 }) });
+  const grp = new THREE.Group(), hd = depth / 2;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.06, r * 1.06, depth, 48).rotateX(Math.PI / 2), M.body); body.castShadow = true; grp.add(body);
+  for (const s of faces === 2 ? [1, -1] : [1]) {
+    const bz = new THREE.Mesh(new THREE.TorusGeometry(r * 1.04, r * 0.06, 10, 48), M.rim); bz.position.z = s * hd; grp.add(bz);
+    const d = new THREE.Mesh(new THREE.CircleGeometry(r * 0.99, 48), clockFaceMat); d.position.z = s * (hd + 0.003); if (s < 0) d.rotation.y = Math.PI; grp.add(d);
+  }
+  return grp;
+}
+// a post clock (時計塔 of a station square or a park): a tapered post on a base, a bracket collar and a double-faced
+// round clock on top, a small finial
+function clockPole_build(B, x, y, z, r = 0) {
+  B.frame(x, y, z, r);
+  B.cyl('concrete', 0, -0.1, 0, 0.26, 0.24, 0.32, 16, { color: [0.72, 0.71, 0.68], cap: true });
+  B.cyl('metal', 0, 0.2, 0, 0.085, 0.065, 3.35, 12, { color: [0.18, 0.24, 0.22] });
+  B.cyl('metal', 0, 0.2, 0, 0.11, 0.1, 0.24, 12, { color: [0.18, 0.24, 0.22], cap: true });
+  B.cyl('metal', 0, 3.5, 0, 0.09, 0.12, 0.14, 12, { color: [0.18, 0.24, 0.22], cap: true });
+  B.cyl('metal', 0, 4.54, 0, 0.04, 0.01, 0.16, 8, { color: [0.18, 0.24, 0.22], cap: true });
+  const h = clockHead(0.42, { faces: 2, color: 0x2b3532 }); h.position.set(...B.P([0, 4.04, 0])); h.rotation.y = r; scene.add(h);
+  addCircle(x, z, 0.14);
 }
 
 // A storage shed in the current frame, standing on local y = 0 with its doors facing local +z. Returns its collision half
@@ -913,4 +963,4 @@ export const utilityPole = placeable('utility_pole', utilityPole_build, atXYZR);
 export const curveMirror = placeable('curve_mirror', curveMirror_build, atXYZR);
 export const roadSign = placeable((B, x, y, z, r, kind) => 'road_sign_' + kind, roadSign_build, atXYZR);
 export const signalMast = placeable('traffic_signal', signalMast_build, atXYZR);
-export const clockPole = placeable('clock_pole', clockPole_build, (B, x, y, z) => [x, y, z, 0]);
+export const clockPole = placeable('clock_pole', clockPole_build, (B, x, y, z, r = 0) => [x, y, z, r]);

@@ -42,14 +42,13 @@ function floorBands(B, x0, x1, ys, color, dz = 0.07) { if (x1 - x0 < 0.3) return
 function panel(B, x0, x1, y0, y1, color, dz = 0.06) { if (x1 - x0 < 0.2 || y1 - y0 < 0.2) return; B.bbox('tiles', (x0 + x1) / 2, y0, dz / 2, x1 - x0, y1 - y0, dz, 0.012, { color, uv: 2.5 }); }
 
 // a sign plate (canvas) on a face: text lines centred
-function plate(B, lx, ly, lz, face, w, h, draw, glow = 0.1, px = 256) {
-  const m = signMesh(w, h, draw, glow, px); m.position.set(...B.P([lx, ly, lz])); m.rotation.y = B.F.r + face; scene.add(m); return m;
+function plate(B, lx, ly, lz, face, w, h, draw, glow = 0.1, px = 256, opts) {
+  const m = signMesh(w, h, draw, glow, px, opts); m.position.set(...B.P([lx, ly, lz])); m.rotation.y = B.F.r + face; scene.add(m); return m;
 }
 // block number painted high on a gable (号棟), facing +z of the current frame
 function blockNumber(B, lx, ly, lz, face, n, color = '#5d5750') {
   const m = plate(B, lx, ly, lz, face, 3.0, 3.0, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = `bold ${H2 * 0.6}px Arial`; g.fillText(String(n), W2 / 2, H2 * 0.4); g.font = `bold ${H2 * 0.2}px ${JP_FONT}`; g.fillText('号棟', W2 / 2, H2 * 0.84); }, 0.05);
-  m.material.transparent = true; m.material.alphaTest = 0.3;
+    g.font = `bold ${H2 * 0.6}px Arial`; g.fillText(String(n), W2 / 2, H2 * 0.4); g.font = `bold ${H2 * 0.2}px ${JP_FONT}`; g.fillText('号棟', W2 / 2, H2 * 0.84); }, 0.05, 256, { back: 'flat', alpha: 0.3, transparent: true }); // (painted on the gable)
 }
 // one straight guard between two points of the current frame (ax, az) -> (bx, bz) on a floor at fy, its outer face to
 // the left of the direction of travel (so a run walked wall -> front -> along -> front -> wall faces outward all round).
@@ -808,7 +807,7 @@ function cornerBlock_build(B, s, rng, ex) {
   for (const fr of [0, Math.PI / 2]) inFrame(B, [Math.sin(fr) * C, 0, Math.cos(fr) * C], fr, () => { for (const h of upper) windowUnit(B, h, { rng, frame: [0.3, 0.3, 0.32], type: 'slide' }); });
   const roofY = flatRoof(B, { w: 2 * C, d: 2 * C, y: H, para: 1.2, color: wall, wallMat: 'tiles', coping: pal.trim });
   B.bbox('concrete', -C - 0.02, H - 0.2, -C - 0.02, 0.6, 1.5, 0.6, 0.02, { color: acc });                                   // the corner's accent pier head
-  plate(B, 0, H + 0.5, -C - 0.05, Math.PI, 5.0, 0.7, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#3a4550'; g.font = `bold ${H2 * 0.6}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, W2 / 2, H2 * 0.55); }, 0.6, 512).material.transparent = true;
+  plate(B, 0, H + 0.5, -C - 0.05, Math.PI, 5.0, 0.7, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#3a4550'; g.font = `bold ${H2 * 0.6}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, W2 / 2, H2 * 0.55); }, 0.6, 512, { back: 'flat', alpha: 0.3, transparent: true }); // (lettering on the parapet)
   B.bbox('metal', C / 2, roofY, C / 2, 2.4, 2.0, 2.4, 0.03, { color: [0.86, 0.86, 0.83] });
   ex.push({ t: 'box', p: B.P([0, 0, 0]), hx: C + 0.2, hz: C + 0.2, r, h: H + 1 });
   for (const e of out.lamps) lampPoints.push(e);
