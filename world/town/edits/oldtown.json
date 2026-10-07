@@ -81,6 +81,34 @@
       "origin": [-363.563, 5.962, 232.532]
     },
     {
+      "id": "house_oldtown_084",
+      "slots": {
+        "wood#0": { "offset": [-0.0113, -3.1275, -0.1191] }
+      },
+      "origin": [-196.429, 5.947, -111.518]
+    },
+    {
+      "id": "house_oldtown_087",
+      "slots": {
+        "wood#0": { "offset": [0.0059, -3.3028, -0.1179] }
+      },
+      "origin": [-164.103, 5.935, -111.69]
+    },
+    {
+      "id": "house_oldtown_088",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-142.045, 5.918, -112.434]
+    },
+    {
+      "id": "house_oldtown_091",
+      "slots": {
+        "wood#0": { "hidden": true, "offset": [0.014, 0, -0.154] }
+      },
+      "origin": [-94.352, 5.966, -111.844]
+    },
+    {
       "id": "house_oldtown_147",
       "slots": {
         "wood#0": { "offset": [0, -3.5191, -0.1185] }

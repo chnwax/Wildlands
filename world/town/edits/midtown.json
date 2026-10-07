@@ -5,11 +5,64 @@
   "area": "midtown",
   "objects": [
     {
+      "id": "detail_m785_t360",
+      "deleted": true,
+      "origin": [-67.28, 7.202, -85.9]
+    },
+    {
+      "id": "hedge_midtown_056",
+      "position": [-130.67, 5.963, -50.951],
+      "origin": [-130.67, 5.963, -51.077]
+    },
+    {
+      "id": "hedge_midtown_057",
+      "position": [-131.583, 5.96, -50.945],
+      "origin": [-131.583, 5.96, -51.1]
+    },
+    {
+      "id": "hedge_midtown_058",
+      "position": [-132.496, 5.957, -50.92],
+      "origin": [-132.496, 5.957, -51.123]
+    },
+    {
+      "id": "hedge_midtown_059",
+      "position": [-133.409, 5.954, -50.907],
+      "origin": [-133.409, 5.954, -51.145]
+    },
+    {
       "id": "house_midtown_002",
       "slots": {
         "wood#0": { "hidden": true }
       },
       "origin": [33.264, 6.067, -242.317]
+    },
+    {
+      "id": "house_midtown_010",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-204.291, 5.91, -62.279]
+    },
+    {
+      "id": "house_midtown_011",
+      "slots": {
+        "wood#0": { "offset": [0.0059, -3.2881, -0.1174] }
+      },
+      "origin": [-231.845, 5.944, -44.023]
+    },
+    {
+      "id": "house_midtown_013",
+      "slots": {
+        "wood#0": { "offset": [0.0058, -3.22, -0.1165] }
+      },
+      "origin": [-203.104, 5.966, -45.812]
+    },
+    {
+      "id": "house_midtown_019",
+      "slots": {
+        "wood#0": { "offset": [-4.2331, -2.2817, -0.1189] }
+      },
+      "origin": [-133.881, 6.03, -44.983]
     },
     {
       "id": "house_midtown_026",
@@ -62,6 +115,13 @@
       "origin": [-132.638, 6.109, 20.319]
     },
     {
+      "id": "house_midtown_046",
+      "slots": {
+        "wood#0": { "offset": [-5.0685, -3.1984, -0.1328] }
+      },
+      "origin": [-236.495, 5.937, -97.927]
+    },
+    {
       "id": "house_midtown_059",
       "slots": {
         "wood": { "offset": [-0.0067, -3.5367, -0.1291] }
@@ -81,6 +141,14 @@
         "wood#0": { "offset": [0, -3.5392, -0.1155] }
       },
       "origin": [138.442, 6.053, -247.263]
+    },
+    {
+      "id": "house_midtown_083",
+      "slots": {
+        "plain#2": { "hidden": true },
+        "plain#3": { "hidden": true }
+      },
+      "origin": [123.623, 6.019, -135.467]
     },
     {
       "id": "house_midtown_086",
@@ -137,6 +205,32 @@
         "wood": { "hidden": true }
       },
       "origin": [77.51, 6.019, -249.727]
+    },
+    {
+      "id": "mailbox_midtown_008",
+      "position": [-132.77, 5.973, -57.801],
+      "origin": [-133.442, 5.973, -57.801]
+    },
+    {
+      "id": "tree_broadleaf_midtown_057",
+      "position": [-131.252, 5.865, -50.244],
+      "origin": [-131.252, 5.865, -50.366]
+    },
+    {
+      "id": "tree_japanese_pine_midtown_010",
+      "position": [118.566, 6.03, -134.232],
+      "origin": [117.704, 5.88, -138.544]
+    },
+    {
+      "id": "tree_japanese_pine_midtown_017",
+      "position": [118.022, 5.932, -260.125],
+      "origin": [119.64, 5.932, -264.87]
+    },
+    {
+      "id": "tree_japanese_pine_midtown_019",
+      "position": [117.302, 5.82, -109.582],
+      "rotation": [1.09, 9.42, 0.57],
+      "origin": [118.042, 5.82, -112.977]
     },
     {
       "id": "tree_sakura_midtown_018",
