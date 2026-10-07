@@ -359,9 +359,12 @@ function fitText(g, text, x, y, maxW, size, font = JP_FONT, weight = 'bold') {
 // a lit sign mesh (canvas texture), glowing at night
 export function signMesh(w, h, draw, glow = 0.8, px = 256) {
   const t = canvasTex(Math.round(px * w / h), px, draw);
+  // Freestanding shop, platform, park and information panels are physical boards, not infinitely thin one-sided cards.
+  // A shallow slab supplies separate outward-facing front/back surfaces and visible edges without globally disabling
+  // back-face culling. Dedicated road signs still use their own shaped front plus modelled grey backing.
   const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0 });
   m.userData.glow = glow; glowMats.push(m);
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, Math.min(0.035, Math.max(0.014, Math.min(w, h) * 0.035))), m);
   mesh.castShadow = false; mesh.receiveShadow = true;
   return mesh;
 }
@@ -819,6 +822,89 @@ function clockPole_build(B, x, y, z) {
   const d = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), m); d.position.set(x, y + 3.9, z); scene.add(d);
   const d2 = d.clone(); d2.rotation.y = Math.PI; d2.position.z -= 0.02; scene.add(d2);
   addCircle(x, z, 0.12);
+}
+
+// A storage shed in the current frame, standing on local y = 0 with its doors facing local +z. Returns its collision half
+// extents { hx, hz } (local x, z).
+//   style 'steel': the Japanese steel 物置 — a concrete pad, painted box-profile walls with pale corner trims, two
+//     sliding doors on top and bottom tracks with recessed pulls, a mono-pitch roof falling to the back with fascias, a
+//     gutter and downspout, a louvred vent in one side.
+//   style 'wood': a timber garden shed — on block piers, board-and-batten walls, a ledged-and-braced plank door with
+//     strap hinges in the front gable, a four-pane side window, a gable roof with barge boards and a ridge board.
+export function storageShed(B, { w = 2.2, d = 1.4, h = 2.0, style = 'steel', wall = [0.55, 0.62, 0.52], trim = [0.86, 0.85, 0.8], roof = [0.42, 0.44, 0.46], door = null, pad = true, window = true } = {}) {
+  const sh = (c, k) => [c[0] * k, c[1] * k, c[2] * k], D = [0.14, 0.14, 0.15];
+  if (style === 'steel') {
+    const F = pad ? 0.08 : 0.02, hF = h, hB = h - 0.18, dc = door || sh(wall, 1.1);
+    if (pad) B.bbox('concrete', 0, -0.25, 0, w + 0.3, 0.33, d + 0.3, 0.02, { color: [0.72, 0.71, 0.68], skip: 'ny' });
+    else for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.box('block', sx * (w / 2 - 0.1), -0.1, sz * (d / 2 - 0.1), 0.19, 0.12, 0.39, { color: [0.7, 0.7, 0.68] });
+    B.box('metalWall', 0, F, -d / 2 + 0.02, w, hB, 0.04, { color: wall, uv: 1.2 });
+    for (const s of [-1, 1]) {
+      B.box('metalWall', s * (w / 2 - 0.02), F, 0, 0.04, hB, d, { color: wall, uv: 1.2 });
+      B.poly('metalWall', [[s * w / 2, F + hB, d / 2], [s * w / 2, F + hB, -d / 2], [s * w / 2, F + hF, d / 2]], [s, 0, 0], { color: wall, uv: 1.2 });
+      B.box('metalWall', s * (w / 2 - 0.07), F, d / 2 - 0.02, 0.14, hF - 0.2, 0.04, { color: wall, uv: 1.2 });             // door jambs
+    }
+    B.box('metalWall', 0, F + hF - 0.22, d / 2 - 0.02, w, 0.22, 0.04, { color: wall, uv: 1.2 });                          // header
+    const ow = w - 0.28, lw = ow / 2 + 0.05, dh = hF - 0.32;
+    for (const [s, dz] of [[-1, 0.02], [1, 0.05]]) {                                                                      // two leaves, staggered tracks
+      B.box('metalWall', s * (ow / 2 - lw / 2), F + 0.05, d / 2 + dz, lw, dh, 0.022, { color: dc, uv: 1.2 });
+      B.box('dark', s * 0.1, F + dh * 0.48, d / 2 + dz + 0.012, 0.035, 0.17, 0.008, { color: D });                        // recessed pull
+    }
+    B.box('metal', 0, F + hF - 0.27, d / 2 + 0.04, w - 0.08, 0.05, 0.07, { color: trim });                                 // top track
+    B.box('metal', 0, F, d / 2 + 0.035, w - 0.08, 0.04, 0.07, { color: trim });                                           // sill
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.box('metal', sx * w / 2, F, sz * d / 2, 0.05, sz > 0 ? hF : hB, 0.05, { color: trim });
+    // roof: one sheet with a slight overhang all round, fascias on three sides, the gutter on the low (back) edge
+    const o = 0.1, oF = 0.16, oB = 0.14, k = (hF - hB) / d, yF = F + hF + 0.03 + k * oF, yB = F + hB + 0.03 - k * oB;
+    const R = [[-w / 2 - o, yF, d / 2 + oF], [w / 2 + o, yF, d / 2 + oF], [w / 2 + o, yB, -d / 2 - oB], [-w / 2 - o, yB, -d / 2 - oB]];
+    B.poly('roofMetal', R.map(p => [p[0], p[1] + 0.035, p[2]]), [0, 1, 0], { color: roof, uv: 0.8 });
+    B.poly('metal', R, [0, -1, 0], { color: sh(roof, 0.8) });
+    B.box('metal', 0, yF - 0.05, d / 2 + oF, w + 2 * o + 0.02, 0.11, 0.025, { color: trim });
+    for (const s of [-1, 1]) B.beam('metal', [s * (w / 2 + o), yF + 0.005, d / 2 + oF], [s * (w / 2 + o), yB + 0.005, -d / 2 - oB], 0.025, 0.1, { color: trim });
+    B.beam('metal', [-w / 2 - o, yB - 0.03, -d / 2 - oB - 0.04], [w / 2 + o, yB - 0.03, -d / 2 - oB - 0.04], 0.08, 0.07, { color: trim });
+    B.cyl('metal', w / 2 + o - 0.07, F, -d / 2 - oB - 0.04, 0.028, 0.028, yB - 0.06 - F, 8, { color: trim });
+    B.box('dark', w / 2 + 0.006, F + hB - 0.5, -d * 0.18, 0.01, 0.22, 0.34, { color: D });                                // vent
+    for (let i = 0; i < 4; i++) B.box('metal', w / 2 + 0.02, F + hB - 0.48 + i * 0.05, -d * 0.18, 0.025, 0.012, 0.34, { color: wall });
+    return { hx: w / 2 + 0.05, hz: d / 2 + 0.06 };
+  }
+  // ---- timber garden shed
+  const F = 0.2, hE = h - 0.5, hR = h, dc = door || sh(wall, 0.85), BT = sh(wall, 0.9);
+  for (const sx of [-1, 1]) for (const sz of [-1, 0, 1]) B.box('block', sx * (w / 2 - 0.12), -0.12, sz * (d / 2 - 0.15), 0.18, 0.26, 0.18, { color: [0.7, 0.7, 0.68] });
+  B.box('wood', 0, 0.12, 0, w + 0.04, 0.08, d + 0.04, { color: sh(wall, 0.7), uv: 0.6 });                                 // floor frame
+  B.box('wood', 0, F, -d / 2 + 0.02, w, hE, 0.04, { color: wall, uv: 0.6 });                                               // back
+  for (const s of [-1, 1]) B.box('wood', s * (w / 2 - 0.02), F, 0, 0.04, hE, d - 0.08, { color: wall, uv: 0.6 });
+  B.box('wood', -(w / 2 + 0.45) / 2 + 0.01, F, d / 2 - 0.02, w / 2 - 0.43, hE, 0.04, { color: wall, uv: 0.6 });            // front either side of the door
+  B.box('wood', (w / 2 + 0.45) / 2 - 0.01, F, d / 2 - 0.02, w / 2 - 0.43, hE, 0.04, { color: wall, uv: 0.6 });
+  B.box('wood', 0, F + 1.82, d / 2 - 0.02, 0.9, hE - 1.82, 0.04, { color: wall, uv: 0.6 });
+  for (const sz of [-1, 1]) B.poly('wood', [[-w / 2, F + hE, sz * d / 2], [w / 2, F + hE, sz * d / 2], [0, F + hR, sz * d / 2]], [0, 0, sz], { color: wall, uv: 0.6 }); // gables
+  // battens over the board joints, 30 cm apart, on the gables and the long sides
+  for (let x = -w / 2 + 0.25; x < w / 2 - 0.15; x += 0.3) { if (Math.abs(x) < 0.5) continue; const top = F + hE + (hR - hE) * (1 - Math.abs(x) / (w / 2));
+    for (const sz of [-1, 1]) B.box('wood', x, F, sz * (d / 2 + 0.005), 0.05, top - F - 0.04, 0.018, { color: BT, uv: 0.6 }); }
+  for (let z = -d / 2 + 0.25; z < d / 2 - 0.15; z += 0.3) for (const s of [-1, 1]) B.box('wood', s * (w / 2 + 0.005), F, z, 0.018, hE - 0.02, 0.05, { color: BT, uv: 0.6 });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.box('wood', sx * (w / 2 + 0.01), F - 0.02, sz * (d / 2 + 0.01), 0.07, hE + 0.02, 0.07, { color: trim, uv: 0.6 });
+  // door: vertical planks, ledges and a brace, strap hinges, a thumb latch
+  B.box('wood', 0, F + 0.02, d / 2 + 0.01, 0.82, 1.78, 0.035, { color: dc, uv: 0.5 });
+  for (const yy of [0.22, 1.5]) B.box('wood', 0, F + yy, d / 2 + 0.035, 0.74, 0.1, 0.025, { color: sh(dc, 0.92), uv: 0.5 });
+  B.beam('wood', [-0.32, F + 0.33, d / 2 + 0.04], [0.32, F + 1.48, d / 2 + 0.04], 0.09, 0.022, { color: sh(dc, 0.92) });
+  for (const yy of [0.27, 1.55]) B.box('dark', 0.15 - 0.4 + 0.2, F + yy, d / 2 + 0.052, 0.4, 0.035, 0.008, { color: D });
+  B.box('metal', 0.32, F + 1.0, d / 2 + 0.05, 0.03, 0.12, 0.03, { color: [0.3, 0.3, 0.3] });
+  for (const s of [-1, 1]) B.box('wood', s * 0.45, F, d / 2 + 0.01, 0.07, 1.86, 0.05, { color: trim, uv: 0.6 });
+  B.box('wood', 0, F + 1.82, d / 2 + 0.01, 0.97, 0.07, 0.05, { color: trim, uv: 0.6 });
+  if (window) { // side window: frame, glazing bars, a sill
+    const wx = w / 2 + 0.02; B.box('glass', wx, F + 0.95, 0, 0.012, 0.5, 0.6);
+    for (const [yy, hh] of [[0.92, 0.04], [1.18, 0.025], [1.45, 0.04]]) B.box('wood', wx + 0.012, F + yy, 0, 0.03, hh, 0.66, { color: trim });
+    for (const zz of [-0.32, 0, 0.32]) B.box('wood', wx + 0.012, F + 0.92, zz, 0.03, 0.57, zz ? 0.04 : 0.025, { color: trim });
+    B.box('wood', wx + 0.03, F + 0.88, 0, 0.06, 0.04, 0.72, { color: trim });
+  }
+  // roof: two planes with a 20 cm overhang at the eaves and the gables, a board underneath, barge boards and a ridge
+  const o = 0.2, oG = 0.18, k = (hR - hE) / (w / 2), yR = F + hR + 0.03, yE = F + hE + 0.03 - k * o;
+  for (const s of [-1, 1]) {
+    const P4 = [[0, yR, d / 2 + oG], [0, yR, -d / 2 - oG], [s * (w / 2 + o), yE, -d / 2 - oG], [s * (w / 2 + o), yE, d / 2 + oG]];
+    B.poly('roofTile', P4.map(p => [p[0], p[1] + 0.05, p[2]]), [s * k, 1, 0], { color: roof, uv: 0.7 });
+    B.poly('wood', P4, [0, -1, 0], { color: sh(wall, 0.75) });
+    B.beam('wood', [s * (w / 2 + o), yE - 0.02, d / 2 + oG], [s * (w / 2 + o), yE - 0.02, -d / 2 - oG], 0.03, 0.1, { color: trim }); // fascia
+    for (const sz of [-1, 1]) B.beam('wood', [0, yR + 0.03, sz * (d / 2 + oG + 0.01)], [s * (w / 2 + o), yE + 0.03, sz * (d / 2 + oG + 0.01)], 0.03, 0.14, { color: trim }); // barge boards
+  }
+  B.beam('wood', [0, yR + 0.07, -d / 2 - oG - 0.02], [0, yR + 0.07, d / 2 + oG + 0.02], 0.12, 0.05, { color: sh(roof, 0.85) });
+  return { hx: w / 2 + 0.05, hz: d / 2 + 0.06 };
 }
 
 // ---------------------------------------------------------------- placed objects (world/capture.js: each call is one editable world object)

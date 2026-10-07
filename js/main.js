@@ -19,6 +19,39 @@ document.querySelectorAll('[data-map]').forEach(b => {
 });
 
 let world = null, life = null, started = false, locked = false, hudOn = true;
+// ---------------------------------------------------------------- game -> World Builder, at this exact view (B)
+// The view travels in the editor's URL — exact metres and radians, taken from the rendered camera whatever mode the
+// player is in (walking, flying, third person) — so nothing has to be copied by hand and nothing can overwrite it
+// before the editor reads it, and it survives a change of server: the game is usually served by Play-Wildlands.bat
+// (static files, port 8765), but saving edits needs the dev server (Editor.bat / npm run dev, port 5180). When that
+// server is running the World Builder opens there; otherwise it opens here, read-only.
+const DEV_PORT = 5180;
+async function builderBase() {
+  const dev = async url => { try { const r = await fetch(url, { cache: 'no-store' }); return r.ok && (await r.json()).dev === true; } catch (e) { return false; } };
+  if (await dev('/api/ping')) return '';
+  const h = location.hostname;
+  if ((h === 'localhost' || h === '127.0.0.1') && +location.port !== DEV_PORT && await dev(`http://${h}:${DEV_PORT}/api/ping`)) return `http://${h}:${DEV_PORT}/`;
+  return '';
+}
+// the editor's query for the current view
+function builderQuery() {
+  camera.updateMatrixWorld(); // (the camera as last rendered: exactly the view on screen)
+  const p = camera.getWorldPosition(new THREE.Vector3()), d = camera.getWorldDirection(new THREE.Vector3()), n = (v, k) => String(+v.toFixed(k));
+  return new URLSearchParams({ map: mapName, from: 'game',
+    cam: [p.x, p.y, p.z].map(v => n(v, 3)).join(','), yaw: n(Math.atan2(-d.x, -d.z), 5), pitch: n(Math.asin(clamp(d.y, -1, 1)), 5),
+    fov: n(camera.fov, 1), hour: n(time.hour, 3), feet: [player.pos.x, player.pos.y, player.pos.z].map(v => n(v, 3)).join(',') }).toString();
+}
+let transferring = false;
+async function openBuilderHere() {
+  if (!world || transferring) return;
+  transferring = true;
+  const q = builderQuery(); // (taken now, before the awaits: the view the player saw when pressing the key)
+  toastMsg('Opening the World Builder here…');
+  if (document.pointerLockElement) document.exitPointerLock();
+  const base = await builderBase();
+  location.assign(base + 'editor.html?' + q);
+  setTimeout(() => { transferring = false; }, 4000); // (navigation refused or cancelled: allow another try)
+}
 
 const clock = new THREE.Clock();
 let fpsAcc = 0, fpsN = 0, ambTimer = 0, amb = {};
@@ -106,6 +139,7 @@ addEventListener('keydown', e => {
   if (e.code === 'BracketRight') { time.hour = (time.hour + 0.5) % 24; updateSky(true); }
   if (e.code === 'KeyH') { hudOn = !hudOn; $('hud').style.display = hudOn ? '' : 'none'; $('credit').style.display = hudOn ? '' : 'none'; }
   if (e.code === 'KeyM') audio.toggleMute();
+  if (e.code === 'KeyB') { e.preventDefault(); openBuilderHere(); }
   if (e.code.startsWith('Digit')) setQuality(['low', 'medium', 'high', 'ultra', 'extreme'][+e.code.slice(5) - 1]);
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -117,6 +151,7 @@ $('fSlider').addEventListener('input', e => { camera.fov = +e.target.value; came
 $('vSlider').addEventListener('input', e => audio.setVolume(+e.target.value));
 $('qSel').addEventListener('change', e => setQuality(e.target.value));
 $('qSel').value = Q.name;
+$('openBuilder').addEventListener('click', e => { e.stopPropagation(); openBuilderHere(); });
 
 // ---------------------------------------------------------------- boot
 async function main() {
@@ -134,7 +169,7 @@ async function main() {
   if (world.layer) world.layer.showProblems();
   let manualT = 0;
   window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
-    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys,
+    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys, builderQuery,
     // automated play-testing: act as if the pointer were locked, so keys (keys.KeyW = true ...) drive the walker
     autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); } }; // console debugging hook
 }

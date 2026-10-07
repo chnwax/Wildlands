@@ -105,8 +105,11 @@ export function validateObject(o, P, ctx = {}) {
     if (!gen) {
       if (o.deleted) P.warn('deleted', 'marks an object deleted that the generator does not create (nothing to delete) — remove the entry instead');
       else {
-        if (!('prefab' in o) && !('source' in o)) P.error('prefab', 'a new object (its id is not one the generator creates) needs a "prefab" (or a "source" object to copy)');
-        if (!('position' in o)) P.error('position', 'a new object needs a "position"');
+        // Loose details are addressed by their merged-mesh triangle. Generator changes can move that triangle to a
+        // different id; an edit carrying its old origin is rebound by WorldLayer before it is applied.
+        const staleDetail = /^detail_m\d+_t\d+$/.test(o.id) && isVec3(o.origin);
+        if (!('prefab' in o) && !('source' in o) && !staleDetail) P.error('prefab', 'a new object (its id is not one the generator creates) needs a "prefab" (or a "source" object to copy)');
+        if (!('position' in o) && !staleDetail) P.error('position', 'a new object needs a "position"');
         // (a missing generated id with an "origin" is matched again by position when the map loads: world/layer.js)
       }
     }

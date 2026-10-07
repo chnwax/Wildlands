@@ -47,7 +47,7 @@ export function danchiGround(x, z, h, Y0) {
 
 // ---------------------------------------------------------------- building the district
 import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle, buildCompound, addCompound } from './core.js';
-import { lampPoints, signMesh, JP_FONT, GeoBuilder } from './townkit.js';
+import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
@@ -696,27 +696,67 @@ export function buildDanchi(ctx) {
       net([0, H, -W / 2], [0, H, W / 2], [s * D, dH, W / 2], [s * D, dH, -W / 2], W / 0.12, Math.hypot(D, H - dH) / 0.12);
       for (const e of [-1, 1]) { B.poly('net', [[0, 0, e * W / 2], [s * D, 0, e * W / 2], [s * D, dH, e * W / 2], [0, H, e * W / 2]], [0, 0, e], { uvs: [[0, 0], [D / 0.12, 0], [D / 0.12, dH / 0.12], [0, H / 0.12]] }); }
       B.frame(0, 0, 0, 0); for (const e of [-1, 1]) addCircle(gx, cz + e * W / 2, 0.08); addBox(gx + s * D, cz, 0.05, W / 2, 0, y - 1, y + dH);
-      // ball-stop net on tall posts behind the goal, in front of the fence
+      // ball-stop net behind the goal: 8 m posts just inside the 5.4 m fence, so the net clearly rises above it
       const bx = s < 0 ? x0 + 0.6 : x1 - 0.6; B.frame(bx, gy(bx, cz), cz, 0);
-      for (let k = -2; k <= 2; k++) B.cyl('steel', 0, 0, k * 6, 0.07, 0.06, 6, 10, { color: [0.3, 0.46, 0.38] });
-      B.beam('steel', [0, 5.95, -12], [0, 5.95, 12], 0.05, 0.05, { color: [0.3, 0.46, 0.38] });
-      B.quad('net', [0, 2.3, 12], [0, 2.3, -12], [0, 5.9, -12], [0, 5.9, 12], { uvs: [[0, 0], [24 / 0.12, 0], [24 / 0.12, 3.6 / 0.12], [0, 3.6 / 0.12]] });
+      for (let k = -2; k <= 2; k++) { B.cyl('metal', 0, -0.1, k * 6, 0.08, 0.065, 8.1, 10, { color: [0.3, 0.46, 0.38], cap: true }); B.cyl('concrete', 0, -0.2, k * 6, 0.17, 0.14, 0.26, 10, { color: [0.66, 0.66, 0.64], cap: true }); }
+      for (const yy of [5.4, 7.95]) B.beam('metal', [0, yy, -12], [0, yy, 12], 0.05, 0.05, { color: [0.3, 0.46, 0.38] });
+      B.quad('net', [0, 5.0, 12], [0, 5.0, -12], [0, 7.9, -12], [0, 7.9, 12], { uvs: [[0, 0], [24 / 0.12, 0], [24 / 0.12, 2.9 / 0.12], [0, 2.9 / 0.12]] });
       B.frame(0, 0, 0, 0); }); }
-    // the fence: galvanised posts every 3 m painted green, chain link, top rail, a kick board; gaps at the gates
-    const GC = [0.3, 0.46, 0.38], gap = (x, z) => (Math.abs(z - z1) < 0.3 && Math.abs(x - GX) < 1.3) || (Math.abs(x - x1) < 0.3 && Math.abs(z - EZ) < 2.2);
-    for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) { const L = Math.hypot(bx - ax, bz - az), n = Math.ceil(L / 3);
-      for (let k = 0; k <= n; k++) { const t = k / n, x = lerp(ax, bx, t), z = lerp(az, bz, t); if (gap(x, z)) continue; B.cyl('steel', x, gy(x, z) - 0.1, z, 0.045, 0.045, 2.55, 8, { color: GC }); }
-      const m = Math.ceil(L / 1.5); for (let k = 0; k < m; k++) { const t0 = k / m, t1 = (k + 1) / m, xa = lerp(ax, bx, t0), za = lerp(az, bz, t0), xb = lerp(ax, bx, t1), zb = lerp(az, bz, t1);
-        if (gap((xa + xb) / 2, (za + zb) / 2)) continue; const ya = gy(xa, za), yb = gy(xb, zb);
-        B.beam('chain', [xa, ya + 0.25, za], [xb, yb + 0.25, zb], 0.02, 2.1, { color: GC }); B.beam('steel', [xa, ya + 2.4, za], [xb, yb + 2.4, zb], 0.045, 0.045, { color: GC });
-        B.beam('concrete', [xa, ya + 0.1, za], [xb, yb + 0.1, zb], 0.12, 0.3, { color: [0.72, 0.72, 0.7] });
-        addBox((xa + xb) / 2, (za + zb) / 2, Math.hypot(xb - xa, zb - za) / 2 + 0.05, 0.08, Math.atan2(xb - xa, zb - za) + Math.PI / 2); } }
-    // the pedestrian gate: stout posts with caps, a pair of mesh leaves (one standing open), the ground worn to earth
+    // Full-height football enclosure.  The former 2.5 m garden-style fence was both too low and was generated as four
+    // long runs with midpoint-cut gate holes, which could leave a whole 1.5 m panel missing beside either gate.  Build
+    // explicit runs up to the gate posts instead: a rigid lower panel, a lighter ball-containment panel above it, proper
+    // rails, concrete kick boards and braced terminal/corner posts.  Every panel follows the terrain at both ends.
+    const GC = [0.3, 0.46, 0.38], FENCE_H = 5.4, LOWER_H = 2.45, posts = new Set();
+    const postAt = (x, z, heavy = false) => {
+      const key = `${x.toFixed(3)},${z.toFixed(3)}`; if (posts.has(key)) return; posts.add(key);
+      const y = gy(x, z), r = heavy ? 0.105 : 0.075;
+      B.cyl('metal', x, y - 0.18, z, r, r * 0.82, FENCE_H + 0.24, heavy ? 12 : 10, { color: GC, cap: true });
+      B.cyl('metal', x, y + FENCE_H + 0.055, z, r * 1.08, r * 1.08, 0.11, heavy ? 12 : 10, { color: [0.25, 0.39, 0.33], cap: true });
+      B.cyl('concrete', x, y - 0.22, z, heavy ? 0.2 : 0.15, heavy ? 0.17 : 0.13, 0.28, 10, { color: [0.66, 0.66, 0.64], cap: true });
+    };
+    const fenceRun = (ax, az, bx, bz, braceA = false, braceB = false) => {
+      const L = Math.hypot(bx - ax, bz - az); if (L < 0.05) return;
+      const n = Math.max(1, Math.ceil(L / 2.8)), dx = (bx - ax) / L, dz = (bz - az) / L;
+      for (let k = 0; k <= n; k++) postAt(lerp(ax, bx, k / n), lerp(az, bz, k / n), k === 0 || k === n);
+      const panels = Math.max(1, Math.ceil(L / 1.4));
+      for (let k = 0; k < panels; k++) {
+        const t0 = k / panels, t1 = (k + 1) / panels, xa = lerp(ax, bx, t0), za = lerp(az, bz, t0), xb = lerp(ax, bx, t1), zb = lerp(az, bz, t1), ya = gy(xa, za), yb = gy(xb, zb);
+        B.quad('chain', [xa, ya + 0.24, za], [xb, yb + 0.24, zb], [xb, yb + LOWER_H, zb], [xa, ya + LOWER_H, za], { uv: 0.32, color: [0.38, 0.57, 0.48] });
+        B.quad('chain', [xa, ya + LOWER_H, za], [xb, yb + LOWER_H, zb], [xb, yb + FENCE_H, zb], [xa, ya + FENCE_H, za], { uv: 0.42, color: [0.34, 0.51, 0.43] });
+        for (const h of [0.24, LOWER_H, 4.0, FENCE_H]) B.beam('metal', [xa, ya + h, za], [xb, yb + h, zb], h === FENCE_H ? 0.06 : 0.045, h === FENCE_H ? 0.06 : 0.045, { color: GC });
+        B.beam('concrete', [xa, ya + 0.08, za], [xb, yb + 0.08, zb], 0.14, 0.28, { color: [0.72, 0.72, 0.7] });
+        addBox((xa + xb) / 2, (za + zb) / 2, Math.hypot(xb - xa, zb - za) / 2 + 0.05, 0.09, Math.atan2(xb - xa, zb - za) + Math.PI / 2);
+      }
+      const brace = (x, z, dir) => { const y = gy(x, z), qx = x + dx * dir * 1.8, qz = z + dz * dir * 1.8, qy = gy(qx, qz); B.beam('metal', [x, y + 2.25, z], [qx, qy + 0.28, qz], 0.05, 0.05, { color: GC }); };
+      if (braceA) brace(ax, az, 1); if (braceB) brace(bx, bz, -1);
+    };
+    // Exact run endpoints make both entrances intentional and leave no accidental panel-sized holes.
+    entity('pitch_fence', () => {
+      for (const [x, z] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) postAt(x, z, true);
+      fenceRun(x0, z0, x1, z0); fenceRun(x0, z1, GX - 1.3, z1, false, true); fenceRun(GX + 1.3, z1, x1, z1, true, false);
+      fenceRun(x0, z0, x0, z1); fenceRun(x1, z0, x1, EZ - 2.2, false, true); fenceRun(x1, EZ + 2.2, x1, z1, true, false);
+    }, [(x0 + x1) / 2, gy((x0 + x1) / 2, (z0 + z1) / 2), (z0 + z1) / 2, 0]);
+    // a gate leaf hung on the post at local x = hx of the current frame (fx, fy, fz, fr), swung by ang: a welded tube
+    // frame (bottom, mid and top rails, two stiles, a diagonal brace) round the same chain link as the fence, barrel
+    // hinges on the post side, a latch on the free stile; it collides where it stands (open or shut)
+    const gateLeaf = (fx, fy, fz, fr, hx, ang, len, H) => {
+      B.frame(...B.P([hx, 0, 0]), fr + ang); const sx = Math.sign(-hx), T = 0.06, x1 = len * sx;
+      for (const yy of [0.1, H * 0.48, H]) B.beam('metal', [0, yy, 0], [x1, yy, 0], T, T, { color: GC });
+      for (const xx of [0.035 * sx, x1 - 0.035 * sx]) B.beam('metal', [xx, 0.1, 0], [xx, H, 0], T, T, { color: GC });
+      B.beam('metal', [0.06 * sx, 0.14, 0], [x1 - 0.06 * sx, H * 0.48 - 0.04, 0], 0.04, 0.04, { color: GC });
+      B.quad('chain', [0.06 * sx, 0.13, 0], [x1 - 0.06 * sx, 0.13, 0], [x1 - 0.06 * sx, H - 0.03, 0], [0.06 * sx, H - 0.03, 0], { uv: 0.32, color: [0.38, 0.57, 0.48] });
+      for (const yy of [0.3, H - 0.3]) B.cyl('metal', -0.05 * sx, yy, 0, 0.032, 0.032, 0.14, 8, { color: [0.24, 0.36, 0.3], cap: true });
+      B.box('metal', x1 - 0.02 * sx, H * 0.48 - 0.07, 0.045, 0.05, 0.14, 0.04, { color: [0.2, 0.22, 0.22] });
+      const c = B.P([x1 / 2, 0, 0]); addBox(c[0], c[2], len / 2, 0.06, fr + ang, fy - 1, fy + H);
+      B.frame(fx, fy, fz, fr); };
+    // the pedestrian gate: stout posts with caps, a pair of mesh leaves (one standing open, swung in), a mesh header
+    // panel over the opening so the enclosure keeps its full height, the ground worn to earth
     { const y = gy(GX, GZ); B.frame(GX, y, GZ, 0);
-      for (const e of [-1, 1]) { B.bbox('steel', e * 1.25, 0, 0, 0.12, 2.6, 0.12, 0.01, { color: GC }); B.cyl('steel', e * 1.25, 2.6, 0, 0.09, 0.02, 0.1, 8, { color: GC, cap: true }); }
-      const leaf = (hx, ang, len) => { B.frame(...B.P([hx, 0, 0]), ang); B.box('steel', len / 2 * Math.sign(-hx), 0.08, 0, len, 0.05, 0.05, { color: GC }); B.box('steel', len / 2 * Math.sign(-hx), 2.0, 0, len, 0.05, 0.05, { color: GC });
-        B.box('steel', len * Math.sign(-hx), 0.08, 0, 0.05, 1.97, 0.05, { color: GC }); B.box('chain', len / 2 * Math.sign(-hx), 0.12, 0, len - 0.06, 1.85, 0.015, { color: GC }); B.frame(GX, y, GZ, 0); };
-      leaf(-1.2, 0, 1.18); leaf(1.2, -1.2, 1.18);
+      for (const e of [-1, 1]) { B.bbox('metal', e * 1.3, -0.18, 0, 0.18, FENCE_H + 0.42, 0.18, 0.015, { color: GC }); B.cyl('metal', e * 1.3, FENCE_H + 0.24, 0, 0.115, 0.04, 0.12, 10, { color: GC, cap: true }); }
+      gateLeaf(GX, y, GZ, 0, -1.2, 0, 1.17, 2.62); gateLeaf(GX, y, GZ, 0, 1.2, -1.2, 1.17, 2.62);
+      B.beam('metal', [-0.02, 0, 0.12], [-0.02, 0.32, 0.12], 0.025, 0.025, { color: [0.2, 0.22, 0.22] }); // drop bolt of the shut leaf
+      B.quad('chain', [-1.21, 2.85, 0], [1.21, 2.85, 0], [1.21, FENCE_H, 0], [-1.21, FENCE_H, 0], { uv: 0.32, color: [0.34, 0.51, 0.43] });
+      for (const yy of [2.85, 4.0, FENCE_H]) B.beam('metal', [-1.22, yy, 0], [1.22, yy, 0], 0.06, 0.06, { color: GC });
       B.frame(0, 0, 0, 0);
       const sg = signMesh(1.6, 0.9, (g, W2, H2) => { g.fillStyle = '#f4f2ec'; g.fillRect(0, 0, W2, H2); g.fillStyle = '#2a6a3a'; g.fillRect(0, 0, W2, H2 * 0.34); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
         g.font = `bold ${H2 * 0.15}px ${JP_FONT}`; g.fillText('桜川ニュータウン 多目的グラウンド', W2 / 2, H2 * 0.17); g.fillStyle = '#222'; g.font = `${H2 * 0.11}px ${JP_FONT}`;
@@ -724,9 +764,14 @@ export function buildDanchi(ctx) {
       sg.position.set(GX - 3.4, y + 1.45, GZ + 0.06); scene.add(sg); }
     // the maintenance gate on the loop road: a pair of wide leaves, closed; a driveway across the footway
     { const y = gy(x1, EZ); B.frame(x1, y, EZ, Math.PI / 2);
-      for (const e of [-1, 1]) B.bbox('steel', e * 2.15, 0, 0, 0.14, 2.6, 0.14, 0.01, { color: GC });
-      for (const e of [-1, 1]) { const c0 = e * 1.05; B.box('steel', c0, 0.1, 0, 2.05, 0.06, 0.06, { color: GC }); B.box('steel', c0, 2.0, 0, 2.05, 0.06, 0.06, { color: GC }); B.box('chain', c0, 0.15, 0, 1.95, 1.82, 0.015, { color: GC }); for (const xx of [e * 0.05, e * 2.05]) B.box('steel', xx, 0.1, 0, 0.06, 1.96, 0.06, { color: GC }); }
-      B.frame(0, 0, 0, 0); addBox(x1, EZ, 0.1, 2.2, 0);
+      for (const e of [-1, 1]) { B.bbox('metal', e * 2.2, -0.18, 0, 0.2, FENCE_H + 0.42, 0.2, 0.015, { color: GC }); B.cyl('metal', e * 2.2, FENCE_H + 0.24, 0, 0.125, 0.04, 0.12, 10, { color: GC, cap: true }); }
+      // two 2.1 m leaves meeting in the middle, shut, a cane bolt into the drive and a padlocked hasp
+      gateLeaf(x1, y, EZ, Math.PI / 2, -2.1, 0, 2.08, 2.85); gateLeaf(x1, y, EZ, Math.PI / 2, 2.1, 0, 2.08, 2.85);
+      B.beam('metal', [0.08, 0, 0.1], [0.08, 0.4, 0.1], 0.025, 0.025, { color: [0.2, 0.22, 0.22] });
+      B.box('metal', 0, 1.3, 0.07, 0.16, 0.06, 0.03, { color: [0.2, 0.22, 0.22] }); B.box('metal', 0.03, 1.2, 0.1, 0.05, 0.07, 0.025, { color: [0.75, 0.6, 0.3] });
+      B.quad('chain', [-2.11, 3.05, 0], [2.11, 3.05, 0], [2.11, FENCE_H, 0], [-2.11, FENCE_H, 0], { uv: 0.32, color: [0.34, 0.51, 0.43] });
+      for (const yy of [3.05, 4.0, FENCE_H]) B.beam('metal', [-2.12, yy, 0], [2.12, yy, 0], 0.06, 0.06, { color: GC });
+      B.frame(0, 0, 0, 0);
       const dU = RN.byId.get('DU'); let best = null; for (const g of dU.PL.segs) { const t = clamp((x1 - g.a[0]) * g.d[0] + (EZ - g.a[1]) * g.d[1], 0, g.L), qx = g.a[0] + g.d[0] * t, qz = g.a[1] + g.d[1] * t, dd = Math.hypot(x1 - qx, EZ - qz); if (!best || dd < best.dd) best = { dd, s: g.s0 + t, side: Math.sign((x1 - g.a[0]) * -g.d[1] + (EZ - g.a[1]) * g.d[0]) }; }
       // the service drive from the footway to the gate: brushed concrete between kerbs, with a grass-block strip down the
       // middle (the way such seldom-used drives are laid), in 1 m slabs draped on the ground
@@ -758,9 +803,10 @@ export function buildDanchi(ctx) {
       B.box('steel', 0, 14.1, 0.15, 2.2, 0.1, 0.1, { color: [0.6, 0.62, 0.64] });
       for (const e of [-0.75, 0, 0.75]) { B.bbox('metal', e, 13.9, 0.35, 0.6, 0.5, 0.3, 0.02, { color: [0.4, 0.42, 0.44] }); B.box('lamp', e, 13.94, 0.51, 0.5, 0.42, 0.02); }
       B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, y + 13.5, z], s: 1.4 }); addCircle(x, z, 0.25); }); }
-    entity('equipment_shed', () => { const x = x1 - 4.5, z = EZ + 5.5, y = gy(x, z); B.frame(x, y, z, Math.PI / 2); B.bbox('concrete', 0, -0.2, 0, 3.4, 0.3, 2.6, 0.02, { color: [0.7, 0.7, 0.68] });
-      B.bbox('metalWall', 0, 0.1, 0, 3.0, 2.1, 2.2, 0.02, { color: [0.36, 0.5, 0.42] }); B.poly('roofMetal', [[-1.7, 2.3, -1.3], [1.7, 2.3, -1.3], [1.7, 2.1, 1.3], [-1.7, 2.1, 1.3]], [0, 1, 0.1], { color: [0.4, 0.42, 0.44] });
-      B.quad('dark', [-0.8, 0.1, 1.105], [0.8, 0.1, 1.105], [0.8, 1.95, 1.105], [-0.8, 1.95, 1.105], { color: [0.2, 0.24, 0.22] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.5, Math.PI / 2); navRect(x, z, 1.8, 2.0, 0, 2); });
+    // the goals' store by the maintenance gate: a steel 物置 in the enclosure's green, doors toward the pitch
+    entity('equipment_shed', () => { const x = x1 - 4.5, z = EZ + 5.5, y = gy(x, z), r = -Math.PI / 2; B.frame(x, y, z, r);
+      const e = storageShed(B, { w: 3.2, d: 2.2, h: 2.25, wall: [0.42, 0.56, 0.47], trim: [0.84, 0.84, 0.8], roof: [0.38, 0.42, 0.42] });
+      B.frame(0, 0, 0, 0); addBox(x, z, e.hx, e.hz, r, y - 1, y + 2.4); navRect(x, z, e.hx + 0.3, e.hz + 0.3, r, 2); });
     // outside: the path from the gate to the south street, the lake park's path along the fence to it, benches beside it
     { const C = [[GX + 1.7, GZ - 0.2], [GX - 1.7, GZ - 0.2], [GX - 1.7, GZ - 2.6], [GX + 1.7, GZ - 2.6]], rid = regions.length; // the paved apron inside the gate
       regions.push({ kind: 'apron', pts: [[GX, GZ - 1.4]], connected: false, link: true }); apron(C, rid, { name: 'football ground gate' }); }

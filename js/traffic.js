@@ -90,18 +90,25 @@ function merge(geos) {
 // side profiles (x forward, y up), width, wheelbase, track, wheel radius, plate colour
 const TYPES = {
   keiTall: { L: 3.39, W: 1.47, belt: 1.05, wb: 2.52, r: 0.28, kei: true,
+    seats: { floor: 0.4, frontFromDash: 0.58, rearGap: 0.86, track: 0.34 },
     body: [[-1.69, 0.3], [1.69, 0.3], [1.69, 0.8], [1.32, 1.0], [0.96, 1.75], [-1.62, 1.78], [-1.69, 1.45]] },
   keiHatch: { L: 3.39, W: 1.47, belt: 0.98, wb: 2.46, r: 0.28, kei: true,
+    seats: { floor: 0.36, frontFromDash: 0.58, rearGap: 0.84, track: 0.33 },
     body: [[-1.69, 0.3], [1.69, 0.3], [1.69, 0.72], [1.2, 0.92], [0.62, 1.62], [-1.5, 1.64], [-1.69, 1.2]] },
   compact: { L: 4.05, W: 1.69, belt: 0.92, wb: 2.55, r: 0.3, kei: false,
+    seats: { floor: 0.35, frontFromDash: 0.63, rearGap: 0.96, track: 0.39 },
     body: [[-2.02, 0.32], [2.02, 0.32], [2.02, 0.62], [1.35, 0.86], [0.45, 1.46], [-1.1, 1.48], [-1.95, 1.02]] },
   minivan: { L: 4.69, W: 1.69, belt: 1.02, wb: 2.85, r: 0.31, kei: false,
+    seats: { floor: 0.4, frontFromDash: 0.62, rearGap: 1.04, track: 0.39 },
     body: [[-2.34, 0.32], [2.34, 0.32], [2.34, 0.78], [1.72, 1.0], [1.02, 1.82], [-2.25, 1.85], [-2.34, 1.5]] },
   van: { L: 4.69, W: 1.69, belt: 1.12, wb: 2.57, r: 0.3, kei: false,
+    seats: { floor: 0.46, frontFromDash: 0.6, rearGap: 1.02, track: 0.39 },
     body: [[-2.34, 0.32], [2.34, 0.32], [2.34, 1.0], [2.1, 1.25], [1.72, 1.95], [-2.3, 1.98], [-2.34, 1.7]] },
   taxi: { L: 4.4, W: 1.7, belt: 1.0, wb: 2.75, r: 0.3, kei: false, taxi: true,
+    seats: { floor: 0.38, frontFromDash: 0.62, rearGap: 1.02, track: 0.39 },
     body: [[-2.2, 0.32], [2.2, 0.32], [2.2, 0.75], [1.5, 0.95], [0.9, 1.72], [-1.95, 1.75], [-2.2, 1.35]] },
   keiTruck: { L: 3.39, W: 1.47, belt: 1.12, wb: 1.9, r: 0.27, kei: true, truck: true,
+    seats: { floor: 0.43, frontFromDash: 0.55, track: 0.34 },
     body: [[0.25, 0.32], [1.69, 0.32], [1.69, 0.95], [1.55, 1.15], [1.35, 1.8], [0.3, 1.82], [0.25, 1.6]] },
 };
 const PAINTS = [[0.93, 0.93, 0.92], [0.95, 0.95, 0.94], [0.9, 0.9, 0.9], [0.62, 0.64, 0.66], [0.55, 0.56, 0.58], [0.05, 0.05, 0.06], [0.08, 0.08, 0.09],
@@ -116,8 +123,26 @@ const clothMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.
 const CLOTH = [[0.2, 0.3, 0.5], [0.88, 0.88, 0.85], [0.3, 0.3, 0.32], [0.62, 0.22, 0.2], [0.25, 0.42, 0.3], [0.72, 0.64, 0.5], [0.12, 0.12, 0.14], [0.55, 0.62, 0.78], [0.86, 0.72, 0.74], [0.9, 0.84, 0.6]];
 const HAIRS = [[0.06, 0.05, 0.05], [0.1, 0.07, 0.05], [0.22, 0.15, 0.1], [0.08, 0.06, 0.05], [0.55, 0.55, 0.56], [0.32, 0.22, 0.14], [0.05, 0.05, 0.06]];
 const hairMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55 });
-const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
-const BODY = ['paint', 'glass', 'trim', 'plate', 'head', 'tail', 'chrome', 'shadow', 'cabin'], DRIVER = ['driverSkin', 'driverCloth', 'driverHair'], PAX = ['paxSkin', 'paxCloth', 'paxHair'];
+const BODY = ['paint', 'glass', 'trim', 'plate', 'head', 'tail', 'chrome', 'shadow', 'cabin'];
+// Occupants: one mesh per material holding every seat of the body (attribute seat 0..3: driver, front passenger, rear
+// right, rear left). Per car a vec4 seatCol carries, per seat, the colour packed as r*65536+g*256+b (8 bits each) or
+// -1 for an empty seat, whose vertices then collapse: three draws a set however the cars are filled.
+const SEATS = ['driver', 'pax', 'rearR', 'rearL'], OCC_KEYS = ['occSkin', 'occCloth', 'occHair'];
+const packCol = c => Math.round(clamp(c[0], 0, 1) * 255) * 65536 + Math.round(clamp(c[1], 0, 1) * 255) * 256 + Math.round(clamp(c[2], 0, 1) * 255);
+function seatedMat(base, tinted) {
+  const m = base.clone();
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+      attribute float seat; attribute vec4 seatCol; varying vec3 vSeatCol;`).replace('#include <begin_vertex>', `#include <begin_vertex>
+      float sc = seat < 0.5 ? seatCol.x : seat < 1.5 ? seatCol.y : seat < 2.5 ? seatCol.z : seatCol.w;
+      if (sc < 0.0) transformed = vec3(0.0);
+      vSeatCol = vec3(floor(sc / 65536.0), mod(floor(sc / 256.0), 256.0), mod(sc, 256.0)) / 255.0;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vSeatCol;')
+      .replace('#include <color_fragment>', '#include <color_fragment>' + (tinted ? '\n diffuseColor.rgb *= vSeatCol;' : ''));
+  };
+  m.customProgramCacheKey = () => 'seated' + (tinted ? 1 : 0);
+  return m;
+}
 const plateTex = canvasTex(256, 128, (g, W, H) => {
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.strokeStyle = '#1f4d2c'; g.lineWidth = 6; g.strokeRect(4, 4, W - 8, H - 8);
   g.fillStyle = '#1f4d2c'; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -170,6 +195,81 @@ function archLiner(xc, T) {
   return g.toNonIndexed();
 }
 
+// ---------------------------------------------------------------- occupants
+// A seated person posed from a seat anchor A: h the H-point (hip-joint centre on the cushion), back the backrest angle
+// from vertical, heel where the heels rest on the floor (at the pedals, or under the seat ahead), out the door side (+1
+// right / -1 left), wheel the steering-wheel rim { c, r, z, up } for the driver (hands at ten to two) or null (hands in
+// the lap), style the hair ('short' | 'bob' | 'long' | 'tied'), s the body scale. Limbs are two-bone chains solved
+// to their targets (elbows down and out, knees up). Anime proportions — a round head a little large for the body, big
+// dark eyes, simple hair masses — on a believable seated adult. Returns the skin mesh (also the fixed-colour trousers,
+// shoes, eyes and seat belt), the shirt (tinted per car) and the hair (tinted per car), and the head's top and the
+// shoulders' reach for the cabin fit.
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const capsule = (r, a, b) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length(), g = new THREE.CapsuleGeometry(r, Math.max(0.001, L), sg(4, 2), sg(10));
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); return g; };
+function ik2(a, t, l1, l2, pole) {
+  const d = t.clone().sub(a), L = Math.min(Math.max(d.length(), Math.abs(l1 - l2) + 1e-3), (l1 + l2) * 0.999); d.normalize();
+  const x = (l1 * l1 - l2 * l2 + L * L) / (2 * L), h = Math.sqrt(Math.max(0, l1 * l1 - x * x)), p = pole.clone().addScaledVector(d, -pole.dot(d)).normalize();
+  return { joint: a.clone().addScaledVector(d, x).addScaledVector(p, h), end: a.clone().addScaledVector(d, L) };
+}
+function seatedFigure(A) {
+  const s = A.s, skin = [], shirt = [], hair = [], [hx, hy, hz] = A.h, H = V3(hx, hy, hz), put = (g, c) => skin.push(tint(g, c));
+  const SKIN = A.skin, PANTS = A.pants, SHOE = [0.12, 0.1, 0.09], BELT = [0.16, 0.16, 0.17], EYE = [0.17, 0.11, 0.09];
+  const up = V3(-Math.sin(A.back), Math.cos(A.back), 0);                         // along the spine, leaning with the backrest
+  const S0 = H.clone().addScaledVector(up, 0.5 * s);                             // middle of the shoulder line
+  const head = V3(S0.x + 0.035 * s, S0.y + 0.215 * s, hz), R = 0.112 * s;        // the head held upright over the neck
+  // torso: chest and belly a flattened capsule from the pelvis up the backrest, a rounded shoulder bar, the hips
+  { const g = new THREE.CapsuleGeometry(0.125 * s, 0.3 * s, sg(4, 2), sg(12)).scale(0.74, 1, 1.22).rotateZ(A.back); g.translate(...H.clone().addScaledVector(up, 0.27 * s).toArray()); shirt.push(g); }
+  shirt.push(new THREE.CapsuleGeometry(0.068 * s, 0.27 * s, sg(4, 2), sg(10)).rotateX(Math.PI / 2).translate(S0.x, S0.y - 0.02 * s, hz));
+  put(new THREE.CapsuleGeometry(0.11 * s, 0.17 * s, sg(4, 2), sg(10)).rotateX(Math.PI / 2).translate(hx, hy + 0.01, hz), PANTS);
+  shirt.push(new THREE.TorusGeometry(0.048 * s, 0.016 * s, sg(6), sg(12)).rotateX(Math.PI / 2).translate(head.x - 0.02 * s, S0.y + 0.03 * s, hz)); // collar
+  put(new THREE.CylinderGeometry(0.038 * s, 0.045 * s, 0.11 * s, sg(10)).translate(head.x - 0.015 * s, S0.y + 0.07 * s, hz), SKIN);                 // neck
+  // head: round skull and soft jaw, a small nose, ears, big dark eyes; brows in the hair colour
+  put(new THREE.SphereGeometry(R, sg(16), sg(12)).scale(0.94, 1.04, 0.9).translate(head.x, head.y, hz), SKIN);
+  put(new THREE.SphereGeometry(R * 0.7, sg(12), sg(8)).scale(1, 0.78, 1).translate(head.x + 0.028 * s, head.y - 0.055 * s, hz), SKIN);
+  put(new THREE.SphereGeometry(R * 0.15, sg(6), sg(5)).scale(1.1, 1.2, 0.8).translate(head.x + R * 0.93, head.y - 0.012 * s, hz), SKIN);
+  for (const e of [-1, 1]) {
+    put(new THREE.SphereGeometry(R * 0.2, sg(6), sg(5)).scale(0.45, 1, 1).translate(head.x - 0.01 * s, head.y - 0.005 * s, hz + e * R * 0.88), SKIN);
+    put(new THREE.SphereGeometry(R * 0.16, sg(8), sg(6)).scale(0.45, 1.25, 0.85).translate(head.x + R * 0.84, head.y + 0.012 * s, hz + e * R * 0.36), EYE);
+    hair.push(new THREE.BoxGeometry(0.012 * s, 0.01 * s, 0.045 * s).rotateX(e * 0.12).translate(head.x + R * 0.87, head.y + 0.05 * s, hz + e * R * 0.37));
+  }
+  // hair: a cap over the crown and the back of the head and a fringe, then the style's masses
+  hair.push(new THREE.SphereGeometry(R * 1.08, sg(16), sg(10), 0, Math.PI * 2, 0, 1.8).scale(0.97, 1.02, 0.94).rotateZ(0.4).translate(head.x - 0.012 * s, head.y + 0.012 * s, hz));
+  hair.push(new THREE.SphereGeometry(R * 0.62, sg(10), sg(6)).scale(0.55, 0.42, 1.38).translate(head.x + R * 0.58, head.y + R * 0.66, hz));
+  if (A.style === 'bob' || A.style === 'long') for (const e of [-1, 1]) hair.push(new THREE.CapsuleGeometry(R * 0.36, R * (A.style === 'long' ? 1.3 : 0.62), sg(4, 2), sg(8)).scale(1, 1, 0.6).translate(head.x - R * 0.15, head.y - R * (A.style === 'long' ? 0.75 : 0.4), hz + e * R * 0.8));
+  if (A.style === 'long') hair.push(new THREE.CapsuleGeometry(R * 0.7, R * 1.5, sg(4, 2), sg(10)).scale(0.6, 1, 1.15).rotateZ(A.back * 0.6).translate(head.x - R * 0.72, head.y - R * 1.0, hz));
+  if (A.style === 'bob') hair.push(new THREE.SphereGeometry(R * 0.95, sg(12), sg(8)).scale(0.7, 0.75, 1.02).translate(head.x - R * 0.45, head.y - R * 0.45, hz));
+  if (A.style === 'tied') hair.push(new THREE.SphereGeometry(R * 0.36, sg(8), sg(6)).translate(head.x - R * 1.02, head.y + R * 0.15, hz));
+  // arms: from the shoulders to the wheel rim at ten to two, or to the thighs
+  for (const e of [-1, 1]) {
+    const sh = S0.clone().add(V3(0, -0.025 * s, e * 0.175 * s));
+    const t = A.wheel ? A.wheel.c.clone().addScaledVector(A.wheel.z, e * A.wheel.r * 0.87).addScaledVector(A.wheel.up, A.wheel.r * 0.45) : V3(hx + 0.27 * s, hy + 0.1 * s, hz + e * 0.1 * s);
+    const k = ik2(sh, t, 0.3 * s, 0.28 * s, V3(-0.2, -1, e * 0.7));
+    shirt.push(capsule(0.046 * s, sh.toArray(), k.joint.toArray()), capsule(0.038 * s, k.joint.toArray(), k.end.toArray()));
+    put(new THREE.SphereGeometry(0.04 * s, sg(8), sg(6)).scale(1.15, 0.8, 0.9).translate(k.end.x, k.end.y, k.end.z), SKIN);
+  }
+  // legs: hips to the heels with the knees up, a shoe on the floor
+  for (const e of [-1, 1]) {
+    const hip = V3(hx + 0.02 * s, hy - 0.01, hz + e * 0.095 * s), ank = V3(A.heel[0] + 0.04, A.heel[1] + 0.085 * s, hz + e * (A.wheel ? 0.12 : 0.1) * s);
+    const k = ik2(hip, ank, 0.45 * s, 0.43 * s, V3(0.4, 1, 0));
+    put(capsule(0.07 * s, hip.toArray(), k.joint.toArray()), PANTS); put(capsule(0.053 * s, k.joint.toArray(), k.end.toArray()), PANTS);
+    put(new THREE.CapsuleGeometry(0.045 * s, 0.17 * s, sg(3, 2), sg(8)).rotateZ(Math.PI / 2).scale(1, 0.9, 1.1).translate(k.end.x + 0.07 * s, A.heel[1] + 0.045 * s, k.end.z), SHOE);
+  }
+  // the seat belt: from the door-side shoulder across the chest to the inboard hip, and the lap strap
+  const o = A.out;
+  put(capsule(0.011, S0.clone().add(V3(0.075 * s, 0.01, o * 0.14 * s)).toArray(), [hx + 0.12 * s, hy + 0.08 * s, hz - o * 0.15 * s]), BELT);
+  put(capsule(0.01, [hx + 0.1 * s, hy + 0.06 * s, hz - o * 0.17 * s], [hx + 0.08 * s, hy + 0.04 * s, hz + o * 0.19 * s]), BELT);
+  return { skin: mergeC(skin), shirt: merge(shirt.map(g => g.index ? g.toNonIndexed() : g)), hair: merge(hair.map(g => g.index ? g.toNonIndexed() : g)),
+    top: head.y + R * 1.13, headX: head.x, reach: Math.abs(hz) + 0.25 * s, shoulderY: S0.y };
+}
+// who sits where (skin tone and trousers per seat; shirts and hair are tinted per car)
+const SEAT_LOOK = {
+  driver: { style: 'short', skin: [0.84, 0.58, 0.43], pants: [0.05, 0.06, 0.09] },   // (linear colours: warm peach skin tones)
+  pax:    { style: 'long', skin: [0.9, 0.66, 0.52], pants: [0.24, 0.2, 0.15] },
+  rearR:  { style: 'bob', skin: [0.78, 0.52, 0.37], pants: [0.06, 0.1, 0.19] },
+  rearL:  { style: 'tied', skin: [0.88, 0.63, 0.49], pants: [0.09, 0.09, 0.1] },
+};
+
 function buildType(T) {
   const hl = T.L / 2;
   const bodyPts = T.body;
@@ -179,7 +279,8 @@ function buildType(T) {
   // hollow where the cabin is: a bonnet block ahead of the dashboard, a tail block behind the cabin, thin door skins
   // along the sides and a floor pan, so the seats, dashboard and driver sit in a real cabin under the glass
   const lower = clipBelow(withArches(bodyPts, T), T.belt + 0.02);
-  const wsx0 = bodyPts[3][0], cx1 = wsx0 - 0.02, cx0 = T.truck ? bodyPts[0][0] + 0.1 : -hl + 0.32, skin = 0.07, floorY = 0.36; // floor pan and seats sit low, as in a real cabin (heads clear the roof)
+  const wsx0 = bodyPts[3][0], cx1 = wsx0 - 0.02, cx0 = T.truck ? bodyPts[0][0] + 0.1 : -hl + 0.32, skin = 0.07;
+  const floorY = T.seats?.floor ?? 0.36; // each body style has a real seat/floor datum instead of sharing one generic occupant height
   const shell = [extrude(roundedShape(clipX(lower, cx1, 1), 0.1), T.W, 0.06)];
   if (!T.truck) shell.push(extrude(roundedShape(clipX(lower, cx0, -1), 0.1), T.W, 0.06));
   for (const sd of [-1, 1]) shell.push(extrude(roundedShape(lower, 0.1), skin, 0.02).translate(0, 0, sd * (T.W / 2 - skin / 2)));
@@ -227,7 +328,7 @@ function buildType(T) {
   // ---- cabin (vertex coloured): dashboard with instrument hood and centre stack, steering column and wheel on the right
   // (right-hand drive, +z), front seats with cushions, backrests and headrests, a rear bench, door cards, floor carpet
   const DASH = [0.13, 0.13, 0.14], SEAT = T.taxi ? [0.2, 0.22, 0.3] : [0.36, 0.36, 0.38], DOOR = [0.32, 0.31, 0.3], CARPET = [0.12, 0.12, 0.12], PLAS = [0.22, 0.22, 0.23];
-  const B0 = T.belt, dz = 0.34 * T.W / 1.47, cabin = [];
+  const B0 = T.belt, dz = T.seats?.track ?? 0.34 * T.W / 1.47, cabin = [];
   const dx0 = cx1 - 0.55;                                                       // dashboard face
   cabin.push(tint(boxG(cx1 - dx0, B0 - floorY - 0.12, T.W - 2 * skin, (cx1 + dx0) / 2, (B0 + floorY + 0.12) / 2, 0), DASH));
   cabin.push(tint(new THREE.BoxGeometry(0.55, 0.06, T.W - 2 * skin).rotateZ(-0.18).translate((cx1 + dx0) / 2 + 0.02, B0 + 0.03, 0), DASH));   // dash top
@@ -236,7 +337,7 @@ function buildType(T) {
   cabin.push(tint(new THREE.CylinderGeometry(0.025, 0.03, 0.34, sg(8)).rotateZ(Math.PI / 2 - 0.45).translate(dx0 - 0.1, B0 - 0.05, dz), PLAS)); // column
   cabin.push(tint(new THREE.TorusGeometry(0.17, 0.022, sg(8), sg(22)).rotateY(Math.PI / 2).rotateZ(-0.45).translate(dx0 - 0.25, B0 + 0.02, dz), DASH));
   cabin.push(tint(new THREE.CylinderGeometry(0.05, 0.05, 0.05, sg(10)).rotateZ(Math.PI / 2 - 0.45).translate(dx0 - 0.25, B0 + 0.02, dz), PLAS)); // hub
-  const sx = dx0 - 0.6;                                                         // centre of the front seat cushions
+  const sx = dx0 - (T.seats?.frontFromDash ?? 0.6);                             // centre of the front seat cushions
   for (const sd of [-1, 1]) {
     cabin.push(tint(boxG(0.5, 0.14, 0.48, sx, floorY + 0.16, sd * dz), SEAT));
     cabin.push(tint(boxG(0.1, 0.22, 0.4, sx + 0.02, floorY + 0.08, sd * dz), PLAS));                                  // seat base
@@ -247,54 +348,42 @@ function buildType(T) {
   }
   cabin.push(tint(boxG(0.6, 0.2, 0.2, sx + 0.05, floorY + 0.1, 0), PLAS));                                           // console
   cabin.push(tint(boxG(cx1 - cx0 - 0.1, 0.02, T.W - 2 * skin - 0.02, (cx0 + cx1) / 2, floorY + 0.01, 0), CARPET));
-  const rx = sx - 1.0;
+  const rx = sx - (T.seats?.rearGap ?? 1.0);
   if (!T.truck && rx - 0.35 > cx0) {                                             // rear bench
     cabin.push(tint(boxG(0.5, 0.16, T.W - 2 * skin - 0.1, rx, floorY + 0.2, 0), SEAT));
     cabin.push(tint(new THREE.BoxGeometry(0.12, 0.6, T.W - 2 * skin - 0.1).translate(0, 0.3, 0).rotateZ(0.22).translate(rx - 0.27, floorY + 0.26, 0), SEAT));
+    for (const sd of [-1, 1]) cabin.push(tint(boxG(0.1, 0.15, 0.25, rx - 0.35, floorY + 0.87, sd * dz), SEAT));
   }
   parts.cabin = mergeC(cabin);
-  // ---- occupants: a seated figure built from rounded parts — head with jaw, nose, ears and eyes, neck, a torso with
-  // shoulders and collar, jointed arms (hands on the wheel for the driver, in the lap for the passenger), thighs and
-  // shins, a seat belt across the chest. Three meshes each: skin/trousers/shoes/belt (fixed colours), shirt (tinted per
-  // car) and hair (tinted per car). The driver sits on the right (right-hand drive), a front passenger on the left.
-  const SKIN = [0.96, 0.8, 0.68], PANTS = [0.2, 0.22, 0.28], SHOE = [0.12, 0.1, 0.09], BELT = [0.16, 0.16, 0.17], EYE = [0.1, 0.08, 0.08];
-  const cap = (r, a, b) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length(), g = new THREE.CapsuleGeometry(r, Math.max(0.001, L), sg(4, 2), sg(10));
-    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); return g; };
-  const person = (pz, drive) => {
-    const hx = sx - 0.08, hy0 = floorY + 0.13, skin = [], hair = [], shirt = [], head = [hx - 0.19, hy0 + 0.86, pz];
-    skin.push(tint(new THREE.SphereGeometry(0.098, sg(16), sg(12)).scale(0.95, 1.1, 0.86).translate(...head), SKIN));                          // skull
-    skin.push(tint(new THREE.SphereGeometry(0.07, sg(12), sg(8)).scale(1, 0.8, 1.05).translate(head[0] + 0.03, head[1] - 0.06, pz), SKIN));  // jaw
-    skin.push(tint(new THREE.SphereGeometry(0.018, sg(6), sg(5)).scale(1.2, 1.3, 0.9).translate(head[0] + 0.093, head[1] - 0.01, pz), SKIN)); // nose
-    for (const e of [-1, 1]) { skin.push(tint(new THREE.SphereGeometry(0.022, sg(6), sg(5)).scale(0.5, 1, 1).translate(head[0] - 0.005, head[1] - 0.005, pz + e * 0.087), SKIN)); // ears
-      skin.push(tint(new THREE.SphereGeometry(0.011, sg(6), sg(5)).translate(head[0] + 0.082, head[1] + 0.018, pz + e * 0.034), EYE)); }        // eyes
-    skin.push(tint(new THREE.CylinderGeometry(0.036, 0.042, 0.1, sg(10)).translate(head[0] + 0.01, head[1] - 0.13, pz), SKIN));          // neck
-    // hair: a cap over the crown and back of the head, a fringe over the brow
-    hair.push(new THREE.SphereGeometry(0.106, sg(16), sg(10), 0, Math.PI * 2, 0, 1.75).scale(0.97, 1.02, 0.9).rotateZ(0.42).translate(head[0] - 0.012, head[1] + 0.012, pz));
-    hair.push(new THREE.SphereGeometry(0.06, sg(10), sg(6)).scale(0.6, 0.45, 1.35).translate(head[0] + 0.06, head[1] + 0.07, pz));
-    // torso: a rounded chest and shoulders leaning back with the seat, collar round the neck
-    const sh = [hx - 0.17, hy0 + 0.6], hip = [hx - 0.1, hy0 + 0.1];
-    shirt.push(cap(0.13, [hip[0], hip[1] + 0.1, pz], [sh[0], sh[1] - 0.08, pz]).scale(1, 1, 1).translate(0, 0, 0));
-    shirt.push(new THREE.CapsuleGeometry(0.075, 0.28, sg(4, 2), sg(10)).rotateX(Math.PI / 2).translate(sh[0], sh[1], pz));                        // shoulders
-    shirt.push(new THREE.TorusGeometry(0.045, 0.014, sg(6), sg(12)).rotateX(Math.PI / 2).translate(head[0] + 0.01, head[1] - 0.17, pz));     // collar
-    // seat belt from the outboard shoulder across to the inboard hip
-    { const out = drive ? 1 : -1; skin.push(tint(cap(0.012, [sh[0] + 0.07, sh[1] + 0.02, pz + out * 0.15], [hip[0] + 0.15, hip[1] + 0.1, pz - out * 0.15]), BELT)); }
-    // arms: upper arm, forearm, hand
-    for (const e of [-1, 1]) {
-      const S = [sh[0], sh[1] - 0.02, pz + e * 0.17];
-      const H = drive ? [dx0 - 0.3, B0 + 0.03 + e * 0.1, dz + e * 0.13] : [hx + 0.26, hy0 + 0.16, pz + e * 0.09];
-      const E = drive ? [hx + 0.07, hy0 + 0.33, pz + e * 0.22] : [hx + 0.02, hy0 + 0.28, pz + e * 0.21];
-      shirt.push(cap(0.047, S, E)); shirt.push(cap(0.04, E, [lerp(E[0], H[0], 0.85), lerp(E[1], H[1], 0.85), lerp(E[2], H[2], 0.85)]));
-      skin.push(tint(new THREE.SphereGeometry(0.036, sg(8), sg(6)).scale(1.2, 0.8, 1).translate(...H), SKIN));
-      // legs: thigh along the cushion, shin down to the pedals, a shoe
-      const K = [hx + 0.34, hy0 + 0.22, pz + e * 0.1], A = [hx + 0.55, floorY + 0.08, pz + e * 0.1];
-      skin.push(tint(cap(0.068, [hip[0] + 0.02, hip[1] - 0.01, pz + e * 0.09], K), PANTS), tint(cap(0.052, K, A), PANTS));
-      skin.push(tint(new THREE.BoxGeometry(0.22, 0.07, 0.09).translate(A[0] + 0.06, floorY + 0.035, A[2]), SHOE));
+  // ---- occupants: seat anchors from this body's own cabin (cushion heights, backrest angles, the wheel, where feet
+  // go), each figure then fitted to this body's roof line and door glass: it reclines a little, then is drawn slighter,
+  // and a seat without room for a person stays empty (no head through the roof, no shoulder through the glass)
+  const roofLine = x => { let y = -1; for (let i = 0; i < bodyPts.length; i++) { const a = bodyPts[i], b = bodyPts[(i + 1) % bodyPts.length];
+    if (a[0] !== b[0] && (a[0] - x) * (b[0] - x) <= 0) y = Math.max(y, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0])); } return y - 0.075; };
+  const glassAt = y => (T.W / 2 - 0.05) * (1 - 0.13 * clamp((y - T.belt) / Math.max(0.2, roofY - T.belt), 0, 1)) - 0.03;
+  const wheel = { c: V3(dx0 - 0.25, B0 + 0.02, dz), r: 0.17, z: V3(0, 0, 1), up: V3(Math.sin(0.45), Math.cos(0.45), 0) };
+  const seat = (role, h, back, heel, out, drive) => {
+    const look = SEAT_LOOK[role];
+    for (const [b, sc] of [[back, 1], [back + 0.07, 1], [back + 0.12, 0.96], [back + 0.16, 0.92], [back + 0.18, 0.88], [back + 0.2, 0.84]]) {
+      const hh = h.slice(), A = { h: hh, back: b, heel, out, wheel: drive ? wheel : null, s: sc, ...look };
+      let f = seatedFigure(A);
+      const over = f.reach - glassAt(f.shoulderY);
+      if (over > 0 && over < 0.07) { hh[2] -= Math.sign(hh[2]) * over; if (drive) A.wheel = { ...wheel, c: wheel.c.clone().setZ(hh[2]) }; f = seatedFigure(A); }
+      if (f.top <= roofLine(f.headX) - 0.025 && f.reach <= glassAt(f.shoulderY) + 0.005) return f;
     }
-    return { skin: mergeC(skin), hair: merge(hair.map(g => g.index ? g.toNonIndexed() : g)), shirt: merge(shirt.map(g => g.index ? g.toNonIndexed() : g)) };
+    return null;
   };
-  { const d = person(dz, true), q = person(-dz, false);
-    parts.driverSkin = d.skin; parts.driverHair = d.hair; parts.driverCloth = d.shirt;
-    parts.paxSkin = q.skin; parts.paxHair = q.hair; parts.paxCloth = q.shirt; }
+  const figs = [], seatIn = (role, f) => { if (f) figs.push([SEATS.indexOf(role), f]); };
+  seatIn('driver', seat('driver', [sx - 0.11, floorY + 0.32, dz], 0.2, [dx0 - 0.12, floorY + 0.02], 1, true));
+  seatIn('pax', seat('pax', [sx - 0.11, floorY + 0.32, -dz], 0.2, [dx0 - 0.16, floorY + 0.02], -1, false));
+  if (!T.truck && rx - 0.35 > cx0) {
+    seatIn('rearR', seat('rearR', [rx - 0.11, floorY + 0.37, dz], 0.22, [sx - 0.5, floorY + 0.02], 1, false));
+    seatIn('rearL', seat('rearL', [rx - 0.11, floorY + 0.37, -dz], 0.22, [sx - 0.5, floorY + 0.02], -1, false));
+  }
+  const seated = (key, coloured) => { const list = figs.map(([k, f]) => { const g = f[key], n = g.attributes.position.count; g.setAttribute('seat', new THREE.BufferAttribute(new Float32Array(n).fill(k), 1)); return g; });
+    if (!list.length) return null; const m = coloured ? mergeC(list) : merge(list), sa = new Float32Array(m.attributes.position.count); let o = 0;
+    for (const g of list) { sa.set(g.attributes.seat.array, o); o += g.attributes.seat.count; } m.setAttribute('seat', new THREE.BufferAttribute(sa, 1)); return m; };
+  parts.occSkin = seated('skin', true); parts.occCloth = seated('shirt', false); parts.occHair = seated('hair', false);
   parts.plate = merge([boxG(0.02, 0.165, 0.33, hl + 0.09, 0.5, 0), boxG(0.02, 0.165, 0.33, -hl - 0.09, 0.6, 0)]);
   const hy = bodyPts[2][1] - 0.1;
   parts.head = merge([boxG(0.05, 0.12, 0.3, hl - 0.01, hy, T.W / 2 - 0.22), boxG(0.05, 0.12, 0.3, hl - 0.01, hy, -T.W / 2 + 0.22)]);
@@ -333,10 +422,10 @@ function buildType(T) {
 // ---------------------------------------------------------------- fleet: instanced rendering of all cars
 const _m = new THREE.Matrix4(), _w = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _c = new THREE.Color(), _qs = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 const PART_MAT = { paint: paintMat, glass: glassMat, trim: trimMat, plate: plateMat, head: headMat, tail: tailMat, chrome: chromeMat, shadow: shadowMat, tire: tireMat, rim: rimMat,
-  cabin: cabinMat, driverSkin: cabinMat, driverCloth: clothMat, driverHair: hairMat, paxSkin: cabinMat, paxCloth: clothMat, paxHair: hairMat };
+  cabin: cabinMat, occSkin: seatedMat(cabinMat, false), occCloth: seatedMat(clothMat, true), occHair: seatedMat(hairMat, true) };
 const CASTS = { paint: true, glass: true, tire: true };
-const TINTED = ['paint', 'plate', 'head', 'tail', 'driverCloth', 'paxCloth', 'driverHair', 'paxHair'];
-const OCCUPANT = new Set([...DRIVER, ...PAX]);
+const TINTED = ['paint', 'plate', 'head', 'tail'];
+const OCCUPANT = new Set(OCC_KEYS);
 // Every car keeps a stable identity (fleet.cars[id]: type, index within its type, transform, colours). What is drawn is
 // derived from it each frame: per car type the near set — full detail within lodDist of the camera — and, beyond it,
 // the same car with fewer segments. The far cars are spread over the whole town, so they are drawn as two lists: the
@@ -358,7 +447,14 @@ export class Fleet {
         for (const key in PART_MAT) {
           if (kind === 1 && !CASTS[key]) continue;
           const g = key === 'tire' ? geo.tire : key === 'rim' ? geo.rim : geo.parts[key], per = key === 'tire' || key === 'rim' ? 4 : 1;
-          const im = new THREE.InstancedMesh(g, PART_MAT[key], n * per); im.count = 0;
+          if (!g) continue;
+          let geo2 = g;
+          if (OCCUPANT.has(key)) { // (its own seat colours: a geometry view sharing the shape's buffers)
+            geo2 = new THREE.BufferGeometry(); for (const a in g.attributes) geo2.setAttribute(a, g.attributes[a]);
+            geo2.boundingSphere = (g.boundingSphere || (g.computeBoundingSphere(), g.boundingSphere)).clone();
+            geo2.setAttribute('seatCol', new THREE.InstancedBufferAttribute(new Float32Array(n * 4).fill(-1), 4));
+          }
+          const im = new THREE.InstancedMesh(geo2, PART_MAT[key], n * per); im.count = 0;
           im.castShadow = kind !== 2 && !!CASTS[key]; im.receiveShadow = key !== 'shadow';
           im.frustumCulled = kind === 0; // the near set is bounded every frame; the far lists are culled per car
           if (TINTED.includes(key)) im.setColorAt(0, _c.setRGB(1, 1, 1));
@@ -377,7 +473,10 @@ export class Fleet {
         const car = { id: si, type, k, T, spin: 0, x: 0, y: 0, z: 0, r: 0, lod: -1, slot: -1, moving: false, placed: false, dirty: false,
           mat: new Float32Array(16), wheels: new Float32Array(64), head: 0, tail: 0,
           col: { paint: sp.color || PAINTS[0], plate: T.kei ? [0.95, 0.82, 0.1] : [0.95, 0.95, 0.93],
-            driverCloth: CLOTH[(si * 7 + 3) % CLOTH.length], paxCloth: CLOTH[(si * 5 + 1) % CLOTH.length], driverHair: HAIRS[(si * 3 + 1) % HAIRS.length], paxHair: HAIRS[(si * 11 + 2) % HAIRS.length] } };
+            driverCloth: CLOTH[(si * 7 + 3) % CLOTH.length], paxCloth: CLOTH[(si * 5 + 1) % CLOTH.length],
+            rearRCloth: CLOTH[(si * 13 + 4) % CLOTH.length], rearLCloth: CLOTH[(si * 17 + 6) % CLOTH.length],
+            driverHair: HAIRS[(si * 3 + 1) % HAIRS.length], paxHair: HAIRS[(si * 11 + 2) % HAIRS.length],
+            rearRHair: HAIRS[(si * 5 + 3) % HAIRS.length], rearLHair: HAIRS[(si * 7 + 5) % HAIRS.length] } };
         this.cars[si] = car; this.types[type].cars.push(car);
       });
     }
@@ -403,9 +502,13 @@ export class Fleet {
   _write(set, car, s = car.slot) {
     const M = set.M, A = car.mat;
     for (const key of BODY) if (M[key]) M[key].instanceMatrix.array.set(A, s * 16);
-    const drv = car.driver ? A : _zero.elements, pax = car.driver && car.pax ? A : _zero.elements;
-    for (const key of DRIVER) if (M[key]) M[key].instanceMatrix.array.set(drv, s * 16);
-    for (const key of PAX) if (M[key]) M[key].instanceMatrix.array.set(pax, s * 16);
+    for (const key of OCC_KEYS) {
+      const im = M[key]; if (!im) continue;
+      im.instanceMatrix.array.set(A, s * 16);
+      const a = im.geometry.attributes.seatCol.array;
+      for (let k = 0; k < 4; k++) { const on = car.driver && (k === 0 || car[SEATS[k]]);
+        a[s * 4 + k] = !on ? -1 : key === 'occSkin' ? 0 : packCol(car.col[SEATS[k] + (key === 'occCloth' ? 'Cloth' : 'Hair')]); }
+    }
     M.tire.instanceMatrix.array.set(car.wheels, s * 64); if (M.rim) M.rim.instanceMatrix.array.set(car.wheels, s * 64);
     for (const key of TINTED) {
       if (!M[key]) continue;
@@ -461,6 +564,7 @@ export class Fleet {
           const per = im.userData.per, a = im.instanceMatrix, c = im.instanceColor;
           a.clearUpdateRanges(); a.addUpdateRange(set.d0 * per * 16, (set.d1 - set.d0 + 1) * per * 16); a.needsUpdate = true;
           if (c) { c.clearUpdateRanges(); c.addUpdateRange(set.d0 * 3, (set.d1 - set.d0 + 1) * 3); c.needsUpdate = true; }
+          const q = im.geometry.attributes.seatCol; if (q) { q.clearUpdateRanges(); q.addUpdateRange(set.d0 * 4, (set.d1 - set.d0 + 1) * 4); q.needsUpdate = true; }
         }
         set.d0 = Infinity; set.d1 = -1;
       }
@@ -479,6 +583,7 @@ export class Fleet {
         const per = im.userData.per, a = im.instanceMatrix, c = im.instanceColor;
         a.clearUpdateRanges(); a.addUpdateRange(0, k * per * 16); a.needsUpdate = true;
         if (c) { c.clearUpdateRanges(); c.addUpdateRange(0, k * 3); c.needsUpdate = true; }
+        const q = im.geometry.attributes.seatCol; if (q) { q.clearUpdateRanges(); q.addUpdateRange(0, k * 4); q.needsUpdate = true; }
       }
     }
   }
@@ -552,7 +657,14 @@ export class Route {
 const tmpA = { x: 0, z: 0, dx: 0, dz: 0 }, tmpB = { x: 0, z: 0, dx: 0, dz: 0 }, _ca = { x: 0, z: 0, dx: 0, dz: 0 }, _cb = { x: 0, z: 0, dx: 0, dz: 0 };
 export class Traffic {
   constructor(fleet, groundAt) { this.fleet = fleet; this.groundAt = groundAt; this.movers = []; this.emitters = [0, 1, 2, 3].map(() => new Emitter('engine')); }
-  add(car, route, s) { car.driver = true; car.pax = ((car.k * 7919 + car.type.length * 31) % 100) < 35; this.movers.push({ car, route, s, v: route.vmax * 0.5, wait: 0, stopIdx: this.nextStop(route, s), brake: 0 }); }
+  add(car, route, s) {
+    const roll = (car.k * 7919 + car.type.length * 31) % 100;
+    car.driver = true;
+    car.pax = roll < (car.T.taxi ? 18 : 34);
+    car.rearR = !car.T.truck && (car.T.taxi ? roll < 72 : roll >= 34 && roll < 48);
+    car.rearL = !car.T.truck && (car.T.taxi ? roll < 26 : roll >= 43 && roll < 51);
+    this.movers.push({ car, route, s, v: route.vmax * 0.5, wait: 0, stopIdx: this.nextStop(route, s), brake: 0 });
+  }
   nextStop(route, s) { let best = -1, bd = 1e9; route.stops.forEach((st, i) => { const d = ((st.s - s) % route.len + route.len) % route.len; if (d < bd) { bd = d; best = i; } }); return best; }
   update(dt, player, headlights) {
     const M = this.movers;

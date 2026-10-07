@@ -73,7 +73,8 @@ setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 20000);
 const server = http.createServer(async (q, r) => {
   const url = new URL(q.url, 'http://localhost');
   try {
-    if (url.pathname === '/api/ping') return send(r, 200, { ok: true, root: ROOT, dev: true });
+    // (the game, when served by the static launcher on another port, asks whether the World Builder can be opened here)
+    if (url.pathname === '/api/ping') { r.setHeader('Access-Control-Allow-Origin', '*'); return send(r, 200, { ok: true, root: ROOT, dev: true }); }
     if (url.pathname === '/api/list') { // file names in an asset folder (the editor's texture library)
       const dir = url.searchParams.get('dir') || '', abs = path.resolve(ROOT, dir);
       if (!/^assets\/[a-z0-9_/-]+$/.test(dir) || !abs.startsWith(ROOT)) return send(r, 400, { ok: false, error: 'bad dir' });

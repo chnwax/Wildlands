@@ -95,6 +95,8 @@ export class WorldLayer {
     // instanced objects
     scatters.forEach((s, si) => { if (!s.meta || !s.items) return; s.wsi = si; this.sets.push(s); const P = s.meta.prefab; if (!this.scatterPrefabs.has(P)) this.scatterPrefabs.set(P, []); this.scatterPrefabs.get(P).push(s);
       for (const part of s.lods[0].parts) if (!this.matName.has(part.material)) this.nameMaterial(part.material, part.material.name ? part.material.name.toLowerCase().replace(/[^a-z0-9]+/g, '_') : P + '_' + (s.lods[0].parts.indexOf(part) + 1)); });
+    // every merged mesh in build order (loose details are addressed by mesh number and triangle)
+    this.buckets = []; scene.traverse(o => { if (o.isMesh && o.userData.bucket) this.buckets.push(o); });
     // primitives' default material
     if (!this.matByName.has('primitive')) this.nameMaterial(new THREE.MeshStandardMaterial({ color: 0xd8d4cc, roughness: 0.75, metalness: 0 }), 'primitive');
   }
@@ -127,6 +129,7 @@ export class WorldLayer {
   // the object with this id (generated, instanced or added), or null
   get(id) {
     const e = this.ents.get(id); if (e) return e;
+    const dm = /^detail_m(\d+)_t(\d+)$/.exec(id); if (dm) return this.detailAt(+dm[1], +dm[2]);
     const g = F.parseGeneratedId(id); if (!g || !this.scatterPrefabs.has(g.prefab)) return null;
     const l = this.table(g.prefab).get(g.area), q = l && l[g.n - 1];
     return q ? this.scatterEnt(q[0], q[1]) : null;
@@ -428,6 +431,43 @@ export class WorldLayer {
     }
     return (ent.pieceLists[slot] = out);
   }
+  // ---------------------------------------------------------------- details: loose geometry that belongs to no object
+  // The connected piece of merged mesh number mi containing triangle tri, as an object of its own (prefab "detail",
+  // id detail_m<mesh>_t<first triangle>), when it is small (not road, terrain or a long wall) and not part of an object.
+  detailAt(mi, tri) {
+    const m = this.buckets[mi]; if (!m || !m.geometry.index) return null;
+    const g = m.geometry, P = g.attributes.position.array, I = g.index.array; if (!P || !I) return null;
+    if (!this.owned3) { // triangle ranges that objects own, per mesh
+      this.owned3 = new Map();
+      for (const e of this.geo) for (const sg of e.cap.segs) if (sg.b.mesh) { let l = this.owned3.get(sg.b.mesh); if (!l) this.owned3.set(sg.b.mesh, l = []); l.push([sg.i0 / 3, sg.i1 / 3]); }
+    }
+    const own = this.owned3.get(m) || [], owned = t => own.some(([a, b]) => t >= a && t < b);
+    if (owned(tri)) return null;
+    let A = m.userData.adj;
+    if (!A) { // triangles by vertex position (built once per mesh, on demand)
+      A = new Map(); const nt = I.length / 3;
+      for (let t = 0; t < nt; t++) { if (owned(t)) continue; for (let j = 0; j < 3; j++) { const v = I[t * 3 + j], k = Math.round(P[v * 3] * 200) + ',' + Math.round(P[v * 3 + 1] * 200) + ',' + Math.round(P[v * 3 + 2] * 200); let l = A.get(k); if (!l) A.set(k, l = []); l.push(t); } }
+      Object.defineProperty(m.userData, 'adj', { value: A, enumerable: false, configurable: true });
+    }
+    const key = v => Math.round(P[v * 3] * 200) + ',' + Math.round(P[v * 3 + 1] * 200) + ',' + Math.round(P[v * 3 + 2] * 200);
+    const seen = new Set([tri]), todo = [tri], box = new THREE.Box3();
+    while (todo.length) {
+      const t = todo.pop();
+      for (let j = 0; j < 3; j++) { const v = I[t * 3 + j]; box.expandByPoint(_v.fromArray(P, v * 3)); for (const u of A.get(key(v)) || []) if (!seen.has(u)) { seen.add(u); todo.push(u); } }
+      if (seen.size > 20000) return null;
+      const sz = box.getSize(_v2); if (Math.max(sz.x, sz.z) > 14 || sz.y > 20) return null; // roads, terrain, long walls: not a detail
+    }
+    const tris = [...seen].sort((a, b) => a - b), id = `detail_m${mi}_t${tris[0]}`;
+    if (this.ents.has(id)) return this.ents.get(id);
+    const segs = [];
+    for (let k = 0; k < tris.length;) { let e = k; while (e + 1 < tris.length && tris[e + 1] === tris[e] + 1) e++; let v0 = 1e9, v1 = -1; for (let t = tris[k]; t <= tris[e]; t++) for (let j = 0; j < 3; j++) { const v = I[t * 3 + j]; v0 = Math.min(v0, v); v1 = Math.max(v1, v); } segs.push({ b: m.userData.bucket, i0: tris[k] * 3, i1: (tris[e] + 1) * 3, v0, v1: v1 + 1 }); k = e + 1; }
+    const c = box.getCenter(new THREE.Vector3());
+    const cap = { prefab: 'detail', x: c.x, y: box.min.y, z: c.z, ry: 0, based: true, segs, props: [], meshes: [], colliders: [], lamps: [], parent: null };
+    const ent = { kind: 'geo', detail: true, prefab: 'detail', cap, category: 'prop', det: null, state: null, parent: null, id, area: this.areaOf ? this.areaOf(c.x, c.z) : 'world', n: tris[0] };
+    ent.base = { p: [c.x, box.min.y, c.z], r: [0, 0, 0], s: [1, 1, 1] };
+    this.ents.set(id, ent);
+    return ent;
+  }
   // which piece of slot the triangle `face` of part mesh m belongs to (its key "slot#k"), or null
   pieceAt(ent, m, face) {
     const own = ent.det.parts.find(p => p.mesh === m); if (!own) return null;
@@ -435,19 +475,60 @@ export class WorldLayer {
     const list = this.piecesOf(ent, own.slot), k = list.findIndex(c => c.part === own && c.tris.includes(face));
     return k >= 0 ? own.slot + '#' + k : own.slot;
   }
+  // finer pieces of piece n: its flat faces (connected triangles on one plane) — one wall face, one roof plane
+  subPiecesOf(ent, slot, n) {
+    const k0 = slot + '#' + n; ent.subLists = ent.subLists || {};
+    if (ent.subLists[k0]) return ent.subLists[k0];
+    const c = this.piecesOf(ent, slot)[n]; if (!c) return [];
+    const g = c.part.mesh.geometry, P = g.attributes.position.array, I = c.part.idx0 || g.index.array;
+    const T = c.tris, nt = T.length, par = new Int32Array(nt).map((_, i) => i), nrm = new Float32Array(nt * 4), byKey = new Map();
+    const find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+    for (let q = 0; q < nt; q++) {
+      const t = T[q], a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, cc = I[t * 3 + 2] * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[cc] - P[a], vy = P[cc + 1] - P[a + 1], vz = P[cc + 2] - P[a + 2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+      nrm.set([nx, ny, nz, nx * P[a] + ny * P[a + 1] + nz * P[a + 2]], q * 4);
+      for (const v of [I[t * 3], I[t * 3 + 1], I[t * 3 + 2]]) { const k = Math.round(P[v * 3] * 500) + ',' + Math.round(P[v * 3 + 1] * 500) + ',' + Math.round(P[v * 3 + 2] * 500); let L2 = byKey.get(k); if (!L2) byKey.set(k, L2 = []); L2.push(q); }
+    }
+    for (const L2 of byKey.values()) for (let x = 1; x < L2.length; x++) for (let y = 0; y < x; y++) {
+      const a = L2[x] * 4, b = L2[y] * 4; if (nrm[a] * nrm[b] + nrm[a + 1] * nrm[b + 1] + nrm[a + 2] * nrm[b + 2] > 0.985 && Math.abs(nrm[a + 3] - nrm[b + 3]) < 0.02) { const ra = find(L2[x]), rb = find(L2[y]); if (ra !== rb) par[ra] = rb; }
+    }
+    const comp = new Map(), out = [];
+    for (let q = 0; q < nt; q++) { const r = find(q); let cc = comp.get(r); if (!cc) { cc = []; comp.set(r, cc); out.push(cc); } cc.push(T[q]); }
+    return (ent.subLists[k0] = out.map(tris => ({ part: c.part, tris })));
+  }
+  // the sub-piece key of a triangle of piece key (slot#n), or null
+  subPieceAt(ent, key, mesh, face) {
+    const [slot, ns] = key.split('#'), n = parseInt(ns), own = ent.det.parts.find(p => p.mesh === mesh); if (!own) return null;
+    const c = this.piecesOf(ent, slot)[n]; if (!c) return null;
+    const t = own.slot === key ? c.tris[face] : face; // (a split-off piece's triangle k is the k-th of the piece)
+    const k = this.subPiecesOf(ent, slot, n).findIndex(q => q.tris.includes(t));
+    return k >= 0 ? `${key}.${k}` : null;
+  }
+  // split the triangles of a piece ("slot#n" or "slot#n.m") off into a mesh of their own (only those still drawn)
   ensurePiece(ent, key) {
     if (!ent.det || ent.det.parts.some(p => p.slot === key)) return;
-    const [slot, ks] = key.split('#'), c = this.piecesOf(ent, slot)[+ks]; if (!c) return;
-    const src = c.part.mesh, g = src.geometry, I = g.index.array; if (!c.part.idx0) c.part.idx0 = I.slice();
-    const I0 = c.part.idx0, map = new Map(), idx = [];
-    for (const t of c.tris) for (let j = 0; j < 3; j++) { const v = I0[t * 3 + j]; let w = map.get(v); if (w === undefined) { w = map.size; map.set(v, w); } idx.push(w); I[t * 3 + j] = I0[t * 3]; }
+    const [slot, rest] = key.split('#'), [ns, ms] = rest.split('.'), n = +ns;
+    const c = ms === undefined ? this.piecesOf(ent, slot)[n] : this.subPiecesOf(ent, slot, n)[+ms]; if (!c) return;
+    // a sub-piece of a piece that is already split off comes out of that piece's mesh
+    let src = c.part, tris = c.tris;
+    const parent = ms !== undefined && ent.det.parts.find(p => p.slot === slot + '#' + n);
+    if (parent) { const pc = this.piecesOf(ent, slot)[n], set = new Set(c.tris); src = parent; tris = []; pc.tris.forEach((t, k) => { if (set.has(t)) tris.push(k); }); }
+    const g = src.mesh.geometry, I = g.index.array; if (!src.idx0) src.idx0 = I.slice();
+    const I0 = src.idx0, map = new Map(), idx = [];
+    for (const t of tris) {
+      if (I[t * 3] === I[t * 3 + 1] && I[t * 3 + 1] === I[t * 3 + 2]) continue; // (already split off into a finer piece)
+      for (let j = 0; j < 3; j++) { const v = I0[t * 3 + j]; let w = map.get(v); if (w === undefined) { w = map.size; map.set(v, w); } idx.push(w); }
+      I[t * 3] = I[t * 3 + 1] = I[t * 3 + 2] = I0[t * 3];
+    }
+    if (!idx.length) return;
     g.index.needsUpdate = true;
     const ng = new THREE.BufferGeometry(), vs = [...map.keys()];
     for (const name in g.attributes) { const a = g.attributes[name], w = a.itemSize, A = new a.array.constructor(vs.length * w); vs.forEach((v, i) => { for (let k = 0; k < w; k++) A[i * w + k] = a.array[v * w + k]; }); ng.setAttribute(name, new THREE.BufferAttribute(A, w, a.normalized)); }
     ng.setIndex(idx); ng.computeBoundingSphere(); ng.computeBoundingBox();
-    const m = new THREE.Mesh(ng, c.part.baseMat); m.castShadow = src.castShadow; m.receiveShadow = src.receiveShadow; m.layers.mask = src.layers.mask;
-    src.updateMatrix(); m.matrix.copy(c.part.t0 || src.matrix); m.matrix.decompose(m.position, m.quaternion, m.scale); m.userData.worldPart = true;
-    ent.det.group.add(m); ent.det.parts.push({ mesh: m, slot: key, baseMat: c.part.baseMat, piece: true });
+    const m = new THREE.Mesh(ng, src.baseMat); m.castShadow = src.mesh.castShadow; m.receiveShadow = src.mesh.receiveShadow; m.layers.mask = src.mesh.layers.mask;
+    src.mesh.updateMatrix(); m.matrix.copy(src.t0 || src.mesh.matrix); m.matrix.decompose(m.position, m.quaternion, m.scale); m.userData.worldPart = true;
+    ent.det.group.add(m); ent.det.parts.push({ mesh: m, slot: key, baseMat: src.baseMat, piece: true });
   }
   // centre of an element in the object's frame (the pivot its edits turn and scale about)
   elementPivot(ent, slot) {
@@ -596,6 +677,33 @@ export class WorldLayer {
   }
   // an edit whose id no longer exists: the object of the same prefab nearest to where the generator used to place it
   rebind(rec) {
+    const dm = /^detail_m(\d+)_t\d+$/.exec(rec.id);
+    if (dm) {
+      // Detail ids contain merged-mesh/triangle numbers, so geometry inserted earlier in the build can renumber them.
+      // Find the small loose component at the saved origin, checking the old mesh first, then the other buckets.
+      let best = null, bd = 3;
+      const oldMi = +dm[1], order = [oldMi, ...this.buckets.map((_, i) => i).filter(i => i !== oldMi)];
+      for (const mi of order) {
+        const m = this.buckets[mi], g = m && m.geometry, P = g && g.attributes.position && g.attributes.position.array, I = g && g.index && g.index.array;
+        if (!P || !I) continue;
+        const near = [];
+        for (let t = 0; t < I.length / 3; t++) {
+          let d = Infinity;
+          for (let j = 0; j < 3; j++) { const v = I[t * 3 + j] * 3; d = Math.min(d, Math.hypot(P[v] - rec.origin[0], P[v + 2] - rec.origin[2])); }
+          if (d < 2.5) near.push([d, t]);
+        }
+        near.sort((a, b) => a[0] - b[0]);
+        const tried = new Set();
+        for (const [, t] of near.slice(0, 64)) {
+          const e = this.detailAt(mi, t); if (!e || tried.has(e.id)) continue; tried.add(e.id);
+          const d = Math.hypot(e.base.p[0] - rec.origin[0], e.base.p[2] - rec.origin[2]);
+          if (d < bd) { bd = d; best = e; if (d < 0.05) break; }
+        }
+        if (best && bd < 0.05) break;
+      }
+      if (best) this.problems.push({ level: 'warning', file: `world/${this.map}`, id: rec.id, field: 'id', message: `the generator now gives this object the id ${best.id} (found at its "origin"); the edit was applied to it. Saving in the editor renames the entry.`, rebound: best.id });
+      return best;
+    }
     const g = F.parseGeneratedId(rec.id); if (!g) return null;
     let best = null, bd = 3;
     const cand = this.scatterPrefabs.has(g.prefab) ? [...this.table(g.prefab).values()].flat().map(([s2, i]) => this.scatterEnt(s2, i)) : this.geo.filter(e => e.prefab === g.prefab);
@@ -657,11 +765,14 @@ export class WorldLayer {
   }
   // a dismissible note listing data problems (the game; the editor has its own panel)
   showProblems() {
-    if (!this.problems.length) return;
-    const errs = this.problems.filter(p => p.level === 'error').length, el = document.createElement('div');
+    // (an edit re-attached to its object by its saved origin was applied: nothing for a player to act on; the editor
+    // lists it and renames the entry on its next save)
+    const P = this.problems.filter(p => !p.rebound);
+    if (!P.length) return;
+    const errs = P.filter(p => p.level === 'error').length, el = document.createElement('div');
     el.style.cssText = 'position:fixed;left:12px;top:12px;max-width:min(640px,90vw);z-index:97;background:rgba(30,18,16,.92);color:#f3d9d2;border:1px solid #c0645a;border-radius:8px;padding:10px 14px;font:12px/1.45 system-ui,sans-serif;cursor:pointer';
     el.title = 'click to close';
-    el.innerHTML = `<b>World data: ${this.problems.length} problem${this.problems.length > 1 ? 's' : ''}${errs ? ` (${errs} error${errs > 1 ? 's' : ''})` : ''}</b> — invalid entries were skipped, the rest of the world loaded.<pre style="white-space:pre-wrap;margin:6px 0 0;font:11px/1.4 Consolas,monospace;max-height:40vh;overflow:auto">${this.problems.slice(0, 12).map(F.formatProblem).join('\n').replace(/</g, '&lt;')}${this.problems.length > 12 ? `\n… ${this.problems.length - 12} more in the console (F12)` : ''}</pre>`;
+    el.innerHTML = `<b>World data: ${P.length} problem${P.length > 1 ? 's' : ''}${errs ? ` (${errs} error${errs > 1 ? 's' : ''})` : ''}</b> — invalid entries were skipped, the rest of the world loaded.<pre style="white-space:pre-wrap;margin:6px 0 0;font:11px/1.4 Consolas,monospace;max-height:40vh;overflow:auto">${P.slice(0, 12).map(F.formatProblem).join('\n').replace(/</g, '&lt;')}${P.length > 12 ? `\n… ${P.length - 12} more in the console (F12)` : ''}</pre>`;
     el.onclick = () => el.remove(); document.body.appendChild(el);
   }
 }

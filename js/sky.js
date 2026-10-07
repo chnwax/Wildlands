@@ -53,9 +53,9 @@ function updateCelestial(th) {
 
 // ---------------------------------------------------------------- sky dome: painted gradient, glowing sun, night sky
 const skyU = {
-  tNoise: S.tNoise, uTime: S.uTime, uSunDir: S.uSunDir,
+  tNoise: S.tNoise, tMoon: { value: makeMoonTexture() }, uTime: S.uTime, uSunDir: S.uSunDir,
   uZen: { value: pal.zen }, uHor: { value: pal.hor }, uGlow: { value: pal.glow }, uGnd: { value: pal.gnd }, uGlowAmt: { value: 0 },
-  uSunDisk: { value: new THREE.Vector3() }, uMoonDir: { value: new THREE.Vector3() }, uMoonGlow: { value: new THREE.Vector3() },
+  uSunDisk: { value: new THREE.Vector3() }, uMoonDir: { value: new THREE.Vector3() }, uMoonGlow: { value: new THREE.Vector3() }, uMoonDisk: { value: new THREE.Vector3() }, uMoonVis: { value: 0 }, uMoonU: { value: new THREE.Vector3(1, 0, 0) }, uMoonV: { value: new THREE.Vector3(0, 1, 0) },
   uNightSky: { value: 0 }, uCel: { value: celestial.inv },
   uTown: { value: new THREE.Vector4() }, uTownCol: { value: new THREE.Vector3(1.0, 0.6, 0.34) },
 };
@@ -74,7 +74,7 @@ const skyMat = new THREE.ShaderMaterial({
       #endif
     }`,
   fragmentShader: /* glsl */`
-    uniform sampler2D tNoise; uniform float uTime, uNightSky, uGlowAmt; uniform vec3 uSunDir, uSunDisk, uMoonDir, uMoonGlow, uZen, uHor, uGlow, uGnd, uTownCol; uniform mat3 uCel; uniform vec4 uTown;
+    uniform sampler2D tNoise, tMoon; uniform float uTime, uNightSky, uGlowAmt, uMoonVis; uniform vec3 uSunDir, uSunDisk, uMoonDir, uMoonGlow, uMoonDisk, uMoonU, uMoonV, uZen, uHor, uGlow, uGnd, uTownCol; uniform mat3 uCel; uniform vec4 uTown;
     varying vec3 vW;
     const float PI = 3.14159265359;
     void main(){
@@ -110,6 +110,16 @@ const skyMat = new THREE.ShaderMaterial({
         col += mw * smoothstep(-0.02, 0.35, d.y) * uNightSky;
         float mm = max(dot(d, uMoonDir), 0.0);
         col += uMoonGlow * (pow(mm, 300.0) * 1.2 + pow(mm, 30.0) * 0.25 + pow(mm, 5.0) * 0.06) * uNightSky;
+        // The moon is painted by the sky itself, at infinity: no geometry, so nothing to depth-fight, sort against the
+        // clouds or lag a frame behind the camera (the former moon was a transparent 260 m card 9 km away, re-aimed
+        // after the camera moved and sorted against the cloud layers — it flickered and swapped layers while turning).
+        // Its texture axes (uMoonU/V) come from the moon's orbit (updateSky), so the disc never flips orientation as it
+        // passes overhead. A 3° disc: the large, painted moon of an anime night sky.
+        float md = dot(d, uMoonDir);
+        vec2 muv = vec2(dot(d, uMoonU), dot(d, uMoonV)) / max(md, 0.001) / 0.0524 + 0.5;
+        float inMoon = step(0.0, min(min(muv.x, muv.y), min(1.0 - muv.x, 1.0 - muv.y))) * step(0.0, md);
+        vec4 moonTex = texture2D(tMoon, clamp(muv, 0.0, 1.0));
+        col = mix(col, moonTex.rgb * uMoonDisk, moonTex.a * inMoon * uMoonVis);
       }
       // light pollution: a faint warm dome low over the lit town — in its direction from outside, all round from within,
       // weaker the farther away the town is
@@ -208,20 +218,28 @@ const starMat = new THREE.ShaderMaterial({
 export const stars = new THREE.Points(starGeo, starMat); stars.frustumCulled = false; stars.layers.set(1); stars.userData.dynamic = true; scene.add(stars);
 
 // ---------------------------------------------------------------- moon
+// painted like the moon of an anime night: a cream disc, its limb a touch darker and cooler, soft lavender-grey maria
+// with blurred edges, a few small craters with lit rims, a warm sheen toward the upper left
 function makeMoonTexture() {
-  const Sz = 256, cv = document.createElement('canvas'); cv.width = cv.height = Sz;
+  const Sz = 512, R = Sz * 0.47, c = Sz / 2, cv = document.createElement('canvas'); cv.width = cv.height = Sz;
   const g = cv.getContext('2d'), rng = mulberry32(3);
-  const grd = g.createRadialGradient(Sz * 0.42, Sz * 0.42, 10, Sz / 2, Sz / 2, Sz * 0.48);
-  grd.addColorStop(0, '#fffdf2'); grd.addColorStop(1, '#e6e0f5');
-  g.fillStyle = grd; g.beginPath(); g.arc(Sz / 2, Sz / 2, Sz * 0.47, 0, 7); g.fill();
+  const grd = g.createRadialGradient(c - R * 0.28, c - R * 0.3, R * 0.05, c, c, R);
+  grd.addColorStop(0, '#fffbea'); grd.addColorStop(0.7, '#f6f1e6'); grd.addColorStop(0.93, '#e4e0ee'); grd.addColorStop(1, '#d5d3e8');
+  g.fillStyle = grd; g.beginPath(); g.arc(c, c, R, 0, 7); g.fill();
   g.globalCompositeOperation = 'source-atop';
-  for (let i = 0; i < 9; i++) { g.fillStyle = `rgba(170,165,200,${0.14 + rng() * 0.16})`; g.beginPath(); g.ellipse(rng() * Sz, rng() * Sz, 18 + rng() * 40, 12 + rng() * 30, rng() * 3, 0, 7); g.fill(); } // soft maria
-  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+  g.filter = 'blur(9px)'; // maria: overlapping soft patches
+  for (const [x, y, rx, ry, a, o] of [[0.38, 0.36, 0.16, 0.12, 0.4, 0.3], [0.55, 0.3, 0.12, 0.09, -0.3, 0.26], [0.62, 0.47, 0.1, 0.13, 0.2, 0.22], [0.44, 0.55, 0.13, 0.08, 0.6, 0.26],
+    [0.33, 0.62, 0.09, 0.07, 0.1, 0.2], [0.66, 0.66, 0.07, 0.06, 0.0, 0.18], [0.5, 0.42, 0.06, 0.05, 0.0, 0.14]]) {
+    g.fillStyle = `rgba(150,148,186,${o})`; g.beginPath(); g.ellipse(x * Sz, y * Sz, rx * Sz, ry * Sz, a, 0, 7); g.fill(); }
+  g.filter = 'blur(1.5px)'; // small craters: a shaded bowl and a light rim on the sunward side
+  for (let i = 0; i < 14; i++) { const a = rng() * 7, r = Math.sqrt(rng()) * R * 0.8, x = c + Math.cos(a) * r, y = c + Math.sin(a) * r, cr = 4 + rng() * 11;
+    g.fillStyle = 'rgba(160,156,190,0.28)'; g.beginPath(); g.arc(x, y, cr, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,253,244,0.45)'; g.lineWidth = 1.6; g.beginPath(); g.arc(x, y, cr, Math.PI * 0.75, Math.PI * 1.6); g.stroke(); }
+  g.filter = 'none';
+  const lim = g.createRadialGradient(c, c, R * 0.72, c, c, R); // limb darkening
+  lim.addColorStop(0, 'rgba(120,120,170,0)'); lim.addColorStop(1, 'rgba(120,120,170,0.22)'); g.fillStyle = lim; g.fillRect(0, 0, Sz, Sz);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
-const moonMat = new THREE.MeshBasicMaterial({ map: makeMoonTexture(), transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1, 1, 1) });
-const moon = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), moonMat);
-moon.scale.setScalar(260); moon.frustumCulled = false; moon.userData.dynamic = true; scene.add(moon);
-
 // ---------------------------------------------------------------- lights
 // ---------------------------------------------------------------- sun + cascaded shadow maps
 // The sun is cascade 0; the other cascades are directional lights of zero intensity that only render shadow maps.
@@ -358,16 +376,21 @@ function freeStand(st) { // its own buffers only: the geometry view shares the s
 }
 const instKey = o => { let v = o.instanceMatrix.version + (o.instanceColor ? o.instanceColor.version * 7 : 0); const A = o.geometry.attributes; for (const k in A) if (A[k].isInstancedBufferAttribute) v += A[k].version * 13; return v; };
 // the set to draw into cascade i at placement P: o itself (all inside), a stand-in, or null (none inside)
-function cullSet(o, i, P, sc) {
+function cullSet(o, i, P, sc, reach = Infinity) {
   const hx = sc.right, hy = sc.top, g = o.geometry;
   if (!g.boundingSphere) g.computeBoundingSphere();
   const W = _cw.multiplyMatrices(sc.matrixWorldInverse, o.matrixWorld).elements;
+  // Dynamic and wind-swaying casters do not need the full 2.6 km up-sun depth reserved for mountains and other cached
+  // static scenery. At a low sun that long slab admitted most of the forest into both near cascades every frame—the
+  // Golden Hour-only draw spike. `reach` keeps enough up-sun distance for the longest useful tree shadow while static
+  // hills/buildings retain the original full-depth shadow volume.
+  const zNear = Number.isFinite(reach) ? -(CSM_D - reach) : -sc.near, zFar = -sc.far;
   const ws = Math.sqrt(Math.max(W[0] * W[0] + W[1] * W[1] + W[2] * W[2], W[4] * W[4] + W[5] * W[5] + W[6] * W[6], W[8] * W[8] + W[9] * W[9] + W[10] * W[10]));
   if (o.frustumCulled && o.boundingSphere) { // the whole set's bounds first
     const c = o.boundingSphere.center, R = o.boundingSphere.radius * ws + CULL_PAD;
-    const X = W[0] * c.x + W[4] * c.y + W[8] * c.z + W[12], Y = W[1] * c.x + W[5] * c.y + W[9] * c.z + W[13];
-    if (Math.abs(X) - R > hx || Math.abs(Y) - R > hy) return null;
-    if (Math.abs(X) + R <= hx && Math.abs(Y) + R <= hy) return o;
+    const X = W[0] * c.x + W[4] * c.y + W[8] * c.z + W[12], Y = W[1] * c.x + W[5] * c.y + W[9] * c.z + W[13], Z = W[2] * c.x + W[6] * c.y + W[10] * c.z + W[14];
+    if (Math.abs(X) - R > hx || Math.abs(Y) - R > hy || Z - R > zNear || Z + R < zFar) return null;
+    if (Math.abs(X) + R <= hx && Math.abs(Y) + R <= hy && Z + R <= zNear && Z - R >= zFar) return o;
   }
   let a = stands.get(o); if (!a) stands.set(o, a = []);
   let st = a[i];
@@ -384,8 +407,8 @@ function cullSet(o, i, P, sc) {
     const s2 = Math.max(a0 * a0 + a1 * a1 + a2 * a2, a4 * a4 + a5 * a5 + a6 * a6, a8 * a8 + a9 * a9 + a10 * a10);
     if (s2 === 0) continue; // a zero-scaled (hidden) instance
     const x = a0 * cx + a4 * cy + a8 * cz + A[b + 12], y = a1 * cx + a5 * cy + a9 * cz + A[b + 13], z = a2 * cx + a6 * cy + a10 * cz + A[b + 14];
-    const R = br * Math.sqrt(s2) + CULL_PAD, X = W[0] * x + W[4] * y + W[8] * z + W[12], Y = W[1] * x + W[5] * y + W[9] * z + W[13];
-    if (X - R > hx || -X - R > hx || Y - R > hy || -Y - R > hy) continue;
+    const R = br * Math.sqrt(s2) + CULL_PAD, X = W[0] * x + W[4] * y + W[8] * z + W[12], Y = W[1] * x + W[5] * y + W[9] * z + W[13], Z = W[2] * x + W[6] * y + W[10] * z + W[14];
+    if (X - R > hx || -X - R > hx || Y - R > hy || -Y - R > hy || Z - R > zNear || Z + R < zFar) continue;
     keep[k++] = j;
   }
   if (k && k < n) {
@@ -415,14 +438,14 @@ function evictStands() {
   }
 }
 const cullable = o => o.isInstancedMesh && !o.geometry.isInstancedBufferGeometry && o.count > 4 && !Object.values(o.geometry.attributes).some(a => a.isInterleavedBufferAttribute);
-function castCulled(l, i, root, P, clear) {
+function castCulled(l, i, root, P, clear, reach = Infinity) {
   l.shadow.updateMatrices(l);
   const sc = l.shadow.camera, out = cullRoot.children; out.length = 0;
   for (const e of root.children) {
     if (!e.visible) continue;
     const o = e.isObject3D ? e : e.children[0];
     if (!cullable(o)) { out.push(e); continue; }
-    const r = cullSet(o, i, P, sc);
+    const r = cullSet(o, i, P, sc, reach);
     if (r === o) out.push(e); else if (r) out.push(r);
   }
   cast(l, cullRoot, clear);
@@ -459,8 +482,8 @@ function updateCachedCascade(i) {
   placeLight(l, C.cur);
   if (!l.shadow.map) cast(l, casts.dyn, true); // (three allocates the shadow map on its first render)
   blitMap(C.front, l.shadow.map);
-  castCulled(l, i, casts.dyn, C.cur, false);
-  if (i < NEAR_CASCADES) castCulled(l, i, casts.sway, C.cur, false);
+  castCulled(l, i, casts.dyn, C.cur, false, 180);
+  if (i < NEAR_CASCADES) castCulled(l, i, casts.sway, C.cur, false, 420);
   C.show = false;
 }
 // wrapped: once a frame, with the scene render that updates shadows (not the mirror pass or the environment capture)
@@ -496,13 +519,14 @@ export function updateSky(force) {
   skyU.uGlowAmt.value = p.glowAmt;
   skyU.uSunDisk.value.set(p.sun.r + 1, p.sun.g + 1, p.sun.b + 1).multiplyScalar(0.5 * smoothstep(-0.04, 0.02, el) * 3.0); // halfway to white
   skyU.uMoonDir.value.copy(env.moonDir);
+  skyU.uMoonU.value.crossVectors(celestial.axis, env.moonDir).normalize(); skyU.uMoonV.value.crossVectors(env.moonDir, skyU.uMoonU.value);
   skyU.uMoonGlow.value.set(MOON.r, MOON.g, MOON.b).multiplyScalar(smoothstep(0.0, -0.1, el));
   const starVis = smoothstep(-0.04, -0.18, el);
   starMat.uniforms.uVis.value = starVis; stars.visible = starVis > 0.01;
   starMat.uniforms.uPR.value = renderer.getPixelRatio();
   skyU.uNightSky.value = smoothstep(-0.03, -0.2, el);
-  moon.visible = -sunDir.y > -0.05;
-  moonMat.color.setScalar(0.6 + 1.6 * night);
+  skyU.uMoonVis.value = smoothstep(-0.05, 0.02, env.moonDir.y) * smoothstep(0.12, 0.75, night);
+  skyU.uMoonDisk.value.setScalar(0.5 + 0.38 * night); // just under the tone map's shoulder: bright, its painted maria still readable
   cloudPal.lit.copy(p.cLit); cloudPal.shade.copy(p.cShade); cloudPal.dir.copy(env.lightDir);
   // the environment map (sky gradient + ground bounce) is the coloured ambient / shadow fill
   envTimer -= 1;
@@ -535,7 +559,6 @@ export function followCamera(groundAt, yaw) {
   const cs = cloudShadow; cs.p.x = S.uTime.value; cs.p.y = cloudU.uCover.value; cs.p.z = (cloudU.uBottom.value + cloudU.uTop.value) / 2;
   cs.sun.x = env.lightDir.x; cs.sun.y = env.lightDir.y; cs.sun.z = env.lightDir.z;
   stars.position.copy(c); stars.quaternion.copy(celestial.q);
-  moon.position.copy(c).addScaledVector(env.moonDir, 9000); moon.lookAt(c);
   // every cascade box sits a little ahead of the camera, snapped to its shadow texels so edges never crawl; far
   // cascades re-render every few frames (staggered), which the eye cannot tell at their distance
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);

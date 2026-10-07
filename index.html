@@ -45,9 +45,13 @@
   .settings select { background: #1b1f22; color: var(--fg); border: 1px solid #444; padding: 4px; }
   @media (max-width: 720px) { .panel { grid-template-columns: 1fr; gap: 20px; } .maps { flex-direction: column; }
     #menu { background: rgba(5,7,9,.72); overflow-y: auto; justify-content: flex-start; padding-top: 28px; padding-bottom: 28px; } }
-  #hud { position: fixed; top: 14px; right: 18px; text-align: right; font-size: 12px; color: var(--dim); z-index: 5;
+  #hud { position: fixed; top: 14px; right: 18px; text-align: right; font-size: 12px; color: var(--dim); z-index: 12;
     text-shadow: 0 1px 3px rgba(0,0,0,.6); letter-spacing: .05em; pointer-events: none; }
   #hud .clock { font-size: 20px; color: var(--fg); font-weight: 300; letter-spacing: .12em; }
+  #openBuilder { pointer-events: auto; margin-top: 9px; padding: 6px 10px; border: 1px solid rgba(242,239,230,.28); border-radius: 3px;
+    background: rgba(9,12,14,.62); color: var(--dim); font: 10px/1.2 inherit; letter-spacing: .16em; text-transform: uppercase; cursor: pointer;
+    backdrop-filter: blur(5px); transition: color .2s, border-color .2s, background .2s; }
+  #openBuilder:hover, #openBuilder:focus-visible { color: var(--fg); border-color: var(--accent); background: rgba(217,181,106,.16); outline: none; }
   #toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); color: var(--fg); font-size: 13px;
     letter-spacing: .12em; text-shadow: 0 1px 4px #000; opacity: 0; transition: opacity .4s; pointer-events: none; z-index: 6; }
   #credit { position: fixed; bottom: 8px; left: 12px; font-size: 10.5px; color: rgba(255,255,255,.35); z-index: 11; }
@@ -93,6 +97,7 @@
       <b>H</b><span>toggle HUD</span>
       <b>F3</b><span>performance overlay</span>
       <b>F4</b><span>show colliders</span>
+      <b>B</b><span>open World Builder here</span>
       <b>M</b><span>mute audio</span>
       <b>Esc</b><span>pause</span>
     </div>
@@ -106,7 +111,7 @@
     </div>
   </div>
 </div>
-<div id="hud"><div class="clock" id="clock">--:--</div><div id="fps"></div><div id="mode"></div></div>
+<div id="hud"><div class="clock" id="clock">--:--</div><div id="fps"></div><div id="mode"></div><button id="openBuilder" type="button" title="Open World Builder at this exact position (B)">World Builder · B</button></div>
 <div id="toast"></div>
 <div id="credit">Textures &amp; scanned models: <a href="https://polyhaven.com" target="_blank">Poly Haven</a> (CC0) · Engine: three.js</div>
 <script type="module" src="js/main.js"></script>
