@@ -38,3 +38,8 @@ Double-click `Editor.bat` (or run `npm run editor`; needs Node.js 18+). It start
 editor at `http://localhost:5180/editor.html?map=town` (`?map=nature` for the lake valley). Changes are saved to
 `world/<map>/edits/` and the game loads them (the game also runs on that server: `http://localhost:5180/?map=town`).
 Press `?` in the editor for every shortcut. The world files are described in [WORLD_FORMAT.md](WORLD_FORMAT.md).
+
+## Credits
+
+- Cars: *Low Poly Soviet Car Pack* (poly.pizza), imported with `node tools/cars-import.mjs` from `AssetsToUse/` into `assets/models/cars/`.
+- People: Quaternius (CC0). Scanned models and textures: Poly Haven (CC0).
