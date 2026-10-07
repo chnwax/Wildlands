@@ -423,14 +423,9 @@
       "origin": [440.978, 6.039, 332.743]
     },
     {
-      "id": "detail_m164_t70698",
+      "id": "detail_m164_t72868",
       "position": [448.977, 6.05, 166],
       "origin": [447, 6.05, 166]
-    },
-    {
-      "id": "detail_m164_t70742",
-      "position": [454.554, 6.05, 182],
-      "origin": [447, 6.05, 182]
     },
     {
       "id": "detail_m169_t7428",
@@ -463,11 +458,6 @@
       "position": [437.471, 6.064, 331.211],
       "rotation": [0, 7.58, 0],
       "origin": [437.18, 6.049, 332.248]
-    },
-    {
-      "id": "detail_m191_t42526",
-      "rotation": [88.56, 0, 0],
-      "origin": [452, 9.65, 158]
     },
     {
       "id": "detail_m19_t8634",
@@ -638,19 +628,19 @@
       "origin": [491.805, 5.8, 2.84]
     },
     {
-      "id": "tree_zelkova_danchi_010",
-      "position": [380.65, 5.8, 106.581],
-      "origin": [375, 5.8, 106]
-    },
-    {
-      "id": "tree_zelkova_danchi_038",
+      "id": "tree_zelkova_danchi_016",
       "position": [448.898, 5.8, 166],
       "origin": [447, 5.8, 166]
     },
     {
-      "id": "tree_zelkova_danchi_039",
+      "id": "tree_zelkova_danchi_017",
       "position": [454.612, 5.8, 182],
       "origin": [447, 5.8, 182]
+    },
+    {
+      "id": "tree_zelkova_danchi_067",
+      "position": [380.65, 5.8, 106.581],
+      "origin": [375, 5.8, 106]
     },
     {
       "id": "utility_box_new_001",
