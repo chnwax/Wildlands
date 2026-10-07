@@ -309,6 +309,13 @@ export function applyShadowQuality() {
 // booms (userData.dynamicCaster) and, in the two near cascades, the trees and shrubs that sway in the wind (their
 // shadows keep moving with them). In the far cascades the sway is below a shadow texel, so trees count as static there.
 const NEAR_CASCADES = 2, SLICES = 6, SLICE_FRAMES = [2, 3, 6, 6]; // frames a refresh takes, per cascade
+// How far up-sun the moving casters are redrawn every frame. A low sun lays the light rays almost along the ground, so a
+// near cascade's rays pass over hundreds of metres of town and forest toward the sun before they reach it: every tree
+// along them used to be redrawn each frame (at golden hour 4-5x the casters of noon — the evening's extra frame cost).
+// Wind sway only shows in a shadow close to its tree, so beyond SWAY_NEAR the swaying vegetation joins the cached static
+// map (as it already does in the far cascades); it still shades, only it holds still. Cars, walkers and trains, a few
+// metres tall, cast nothing that reaches beyond DYN_REACH.
+const SWAY_NEAR = 40, SWAY_FAR = 420, DYN_REACH = 35;
 const shadowCache = [];
 let cacheReady = false;
 function resetShadowCache() {
@@ -376,7 +383,7 @@ function freeStand(st) { // its own buffers only: the geometry view shares the s
 }
 const instKey = o => { let v = o.instanceMatrix.version + (o.instanceColor ? o.instanceColor.version * 7 : 0); const A = o.geometry.attributes; for (const k in A) if (A[k].isInstancedBufferAttribute) v += A[k].version * 13; return v; };
 // the set to draw into cascade i at placement P: o itself (all inside), a stand-in, or null (none inside)
-function cullSet(o, i, P, sc, reach = Infinity) {
+function cullSet(o, i, P, sc, reach = Infinity, from = -Infinity, slot = i) {
   const hx = sc.right, hy = sc.top, g = o.geometry;
   if (!g.boundingSphere) g.computeBoundingSphere();
   const W = _cw.multiplyMatrices(sc.matrixWorldInverse, o.matrixWorld).elements;
@@ -384,7 +391,8 @@ function cullSet(o, i, P, sc, reach = Infinity) {
   // static scenery. At a low sun that long slab admitted most of the forest into both near cascades every frame—the
   // Golden Hour-only draw spike. `reach` keeps enough up-sun distance for the longest useful tree shadow while static
   // hills/buildings retain the original full-depth shadow volume.
-  const zNear = Number.isFinite(reach) ? -(CSM_D - reach) : -sc.near, zFar = -sc.far;
+  // `from` (with `reach`) selects a band up-sun of the cascade: only what lies between from and reach metres toward the sun
+  const zNear = Number.isFinite(reach) ? -(CSM_D - reach) : -sc.near, zFar = Number.isFinite(from) ? -(CSM_D - from) : -sc.far;
   const ws = Math.sqrt(Math.max(W[0] * W[0] + W[1] * W[1] + W[2] * W[2], W[4] * W[4] + W[5] * W[5] + W[6] * W[6], W[8] * W[8] + W[9] * W[9] + W[10] * W[10]));
   if (o.frustumCulled && o.boundingSphere) { // the whole set's bounds first
     const c = o.boundingSphere.center, R = o.boundingSphere.radius * ws + CULL_PAD;
@@ -393,7 +401,7 @@ function cullSet(o, i, P, sc, reach = Infinity) {
     if (Math.abs(X) + R <= hx && Math.abs(Y) + R <= hy && Z + R <= zNear && Z - R >= zFar) return o;
   }
   let a = stands.get(o); if (!a) stands.set(o, a = []);
-  let st = a[i];
+  let st = a[slot];
   const key = instKey(o), mw = o.matrixWorld.elements;
   if (st && st.key === key && st.n === o.count && st.place === P) {
     let same = true; for (let q = 0; q < 16 && same; q++) same = st.mw[q] === mw[q];
@@ -412,7 +420,7 @@ function cullSet(o, i, P, sc, reach = Infinity) {
     keep[k++] = j;
   }
   if (k && k < n) {
-    if (!st || !st.m || st.cap < k) { if (st && st.m) freeStand(st); st = a[i] = makeStand(o, Math.max(32, Math.ceil(k * 1.5))); }
+    if (!st || !st.m || st.cap < k) { if (st && st.m) freeStand(st); st = a[slot] = makeStand(o, Math.max(32, Math.ceil(k * 1.5))); }
     const m = st.m, B = m.instanceMatrix.array;
     for (let q = 0; q < k; q++) { const s0 = keep[q] * 16, d0 = q * 16; for (let e = 0; e < 16; e++) B[d0 + e] = A[s0 + e]; }
     m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, k * 16); m.instanceMatrix.needsUpdate = true;
@@ -425,7 +433,7 @@ function cullSet(o, i, P, sc, reach = Infinity) {
       dst.clearUpdateRanges(); dst.addUpdateRange(0, k * w); dst.needsUpdate = true;
     }
     m.count = k; m.matrixWorld.copy(o.matrixWorld);
-  } else if (!st) st = a[i] = { m: null, inst: [], cap: 0, key: -1, n: -1, place: null, k: 0, used: 0, mw: new Float32Array(16) };
+  } else if (!st) st = a[slot] = { m: null, inst: [], cap: 0, key: -1, n: -1, place: null, k: 0, used: 0, mw: new Float32Array(16) };
   st.key = key; st.n = n; st.place = P; st.k = k; st.used = csmFrame; st.mw.set(mw);
   return k === n ? o : k ? st.m : null;
 }
@@ -438,20 +446,42 @@ function evictStands() {
   }
 }
 const cullable = o => o.isInstancedMesh && !o.geometry.isInstancedBufferGeometry && o.count > 4 && !Object.values(o.geometry.attributes).some(a => a.isInterleavedBufferAttribute);
-function castCulled(l, i, root, P, clear, reach = Infinity) {
+// statics: a fixed caster can only shade the cascade from as far up-sun as its own height above the ground there lets
+// its shadow reach (height / tan elevation) — buildings 300 m away at a low sun, a few tens of metres at noon; hills and
+// the forest on them, being high, still reach from kilometres
+function staticReach(o, sc, P, se) {
+  const g = o.geometry; if (!g || !g.boundingSphere) return true;
+  const W = _cw.multiplyMatrices(sc.matrixWorldInverse, o.matrixWorld).elements, c = g.boundingSphere.center;
+  const ws = Math.sqrt(Math.max(W[0] * W[0] + W[1] * W[1] + W[2] * W[2], W[4] * W[4] + W[5] * W[5] + W[6] * W[6], W[8] * W[8] + W[9] * W[9] + W[10] * W[10]));
+  const R = g.boundingSphere.radius * ws, Z = W[2] * c.x + W[6] * c.y + W[10] * c.z + W[14];
+  const M = o.matrixWorld.elements, top = M[1] * c.x + M[5] * c.y + M[9] * c.z + M[13] + R;
+  const up = Z + CSM_D - R; if (up <= 0) return true;
+  return up * se / Math.sqrt(Math.max(1e-4, 1 - se * se)) <= top - P.center.y + 2;
+}
+// a single (not instanced) moving or swaying caster: inside the up-sun band [from, reach] of the cascade
+function inBand(o, sc, reach, from) {
+  if (!Number.isFinite(reach) && !Number.isFinite(from)) return true;
+  const g = o.geometry; if (!g || !g.boundingSphere) return true;
+  const W = _cw.multiplyMatrices(sc.matrixWorldInverse, o.matrixWorld).elements, c = g.boundingSphere.center;
+  const R = g.boundingSphere.radius * Math.sqrt(Math.max(W[0] * W[0] + W[1] * W[1] + W[2] * W[2], W[4] * W[4] + W[5] * W[5] + W[6] * W[6], W[8] * W[8] + W[9] * W[9] + W[10] * W[10]));
+  const up = W[2] * c.x + W[6] * c.y + W[10] * c.z + W[14] + CSM_D;
+  return up - R <= reach && up + R >= from;
+}
+function castCulled(l, i, root, P, clear, reach = Infinity, from = -Infinity, slot = i, fixed = false) {
   l.shadow.updateMatrices(l);
-  const sc = l.shadow.camera, out = cullRoot.children; out.length = 0;
+  const sc = l.shadow.camera, out = cullRoot.children, se = Math.max(0.02, Math.abs(P.dir.y)); out.length = 0;
   for (const e of root.children) {
     if (!e.visible) continue;
     const o = e.isObject3D ? e : e.children[0];
-    if (!cullable(o)) { out.push(e); continue; }
-    const r = cullSet(o, i, P, sc, reach);
+    if (!cullable(o)) { if (fixed ? staticReach(o, sc, P, se) : inBand(o, sc, reach, from)) out.push(e); continue; }
+    const r = cullSet(o, i, P, sc, reach, from, slot);
     if (r === o) out.push(e); else if (r) out.push(r);
   }
   cast(l, cullRoot, clear);
   out.length = 0;
 }
 function placeLight(l, P) {
+  if (P.hy) setHalfY(l, P.hy);
   l.target.position.copy(P.center); l.position.copy(P.center).addScaledVector(P.dir, CSM_D);
   l.target.updateMatrixWorld(); l.updateMatrixWorld();
 }
@@ -466,7 +496,10 @@ function cacheRT(l) { return new THREE.WebGLRenderTarget(l.shadow.mapSize.x, l.s
 function renderStatic(i, l, C, s0, s1, into) {
   placeLight(l, C.next);
   const map = l.shadow.map; l.shadow.map = into;
-  for (let s = s0; s < s1; s++) { if (i < NEAR_CASCADES) castCulled(l, i, casts.statics[s], C.next, s === 0); else { cast(l, casts.statics[s], s === 0); cast(l, casts.sways[s], false); } }
+  for (let s = s0; s < s1; s++) {
+    if (i < NEAR_CASCADES) { castCulled(l, i, casts.statics[s], C.next, s === 0, Infinity, -Infinity, i, true); castCulled(l, i, casts.sways[s], C.next, false, SWAY_FAR, SWAY_NEAR, i + 8); }
+    else { castCulled(l, i, casts.statics[s], C.next, s === 0, Infinity, -Infinity, i, true); castCulled(l, i, casts.sways[s], C.next, false, Infinity, -Infinity, i + 8, true); }
+  }
   l.shadow.map = map;
 }
 function updateCachedCascade(i) {
@@ -482,8 +515,8 @@ function updateCachedCascade(i) {
   placeLight(l, C.cur);
   if (!l.shadow.map) cast(l, casts.dyn, true); // (three allocates the shadow map on its first render)
   blitMap(C.front, l.shadow.map);
-  castCulled(l, i, casts.dyn, C.cur, false, 180);
-  if (i < NEAR_CASCADES) castCulled(l, i, casts.sway, C.cur, false, 420);
+  castCulled(l, i, casts.dyn, C.cur, false, DYN_REACH);
+  if (i < NEAR_CASCADES) castCulled(l, i, casts.sway, C.cur, false, SWAY_NEAR);
   C.show = false;
 }
 // wrapped: once a frame, with the scene render that updates shadows (not the mirror pass or the environment capture)
@@ -550,6 +583,18 @@ export function updateSky(force) {
 }
 
 const lsInv = new THREE.Matrix4(), lsMat = new THREE.Matrix4(), snapV = new THREE.Vector3(), origin = new THREE.Vector3(), _negL = new THREE.Vector3();
+// Golden hour: a cascade box is square in light space, and seen along a low sun its vertical axis stretches over the
+// ground by 1 / sin(elevation) — at 8 degrees a 40 m box shaded a 290 m strip toward the sun, and every car, walker and
+// swaying tree along that strip was drawn into it each frame (the evening's extra shadow cost). The box only has to hold
+// the receivers of its slice of the view: its ground disc (half * sin el along the light's vertical axis) plus the
+// height of what stands on it (facades, slopes: RECV[i] * cos el). Casters need no room of their own — whatever shades a
+// receiver lies on the same light ray, inside the same box. So each box's light-space half-height follows the sun,
+// quantised (a change re-places the cascade like a move). By day it stays square; at a low sun it is shorter, cheaper and
+// sharper (the same texels over a shorter span).
+const RECV = [14, 30, 120, 320];
+const fitHalfY = (i, half) => { const se = Math.min(1, Math.abs(env.lightDir.y)), ce = Math.sqrt(1 - se * se);
+  return half * Math.min(1, Math.max(0.25, Math.ceil(Math.min(1, (half * se + (RECV[i] ?? 320) * ce) / half) * 16) / 16)); };
+function setHalfY(l, hy) { const c = l.shadow.camera; if (c.top !== hy) { c.top = hy; c.bottom = -hy; c.updateProjectionMatrix(); } }
 let csmFrame = 0;
 const aim = [0, 1, 2, 3, 4, 5].map(() => ({ x: 0, z: -1, set: false }));
 export function followCamera(groundAt, yaw) {
@@ -576,14 +621,14 @@ export function followCamera(groundAt, yaw) {
     const center = snapV.set(c.x + ax * half * 0.5, 0, c.z + az * half * 0.5);
     center.y = groundAt(center.x, center.z);
     center.applyMatrix4(lsInv);
-    const texel = (half * 2) / size;
-    center.x = Math.round(center.x / texel) * texel; center.y = Math.round(center.y / texel) * texel;
+    const hy = fitHalfY(i, half), texel = (half * 2) / size, texelY = (hy * 2) / size;
+    center.x = Math.round(center.x / texel) * texel; center.y = Math.round(center.y / texelY) * texelY;
     center.applyMatrix4(lsMat);
     if (cached) { // keep the cached placement until the cascade has to move; the moving casters update at the cascade's rate
       const C = shadowCache[i] || (shadowCache[i] = { cur: null, next: null, slice: -1, show: false, front: null, back: null });
       const ref = C.next || C.cur;
-      if (!ref || (C.slice < 0 && !C.next && (ref.center.distanceTo(center) > half * 0.08 || ref.dir.dot(env.lightDir) < 0.999994))) {
-        C.next = { center: center.clone(), dir: env.lightDir.clone() }; if (C.front) C.slice = 0;
+      if (!ref || (C.slice < 0 && !C.next && (ref.center.distanceTo(center) > half * 0.08 || ref.dir.dot(env.lightDir) < 0.999994 || ref.hy !== hy))) {
+        C.next = { center: center.clone(), dir: env.lightDir.clone(), hy }; if (C.front) C.slice = 0;
       }
       if (csmFrame % rate === i % rate || C.late) { C.late = false;
         // two far cascades never redraw their moving casters in the same frame (every 2nd and every 3rd frame met every
@@ -591,6 +636,7 @@ export function followCamera(groundAt, yaw) {
         if (i >= NEAR_CASCADES && i > 0 && shadowCache[i - 1] && shadowCache[i - 1].show && i - 1 >= NEAR_CASCADES) C.late = true; else C.show = true; }
       continue;
     }
+    setHalfY(l, hy);
     l.target.position.copy(center);
     l.position.copy(center).addScaledVector(env.lightDir, CSM_D);
     l.target.updateMatrixWorld(); l.updateMatrixWorld();
