@@ -127,7 +127,7 @@
     { "name": "tree_spruce", "label": "Tree spruce", "category": "vegetation", "source": "instanced", "template": "tree_spruce_hills_001", "count": 0, "fieldCount": 3021, "size": [8.58, 14.31, 9.23] },
     { "name": "tree_willow", "label": "Tree willow", "category": "vegetation", "source": "instanced", "template": "tree_willow_river_001", "count": 19, "size": [6.59, 9.85, 6.96] },
     { "name": "tree_young_fir", "label": "Tree young fir", "category": "vegetation", "source": "instanced", "template": "tree_young_fir_hills_001", "count": 0, "fieldCount": 21555, "size": [6.6, 9.33, 7.01] },
-    { "name": "tree_zelkova", "label": "Tree zelkova", "category": "vegetation", "source": "instanced", "template": "tree_zelkova_midtown_001", "count": 239, "size": [11.34, 12.08, 13.05] },
+    { "name": "tree_zelkova", "label": "Tree zelkova", "category": "vegetation", "source": "instanced", "template": "tree_zelkova_midtown_001", "count": 239, "size": [10.77, 12.71, 10.49] },
     { "name": "twigs", "label": "Twigs", "category": "vegetation", "source": "instanced", "template": "twigs_hills_001", "count": 0, "fieldCount": 2600, "size": [2.47, 0.12, 2.58] },
     { "name": "weed_1", "label": "Weed 1", "category": "vegetation", "source": "instanced", "template": "weed_1_oldtown_001", "count": 0, "fieldCount": 396, "size": [1.2, 0.4, 1.59] },
     { "name": "weed_2", "label": "Weed 2", "category": "vegetation", "source": "instanced", "template": "weed_2_oldtown_001", "count": 0, "fieldCount": 396, "size": [1.38, 0.5, 1.47] },
