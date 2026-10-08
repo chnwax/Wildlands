@@ -447,6 +447,11 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     let best = C[0]; for (const c of C) if (c[0] > best[0] + 1e-6) best = c;
     return { w, drop: best[0], semi: best[0] > 1e-4 ? best[1] : true };
   };
+  // a curb return's footway width toward (x, z) (its arc's centre seen from the point)
+  RN.cornerW = (cr, x, z) => { const aa = Math.atan2(z - cr.O[1], x - cr.O[0]), a1 = Math.atan2(cr.arc[0][1] - cr.O[1], cr.arc[0][0] - cr.O[0]), a2 = Math.atan2(cr.arc[cr.arc.length - 1][1] - cr.O[1], cr.arc[cr.arc.length - 1][0] - cr.O[0]);
+    let span = a2 - a1; while (span > Math.PI) span -= 2 * Math.PI; while (span < -Math.PI) span += 2 * Math.PI;
+    let rel = aa - a1; while (rel > Math.PI) rel -= 2 * Math.PI; while (rel < -Math.PI) rel += 2 * Math.PI;
+    const arcL = Math.abs(span) * cr.rF, sa = clamp(rel * Math.sign(span), 0, Math.abs(span)) * cr.rF; return cornerAt(cr, sa, arcL).w; };
   RN.walkY = (x, z) => {
     for (const it of near(x, z)) {
       if (it.cr) {

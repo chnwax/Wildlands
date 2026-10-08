@@ -45,6 +45,14 @@ export class PedNet {
   addArea(poly, o = {}) { const xs = poly.map(p => p[0]), zs = poly.map(p => p[1]);
     this.areas.push({ poly, rid: o.rid ?? -1, draw: o.draw !== false, y: o.y || null, door: o.door ?? null, color: o.color || [0.8, 0.78, 0.74], bb: [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)] });
     return this.areas.length - 1; }
+  // is (x, z) on the network's paving (a path's strip or an area), within pad metres
+  onPaving(x, z, pad = 0) {
+    if (this.areaAt(x, z) >= 0) return true;
+    for (const e of this.edges || []) { if (e.dead) continue; const A = this.nodes[e.a], Bq = this.nodes[e.b], hw = this.chains[e.c].w / 2 + pad;
+      if (x < Math.min(A.x, Bq.x) - hw || x > Math.max(A.x, Bq.x) + hw || z < Math.min(A.z, Bq.z) - hw || z > Math.max(A.z, Bq.z) + hw) continue;
+      if (segDist(x, z, A.x, A.z, Bq.x, Bq.z).d < hw) return true; }
+    return false;
+  }
   areaAt(x, z) { for (let i = 0; i < this.areas.length; i++) if (this.inArea(i, x, z)) return i; return -1; }
   inArea(i, x, z) { const A = this.areas[i]; return x >= A.bb[0] && x <= A.bb[2] && z >= A.bb[1] && z <= A.bb[3] && inPoly(A.poly, x, z); }
   // is (x, z) on what a tag names (a street, or that particular area — areas may overlap)

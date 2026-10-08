@@ -521,7 +521,7 @@ export async function build(progress, opts = {}) {
   for (const I of inters) for (const cr of I.corners) {
     const u1 = [(cr.T1[0] - cr.O[0]) / cr.rF, (cr.T1[1] - cr.O[1]) / cr.rF], u2 = [(cr.T2[0] - cr.O[0]) / cr.rF, (cr.T2[1] - cr.O[1]) / cr.rF], k = u1[0] * u2[1] - u1[1] * u2[0], E = cr.rF + 1;
     hf.paintPave(cr.O[0] - E, cr.O[1] - E, cr.O[0] + E, cr.O[1] + E, (x, z) => { const vx = x - cr.O[0], vz = z - cr.O[1], r = Math.hypot(vx, vz);
-      return r > cr.rF - (cr.walk || 0.5) - 0.15 && (u1[0] * vz - u1[1] * vx) * k >= -0.3 * r && (vx * u2[1] - vz * u2[0]) * k >= -0.3 * r ? 1 : 0; });
+      return r > cr.rF - (cr.kind === 'walk' ? RN.cornerW(cr, x, z) : 0.5) - 0.12 && (u1[0] * vz - u1[1] * vx) * k >= -0.3 * r && (vx * u2[1] - vz * u2[0]) * k >= -0.3 * r ? 1 : 0; });
   }
   // footways the pedestrian network carries on round corners onto lanes: lots keep off them, nothing grows through
   for (const n of RN.net) if (!n.walk) for (const side of [1, -1]) for (const [s0, s1, w] of n.ws[side]) for (let s = s0; s <= s1 + 0.5; s += 0.8) {
@@ -1445,6 +1445,60 @@ export async function build(progress, opts = {}) {
   progress('Building terrain', 0.76); await tick();
   const firstNatural = scene.children.length;
   const terrainGroup = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: RIVER_LV, snow: 900, conifer: 0.72, riverBed: true }));
+  { // Verges: a footway stands a kerb's height (about 20 cm) above the ground beside the road, and the heightfield (2 m
+    // cells) cannot rise that sharply at its back edge — every footway stood on the lawn like a low white wall. Along
+    // each footway's back a strip of lawn is laid in the terrain's own material, from just under the paving's edge
+    // down to the ground over a metre and a half (gentler where there is room): the ground meets the paving the way a
+    // graded verge does. It stops short of whatever else is there — another road or footway, paving, a plot or a
+    // building, the district's paths — and only where the footway really stands above the ground.
+    const vmat = terrainGroup.children.find(m => m.isMesh) ? terrainGroup.children.find(m => m.isMesh).material : null;
+    const pos = [], nor = [], rotL = d => [-d[1], d[0]];
+    // (the roads keep their own band — carriageway and footways — marked as occupied: inside it that is not an obstacle)
+    const inBand = (x, z) => { for (const n of RN.net) { const ext = n.hw + Math.max(n.walk, ...n.ws[1].map(q => q[2]), ...n.ws[-1].map(q => q[2]), 0.45) + 0.1;
+      for (const g of n.PL.segs) { if (x < Math.min(g.a[0], g.b[0]) - ext || x > Math.max(g.a[0], g.b[0]) + ext || z < Math.min(g.a[1], g.b[1]) - ext || z > Math.max(g.a[1], g.b[1]) + ext) continue;
+        const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L); if (Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t) < ext) return true; } } return false; };
+    const blocked = (x, z) => RN.roadAt(x, z) || RN.walkY(x, z) !== null || hf.paveAt(x, z) > 0.3 || (occRect(x, z, 0.15, 0.15, 0, 0, true) && !inBand(x, z)) || (danchi.net && danchi.net.onPaving(x, z, 0.15)) || Math.abs(x - riverX(z)) < 18.5;
+    const SW = 1.6;
+    // a row of the verge at a point of a footway's back edge (bx, bz) facing out along l
+    const row = (bx, bz, l) => { const top = RN.walkY(bx - l[0] * 0.06, bz - l[1] * 0.06);
+      let w = 0; if (top !== null && top - hf.groundAt(bx, bz) > 0.06) { for (let d = 0.15; d <= SW + 0.01; d += 0.15) { if (blocked(bx + l[0] * d, bz + l[1] * d)) break; w = d; } }
+      return { bx, bz, l, top, w }; };
+    const edges = [];
+    for (const [n, side, sa, sb, kind, rw] of RN.runs) { if (kind !== 'walk') continue;
+      const prof = [];
+      for (let s = sa; s <= sb + 1e-6; s = s + 1 > sb && s < sb ? sb : s + 1) {
+        const q = RN.sampleAt(n, s), l0 = rotL(q.d), l = [l0[0] * side, l0[1] * side], u = n.hw + rw;
+        prof.push(row(q.x + l[0] * u, q.z + l[1] * u, l));
+        if (s >= sb) break;
+      }
+      edges.push(prof); }
+    // round the curb returns: the back edge found by walking in from the kerb line toward the corner's centre
+    for (const I of RN.inters) for (const cr of I.corners) { if (cr.kind !== 'walk') continue;
+      const prof = [];
+      for (const p of cr.arc) { const L = Math.hypot(cr.O[0] - p[0], cr.O[1] - p[1]), l = [(cr.O[0] - p[0]) / L, (cr.O[1] - p[1]) / L];
+        let d = 0.5; while (d < 4.5 && RN.walkY(p[0] + l[0] * d, p[1] + l[1] * d) !== null) d += 0.03;
+        prof.push(row(p[0] + l[0] * d, p[1] + l[1] * d, l)); }
+      edges.push(prof); }
+    if (vmat) for (const prof of edges) {
+      // the width eased along the edge (no saw-tooth where an obstacle cuts it short): each row at most a little wider
+      // than its neighbours' mean, so the strip tapers in and out instead of stepping
+      for (let it = 0; it < 6; it++) for (let i = 0; i < prof.length; i++) { const a = prof[i - 1], b = prof[i + 1];
+        const m = ((a ? a.w : 0) + (b ? b.w : 0)) / ((a ? 1 : 0) + (b ? 1 : 0) || 1); prof[i].w = Math.min(prof[i].w, m + 0.12); }
+      for (let i = 0; i + 1 < prof.length; i++) {
+        const a = prof[i], b = prof[i + 1]; if (Math.max(a.w, b.w) < 0.05 || a.top === null || b.top === null) continue;
+        const K = 4, ring = P => { const pts = []; for (let k = 0; k <= K; k++) { const t = k / K, d = 0.02 + Math.max(0, P.w - 0.02) * t, x = P.bx + P.l[0] * d, z = P.bz + P.l[1] * d, g = hf.groundAt(x, z);
+          const yTop = P.top - 0.025, e = t * t * (3 - 2 * t); pts.push([x, Math.max(g, yTop + (g - 0.04 - yTop) * e), z]); } return pts; };
+        const A = ring(a), Bq = ring(b);
+        for (let k = 0; k < K; k++) { const q4 = [A[k], Bq[k], Bq[k + 1], A[k + 1]];
+          const ux = q4[1][0] - q4[0][0], uy = q4[1][1] - q4[0][1], uz = q4[1][2] - q4[0][2], vx = q4[3][0] - q4[0][0], vy = q4[3][1] - q4[0][1], vz = q4[3][2] - q4[0][2];
+          let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; q4.reverse(); }
+          { const l0 = Math.hypot(nx, ny, nz) || 1; nx /= l0; ny = ny / l0 + 1.2; nz /= l0; } const L = Math.hypot(nx, ny, nz) || 1; // (shaded nearly as the flat lawn: the bank reads as one with it)
+          for (const [i0, i1, i2] of [[0, 1, 2], [0, 2, 3]]) for (const v of [q4[i0], q4[i1], q4[i2]]) { pos.push(v[0], v[1], v[2]); nor.push(nx / L, ny / L, nz / L); } }
+      }
+    }
+    if (pos.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, vmat); m.receiveShadow = true; m.castShadow = false; m.name = 'verges'; m.matrixAutoUpdate = false; terrainGroup.add(m); m.updateMatrixWorld(); }
+  }
   // the hill woods and the riverside trees are mirrored in the river; garden and street trees, saplings and the
   // forest floor are not (keeps the reflection pass cheap)
   const allTrees = [...trees, ...sakura.map(t => ({ ...t, kind: 'sakura', v: t.v ?? Math.floor(srng() * 4) }))];
