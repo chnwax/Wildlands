@@ -413,12 +413,11 @@ export function logGeo(lod = 0, seed = 7) {
 
 // ---------------------------------------------------------------- blob crowns: lumpy solid blobs + card fringe (height ~1)
 // shape: 'leaf' round broadleaf, 'oak' broad spreading crown (also camphor), 'birch' narrow airy crown, 'zelkova'
-// vase-shaped street tree, 'maple' low layered dome, 'willow' weeping, 'sakura' wide umbrella crown on spreading dark
-// branches, 'bush' / 'hydra' low shrubs, 'hedge' a clipped hedge block, 'ivy' a flat mat of leaves on a wall
+// vase-shaped street tree, 'willow' weeping, 'bush' / 'hydra' low shrubs, 'hedge' a clipped hedge block, 'ivy' a flat
+// mat of leaves on a wall (the maple and the sakura are grown on a branch skeleton: mapleGeo, sakuraGeo)
 function crownLayout(shape, hi, rng) {
   const blobs = [], B = (x, y, z, R, sc) => blobs.push({ c: V(x, y, z), R, s: rng() * 10, sc: sc || null });
   const ring = (n, rMin, rMax, yMin, yMax, RMin, RMax, sc) => { for (let i = 0; i < n; i++) { const a = i / n * TAU + rng() * 0.6, r = rMin + rng() * (rMax - rMin); B(Math.cos(a) * r, yMin + rng() * (yMax - yMin), Math.sin(a) * r, RMin + rng() * (RMax - RMin), sc); } };
-  if (shape === 'sakura') { B(0, 0.74, 0, 0.22); ring(hi ? 8 : 4, 0.2, 0.34, 0.52, 0.68, 0.15, 0.21); return { crown: V(0, 0.6, 0), blobs }; }
   if (shape === 'bush' || shape === 'hydra') { B(0, 0.42, 0, 0.32); ring(hi ? 4 : 2, 0.2, 0.3, 0.26, 0.36, 0.22, 0.3); return { crown: V(0, 0.3, 0), blobs }; }
   if (shape === 'hedge') { for (let i = 0; i < 5; i++) B(lerp(-0.4, 0.4, i / 4), 0.46, (rng() - 0.5) * 0.05, 0.3, V(1, 1.65, 1.15)); return { crown: V(0, 0.45, 0), blobs }; }
   if (shape === 'ivy') { for (let i = 0; i < 6; i++) B(lerp(-0.4, 0.4, (i % 3) / 2) + (rng() - 0.5) * 0.12, i < 3 ? 0.3 : 0.7, 0, 0.24 + rng() * 0.06, V(1, 1.1, 0.1)); return { crown: V(0, 0.5, -0.6), blobs }; }
@@ -436,7 +435,6 @@ function crownLayout(shape, hi, rng) {
     }
     return { crown: V(0, 0.75, 0), blobs };
   }
-  if (shape === 'maple') { B(0, 0.7, 0, 0.16); ring(hi ? 10 : 5, 0.14, 0.34, 0.42, 0.66, 0.11, 0.15); return { crown: V(0, 0.56, 0), blobs }; }
   if (shape === 'willow') { B(0, 0.8, 0, 0.19, V(1, 1.3, 1)); ring(hi ? 6 : 3, 0.12, 0.24, 0.6, 0.78, 0.14, 0.17, V(1, 1.5, 1)); return { crown: V(0, 0.66, 0), blobs }; }
   B(0, 0.84, 0, 0.2); ring(hi ? 6 : 3, 0.14, 0.22, 0.6, 0.8, 0.14, 0.2);
   return { crown: V(0, 0.7, 0), blobs };
@@ -472,7 +470,7 @@ export function broadleafGeo(lod = 0, seed = 7, shape = 'leaf') {
   if (far) return { solid };
   // leaf cards stuck on the blob surfaces, facing out, sharing the blob's smooth normal
   const B = meshBuilder(), ax = V(0, 0, 0), ay = V(0, 0, 0);
-  const mult = { sakura: 1.4, hydra: 1.2, birch: 1.3, hedge: 0.9, ivy: 1.6, maple: 1.1 }[shape] || 1;
+  const mult = { hydra: 1.2, birch: 1.3, hedge: 0.9, ivy: 1.6 }[shape] || 1;
   for (const b of blobs) {
     const cards = (hi ? 16 : 6) * mult | 0;
     for (let k = 0; k < cards; k++) {
@@ -529,10 +527,7 @@ export function broadleafGeo(lod = 0, seed = 7, shape = 'leaf') {
       }
     });
   };
-  if (shape === 'sakura') { // short stout trunk forking into dark spreading limbs that show under the blossom
-    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.05 }, { p: V(0.02, 0.22, 0), r: 0.04 }, { p: V(0, 0.34, 0.01), r: 0.034 }])];
-    limbs(0.32, 0.022, ring.slice(0, hi ? 6 : 3), 0.9);
-  } else if (shape === 'oak') {
+  if (shape === 'oak') {
     trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.058 }, { p: V(0, 0.03, 0), r: 0.045 }, { p: V(0.015, 0.26, 0), r: 0.036 }, { p: V(0, 0.42, 0.01), r: 0.03 }])];
     limbs(0.38, 0.022, ring.slice(0, hi ? 6 : 3), 0.8);
   } else if (shape === 'birch') {
@@ -547,9 +542,6 @@ export function broadleafGeo(lod = 0, seed = 7, shape = 'leaf') {
     // the smaller crown lobes instead of ending as the old bundle of sawn-off poles.
     scaffold(0.38, 0.024, ring.slice(0, hi ? 5 : 4), 0.92, -0.015);
     if (hi) scaffold(0.5, 0.012, ring.slice(5, 12), 0.9, -0.01, false);
-  } else if (shape === 'maple') {
-    trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.04 }, { p: V(0.01, 0.22, 0), r: 0.03 }])];
-    limbs(0.2, 0.018, ring.slice(0, hi ? 7 : 4), 0.85);
   } else if (shape === 'willow') {
     trunkParts = [trunkOf([{ p: V(0, 0, 0), r: 0.055 }, { p: V(0.03, 0.25, 0), r: 0.042 }, { p: V(0.02, 0.5, 0.01), r: 0.032 }])];
     limbs(0.48, 0.018, ring.slice(0, hi ? 6 : 3), 0.8);
@@ -655,6 +647,138 @@ export function zelkovaGeo(lod = 0, seed = 29) {
   if (far) return { solid, trunk: mergeGeometries(wood) };
   const B = meshBuilder();
   for (const k of clumps) clumpCards(B, rng, k, crownC, crownR, hi ? Math.round(8 + k.R * 50) : 5);
+  return { solid, cards: B.geometry(true), trunk: mergeGeometries(wood) };
+}
+// surface roots spreading from a trunk's foot (near LOD only)
+const rootFlare = (wood, rng, a0, r, L0, n = 5) => { for (let k = 0; k < n; k++) { const a = a0 + k / n * TAU + rng() * 0.4, L = L0 * (0.75 + rng() * 0.5);
+  wood.push(trunkGeo([{ p: V(0, 0.045, 0), r: r * 0.55 }, { p: V(Math.cos(a) * L * 0.55, 0.014, Math.sin(a) * L * 0.55), r: r * 0.27 }, { p: V(Math.cos(a) * L, -0.008, Math.sin(a) * L), r: 0.002 }], 5, 5, ROOTED)); } };
+// close a crown's outline: masses just inside its envelope (c, radii E, centres at `inset` of it) wherever the
+// branch-borne ones leave a gap, above yMin (in envelope radii from the centre) — the canopy then reads as one
+// continuous, scalloped mass over the branch work instead of separate balls with sky between them
+const fillCrown = (clumps, rng, c, E, n, R0, R1, mk, yMin = 0, inset = 0.82) => {
+  const ga = Math.PI * (3 - Math.sqrt(5)), off = rng() * TAU;
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (i + 0.5) / n * 2; if (y < yMin) break;
+    const rr = Math.sqrt(1 - y * y), a = off + i * ga, R = R0 + rng() * (R1 - R0);
+    const p = V(c.x + Math.cos(a) * rr * E[0] * inset, c.y + y * E[1] * inset, c.z + Math.sin(a) * rr * E[2] * inset);
+    if (clumps.some(k => k.c.distanceTo(p) < (k.R + R) * 0.7)) continue;
+    clumps.push({ ...mk, c: p, R, s: rng() * 10, sc: mk.sc.clone() });
+  }
+};
+
+// sakura (染井吉野), height 1: a short, stout, leaning trunk with a root flare forks low (about a quarter of the height)
+// into four or five heavy limbs that arch up and far out — the tree is wider than it is tall — each dividing into side
+// branches, the inner ones climbing to fill the crown's top, the outer ones spreading level with their ends dipping a
+// little under the blossom. The blossom lies along the tops of those branches as a broad, low umbrella of many modest,
+// flattened masses (darker beneath, where the dark limbs show through) with small sprays hanging from the outer ends.
+// lod 1: the same skeleton with fewer, plainer masses; lod 2: a mass on each limb end and over the top, a plain trunk.
+export function sakuraGeo(lod = 0, seed = 13) {
+  const rng = mulberry32(seed), hi = lod === 0, far = lod >= 2;
+  const la = rng() * TAU, lean = 0.03 + rng() * 0.03, fork = 0.23 + rng() * 0.05, lx = Math.cos(la) * lean, lz = Math.sin(la) * lean;
+  const crownC = V(lx * 1.4, 0.62, lz * 1.4), crownR = 0.56, ENV = [0.54, 0.36, 0.54];
+  const env = (p, f = 1, fy = 1) => intoEnvelope(p, crownC, ENV[0] * f, ENV[1] * fy, ENV[2] * f);
+  const stem = [{ p: V(0, 0, 0), r: 0.062 }, { p: V(lx * 0.2, 0.05, lz * 0.2), r: 0.051 }, { p: V(lx * 0.62, fork * 0.6, lz * 0.62), r: 0.046 }, { p: V(lx, fork, lz), r: 0.04 }];
+  const wood = [trunkGeo(stem, [10, 6, 4][lod], 5, { tip: 0.5 })];
+  if (hi) rootFlare(wood, rng, la, 0.062, 0.11);
+  const clumps = [], bl = { flat: 0.7, dark: 0.4, rough: 1.1 }, nP = 4 + (rng() < 0.5 ? 1 : 0);
+  let az = la + rng() * TAU;
+  for (let i = 0; i < nP; i++) {
+    az += TAU / nP * (0.75 + rng() * 0.5);
+    const dx = Math.cos(az), dz = Math.sin(az), H = 0.36 + rng() * 0.1, Y = 0.24 + rng() * 0.1;
+    const base = V(lx + dx * 0.006, fork - 0.085 + rng() * 0.03, lz + dz * 0.006), up = base.clone().add(V(dx * 0.016, 0.07, dz * 0.016)); // (its open root end stays inside the trunk)
+    const ctrl = base.clone().add(V(dx * H * 0.3, Y * 1.2, dz * H * 0.3)).add(V((rng() - 0.5) * 0.05, 0, (rng() - 0.5) * 0.05));
+    const tip = env(base.clone().add(V(dx * H, Y, dz * H)), 0.92, 1.3);                      // arching: it rises, then runs out level
+    const r0 = 0.03 + rng() * 0.005, pts = [{ p: base, r: r0 }, ...bez(up, ctrl, tip, r0 * 0.92, 0.006, far ? 3 : hi ? 7 : 5)];
+    wood.push(trunkGeo(pts, [7, 5, 3][lod], 5, ROOTED));
+    clumps.push({ ...bl, c: tip.clone().add(V(dx * 0.03, 0.05, dz * 0.03)), R: (far ? 0.2 : 0.13) + rng() * 0.03, s: rng() * 10, sc: V(1.08, 0.84, 1.08) });
+    if (far) continue;
+    { const F = along(pts, 0.62); clumps.push({ ...bl, c: F.p.clone().add(V(0, 0.07, 0)), R: 0.105 + rng() * 0.025, s: rng() * 10, sc: V(1.06, 0.86, 1.06), dark: 0.34 }); }
+    if (hi) { // a spray hanging from the limb's end
+      const hang = tip.clone().add(V(dx * 0.07, -0.05, dz * 0.07));
+      wood.push(trunkGeo([{ p: along(pts, 0.92).p, r: 0.006 }, { p: hang.clone().add(V(0, 0.02, 0)), r: 0.002 }], 3, 5, ROOTED));
+      clumps.push({ ...bl, c: hang, R: 0.06 + rng() * 0.015, s: rng() * 10, sc: V(0.95, 0.9, 0.95), dark: 0.46 });
+    }
+    const nS = hi ? 4 : 3;
+    for (let j = 0; j < nS; j++) {
+      const t = 0.3 + j * (0.58 / nS) + rng() * 0.07, P = along(pts, t), inner = t < 0.5;
+      const saz = az + (j % 2 ? 1 : -1) * (0.55 + rng() * 0.6), el = inner ? 0.75 + rng() * 0.35 : 0.2 + rng() * 0.3, sl = (inner ? 0.24 : 0.17) + rng() * 0.08;
+      const sd = V(Math.cos(saz) * Math.cos(el), Math.sin(el), Math.sin(saz) * Math.cos(el));
+      const send = env(P.p.clone().addScaledVector(sd, sl)), smid = P.p.clone().lerp(send, 0.5).add(V(0, sl * (inner ? 0.02 : 0.12), 0));
+      if (!inner) send.y -= 0.02;                                                                // (the outer ends dip)
+      const spts = bez(P.p, smid, send, Math.min(P.r * 0.72, 0.014), 0.003, hi ? 4 : 3);
+      wood.push(trunkGeo(spts, hi ? 5 : 3, 5, ROOTED));
+      clumps.push({ ...bl, c: send.clone().add(V(0, 0.04, 0)), R: 0.1 + rng() * 0.03, s: rng() * 10, sc: V(1.08, 0.86, 1.08) });
+      if (hi) for (const e of [-1, 1]) { // twigs off the branch, one with a small mass of its own
+        const tq = along(spts, 0.5 + rng() * 0.2), ta = saz + e * (0.7 + rng() * 0.4), te = Math.max(0.1, el - 0.2 + rng() * 0.4), tl = 0.07 + rng() * 0.04;
+        const tend = env(tq.p.clone().add(V(Math.cos(ta) * Math.cos(te) * tl, Math.sin(te) * tl, Math.sin(ta) * Math.cos(te) * tl)));
+        wood.push(trunkGeo([{ p: tq.p, r: Math.min(tq.r * 0.7, 0.005) }, { p: tend, r: 0.0015 }], 3, 5, ROOTED));
+        if (e === (j % 2 ? 1 : -1)) clumps.push({ ...bl, c: tend.clone().add(V(0, 0.025, 0)), R: 0.07 + rng() * 0.025, s: rng() * 10, sc: V(1.06, 0.88, 1.06) });
+      }
+    }
+  }
+  // the umbrella closed over the limbs down to a little under its widest, open beneath where the limbs show
+  fillCrown(clumps, rng, crownC, ENV, far ? 18 : hi ? 64 : 38, far ? 0.16 : hi ? 0.1 : 0.12, far ? 0.2 : hi ? 0.13 : 0.15, { ...bl, sc: V(1.08, 0.86, 1.08) }, -0.2, 0.84);
+  if (!far) fillCrown(clumps, rng, crownC, ENV, hi ? 14 : 8, 0.12, 0.15, { ...bl, sc: V(1.1, 0.85, 1.1), dark: 0.32 }, 0.1, 0.45); // (a core: no seeing through the dome)
+  const solid = mergeGeometries(clumps.map(k => clumpSolid(k, crownC, crownR, hi && k.R > 0.12 ? 2 : 1)));
+  if (far) return { solid, trunk: mergeGeometries(wood) };
+  const B = meshBuilder();
+  for (const k of clumps) clumpCards(B, rng, k, crownC, crownR, hi ? Math.round(10 + k.R * 64) : 7, 0.8, 0.8);
+  return { solid, cards: B.geometry(true), trunk: mergeGeometries(wood) };
+}
+
+// Japanese maple (いろは紅葉), height 1: a short trunk divides low into two to four slender, sinuous leaders leaning out
+// and up; from each, slim branches reach out almost level in tiers, and the foliage lies on them in thin spreading plates
+// — layer over layer, with daylight and the dark branch work between them, a broad airy dome a little wider than tall.
+// lod 1: the same skeleton with fewer plates; lod 2: a plate per tier and a plain trunk.
+export function mapleGeo(lod = 0, seed = 31) {
+  const rng = mulberry32(seed), hi = lod === 0, far = lod >= 2;
+  const la = rng() * TAU, lean = 0.015 + rng() * 0.02, fork = 0.13 + rng() * 0.05, lx = Math.cos(la) * lean, lz = Math.sin(la) * lean;
+  const crownC = V(lx, 0.57, lz), crownR = 0.52, ENV = [0.56, 0.41, 0.56];
+  const env = (p, f = 1, fy = 1) => intoEnvelope(p, crownC, ENV[0] * f, ENV[1] * fy, ENV[2] * f);
+  const stem = [{ p: V(0, 0, 0), r: 0.048 }, { p: V(lx * 0.3, 0.04, lz * 0.3), r: 0.039 }, { p: V(lx, fork, lz), r: 0.033 }];
+  const wood = [trunkGeo(stem, [9, 6, 4][lod], 6, { tip: 0.5 })];
+  if (hi) rootFlare(wood, rng, la, 0.048, 0.085, 4);
+  const clumps = [], pl = { flat: 0.6, dark: 0.36, rough: 0.95 };
+  const plate = (c, R, sq = 0.8) => clumps.push({ ...pl, c, R, s: rng() * 10, sc: V(1.2, sq, 1.2) });
+  const nL = 3 + (rng() < 0.35 ? 1 : 0) - (rng() < 0.25 ? 1 : 0), tiers = far ? [0.42, 0.74] : hi ? [0.3, 0.47, 0.63, 0.79] : [0.34, 0.56, 0.78];
+  let az = rng() * TAU;
+  for (let i = 0; i < nL; i++) {
+    az += TAU / nL * (0.8 + rng() * 0.4);
+    const dx = Math.cos(az), dz = Math.sin(az), sd = V(-dz, 0, dx), tilt = 0.42 + rng() * 0.32, L = 0.72 + rng() * 0.12, wig = (rng() < 0.5 ? 1 : -1) * (0.018 + rng() * 0.014);
+    const base = V(lx + dx * 0.004, fork - 0.06, lz + dz * 0.004);
+    const tip = env(base.clone().add(V(dx * Math.sin(tilt) * L, Math.cos(tilt) * L, dz * Math.sin(tilt) * L)), 0.72, 0.96);
+    const n = far ? 3 : hi ? 8 : 5, r0 = 0.024 + rng() * 0.004, pts = [{ p: base, r: r0 }];
+    for (let k = 1; k <= n; k++) { const t = k / n, p = base.clone().lerp(tip, t);           // sinuous, bowed a little outward
+      p.add(V(dx * Math.sin(Math.PI * t) * 0.035, 0, dz * Math.sin(Math.PI * t) * 0.035)).addScaledVector(sd, Math.sin(TAU * t) * wig);
+      if (k === 1) p.set(base.x + dx * 0.012, base.y + 0.07, base.z + dz * 0.012);              // (rising out of the trunk first)
+      pts.push({ p, r: lerp(r0 * 0.92, 0.005, Math.pow(t, 0.9)) }); }
+    wood.push(trunkGeo(pts, [6, 4, 3][lod], 6, ROOTED));
+    plate(tip.clone().add(V(0, 0.035, 0)), (far ? 0.16 : 0.115) + rng() * 0.025, 0.9);           // the leader's own top
+    tiers.forEach((t0, j) => {
+      const t = t0 + (rng() - 0.5) * 0.06, P = along(pts, t), baz = az + (j % 2 ? 1 : -1) * (0.5 + rng() * 0.9), blen = lerp(0.34, 0.16, t) * (0.85 + rng() * 0.3);
+      const bd = V(Math.cos(baz), 0, Math.sin(baz)), bs = V(-bd.z, 0, bd.x);
+      const end = env(P.p.clone().addScaledVector(bd, blen).add(V(0, blen * 0.14, 0))), mid = P.p.clone().lerp(end, 0.5).add(V(0, -0.012, 0));
+      const bpts = bez(P.p, mid, end, Math.min(P.r * 0.72, 0.011), 0.0025, far ? 2 : hi ? 4 : 3);
+      wood.push(trunkGeo(bpts, far ? 3 : 4, 6, ROOTED));
+      const R = lerp(0.135, 0.1, t) * (0.9 + rng() * 0.2);
+      plate(end.clone().add(V(0, 0.028, 0)), far ? R * 1.35 : R);
+      if (far) return;
+      const M = along(bpts, 0.45); plate(M.p.clone().addScaledVector(bs, (rng() - 0.5) * 0.06).add(V(0, 0.045, 0)), R * 0.78); // filling along the branch
+      if (hi) for (const e of [-1, 1]) { // twigs fanning off the end, each under a small plate
+        const q = along(bpts, 0.62 + rng() * 0.12), te = env(end.clone().addScaledVector(bs, e * R * (0.8 + rng() * 0.3)).addScaledVector(bd, -R * 0.35).add(V(0, 0.01, 0)));
+        wood.push(trunkGeo([{ p: q.p, r: Math.min(q.r * 0.7, 0.0045) }, { p: te, r: 0.0015 }], 3, 6, ROOTED));
+        plate(te.clone().add(V(0, 0.022, 0)), R * (0.66 + rng() * 0.12));
+      }
+    });
+  }
+  // the dome's outline closed over the upper tiers (the lower ones stay open, layer under layer), its crown first
+  clumps.push({ ...pl, c: V(crownC.x + (rng() - 0.5) * 0.06, crownC.y + ENV[1] * 0.8, crownC.z + (rng() - 0.5) * 0.06), R: (far ? 0.17 : 0.12) + rng() * 0.02, s: rng() * 10, sc: V(1.2, 0.8, 1.2) });
+  fillCrown(clumps, rng, crownC, ENV, far ? 16 : hi ? 64 : 36, far ? 0.15 : hi ? 0.095 : 0.11, far ? 0.19 : hi ? 0.12 : 0.14, { ...pl, sc: V(1.2, 0.82, 1.2) }, 0.0, 0.82);
+  if (!far) fillCrown(clumps, rng, crownC, ENV, hi ? 14 : 8, 0.12, 0.15, { ...pl, sc: V(1.1, 0.9, 1.1), dark: 0.3 }, 0.1, 0.45); // (a core: no seeing through the dome)
+  const solid = mergeGeometries(clumps.map(k => clumpSolid(k, crownC, crownR, hi && k.R > 0.1 ? 2 : 1)));
+  if (far) return { solid, trunk: mergeGeometries(wood) };
+  const B = meshBuilder();
+  for (const k of clumps) clumpCards(B, rng, k, crownC, crownR, hi ? Math.round(6 + k.R * 60) : 5, 0.95, 1.0);
   return { solid, cards: B.geometry(true), trunk: mergeGeometries(wood) };
 }
 
@@ -859,9 +983,9 @@ const SPECIES = {
   oak:     { mat: 'oak', n: 1, geo: (l, v) => broadleafGeo(l, 19 + v * 5, 'oak'), trunk: 0.045 },
   birch:   { mat: 'birch', n: 1, geo: (l, v) => broadleafGeo(l, 23 + v * 9, 'birch'), trunk: 0.022 },
   zelkova: { mat: 'zelkova', n: 3, geo: (l, v) => zelkovaGeo(l, 29 + v * 17), trunk: 0.05, hiScale: 0.55 }, // (its mid LOD keeps the skeleton and masses: the detailed set need only be near)
-  maple:   { mat: 'maple', n: 1, geo: (l, v) => broadleafGeo(l, 31 + v * 8, 'maple'), trunk: 0.035 },
+  maple:   { mat: 'maple', n: 2, geo: (l, v) => mapleGeo(l, 31 + v * 23), trunk: 0.035, hiScale: 0.6 },
   willow:  { mat: 'willow', n: 1, geo: (l, v) => broadleafGeo(l, 37, 'willow'), trunk: 0.05 },
-  sakura:  { mat: 'sakura', n: 2, geo: (l, v) => broadleafGeo(l, 13 + v * 8, 'sakura'), trunk: 0.05, cardShadow: false },
+  sakura:  { mat: 'sakura', n: 2, geo: (l, v) => sakuraGeo(l, 13 + v * 19), trunk: 0.05, cardShadow: false, hiScale: 0.6 },
   bamboo:  { mat: 'bamboo', n: 9, geo: (l, v) => bambooGeo(l, 9 + v * 4, v >= 6), trunk: 0.0065, farCards: true, hiScale: 0.6 }, // v 6-8: grove-rim culms
 };
 // painted bark colour of trunks merged into the foliage mesh (mid / far LODs)
