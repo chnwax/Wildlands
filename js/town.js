@@ -277,7 +277,13 @@ for (const R of ROADS) {
 // the district's streets are designed roads: their bends are arcs (the loop road's sweep round the north, the avenue's
 // curve), so carriageway, kerbs and footways follow them smoothly. (After the ends are snapped onto the roads they meet,
 // so a junction's arm stays straight; then the ends are snapped again onto the rounded lines.)
-for (const R of ROADS) if (R.district && R.kind !== 'main') R.pts = filletPolyline(R.pts, { radius: R.kind === 'road' ? 70 : 45, maxDev: 1.4 });
+for (const R of ROADS) if (R.district && R.kind !== 'main') {
+  // (straight through its junctions: within 15 m of every point where it meets another road)
+  const keep = [];
+  for (const O of ROADS) { if (O === R || O.kind === 'path') continue;
+    for (let i = 0; i + 1 < R.pts.length; i++) for (let j = 0; j + 1 < O.pts.length; j++) { const h = segInter(R.pts[i], R.pts[i + 1], O.pts[j], O.pts[j + 1]); if (h) keep.push([h[0], h[1], 15]); } }
+  R.pts = filletPolyline(R.pts, { radius: R.kind === 'road' ? 70 : 45, maxDev: 1.4, keep });
+}
 for (const R of ROADS) if (R.district && R.kind !== 'main') for (const end of [0, R.pts.length - 1]) {
   const p = R.pts[end]; let best = null;
   for (const O of ROADS) { if (O === R || O.kind === 'path') continue;
@@ -710,7 +716,7 @@ export async function build(progress, opts = {}) {
     B.beam('alu', [ra[0], ra[1] + 0.95, z1], [rb[0], rb[1] + 0.95, rb[2]], 0.07, 0.07, rc); B.beam('alu', [ra[0], ra[1] + 0.5, z1], [rb[0], rb[1] + 0.5, rb[2]], 0.035, 0.035, rc);
     for (const t of [0, 0.5, 1]) { const p = [lerp(ra[0], rb[0], t), lerp(ra[1], rb[1], t), lerp(z1, rb[2], t)]; B.box('alu', p[0], p[1] - 0.02, p[2], 0.06, 0.97, 0.06, rc); }
     addBox((ra[0] + rb[0]) / 2, (z1 + rb[2]) / 2, 0.1, Math.abs(rb[2] - z1) / 2, 0);
-    hf.paint2(2, riverX(z2) + sd * 14.4 - 3.5, Math.min(z1, z2) - 1, riverX(z2) + sd * 14.4 + 3.5, Math.max(z1, z2) + 1, () => 1);
+    hf.paintPave(riverX(z2) + sd * 14.4 - 3.5, Math.min(z1, z2) - 0.2, riverX(z2) + sd * 14.4 + 3.5, Math.max(z1, z2) + 0.2, (x, z) => { const rd = Math.abs(x - riverX(z)); return rd > 14.3 && rd < 17.9 ? 1 : 0; });
   }
   // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
   // an aluminium railing, name pillars (親柱) at the four corners, lamps, and steel expansion joints across the road
@@ -1109,6 +1115,39 @@ export async function build(progress, opts = {}) {
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
   RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470, ground: (x, z) => hf.groundAt(x, z) }); // guide blocks in town, not out on the valley road
+  { // bridgeheads (橋詰): where the riverside lane R meets a bridge road, the bank-top walkway, the walkway's ramp up to
+    // the road and the lane's own footway round the corner lay side by side with a strip of lawn between them — two
+    // parallel paths a few metres apart and an unpaved wedge at the bridge end. That strip is paved into one small
+    // bridgehead square: from the walkway's outer edge to the back of the lane's footway (wherever the curb return puts
+    // it), from the bridge road's footway out along the bank as far as the lane's footway runs, its surface eased from
+    // the walkway's (and its ramp's) level to the footway's, a kerb along its open end
+    const RAMP_L = 3.0, TOP_Y = Y0 + 0.385, rdW = 17.6;
+    for (const [bz, , id] of BRIDGES) for (const e of [-1, 1]) {
+      const sd = -1, E = BRIDGE_EDGE[id];                                     // (lane R runs along the west bank only)
+      const yW = z => { const d = Math.abs(z - bz); return d < E + RAMP_L ? lerp(TOP_Y, Y0 + 0.12, clamp((d - E) / RAMP_L, 0, 1)) : Y0 + 0.12; };
+      const backAt = z => { for (let rd = rdW + 0.05; rd < 25; rd += 0.05) { const y = RN.walkY(riverX(z) + sd * rd, z); if (y !== null) return { rd: rd - 0.02, y }; } return null; };
+      const rows = []; for (let d = E + 0.02; d < E + 30; d += 0.5) { const z = bz + e * d, b = backAt(z); if (!b || b.rd - rdW > 6) break; rows.push({ z, ...b }); }
+      if (rows.length < 3) continue;
+      entity('bridgehead_square', () => {
+        B.frame(0, 0, 0, 0);
+        const Wp = (z, rd, y) => [riverX(z) + sd * rd, y, z], col = [0.88, 0.86, 0.82];
+        for (let i = 0; i + 1 < rows.length; i++) {
+          const a = rows[i], b = rows[i + 1], n = Math.max(1, Math.ceil(Math.max(a.rd, b.rd) - rdW) / 1.2 | 0);
+          for (let k = 0; k < n; k++) { const t0 = k / n, t1 = (k + 1) / n;
+            const ra0 = lerp(rdW, a.rd, t0), ra1 = lerp(rdW, a.rd, t1), rb0 = lerp(rdW, b.rd, t0), rb1 = lerp(rdW, b.rd, t1);
+            const ya0 = lerp(yW(a.z), a.y, t0), ya1 = lerp(yW(a.z), a.y, t1), yb0 = lerp(yW(b.z), b.y, t0), yb1 = lerp(yW(b.z), b.y, t1);
+            const q = [Wp(a.z, ra0, ya0), Wp(b.z, rb0, yb0), Wp(b.z, rb1, yb1), Wp(a.z, ra1, ya1)], al = [a.z * e, b.z * e, b.z * e, a.z * e], ac = [ra0, rb0, rb1, ra1].map(r => r - rdW + 0.5);
+            B.poly('pavement', q, [0, 1, 0], { color: col, uvs: q.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: { aPave: al.map((v, j) => [v, ac[j]]) } }); }
+        }
+        // the open end: a kerb down to the lawn
+        const L = rows[rows.length - 1], n = 6;
+        for (let k = 0; k < n; k++) { const r0 = lerp(rdW, L.rd, k / n), r1 = lerp(rdW, L.rd, (k + 1) / n), y0 = lerp(yW(L.z), L.y, k / n), y1 = lerp(yW(L.z), L.y, (k + 1) / n);
+          B.poly('concrete', [Wp(L.z, r0, y0 - 0.25), Wp(L.z, r1, y1 - 0.25), Wp(L.z, r1, y1 + 0.004), Wp(L.z, r0, y0 + 0.004)], [0, 0, e], { color: [0.76, 0.75, 0.72] });
+          B.poly('concrete', [Wp(L.z, r0, y0 + 0.004), Wp(L.z, r1, y1 + 0.004), Wp(L.z + e * 0.12, r1, y1 + 0.004), Wp(L.z + e * 0.12, r0, y0 + 0.004)], [0, 1, 0], { color: [0.8, 0.79, 0.76] }); }
+        hf.paintPave(riverX(bz) - 26, Math.min(bz + e * E, L.z) - 0.3, riverX(bz) - 16, Math.max(bz + e * E, L.z) + 0.3, (x, z) => { const rd = riverX(z) - x, d = (z - bz) * e; if (d < E - 0.2 || d > Math.abs(L.z - bz) + 0.15) return 0; const b = backAt(z); return rd > rdW - 0.1 && b && rd < b.rd + 0.15 ? 1 : 0; });
+      });
+    }
+  }
   { // footways standing above the ground (embanked approaches out of town, the bridge ramps): the ground behind them is
     // built up into a grassy bank at 1:1.6 to their back edge, instead of the back edge standing out of the lawn
     const { HN, HALF, CELL, H } = hf, rotL = d => [-d[1], d[0]];

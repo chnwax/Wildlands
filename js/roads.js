@@ -53,7 +53,9 @@ function segInter(a, b, c, d) {
 // folding at it. The radius is the road's design radius, reduced where the straights are too short to hold the arc
 // (neighbouring arcs never overlap) and where the arc would pull the road more than maxDev off its corner point (the
 // buildings and paths beside it were planned against the original line).
-export function filletPolyline(pts, { radius = 40, maxDev = 1.2, step = 2.5 } = {}) {
+// keep: [[x, z, r]] — the road stays straight within r of these points (its junctions: a curb return needs straight
+// kerbs to meet)
+export function filletPolyline(pts, { radius = 40, maxDev = 1.2, step = 2.5, keep = [] } = {}) {
   const n = pts.length; if (n < 3) return pts.map(p => p.slice());
   const L = [], D = [];
   for (let i = 0; i + 1 < n; i++) { const dx = pts[i + 1][0] - pts[i][0], dz = pts[i + 1][1] - pts[i][1], l = Math.hypot(dx, dz) || 1e-9; L.push(l); D.push([dx / l, dz / l]); }
@@ -61,7 +63,12 @@ export function filletPolyline(pts, { radius = 40, maxDev = 1.2, step = 2.5 } = 
   for (let i = 1; i + 1 < n; i++) {
     const th = Math.acos(clamp(dot(D[i - 1], D[i]), -1, 1)); if (th < 0.006) continue;
     const R = Math.min(radius, maxDev / (1 / Math.cos(th / 2) - 1));
-    T[i] = Math.min(R * Math.tan(th / 2), (i === 1 ? 0.4 : 0.5) * L[i - 1], (i + 2 === n ? 0.4 : 0.5) * L[i]); TH[i] = th; // (a road's end segments stay mostly straight: they run into junctions)
+    let t = Math.min(R * Math.tan(th / 2), (i === 1 ? 0.4 : 0.5) * L[i - 1], (i + 2 === n ? 0.4 : 0.5) * L[i]); // (a road's end segments stay mostly straight: they run into junctions)
+    const inKeep = (x, z) => keep.some(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) < kr);
+    if (inKeep(pts[i][0], pts[i][1])) continue;
+    while (t > 0.3 && (inKeep(pts[i][0] - D[i - 1][0] * t, pts[i][1] - D[i - 1][1] * t) || inKeep(pts[i][0] + D[i][0] * t, pts[i][1] + D[i][1] * t))) t *= 0.85;
+    if (t <= 0.3) continue;
+    T[i] = t; TH[i] = th;
   }
   const out = [pts[0].slice()];
   for (let i = 1; i + 1 < n; i++) {
@@ -123,11 +130,16 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
   for (const I of inters) {
     const rF = Math.max(3, Math.max(I.nets[0].walk, I.nets[1].walk) + 2);
     I.rF = rF; I.arms = [];
+    // (each arm is the straight line of its road where the curb return meets it — at the end of the junction, a road
+    // that bends or kinks at the crossing point included: the corner's tangent points then lie exactly on the kerb line
+    // the straight footway runs along, instead of on a line through the crossing point that the road no longer follows)
     I.nets.forEach((n, k) => {
-      const o = I.nets[1 - k], s = I.s[k], smp = sampleAt(n.PL, s), L = o.hw + o.walk + rF;
+      const o = I.nets[1 - k], s = I.s[k], L = o.hw + o.walk + rF;
       for (const dir of [1, -1]) {
         if (dir > 0 ? s > n.PL.len - 0.5 : s < 0.5) continue;
-        const arm = { I, n, dir, d: [smp.d[0] * dir, smp.d[1] * dir], h: n.hw, L, s, cornerT: {} };
+        const sQ = clamp(s + dir * L, 0, n.PL.len), Lm = Math.abs(sQ - s), q = sampleAt(n.PL, sQ), d = [q.d[0] * dir, q.d[1] * dir];
+        const tQ = (q.x - I.p[0]) * d[0] + (q.z - I.p[1]) * d[1], base = [q.x - d[0] * tQ, q.z - d[1] * tQ];
+        const arm = { I, n, dir, d, base, Lm, tQ, h: n.hw, L, s, cornerT: {} };
         I.arms.push(arm); n.arms.push(arm);
       }
       n.clips.push([s - L, s + L]);
@@ -139,7 +151,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
       let ang = Math.atan2(b.d[1], b.d[0]) - Math.atan2(a.d[1], a.d[0]); if (ang <= 0) ang += Math.PI * 2;
       if (ang > Math.PI * 0.94) continue;                 // straight kerb line (the through side of a T)
       const na = rot(a.d), nb = rot(b.d), phi = Math.acos(clamp(dot(a.d, b.d), -1, 1));
-      const p1 = [c[0] + na[0] * a.h, c[1] + na[1] * a.h], p2 = [c[0] - nb[0] * b.h, c[1] - nb[1] * b.h];
+      const p1 = [a.base[0] + na[0] * a.h, a.base[1] + na[1] * a.h], p2 = [b.base[0] - nb[0] * b.h, b.base[1] - nb[1] * b.h];
       const den = a.d[0] * b.d[1] - a.d[1] * b.d[0]; if (Math.abs(den) < 1e-6) continue;
       const t = ((p2[0] - p1[0]) * b.d[1] - (p2[1] - p1[1]) * b.d[0]) / den;
       const C = [p1[0] + a.d[0] * t, p1[1] + a.d[1] * t];
@@ -149,8 +161,10 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
       let da = a2 - a1; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
       const k = Math.max(6, Math.ceil(Math.abs(da) * rF / 0.5)), arc = [];
       for (let j = 0; j <= k; j++) { const aa = a1 + da * j / k; arc.push([O[0] + Math.cos(aa) * rF, O[1] + Math.sin(aa) * rF]); }
-      a.cornerT[a.dir] = dot([T1[0] - c[0], T1[1] - c[1]], a.d);
-      b.cornerT[-b.dir] = dot([T2[0] - c[0], T2[1] - c[1]], b.d);
+      // (the tangent point's distance along the road from the crossing point: measured from where the arm line meets
+      // the road at the end of the junction, back along the road)
+      a.cornerT[a.dir] = a.Lm - a.tQ + dot([T1[0] - a.base[0], T1[1] - a.base[1]], a.d);
+      b.cornerT[-b.dir] = b.Lm - b.tQ + dot([T2[0] - b.base[0], T2[1] - b.base[1]], b.d);
       const kinds = [edgeKind(a.n), edgeKind(b.n)];
       I.corners.push({ a, b, O, rF, arc, T1, T2, walk: Math.max(a.n.walk, b.n.walk), kind: kinds.includes('walk') ? 'walk' : kinds.includes('gutter') ? 'gutter' : 'skirt' });
     }
@@ -416,19 +430,36 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     h = Math.max(h, (c.flush ? 2 : 1) * smoothstep(c.s0 - r, c.s0, s) * (1 - smoothstep(c.s1, c.s1 + r, s))); } return h; };
   const semiAt = (n, side, s) => { let best = 0, semi = false; for (const c of RN.cuts) if (c.id === n.R.id && c.side === side) { const r = c.ramp || 1.2, v = smoothstep(c.s0 - r, c.s0, s) * (1 - smoothstep(c.s1, c.s1 + r, s)); if (v > best + 1e-6) { best = v; semi = !!c.xing; } } return semi; };
   // sidewalk / kerb top at a point (null when not on one)
+  // A curb return joins two footway runs: at each tangent point it takes on that run's width and kerb (lowered for a
+  // crossing or a driveway next to the corner, semi-flat or not), and between them it changes smoothly — a corner
+  // between a 3 m avenue footway and a 2 m street footway narrows round its arc instead of ending in a 1 m step, and a
+  // crossing just past the corner no longer leaves the corner standing 15 cm above the lowered kerb beside it.
+  // sa: arc length from the corner's A end, arcL: its length. -> { w, drop, semi }
+  const cornerEnds = cr => cr.ends || (cr.ends = (() => { const a = cr.a, b = cr.b, sA = a.s + a.dir * (a.cornerT[a.dir] ?? 0), sB = b.s + b.dir * (b.cornerT[-b.dir] ?? 0);
+    // (an end on a road without a footway — the corner ramps down onto a lane, a path — narrows to a kerb's width there)
+    return { sA, sB, wA: wsAt(a.n, a.dir, sA + a.dir * 0.05) || (cr.dropA ? 0.6 : cr.walk), wB: wsAt(b.n, -b.dir, sB + b.dir * 0.05) || (cr.dropB ? 0.6 : cr.walk) }; })());
+  const cornerAt = (cr, sa, arcL) => {
+    const E = cornerEnds(cr), f = arcL > 1e-6 ? clamp(sa / arcL, 0, 1) : 0, w = lerp(E.wA, E.wB, f * f * (3 - 2 * f));
+    if (cr.kind !== 'walk') return { w, drop: 0, semi: false };
+    const fa = 1 - smoothstep(0.3, 1.8, sa), fb = smoothstep(arcL - 1.8, arcL - 0.3, sa);
+    const C = [[cr.dropA ? 1 - smoothstep(0.6, 2.2, sa) : 0, false], [cr.dropB ? smoothstep(arcL - 2.2, arcL - 0.6, sa) : 0, false],
+      [cutAt(cr.a.n, cr.a.dir, E.sA) * fa, semiAt(cr.a.n, cr.a.dir, E.sA)], [cutAt(cr.b.n, -cr.b.dir, E.sB) * fb, semiAt(cr.b.n, -cr.b.dir, E.sB)]];
+    let best = C[0]; for (const c of C) if (c[0] > best[0] + 1e-6) best = c;
+    return { w, drop: best[0], semi: best[0] > 1e-4 ? best[1] : true };
+  };
   RN.walkY = (x, z) => {
     for (const it of near(x, z)) {
       if (it.cr) {
         const cr = it.cr; if (cr.kind !== 'walk') continue;
-        const r = Math.hypot(x - cr.O[0], z - cr.O[1]); if (r > cr.rF || r < cr.rF - cr.walk) continue;
+        const r = Math.hypot(x - cr.O[0], z - cr.O[1]); if (r > cr.rF || r < cr.rF - Math.max(cr.walk, cornerEnds(cr).wA, cornerEnds(cr).wB)) continue;
         const aa = Math.atan2(z - cr.O[1], x - cr.O[0]), a1 = Math.atan2(cr.arc[0][1] - cr.O[1], cr.arc[0][0] - cr.O[0]), a2 = Math.atan2(cr.arc[cr.arc.length - 1][1] - cr.O[1], cr.arc[cr.arc.length - 1][0] - cr.O[0]);
         let span = a2 - a1; while (span > Math.PI) span -= 2 * Math.PI; while (span < -Math.PI) span += 2 * Math.PI;
         let rel = aa - a1; while (rel > Math.PI) rel -= 2 * Math.PI; while (rel < -Math.PI) rel += 2 * Math.PI;
         if (rel * Math.sign(span) < 0 || Math.abs(rel) > Math.abs(span)) continue;
         const ex = cr.O[0] + (x - cr.O[0]) / r * cr.rF, ez = cr.O[1] + (z - cr.O[1]) / r * cr.rF;
-        const arcL = Math.abs(span) * cr.rF, sa = Math.abs(rel) * cr.rF;
-        const drop = Math.max(cr.dropA ? 1 - smoothstep(0.6, 2.2, sa) : 0, cr.dropB ? smoothstep(arcL - 2.2, arcL - 0.6, sa) : 0);
-        return baseY(ex, ez) + profileY(kerbProfile(cr.walk, drop, _kp, true), cr.rF - r); // (a corner's lowering is its crossing's)
+        const arcL = Math.abs(span) * cr.rF, sa = Math.abs(rel) * cr.rF, C = cornerAt(cr, sa, arcL);
+        if (r < cr.rF - C.w) continue;
+        return baseY(x, z) + profileY(kerbProfile(C.w, C.drop, _kp, C.semi), cr.rF - r);
       }
       const { n, g } = it; if (!n.ws[1].length && !n.ws[-1].length) continue;
       const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), u = (x - g.a[0] - g.d[0] * t) * -g.d[1] + (z - g.a[1] - g.d[1] * t) * g.d[0];
@@ -522,15 +553,13 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     }
     // curb returns: the edge profile swept around each fillet (toward the block)
     for (const I of inters) for (const cr of I.corners) {
-      const pr = profOf(cr.kind, cr.walk, 0), k = cr.arc.length - 1;
-      const dropA = cr.kind === 'walk' && cr.dropA, dropB = cr.kind === 'walk' && cr.dropB;
+      const k = cr.arc.length - 1;
       const frame = j => {
         const p = cr.arc[j], inw = [(cr.O[0] - p[0]) / cr.rF, (cr.O[1] - p[1]) / cr.rF];
-        return { o: inw, at: q => { const x = p[0] + inw[0] * q[0], z = p[1] + inw[1] * q[0]; return V(x, baseY(p[0], p[1]) + q[1], z); } };
+        return { o: inw, at: q => { const x = p[0] + inw[0] * q[0], z = p[1] + inw[1] * q[0]; return V(x, baseY(x, z) + q[1], z); } };
       };
       const segLen = Math.hypot(cr.arc[1][0] - cr.arc[0][0], cr.arc[1][1] - cr.arc[0][1]);
-      const arcL = k * segLen, dropAt = j => { const s = j * segLen; return cr.kind !== 'walk' ? 0 : Math.max(dropA ? 1 - smoothstep(0.6, 2.2, s) : 0, dropB ? smoothstep(arcL - 2.2, arcL - 0.6, s) : 0); };
-      const prJ = j => profOf(cr.kind, cr.walk, dropAt(j), frame(j), true);
+      const arcL = k * segLen, prJ = j => { const C = cornerAt(cr, j * segLen, arcL); return profOf(cr.kind, C.w, C.drop, frame(j), C.semi); };
       for (let j = 0; j < k; j++) sweepSeg(cr.kind, prJ(j), prJ(j + 1), frame(j), frame(j + 1), j * segLen, (j + 1) * segLen, hash(j, cr.O[0]), cr.a.n);
       const f0 = frame(0), fk = frame(k), t0 = norm2([cr.arc[0][0] - cr.arc[1][0], cr.arc[0][1] - cr.arc[1][1]]), tk = norm2([cr.arc[k][0] - cr.arc[k - 1][0], cr.arc[k][1] - cr.arc[k - 1][1]]);
       cap(cr.kind, prJ(0), f0, t0); cap(cr.kind, prJ(k), fk, tk);
