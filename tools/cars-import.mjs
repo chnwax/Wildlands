@@ -84,7 +84,13 @@ function convert(id) {
   // side profile (top line) every 5 cm, for the occupants' head room; the glass's lowest side edge is the belt line
   const prof = [], step = 0.05, n = Math.ceil(L / step);
   for (let i = 0; i <= n; i++) prof.push(-1);
-  for (const t of tris.body) for (const v of t.vs) { const i = Math.round((v.p[0] + L / 2) / step); if (i >= 0 && i <= n && Math.abs(v.p[2]) < W * 0.3) prof[i] = Math.max(prof[i], v.p[1]); }
+  // (from the surfaces, not the vertices: a low-poly roof is one big polygon with no vertex in its middle — every
+  // triangle near the centreline is sampled densely, so the profile is the real top line)
+  for (const t of tris.body) { if (t.part === 'chrome' && t.vs.every(v => v.p[1] > 1.2)) continue; // (a roof rack is not head room)
+    const [A, Bv, C] = t.vs.map(v => v.p), ext = Math.max(Math.hypot(Bv[0] - A[0], Bv[2] - A[2]), Math.hypot(C[0] - A[0], C[2] - A[2]), Math.hypot(C[0] - Bv[0], C[2] - Bv[2])), m = Math.max(1, Math.ceil(ext / 0.025));
+    if (Math.min(Math.abs(A[2]), Math.abs(Bv[2]), Math.abs(C[2])) > W * 0.3 && Math.sign(A[2]) === Math.sign(Bv[2]) && Math.sign(Bv[2]) === Math.sign(C[2])) continue;
+    for (let a = 0; a <= m; a++) for (let b = 0; a + b <= m; b++) { const u = a / m, w = b / m, x = A[0] + (Bv[0] - A[0]) * u + (C[0] - A[0]) * w, y = A[1] + (Bv[1] - A[1]) * u + (C[1] - A[1]) * w, z = A[2] + (Bv[2] - A[2]) * u + (C[2] - A[2]) * w;
+      if (Math.abs(z) > W * 0.3) continue; const i = Math.round((x + L / 2) / step); if (i >= 0 && i <= n) prof[i] = Math.max(prof[i], y); } }
   for (let i = 0; i <= n; i++) if (prof[i] < 0) prof[i] = prof[i - 1] ?? 0.5;
   let belt = 9, wsx = -9, glassTop = 0;
   for (const t of tris.body) if (t.part === 'glass') for (const v of t.vs) { if (Math.abs(v.p[2]) > W * 0.35) belt = Math.min(belt, v.p[1]); wsx = Math.max(wsx, v.p[0]); glassTop = Math.max(glassTop, v.p[1]); }

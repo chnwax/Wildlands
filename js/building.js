@@ -758,6 +758,11 @@ function shopBuilding_build(B, s, rng, extras) {
     for (let f = 1; f < floors; f++) if (rng() < 0.5) acUnit(B, -W / 2 + 0.75, f * fh + 0.45, rng, { onWall: true, pipeTo: f * fh + 2.2, z: 0.25 });
     lampPoints.push({ p: B.P([0, 2.9, 0.8]), s: 0.8 });
   });
+  // side windows: the openings cut in the side walls get their frames and glass (they were left as open holes)
+  // (their own random stream: the town's sequence after this shop stays as it was)
+  const srng = mulberry32((Math.floor(s.x * 31) * 7919 + Math.floor(s.z * 17)) >>> 0);
+  for (const [fi, fr] of [[2, Math.PI / 2], [3, -Math.PI / 2]]) if (wins[fi].length) inFrame(B, [Math.sin(fr) * W / 2, 0, 0], fr, () => {
+    for (const [h, o] of wins[fi]) windowUnit(B, h, { rng: srng, frame: frameC, frameMat: 'alu', ...o }); });
   // back: service door, windows, meters, water heater, downpipes, external stair
   inFrame(B, [0, 0, -d / 2], Math.PI, () => {
     for (const [h, o] of wins[1]) windowUnit(B, h, { rng, ...o });

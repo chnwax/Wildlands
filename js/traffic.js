@@ -228,8 +228,8 @@ function buildType(T) {
   const DASH = [0.13, 0.13, 0.14], SEAT = T.taxi ? [0.2, 0.22, 0.3] : [0.36, 0.36, 0.38], DOOR = [0.32, 0.31, 0.3], CARPET = [0.12, 0.12, 0.12], PLAS = [0.22, 0.22, 0.23];
   const B0 = T.belt, dz = T.seats?.track ?? 0.34 * T.W / 1.47, cabin = [];
   const dx0 = cx1 - 0.55;                                                       // dashboard face
-  cabin.push(tint(boxG(cx1 - dx0, B0 - floorY - 0.12, T.W - 2 * skin, (cx1 + dx0) / 2, (B0 + floorY + 0.12) / 2, 0), DASH));
-  cabin.push(tint(new THREE.BoxGeometry(0.55, 0.06, T.W - 2 * skin).rotateZ(-0.18).translate((cx1 + dx0) / 2 + 0.02, B0 + 0.03, 0), DASH));   // dash top
+  cabin.push(tint(boxG(cx1 - dx0, B0 - floorY - 0.12, T.W - 2 * skin - 0.08, (cx1 + dx0) / 2, (B0 + floorY + 0.12) / 2, 0), DASH));
+  cabin.push(tint(new THREE.BoxGeometry(0.55, 0.06, T.W - 2 * skin - 0.08).rotateZ(-0.18).translate((cx1 + dx0) / 2 + 0.02, B0 + 0.03, 0), DASH));   // dash top
   cabin.push(tint(boxG(0.22, 0.09, 0.42, dx0 + 0.1, B0 + 0.08, dz), PLAS));                                            // instrument hood
   cabin.push(tint(boxG(0.1, 0.34, 0.26, dx0 - 0.02, B0 - 0.2, 0), PLAS));                                              // centre stack
   cabin.push(tint(new THREE.CylinderGeometry(0.025, 0.03, 0.34, sg(8)).rotateZ(Math.PI / 2 - 0.45).translate(dx0 - 0.1, B0 - 0.05, dz), PLAS)); // column
@@ -241,18 +241,31 @@ function buildType(T) {
     cabin.push(tint(boxG(0.1, hp - 0.1, 0.4, sx + 0.02, floorY + (hp - 0.16) / 2, sd * dz), PLAS));                                  // seat base
     cabin.push(tint(new THREE.BoxGeometry(0.12, 0.62, 0.46).translate(0, 0.31, 0).rotateZ(0.2).translate(sx - 0.27, floorY + hp - 0.12, sd * dz), SEAT));
     cabin.push(tint(boxG(0.1, 0.16, 0.26, sx - 0.37, floorY + hp + 0.54, sd * dz), SEAT));                                 // headrest
-    cabin.push(tint(boxG(cx1 - cx0 - 0.1, B0 - floorY - 0.05, 0.03, (cx0 + cx1) / 2 - 0.05, (B0 + floorY) / 2, sd * (T.W / 2 - skin - 0.015)), DOOR)); // door cards
     cabin.push(tint(boxG(0.3, 0.04, 0.1, sx + 0.1, B0 - 0.2, sd * (T.W / 2 - skin - 0.07)), PLAS));                  // armrests
   }
   cabin.push(tint(boxG(0.6, 0.2, 0.2, sx + 0.05, floorY + 0.1, 0), PLAS));                                           // console
-  cabin.push(tint(boxG(cx1 - cx0 - 0.1, 0.02, T.W - 2 * skin - 0.02, (cx0 + cx1) / 2, floorY + 0.01, 0), CARPET));
-  const rx = sx - (T.seats?.rearGap ?? 1.0);
-  if (!T.truck && rx - 0.35 > cx0) {                                             // rear bench
+  // the body's inside top line (the roof's underside, the rear window, the boot lid)
+  const roofIn = x => { let y = -1; for (let i = 0; i < bodyPts.length; i++) { const a = bodyPts[i], b = bodyPts[(i + 1) % bodyPts.length];
+    if (a[0] !== b[0] && (a[0] - x) * (b[0] - x) <= 0) y = Math.max(y, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0])); } return y - 0.06; };
+  // the rear bench stands where its backrest and headrests fit under the roof / in front of a sloping rear window:
+  // moved forward (keeping knee room behind the front seats), the backrest leaning less, or (failing that) no bench
+  let rx = sx - (T.seats?.rearGap ?? 1.0), rearLean = 0.22;
+  const benchFits = (x, lean) => { const tx = x - 0.27 - 0.6 * Math.sin(lean), ty = floorY + hp - 0.06 + 0.6 * Math.cos(lean); return roofIn(tx) > ty + 0.02 && roofIn(x - 0.35) > floorY + hp + 0.72; };
+  for (let k = 0; k < 12 && !benchFits(rx, rearLean); k++) { if (rx < sx - 0.78) rx += 0.04; else rearLean = Math.max(0.08, rearLean - 0.03); }
+  const rearOK = benchFits(rx, rearLean);
+  if (!T.truck && rearOK && rx - 0.35 > cx0) {                                   // rear bench
     cabin.push(tint(boxG(0.5, 0.16, T.W - 2 * skin - 0.1, rx, floorY + hp - 0.12, 0), SEAT));
-    cabin.push(tint(new THREE.BoxGeometry(0.12, 0.6, T.W - 2 * skin - 0.1).translate(0, 0.3, 0).rotateZ(0.22).translate(rx - 0.27, floorY + hp - 0.06, 0), SEAT));
+    cabin.push(tint(new THREE.BoxGeometry(0.12, 0.6, T.W - 2 * skin - 0.1).translate(0, 0.3, 0).rotateZ(rearLean).translate(rx - 0.27, floorY + hp - 0.06, 0), SEAT));
     for (const sd of [-1, 1]) cabin.push(tint(boxG(0.1, 0.15, 0.25, rx - 0.35, floorY + hp + 0.55, sd * dz), SEAT));
   }
+  // door cards and carpet from the dash back to behind the last seats (not on into the boot, where the body narrows)
+  const cxB = Math.max(cx0, (!T.truck && rearOK ? rx : sx) - 0.75);
+  for (const sd of [-1, 1]) cabin.push(tint(boxG(cx1 - cxB - 0.1, B0 - floorY - 0.2, 0.03, (cxB + cx1) / 2 - 0.05, floorY + 0.15, sd * (T.W / 2 - skin - 0.015)), DOOR)); // (clear of the wheel arches below)
+  cabin.push(tint(boxG(cx1 - cxB - 0.1, 0.02, T.W - 2 * skin - 0.02, (cxB + cx1) / 2, floorY + 0.01, 0), CARPET));
   parts.cabin = mergeC(cabin);
+  { // nothing of the cabin above the body's inside top line (door cards and the parcel shelf under a boot lid, a front
+    // headrest under a low roof): pressed down under it
+    const P = parts.cabin.attributes.position; for (let i = 0; i < P.count; i++) { const c = roofIn(P.getX(i)) - 0.02; if (P.getY(i) > c) P.setY(i, Math.max(floorY, c)); } }
   // ---- occupants: seat anchors from this body's own cabin (cushion heights, backrest angles, the wheel, where feet
   // go), each figure then fitted to this body's roof line and door glass: it reclines a little, then is drawn slighter,
   // and a seat without room for a person stays empty (no head through the roof, no shoulder through the glass)
@@ -274,9 +287,9 @@ function buildType(T) {
   const figs = [], seatIn = (role, f) => { if (f) figs.push([SEATS.indexOf(role), f]); };
   seatIn('driver', seat('driver', [sx - 0.11, floorY + hp, dz], 0.2, [dx0 - 0.12, floorY + 0.02], 1, true));
   seatIn('pax', seat('pax', [sx - 0.11, floorY + hp, -dz], 0.2, [dx0 - 0.16, floorY + 0.02], -1, false));
-  if (!T.truck && rx - 0.35 > cx0) {
-    seatIn('rearR', seat('rearR', [rx - 0.11, floorY + hp + 0.05, dz], 0.22, [sx - 0.5, floorY + 0.02], 1, false));
-    seatIn('rearL', seat('rearL', [rx - 0.11, floorY + hp + 0.05, -dz], 0.22, [sx - 0.5, floorY + 0.02], -1, false));
+  if (!T.truck && rearOK && rx - 0.35 > cx0) {
+    seatIn('rearR', seat('rearR', [rx - 0.11, floorY + hp + 0.05, dz], rearLean, [sx - 0.5, floorY + 0.02], 1, false));
+    seatIn('rearL', seat('rearL', [rx - 0.11, floorY + hp + 0.05, -dz], rearLean, [sx - 0.5, floorY + 0.02], -1, false));
   }
   const seated = (key, coloured) => { const list = figs.map(([k, f]) => { const g = f[key], n = g.attributes.position.count; g.setAttribute('seat', new THREE.BufferAttribute(new Float32Array(n).fill(k), 1)); return g; });
     if (!list.length) return null; const m = coloured ? mergeC(list) : merge(list), sa = new Float32Array(m.attributes.position.count); let o = 0;
