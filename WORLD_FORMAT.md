@@ -58,6 +58,7 @@ To find an object: search `generated/*.json` for its prefab, name or position â€
 | `name` | display name |
 | `prefab` | object type, a name from `prefabs.json` (required for new objects unless `source` is given) |
 | `source` | new objects: copy the look of this existing object (generated or added) |
+| `part` | with `source`: only one part of that object, as an object of its own â€” its material slot (`"stucco"`) or one piece of it (`"stucco#3"`, a face of a piece `"stucco#3.1"`); the World Builder writes these when a part is duplicated or copied |
 | `position` | `[x, y, z]` metres |
 | `rotation` | `[x, y, z]` degrees |
 | `scale` | `[x, y, z]`, never 0 |

@@ -92,6 +92,17 @@ export class WorldLayer {
       capToEnt.set(e, ent); this.geo.push(ent); this.ents.set(ent.id, ent);
     }
     for (const ent of this.geo) { let p = ent.parentCap; while (p && !capToEnt.has(p)) p = p.parent; ent.parent = p ? capToEnt.get(p).id : null; delete ent.parentCap; }
+    // materials without a name of their own (a sign face, a clock dial, a machine front painted on a canvas) are named
+    // after the first object (in id order) that uses them and what they are — "clock_pole_face", "vending_machine_panel" —
+    // the same in the game and the editor, as edits address an object's parts by these names
+    const what = m => m.map && !(m.map.userData && m.map.userData.photo) ? 'face' : m.transparent ? 'glass' : m.emissive && m.emissive.getHex() ? 'light' : 'panel';
+    const nameNew = (m, prefab) => { if (m && m.isMaterial && !this.matName.has(m) && !m.name) this.nameMaterial(m, prefab + '_' + what(m)); };
+    for (const ent of this.geo) {
+      const c = ent.cap;
+      for (const sg of c.segs) if (sg.b.mesh) nameNew(sg.b.mesh.material, ent.prefab);
+      for (const pid of c.props) for (const p of props.items[pid].parts) nameNew(p.group.material, ent.prefab);
+      for (const o0 of c.meshes) o0.traverse(q => { if (q.isMesh && !Array.isArray(q.material)) nameNew(q.material, ent.prefab); });
+    }
     // instanced objects
     scatters.forEach((s, si) => { if (!s.meta || !s.items) return; s.wsi = si; this.sets.push(s); const P = s.meta.prefab; if (!this.scatterPrefabs.has(P)) this.scatterPrefabs.set(P, []); this.scatterPrefabs.get(P).push(s);
       for (const part of s.lods[0].parts) if (!this.matName.has(part.material)) this.nameMaterial(part.material, part.material.name ? part.material.name.toLowerCase().replace(/[^a-z0-9]+/g, '_') : P + '_' + (s.lods[0].parts.indexOf(part) + 1)); });
@@ -144,8 +155,8 @@ export class WorldLayer {
   slotsOf(ent) {
     if (ent.slots) return ent.slots;
     const w = new Map();
-    const add = (m, n) => { if (!m) return; const name = this.materialNameOf(m); w.set(name, (w.get(name) || 0) + n); };
     const src = ent.kind === 'added' ? ent.src : ent;
+    const add = (m, n) => { if (!m) return; const name = this.materialNameOf(m); w.set(name, (w.get(name) || 0) + n); };
     if (!src) ent.slots = ent.kind === 'added' && ent.prim ? ['primitive'] : [];
     else if (src.kind === 'geo') {
       // surface area per material (vertex counts would favour fine trim — railings, frames — over walls)
@@ -156,6 +167,7 @@ export class WorldLayer {
           const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx, A2 = Math.hypot(cx, cy, cz); a += (Math.abs(cy) < 0.5 * A2 ? 1 : 0.15) * A2 / 2; }
         add(m.material, a); }
       for (const pid of src.cap.props) for (const p of props.items[pid].parts) add(p.group.material, 2);
+      for (const o0 of src.cap.meshes) o0.traverse(q => { if (q.isMesh && q.material && !Array.isArray(q.material) && q.geometry) add(q.material, Math.max(1, (q.geometry.index ? q.geometry.index.count : q.geometry.attributes.position.count) / 6)); });
     } else if (src.kind === 'scatter') for (const p of src.set.lods[0].parts) add(p.material, p.geometry.attributes.position.count);
     if (!ent.slots) ent.slots = [...w.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0]);
     return ent.slots;
@@ -189,7 +201,8 @@ export class WorldLayer {
   localBounds(ent) {
     if (ent.lb) return ent.lb;
     const box = new THREE.Box3(), src = ent.kind === 'added' ? ent.src : ent;
-    if (ent.prim) box.copy(ent.prim.geo.boundingBox || (ent.prim.geo.computeBoundingBox(), ent.prim.geo.boundingBox));
+    if (ent.partKey && ent.det) { for (const p of ent.det.parts) { const g = p.mesh.geometry; if (!g.boundingBox) g.computeBoundingBox(); box.union(_bb.copy(g.boundingBox).applyMatrix4(p.t0 || (p.mesh.updateMatrix(), p.mesh.matrix))); } }
+    else if (ent.prim) box.copy(ent.prim.geo.boundingBox || (ent.prim.geo.computeBoundingBox(), ent.prim.geo.boundingBox));
     else if (src && src.kind === 'geo') {
       const wb = new THREE.Box3(), inv = this.baseMatrix(src).invert();
       for (const s of src.cap.segs) { const pa = s.b.mesh && s.b.mesh.geometry.attributes.position.array; if (!pa) continue;
@@ -260,7 +273,7 @@ export class WorldLayer {
         group.add(c);
         // (a captured group — a clock head, a model — is drawn by its meshes: each is a part with its own material, and
         // hiding the original means every mesh in it, as three.js tests layers per object, not per subtree)
-        c.traverse(q => { if (q.isMesh) parts.push({ mesh: q, slot: null, baseMat: q.material, loose: true }); });
+        c.traverse(q => { if (q.isMesh) parts.push({ mesh: q, slot: q.material && !Array.isArray(q.material) ? this.materialNameOf(q.material) : null, baseMat: q.material, loose: true }); });
         if (collapse) o.traverse(q => { q.userData.layers0 = q.layers.mask; q.layers.mask = 0; });
       }
     } else if (src.kind === 'scatter') {
@@ -384,7 +397,7 @@ export class WorldLayer {
   materials(ent, rec, gen) {
     if (rec.slots) for (const k of Object.keys(rec.slots)) if (k.includes('#')) this.ensurePiece(ent, k);
     for (const p of ent.det.parts) {
-      if (p.loose || !p.slot) continue;
+      if (!p.slot) continue;
       const o = this.slotOverride(ent, rec, gen, p.slot);
       let base = p.baseMat;
       if (ent.prim) base = this.matByName.get(rec.material) || this.matByName.get('primitive');
@@ -394,13 +407,24 @@ export class WorldLayer {
       this.element(ent, p, (rec.slots && rec.slots[p.slot]) || {});
       // instance-tinted parts (trees, rocks, bikes): the colour is the tint
       if (p.tint) { const c = ov.color ? new THREE.Color(ov.color) : null; const a = p.mesh.instanceColor.array; if (c) { a[0] = c.r; a[1] = c.g; a[2] = c.b; } else a.set(p.tint); p.mesh.instanceColor.needsUpdate = true; delete ov.color; }
-      // vertex-coloured kit parts: an exact colour, keeping the light and dark of the original shading
+      // vertex-coloured kit parts (most of the world: white materials painted per vertex): the chosen colour goes into
+      // the vertex colours, keeping the light and dark of the original shading, divided by what the material itself
+      // contributes (its texture as the painted shader evens it out) — so the surface really shows the chosen colour
       const col = p.mesh.geometry.attributes.color;
       if (col && base.vertexColors && !p.mesh.isInstancedMesh) {
-        if (ov.color && !p.colors0) { p.colors0 = col.array.slice(); let sum = 0; const A = col.array, n = A.length / 3; for (let i = 0; i < n; i++) sum += A[i * 3] * 0.3 + A[i * 3 + 1] * 0.59 + A[i * 3 + 2] * 0.11; const avg = sum / Math.max(1, n) || 1;
-          for (let i = 0; i < n; i++) { const l = Math.min(1.6, (A[i * 3] * 0.3 + A[i * 3 + 1] * 0.59 + A[i * 3 + 2] * 0.11) / avg); A[i * 3] = A[i * 3 + 1] = A[i * 3 + 2] = l; } col.needsUpdate = true; }
-        else if (!ov.color && p.colors0) { col.array.set(p.colors0); p.colors0 = null; col.needsUpdate = true; }
+        const key = ov.color ? ov.color + '|' + base.uuid : null;
+        if (key && p.vcKey !== key) {
+          if (!p.colors0) p.colors0 = col.array.slice();
+          const A = col.array, C0 = p.colors0, n = A.length / 3, f = albedoFactor(base), t = new THREE.Color(ov.color); let sum = 0;
+          for (let i = 0; i < n; i++) sum += C0[i * 3] * 0.3 + C0[i * 3 + 1] * 0.59 + C0[i * 3 + 2] * 0.11; const avg = sum / Math.max(1, n) || 1;
+          const tr = t.r / Math.max(0.03, f[0]), tg = t.g / Math.max(0.03, f[1]), tb = t.b / Math.max(0.03, f[2]);
+          for (let i = 0; i < n; i++) { const l = Math.min(1.6, (C0[i * 3] * 0.3 + C0[i * 3 + 1] * 0.59 + C0[i * 3 + 2] * 0.11) / avg); A[i * 3] = tr * l; A[i * 3 + 1] = tg * l; A[i * 3 + 2] = tb * l; }
+          col.needsUpdate = true; p.vcKey = key;
+        } else if (!key && p.colors0) { col.array.set(p.colors0); p.colors0 = null; p.vcKey = null; col.needsUpdate = true; }
+        if (key) delete ov.color;
       }
+      // a plain (not vertex-coloured) textured material: its picture's average is divided out of the colour
+      if (ov.color && base.map) { const f = albedoFactor(base, true), c = new THREE.Color(ov.color); ov.color = '#' + c.setRGB(Math.min(1, c.r / Math.max(0.05, f[0])), Math.min(1, c.g / Math.max(0.05, f[1])), Math.min(1, c.b / Math.max(0.05, f[2])), THREE.LinearSRGBColorSpace).getHexString(); }
       p.mesh.material = Object.keys(ov).length ? this.variant(base, ov) : base;
     }
   }
@@ -410,6 +434,7 @@ export class WorldLayer {
     const m = p.mesh;
     if (!p.t0) { m.updateMatrix(); p.t0 = m.matrix.clone(); }
     m.userData.partHidden = !!el.hidden; m.visible = !el.hidden;
+    if (p.loose && m.parent !== ent.det.group) return;
     if (!el.offset && !el.rotate && !el.scale) { if (p.moved) { p.t0.decompose(m.position, m.quaternion, m.scale); p.moved = false; } return; }
     const c = this.elementPivot(ent, p.slot), o = el.offset || [0, 0, 0], r = el.rotate || [0, 0, 0], k = el.scale || [1, 1, 1];
     _e.set(r[0] * DEG, r[1] * DEG, r[2] * DEG, 'XYZ'); _q.setFromEuler(_e);
@@ -508,6 +533,15 @@ export class WorldLayer {
     const k = this.subPiecesOf(ent, slot, n).findIndex(q => q.tris.includes(t));
     return k >= 0 ? `${key}.${k}` : null;
   }
+  // a copied part ("stucco", "stucco#3", "stucco#3.1"): the object keeps only that element / piece, named by its material
+  onlyPart(ent, key) {
+    const base = key.split('#')[0];
+    if (key.includes('#')) this.ensurePiece(ent, key);
+    const keep = ent.det.parts.filter(p => key.includes('#') ? p.slot === key : p.slot === base);
+    ent.det.group.children.slice().forEach(c => { let has = false; c.traverse(o => { if (keep.some(p => p.mesh === o)) has = true; }); if (!has) ent.det.group.remove(c); });
+    for (const p of keep) { p.slot = base; delete p.piece; }
+    ent.det.parts = keep; ent.partKey = key; ent.slots = [base]; ent.lb = null; ent.pieceLists = null; ent.subLists = null;
+  }
   // split the triangles of a piece ("slot#n" or "slot#n.m") off into a mesh of their own (only those still drawn)
   ensurePiece(ent, key) {
     if (!ent.det || ent.det.parts.some(p => p.slot === key)) return;
@@ -533,13 +567,51 @@ export class WorldLayer {
     src.mesh.updateMatrix(); m.matrix.copy(src.t0 || src.mesh.matrix); m.matrix.decompose(m.position, m.quaternion, m.scale); m.userData.worldPart = true;
     ent.det.group.add(m); ent.det.parts.push({ mesh: m, slot: key, baseMat: src.baseMat, piece: true });
   }
+  // an element's box in the object's frame, as the generator built it (before its own edits)
+  elementBox(ent, slot) {
+    ent.eboxes = ent.eboxes || {};
+    if (ent.eboxes[slot]) return ent.eboxes[slot];
+    const box = new THREE.Box3();
+    for (const p of ent.det.parts) if (p.slot === slot) { const g = p.mesh.geometry; if (!g.boundingBox) g.computeBoundingBox(); const M = p.t0 || (p.mesh.updateMatrix(), p.mesh.matrix); box.union(_bb.copy(g.boundingBox).applyMatrix4(M)); }
+    if (box.isEmpty()) box.set(new THREE.Vector3(-0.1, 0, -0.1), new THREE.Vector3(0.1, 0.2, 0.1));
+    return (ent.eboxes[slot] = box);
+  }
   // centre of an element in the object's frame (the pivot its edits turn and scale about)
   elementPivot(ent, slot) {
     ent.pivots = ent.pivots || {};
     if (ent.pivots[slot]) return ent.pivots[slot];
-    const box = new THREE.Box3();
-    for (const p of ent.det.parts) if (p.slot === slot) { const g = p.mesh.geometry; if (!g.boundingBox) g.computeBoundingBox(); const M = p.t0 || (p.mesh.updateMatrix(), p.mesh.matrix); box.union(_bb.copy(g.boundingBox).applyMatrix4(M)); }
-    return (ent.pivots[slot] = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3()));
+    return (ent.pivots[slot] = this.elementBox(ent, slot).getCenter(new THREE.Vector3()));
+  }
+  // What a slot really looks like on this object: the colour a viewer sees — the material colour times the average of
+  // its vertex colours (most kit materials are white and painted per vertex) or its instance tint, times its texture's
+  // average — and what gives it that colour. { hex, source: 'material' | 'vertex' | 'tint' | 'texture', texture }
+  slotLook(ent, slot) {
+    ent.looks = ent.looks || {};
+    if (ent.looks[slot]) return ent.looks[slot];
+    const base = slot.split('#')[0], m = this.matByName.get(base); if (!m) return null;
+    let r = 0, g = 0, b = 0, w = 0, tinted = false;
+    const acc = (cr, cg, cb, a) => { r += cr * a; g += cg * a; b += cb * a; w += a; };
+    const fromGeo = (geo, I, i0, i1, cols) => { // area-weighted average of a colour attribute over triangles i0..i1 of index I
+      const P = geo.attributes.position.array, C = cols || (geo.attributes.color && geo.attributes.color.array); if (!C || !P) return;
+      for (let k = i0; k + 2 < i1; k += 3) { const a = I[k], bq = I[k + 1], c = I[k + 2]; if (a === bq && bq === c) continue;
+        const ux = P[bq * 3] - P[a * 3], uy = P[bq * 3 + 1] - P[a * 3 + 1], uz = P[bq * 3 + 2] - P[a * 3 + 2], vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
+        const A = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) + 1e-6;
+        acc((C[a * 3] + C[bq * 3] + C[c * 3]) / 3, (C[a * 3 + 1] + C[bq * 3 + 1] + C[c * 3 + 1]) / 3, (C[a * 3 + 2] + C[bq * 3 + 2] + C[c * 3 + 2]) / 3, A); } };
+    const src = ent.kind === 'added' ? ent.src : ent;
+    if (ent.det) for (const p of ent.det.parts) {
+      if (p.slot !== slot && !(slot === base && p.slot && p.slot.split('#')[0] === base)) continue;
+      if (p.tint) { acc(p.tint[0], p.tint[1], p.tint[2], 1); tinted = true; continue; }
+      const geo = p.mesh.geometry; if (!geo.attributes.color) continue;
+      const I = p.idx0 || (geo.index && geo.index.array); if (I) fromGeo(geo, I, 0, I.length, p.colors0);
+    }
+    else if (src && src.kind === 'geo') for (const sg of src.cap.segs) { const mm = sg.b.mesh; if (!mm || mm.material !== m) continue; const I = mm.geometry.index && mm.geometry.index.array; if (I) fromGeo(mm.geometry, sg.idx0 || I, sg.idx0 ? 0 : sg.i0, sg.idx0 ? sg.idx0.length : sg.i1); }
+    else if (src && src.kind === 'scatter') for (const part of src.set.lods[0].parts) if (part.material === m && part.tint) { const c = src.set.col.get(part.tint); acc(c[src.i * 3], c[src.i * 3 + 1], c[src.i * 3 + 2], 1); tinted = true; }
+    const vc = w > 0 ? [r / w, g / w, b / w] : [1, 1, 1], t = texAverage(m.map), f = albedoFactor(m);
+    const lin = [0, 1, 2].map(k => f[k] * vc[k]);
+    const col = new THREE.Color().setRGB(Math.min(1, lin[0]), Math.min(1, lin[1]), Math.min(1, lin[2]), THREE.LinearSRGBColorSpace);
+    const look = { hex: '#' + col.getHexString(), source: tinted ? 'tint' : w > 0 && m.vertexColors ? 'vertex' : t ? 'texture' : 'material', texture: texPath(m.map), vc, tex: t };
+    if (!t && m.map) return look; // (the texture is still loading: not cached, asked again later)
+    return (ent.looks[slot] = look);
   }
   variant(base, ov) {
     const key = base.uuid + JSON.stringify(Object.keys(ov).sort().map(k => [k, ov[k]]));
@@ -566,20 +638,21 @@ export class WorldLayer {
     if (rec.source) { src = this.get(rec.source); if (src && src.kind === 'added') { prim = src.prim; src = src.src; } }
     if (!src && !prim && rec.prefab) { if (PRIMITIVES[rec.prefab]) prim = PRIMITIVES[rec.prefab]; else { const t = this.templateOf(rec.prefab); src = t ? this.get(t) : null; } }
     if (!src && !prim) return null;
-    ent = { kind: 'added', id: rec.id, srcKey: (rec.source || '') + '|' + (rec.prefab || ''), prefab: rec.prefab || (src ? src.prefab : 'box'), src, prim, category: src ? src.category : 'primitive', area: this.areaOf ? this.areaOf(rec.position[0], rec.position[2]) : 'world', det: null, state: null, parent: null };
+    ent = { kind: 'added', id: rec.id, srcKey: (rec.source || '') + '|' + (rec.prefab || '') + '|' + (rec.part || ''), prefab: rec.prefab || (src ? src.prefab : 'box'), src, prim, category: src ? src.category : 'primitive', area: this.areaOf ? this.areaOf(rec.position[0], rec.position[2]) : 'world', det: null, state: null, parent: null };
     if (prim) {
       if (!prim.g) { prim.g = prim.geo(); prim.g.computeBoundingBox(); prim.g.computeBoundingSphere(); }
       ent.prim = { geo: prim.g, key: rec.prefab };
       const group = new THREE.Group(), mesh = new THREE.Mesh(prim.g, this.matByName.get('primitive'));
       mesh.castShadow = mesh.receiveShadow = true; mesh.layers.enable(1); group.add(mesh); group.userData.worldObject = true;
       ent.det = { group, parts: [{ mesh, slot: 'primitive', baseMat: mesh.material }] };
-    } else ent.det = this.buildParts(src, false);
+    } else { ent.det = this.buildParts(src, false); if (rec.part) this.onlyPart(ent, rec.part); }
     ent.det.group.userData.ent = ent.id;
     scene.add(ent.det.group);
     for (const p of ent.det.parts) if (p.lod) this.detLod.push(p.mesh);
     // copies of the source's colliders and fixtures, in the source's frame
     ent.cols = []; ent.lampsOwn = [];
-    if (src) {
+    if (src && ent.partKey) { this.claim(src); ent.base0 = this.baseMatrix(src); } // (a copied part: no colliders or lamps of the whole object)
+    else if (src) {
       this.claim(src);
       const M = this.baseMatrix(src);
       for (const { c0 } of src.cols || []) ent.cols.push({ c: { ...c0 }, c0: { ...c0 } });
@@ -793,6 +866,32 @@ export function cloneMaterial(base) {
   return m;
 }
 const hex = c => '#' + c.getHexString();
+// what a material contributes to a surface's average colour (linear rgb): its colour times its picture's average, as the
+// painted-look shader (toon.js TOON_FLAT / TOON_NORM) evens photo textures out — mostly greyed to a set brightness, or
+// lifted — before the vertex colours multiply. unitColor: the material's own colour left out (the factor of its texture).
+export function albedoFactor(m, unitColor = false) {
+  const c = m.color && !unitColor ? [m.color.r, m.color.g, m.color.b] : [1, 1, 1], t = texAverage(m.map);
+  if (!t) return c;
+  const ta = [c[0] * t[0], c[1] * t[1], c[2] * t[2]], lum = v => v[0] * 0.3 + v[1] * 0.59 + v[2] * 0.11;
+  if (m.defines && 'TOON_FLAT' in m.defines) {
+    if ('TOON_NORM' in m.defines) { const L = lum(ta), k = parseFloat(m.defines.TOON_NORM) / Math.max(lum(t), 0.04); return ta.map(v => (L + (v - L) * 0.35) * k); }
+    return ta.map(v => v * 0.82 + 0.05);
+  }
+  return ta;
+}
+// the average colour of a texture's picture (linear), measured once on an 8 x 8 copy; null until the image has loaded
+export function texAverage(t) {
+  if (!t) return null;
+  if (t.userData && t.userData.avg) return t.userData.avg;
+  const img = t.image; if (!img || !(img.width > 0) || (img.complete === false)) return null;
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 8, 8);
+    const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, b = 0;
+    const lin = v => { v /= 255; return t.colorSpace === THREE.SRGBColorSpace ? (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)) : v; };
+    for (let i = 0; i < 64; i++) { r += lin(d[i * 4]); gg += lin(d[i * 4 + 1]); b += lin(d[i * 4 + 2]); }
+    t.userData.avg = [r / 64, gg / 64, b / 64]; return t.userData.avg;
+  } catch (e) { return null; }
+}
 // the library path of a texture ("tex/....jpg"), "procedural" for painted canvases, null for none
 export const texPath = t => !t ? null : t.userData && t.userData.path ? t.userData.path : t.image && t.image.src ? decodeURI(t.image.src).replace(/^.*?\/assets\//, '') : 'procedural';
 export function materialProps(m) {

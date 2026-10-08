@@ -19,6 +19,7 @@ export function el(tag, attrs = {}, ...kids) {
 }
 const ICONS = {
   select: '<path d="M4 3l7 17 2.2-7.2L20 11z"/>',
+  direct: '<path d="M7 7h10v10H7z"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/>',
   move: '<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>',
   rotate: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>',
   scale: '<path d="M4 20h7v-7H4zM11 13l9-9M14 4h6v6"/>',
@@ -162,8 +163,9 @@ function buildStatus(U, ed) {
 
 // ---------------------------------------------------------------- shortcut overlay
 export const SHORTCUTS = [
-  ['Tools', [['Select', 'Q'], ['Move', 'W'], ['Rotate', 'E'], ['Scale / stretch', 'R'], ['Local / world space', 'X'], ['Toggle snapping', 'G'], ['Invert snapping while dragging', 'Ctrl (hold)'], ['Constrain drag to an axis', 'gizmo handle'], ['Uniform scale', 'centre handle']]],
-  ['Selection', [['Select', 'Click'], ['Add / remove', 'Shift+Click'], ['Box select', 'Drag on empty space'], ['Add box to selection', 'Shift+Drag'], ['Select all visible', 'Ctrl+A'], ['Deselect', 'Esc'], ['Select one part (wall, window, sign plate…)', 'Alt+Click'], ['Back to the whole object', 'Esc'], ['Select a group', 'Double-click a member'], ['Search the outliner', 'Ctrl+F']]],
+  ['Edit directly (main tool)', [['Edit tool', 'Q'], ['Move an object over the ground', 'Drag it'], ['Resize one side (the other stays)', 'Drag a side grip'], ['Resize both sides', 'Alt+Drag a side grip'], ['Raise / lower', 'Drag the arrow above'], ['Turn', 'Drag the ring'], ['Toggle snapping', 'G'], ['Invert snapping while dragging', 'Ctrl (hold)'], ['Cancel the drag', 'Esc']]],
+  ['Advanced X / Y / Z', [['Move along X / Y / Z', 'W'], ['Rotate about X / Y / Z', 'E'], ['Scale / stretch', 'R'], ['Local / world axes', 'X'], ['Constrain drag to an axis', 'gizmo handle'], ['Uniform scale', 'centre handle']]],
+  ['Selection', [['Select', 'Click'], ['Add / remove', 'Shift+Click'], ['Box select', 'Drag on empty space'], ['Add box to selection', 'Shift+Drag'], ['Select all visible', 'Ctrl+A'], ['Deselect', 'Esc'], ['Select one part (wall, window, sign plate…)', 'Double-click / Alt+Click'], ['A finer part (one face)', 'Double-click it again'], ['Duplicate / copy just that part', 'Ctrl+D / Ctrl+C'], ['Back to the whole object', 'Esc'], ['Select a group', 'Shift+Double-click a member'], ['Search the outliner', 'Ctrl+F']]],
   ['Placing (palette)', [['Place one', 'Click'], ['Turn', '[ / ] / Alt+Wheel'], ['Resize', '+ / −'], ['Stop placing', 'Esc / Right-click'], ['Drop in from the palette', 'Drag']]],
   ['Edit', [['Undo', 'Ctrl+Z'], ['Redo', 'Ctrl+Y / Ctrl+Shift+Z'], ['Duplicate', 'Ctrl+D'], ['Copy', 'Ctrl+C'], ['Paste', 'Ctrl+V'], ['Delete', 'Delete'], ['Drop to ground', 'End'], ['Align to surface', 'Shift+End'], ['Group', 'Ctrl+G'], ['Ungroup', 'Ctrl+Shift+G'], ['Rename', 'F2'], ['Hide / show', 'H'], ['Show all hidden', 'Alt+H'], ['Lock / unlock', 'L']]],
   ['Materials', [['Pick material (eyedropper)', 'I'], ['Paste material onto selection', 'Ctrl+Shift+V']]],

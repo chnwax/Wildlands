@@ -41,7 +41,7 @@ for (const map of maps) {
     for (const o of d.objects || []) gen.set(o.id, o);
     for (const f of d.fields || []) for (const [a, n] of Object.entries(f.areas || {})) fieldCount.set(f.prefab + '|' + a, n);
   }
-  const generated = id => { if (gen.has(id)) return gen.get(id); const g = parseGeneratedId(id); return g && g.n <= (fieldCount.get(g.prefab + '|' + g.area) || 0) ? { id } : null; };
+  const generated = id => { if (gen.has(id)) return gen.get(id); if (/^detail_m\d+_t\d+$/.test(id)) return { id }; const g = parseGeneratedId(id); return g && g.n <= (fieldCount.get(g.prefab + '|' + g.area) || 0) ? { id } : null; };
   const seen = new Map(), all = [];
   const editsDir = path.join(dir, 'edits'), listed = new Set(ix.edits || []);
   if (ix.materialEdits) listed.add(ix.materialEdits);

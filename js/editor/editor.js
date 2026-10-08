@@ -1,9 +1,11 @@
-// Editor controller: selection, viewport interaction (click, Shift+click, box select, gizmo drags, placing from the
-// palette) and every editing command (duplicate, copy / paste, delete, drop to ground, align to surface, group,
-// hide, lock, materials). All changes go through the document's command history (doc.js).
+// Editor controller: selection, viewport interaction (click, Shift+click, box select, direct manipulation — face grips,
+// dragging objects over the ground, the lift grip and the turn ring — and the advanced XYZ gizmo, placing from the
+// palette) and every editing command (duplicate, copy / paste of objects and of single parts, delete, drop to ground,
+// align to surface, group, hide, lock, materials). All changes go through the document's command history (doc.js).
 import { THREE, camera, renderer } from '../core.js';
 import { Picker } from './picking.js';
 import { Gizmo } from './gizmo.js';
+import { DirectHandles } from './handles.js';
 import { Outline } from './outline.js';
 import { ui, toast } from './ui.js';
 import { labelOf, PRIMITIVES } from '../world/layer.js';
@@ -25,9 +27,9 @@ const MAX_OUTLINED = 250;
 export class Editor {
   constructor(ed, doc) {
     this.ed = ed; this.doc = doc; this.L = doc.layer; this.world = ed.world; this.dom = renderer.domElement;
-    this.sel = []; this.hoverId = null; this.tool = 'translate'; this.showHidden = false; this.listeners = new Set();
+    this.sel = []; this.hoverId = null; this.tool = 'direct'; this.showHidden = false; this.listeners = new Set();
     this.picker = new Picker(this.L, this.world, { dom: this.dom, showHidden: () => this.showHidden });
-    this.gizmo = new Gizmo(this.dom); this.outline = new Outline();
+    this.gizmo = new Gizmo(this.dom); this.outline = new Outline(); this.handles = new DirectHandles(this.dom, this.gizmo.scene);
     this.placing = null; // { prefab, ghost } while a palette item is armed
     this.matClip = null; // copied material: { material, materialOverrides, slots }
     this.gizmo.onStart = D => this.dragStart(D); this.gizmo.onDrag = o => this.dragMove(o); this.gizmo.onEnd = c => this.dragEnd(c);
@@ -63,14 +65,40 @@ export class Editor {
     this.placeGizmo();
     this.emit('selection');
   }
+  get xyz() { return this.tool === 'translate' || this.tool === 'rotate' || this.tool === 'scale'; }
   placeGizmo() {
     const ids = this.sel.filter(id => { const r = this.doc.rec(id); return r && !r.deleted; });
-    this.gizmo.visible = ids.length > 0 && this.tool !== 'select' && !this.placing;
-    if (!ids.length) return;
+    this.gizmo.visible = ids.length > 0 && this.xyz && !this.placing;
+    this.handles.visible = ids.length > 0 && this.tool === 'direct' && !this.placing;
+    if (!ids.length) { this.handles.set(null); return; }
+    const box = this.selectionBox(ids); this.handles.set(box);
+    this.handles.allow = { resize: ids.length === 1, turn: true, lift: true };
     const c = new THREE.Vector3(); for (const id of ids) c.add(_v.fromArray(this.doc.rec(id).position)); c.divideScalar(ids.length);
     const prim = this.doc.rec(ids[ids.length - 1]);
     if (this.part && ids.length === 1) { const e = this.L.get(ids[0]); if (e && e.det) { const el = (prim.slots || {})[this.part.slot] || {}, c = this.L.elementPivot(e, this.part.slot).clone().add(_v.fromArray(el.offset || [0, 0, 0])); e.det.group.updateMatrixWorld(true); this.gizmo.place(c.applyMatrix4(e.det.group.matrixWorld), quatOf(prim.rotation)); return; } }
     this.gizmo.place(ids.length === 1 ? _v.fromArray(prim.position) : c, quatOf(prim.rotation));
+  }
+  // the box the direct handles sit on: one object (or the element being edited) in its own axes, several objects as one
+  // box in world axes. { C, U: [3 unit axes], H: [3 half sizes], foot }
+  selectionBox(ids) {
+    const mk = (M, lb) => {
+      const ctr = lb.getCenter(new THREE.Vector3()), C = ctr.clone().applyMatrix4(M), U = [], H = [];
+      for (let i = 0; i < 3; i++) { const col = new THREE.Vector3().setFromMatrixColumn(M, i), L = col.length() || 1; U.push(col.divideScalar(L)); H.push(L * (lb.max.getComponent(i) - lb.min.getComponent(i)) / 2); }
+      const foot = new THREE.Vector3(ctr.x, lb.min.y, ctr.z).applyMatrix4(M);
+      return { C, U, H, foot, M: M.clone(), lb: lb.clone() };
+    };
+    if (ids.length === 1) {
+      const e = this.L.get(ids[0]); if (!e) return null;
+      if (this.part && this.part.id === ids[0] && e.det) {
+        e.det.group.updateMatrixWorld(true);
+        const p = e.det.parts.find(q => q.slot === this.part.slot); if (!p) return null;
+        p.mesh.updateMatrix(); const rel = p.t0 ? p.mesh.matrix.clone().multiply(p.t0.clone().invert()) : new THREE.Matrix4();
+        return mk(e.det.group.matrixWorld.clone().multiply(rel), this.L.elementBox(e, this.part.slot));
+      }
+      return mk(this.L.matrixOf(e, new THREE.Matrix4()), this.L.localBounds(e));
+    }
+    const b = new THREE.Box3(); for (const id of ids) { const e = this.L.get(id); if (e) b.union(this.L.worldBox(e)); }
+    return mk(new THREE.Matrix4(), b);
   }
   // ---------------------------------------------------------------- elements (parts of one material slot: roof, walls...)
   // the element of object id under the cursor (client x, y), or its main element
@@ -80,12 +108,14 @@ export class Editor {
     const hit = ray.intersectObject(e.det.group, true).find(h => h.object.visible !== false);
     if (!hit) return null;
     if (hit.object.isInstancedMesh) { const p = e.det.parts.find(q => q.mesh === hit.object); return p && p.slot; }
+    // Alt+click inside the piece being edited goes one level finer: its flat faces (one wall face, one roof plane)
+    if (this.part && this.part.id === id && /#\d+$/.test(this.part.slot)) { const own = e.det.parts.find(q => q.mesh === hit.object); if (own && (own.slot === this.part.slot || own.slot === this.part.slot.split('#')[0])) { const sub = this.L.subPieceAt(e, this.part.slot, hit.object, hit.faceIndex); if (sub) return sub; } }
     return this.L.pieceAt(e, hit.object, hit.faceIndex); // one connected piece: a wall, a window frame, a sign plate
   }
   selectElement(id, slot) {
     if (!slot) { this.part = null; this.refreshSelection(); return; }
     const e = this.L.get(id); if (e && slot.includes('#')) this.L.ensurePiece(e, slot);
-    this.sel = [id]; this.part = { id, slot }; if (this.tool === 'select') this.tool = 'translate'; this.gizmo.mode = this.tool;
+    this.sel = [id]; this.part = { id, slot }; if (this.xyz) this.gizmo.mode = this.tool;
     this.refreshSelection(); ui.status(`Element “${slot}” of ${(this.doc.rec(id) || {}).name || id} — move / turn / scale it with the gizmo, H hides it, Esc back to the whole object`);
   }
   // edit element fields of the current part (fn(el) -> el)
@@ -94,7 +124,7 @@ export class Editor {
     this.doc.edit([P.id], r => { const S = { ...(r.slots || {}) }, el = fn({ ...(S[P.slot] || {}) }); for (const k of Object.keys(el)) if (el[k] === undefined) delete el[k]; if (Object.keys(el).length) S[P.slot] = el; else delete S[P.slot]; if (Object.keys(S).length) r.slots = Object.fromEntries(Object.entries(S).sort()); else delete r.slots; return r; }, label);
     this.refreshSelection();
   }
-  setTool(t) { this.tool = t; this.gizmo.mode = t === 'select' ? this.gizmo.mode : t; this.placeGizmo(); this.emit('tool'); }
+  setTool(t) { if (t === 'select') t = 'direct'; this.tool = t; if (this.xyz) this.gizmo.mode = t; this.placeGizmo(); this.emit('tool'); }
   // ---------------------------------------------------------------- pointer
   bindPointer() {
     const D = this.dom; let down = null, lastHover = 0;
@@ -104,30 +134,47 @@ export class Editor {
       D.focus();
       if (this.placing) { this.placeAt(e.clientX, e.clientY, e); return; }
       if (this.eyedropper) { this.pickMaterialAt(e.clientX, e.clientY); return; }
+      const dh = this.tool === 'direct' && this.handles.hit(e.clientX, e.clientY);
+      if (dh) { D.setPointerCapture(e.pointerId); this.beginDirect(dh, e.clientX, e.clientY, e.altKey); return; }
+      if (e.altKey) { // Alt+left-drag is the camera's (orbit); Alt+click picks an element (even over the gizmo)
+        down = { x: e.clientX, y: e.clientY, alt: true, box: false, cam: true }; return; }
       const h = this.gizmo.hit(e.clientX, e.clientY);
       if (h) { D.setPointerCapture(e.pointerId); this.gizmo.begin(h, e.clientX, e.clientY); return; }
-      if (e.altKey) { // Alt+left-drag is the camera's (orbit); Alt+click picks an element
-        down = { x: e.clientX, y: e.clientY, alt: true, box: false, cam: true }; return; }
       down = { x: e.clientX, y: e.clientY, shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, box: false };
+      // in the main tool, pressing on an object grabs it: dragging slides it over the ground (a click still selects)
+      if (this.tool === 'direct' && !down.shift && !down.ctrl) { const p = this.picker.pick(e.clientX, e.clientY); if (p.hit) { down.grab = p.hit.id; down.point = p.hit.point.clone(); } }
       D.setPointerCapture(e.pointerId);
     });
     D.addEventListener('pointermove', e => {
       if (this.gizmo.drag) { this.gizmo.move(e.clientX, e.clientY); return; }
+      if (this.direct) { this.moveDirect(e.clientX, e.clientY, e.altKey); return; }
       if (down) {
         if (down.cam) { if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.moved = true; return; }
+        if (down.grab && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) { // start sliding the grabbed object
+          const g = down.grab, pt = down.point; down = null;
+          const inPart = this.part && this.part.id === g;
+          if (!this.sel.includes(g)) this.select([g]);
+          if (this.sel.includes(g)) { this.beginDirect('move', e.clientX, e.clientY, false, pt, inPart); this.moveDirect(e.clientX, e.clientY); }
+          return;
+        }
         if (!down.box && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.box = true;
         if (down.box) { const x0 = Math.min(down.x, e.clientX), y0 = Math.min(down.y, e.clientY); Object.assign(rect.style, { display: 'block', left: x0 + 'px', top: y0 + 'px', width: Math.abs(e.clientX - down.x) + 'px', height: Math.abs(e.clientY - down.y) + 'px' }); }
         return;
       }
       if (this.placing) { this.moveGhost(e.clientX, e.clientY, e); return; }
       if (this.ed.cam.drag) return;
-      const h = this.gizmo.hit(e.clientX, e.clientY); this.gizmo.highlight(h); D.style.cursor = h ? 'pointer' : this.eyedropper ? 'crosshair' : '';
+      const h = this.gizmo.hit(e.clientX, e.clientY); this.gizmo.highlight(h);
+      const dh = !h && this.tool === 'direct' ? this.handles.hit(e.clientX, e.clientY) : null; this.handles.highlight(dh);
+      if (dh) { const n = dh[1] ? this.handles.faceName(dh) : ''; D.style.cursor = dh === 'rot' ? 'grab' : dh === 'up' || n === 'TOP' || n === 'BOTTOM' ? 'ns-resize' : 'ew-resize'; this.handles.label(this.handles.hint(dh), e.clientX, e.clientY); return; }
+      this.handles.label(null);
+      D.style.cursor = h ? 'pointer' : this.eyedropper ? 'crosshair' : this.tool === 'direct' && this.hoverId && this.sel.includes(this.hoverId) ? 'move' : '';
       const now = performance.now();
       if (!h && now - lastHover > 90) { lastHover = now; const p = this.picker.pick(e.clientX, e.clientY); const id = p.hit ? p.hit.id : null; this.cursor = p; if (id !== this.hoverId) { this.hoverId = id; this.refreshHover(); } this.emit('cursor'); }
     });
     D.addEventListener('pointerup', e => {
       if (e.button !== 0) return;
       if (this.gizmo.drag) { this.gizmo.end(); return; }
+      if (this.direct) { this.endDirect(false); return; }
       if (!down) return;
       const d = down; down = null; rect.style.display = 'none';
       if (d.cam && d.moved) return;
@@ -137,16 +184,18 @@ export class Editor {
         if (ids.length) ui.status(`${ids.length} object${ids.length > 1 ? 's' : ''} in the box`);
         return;
       }
-      const p = this.picker.pick(e.clientX, e.clientY);
+      const p = this.picker.pick(e.clientX, e.clientY, { details: true });
       // Alt+click (or any click inside the object whose element is being edited) picks one element of an object
       if (p.hit && (d.alt || (this.part && this.part.id === p.hit.id))) { this.selectElement(p.hit.id, this.elementAt(p.hit.id, e.clientX, e.clientY)); return; }
       if (p.hit) this.select([p.hit.id], d.shift ? 'toggle' : d.ctrl ? 'remove' : 'set');
       else if (!d.shift && !d.ctrl) this.select([]);
     });
     D.addEventListener('dblclick', e => {
-      const p = this.picker.pick(e.clientX, e.clientY); if (!p.hit) return;
+      const p = this.picker.pick(e.clientX, e.clientY, { details: true }); if (!p.hit) return;
       const g = (this.doc.rec(p.hit.id) || {}).group;
-      if (g) { this.select(this.groupMembers(g), 'set'); ui.status(`group ${g}: ${this.sel.length} objects`); }
+      if (e.shiftKey && g) { this.select(this.groupMembers(g), 'set'); ui.status(`group ${g}: ${this.sel.length} objects`); return; }
+      // double-click goes one level in: the part under the cursor (a wall, a window frame, a sign plate), then finer
+      this.selectElement(p.hit.id, this.elementAt(p.hit.id, e.clientX, e.clientY));
     });
     D.addEventListener('pointerleave', () => { if (this.hoverId) { this.hoverId = null; this.refreshHover(); } });
     // drag and drop from the palette
@@ -231,6 +280,91 @@ export class Editor {
     this.ed.refreshShadows && this.ed.refreshShadows();
     this.placeGizmo(); this.emit('selection');
   }
+  // ---------------------------------------------------------------- direct manipulation
+  // kind: a face key ('0+'..'2-'), 'up', 'rot' or 'move'; grab: the world point an object was grabbed at (move)
+  beginDirect(kind, x, y, alt = false, grab = null, inPart = !!this.part) {
+    const ids = this.sel.filter(id => { const r = this.doc.rec(id); return r && !r.deleted && !r.locked; }); if (!ids.length) return;
+    const H = this.handles, B = this.selectionBox(ids); if (!B) return;
+    H.set(B); H.active = kind;
+    const part = inPart && this.part && ids.length === 1 ? this.part : null;
+    const D = this.direct = { kind, ids, part, B, alt, start: new Map(), x0: x, y0: y };
+    for (const id of ids) D.start.set(id, this.doc.rec(id));
+    if (part) { const r = this.doc.rec(part.id); D.el0 = { ...((r.slots || {})[part.slot] || {}) }; }
+    const toCam = camera.position.clone();
+    const facing = (dir, through) => { const n = toCam.clone().sub(through).normalize(); n.addScaledVector(dir, -n.dot(dir)); if (n.lengthSq() < 1e-6) n.set(0, 1, 0); return new THREE.Plane().setFromNormalAndCoplanarPoint(n.normalize(), through); };
+    if (kind === 'move') { D.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), grab || B.foot); }
+    else if (kind === 'rot') { D.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), B.foot); D.center = B.foot.clone(); }
+    else if (kind === 'up') { D.dir = new THREE.Vector3(0, 1, 0); D.plane = facing(D.dir, B.foot); }
+    else { D.dir = H.dir(kind); D.axis = +kind[0]; D.sign = kind[1] === '+' ? 1 : -1; D.plane = facing(D.dir, H.facePoint(kind)); D.ext0 = B.H[D.axis] * 2; D.dim = H.dimName(kind); D.face = H.faceName(kind); }
+    D.p0 = this.handles.ray(x, y).intersectPlane(D.plane, new THREE.Vector3()) || (grab || B.foot).clone();
+    for (const id of ids) { const e = this.L.get(id); if (e && e.det) e.det.group.traverse(o => { o.userData.dynamicCaster = true; }); }
+    this.ed.refreshShadows && this.ed.refreshShadows();
+  }
+  moveDirect(x, y, alt = false) {
+    const D = this.direct; if (!D) return;
+    const p = this.handles.ray(x, y).intersectPlane(D.plane, new THREE.Vector3()); if (!p) return;
+    const snap = this.gizmo.snapping, st = this.gizmo.snap, sizeStep = Math.min(st.move, 0.25);
+    const recs = new Map(); let label = '';
+    if (D.kind === 'move' || D.kind === 'up') {
+      const delta = p.clone().sub(D.p0);
+      if (D.kind === 'move') delta.y = 0; else { delta.set(0, delta.dot(D.dir), 0); if (snap) delta.y = Math.round(delta.y / sizeStep) * sizeStep; }
+      if (D.kind === 'move' && snap && st.move > 0) { const r0 = D.start.get(D.ids[D.ids.length - 1]); delta.x = Math.round((r0.position[0] + delta.x) / st.move) * st.move - r0.position[0]; delta.z = Math.round((r0.position[2] + delta.z) / st.move) * st.move - r0.position[2]; }
+      if (D.part) {
+        const r0 = D.start.get(D.part.id), qi = quatOf(r0.rotation).invert(), sc = _v.fromArray(r0.scale).clone(), loc = delta.clone().applyQuaternion(qi).divide(sc), el = { ...D.el0 };
+        el.offset = (el.offset || [0, 0, 0]).map((v, i) => v + loc.getComponent(i)); this.previewPart(el);
+      } else for (const id of D.ids) {
+        const r0 = D.start.get(id), r = clone(r0), [x0, y0, z0] = r0.position;
+        r.position = [x0 + delta.x, y0 + delta.y, z0 + delta.z];
+        if (D.kind === 'move') { const g0 = this.world.groundAt(x0, z0); if (Math.abs(y0 - g0) < 0.3) r.position[1] = this.world.groundAt(r.position[0], r.position[2]) + (y0 - g0); } // (standing on the ground: stays on it)
+        recs.set(id, r);
+      }
+      label = D.kind === 'move' ? `<b>Move</b> ${Math.hypot(delta.x, delta.z).toFixed(2)} m${snap ? ' · snapped' : ''}` : `<b>${delta.y >= 0 ? 'Raise' : 'Lower'}</b> ${delta.y >= 0 ? '+' : ''}${delta.y.toFixed(2)} m`;
+    } else if (D.kind === 'rot') {
+      const a = D.p0.clone().sub(D.center), b = p.clone().sub(D.center); a.y = b.y = 0;
+      let ang = Math.atan2(a.clone().cross(b).y, a.dot(b)); if (snap) ang = Math.round(ang / (st.rotate * DEG)) * st.rotate * DEG;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ang);
+      if (D.part) { const r0 = D.start.get(D.part.id), qo = quatOf(r0.rotation), qi = qo.clone().invert(), el = { ...D.el0 }; el.rotate = eulerOf(qi.multiply(q).multiply(qo).multiply(quatOf(el.rotate || [0, 0, 0]))); this.previewPart(el); }
+      else for (const id of D.ids) { const r0 = D.start.get(id), r = clone(r0), rel = _v.fromArray(r0.position).clone().sub(D.center).applyQuaternion(q); r.position = D.center.clone().add(rel).toArray(); r.rotation = eulerOf(q.clone().multiply(quatOf(r0.rotation))); recs.set(id, r); }
+      label = `<b>Turn</b> ${(ang * RAD).toFixed(snap ? 0 : 1)}°`;
+    } else { // one face: the opposite face stays (Alt: both move, about the centre)
+      const centered = alt || D.alt, i = D.axis;
+      let d = p.clone().sub(D.p0).dot(D.dir), ext = D.ext0 + (centered ? 2 * d : d);
+      if (snap) ext = Math.round(ext / sizeStep) * sizeStep;
+      ext = Math.max(0.02, ext); const f = ext / Math.max(1e-6, D.ext0);
+      const lb = D.B.lb, fixedLocal = centered ? (lb.min.getComponent(i) + lb.max.getComponent(i)) / 2 : D.sign > 0 ? lb.min.getComponent(i) : lb.max.getComponent(i);
+      if (D.part) {
+        const e = this.L.get(D.part.id), c = this.L.elementPivot(e, D.part.slot), el = { ...D.el0 }, k0 = el.scale || [1, 1, 1], k1 = k0.slice(); k1[i] = k0[i] * f;
+        const v = [0, 0, 0]; v[i] = (k0[i] - k1[i]) * (fixedLocal - c.getComponent(i));
+        const R = quatOf(el.rotate || [0, 0, 0]), w = new THREE.Vector3(...v).applyQuaternion(R);
+        el.scale = k1; el.offset = (el.offset || [0, 0, 0]).map((o, j) => o + w.getComponent(j)); this.previewPart(el);
+      } else {
+        const id = D.ids[0], r0 = D.start.get(id), r = clone(r0), s1 = r0.scale.slice(); s1[i] = r0.scale[i] * f;
+        const v = [0, 0, 0]; v[i] = (r0.scale[i] - s1[i]) * fixedLocal; const w = new THREE.Vector3(...v).applyQuaternion(quatOf(r0.rotation));
+        r.scale = s1; r.position = r0.position.map((o, j) => o + w.getComponent(j)); recs.set(id, r);
+      }
+      const dd = ext - D.ext0;
+      label = `<b>${D.dim} ${ext.toFixed(2)} m</b> (${dd >= 0 ? '+' : ''}${dd.toFixed(2)})${centered ? ' · both sides' : ` · ${D.face.toLowerCase()} side`}${snap ? ' · snapped' : ''}`;
+    }
+    if (recs.size) { D.last = recs; for (const [id, r] of recs) this.L.apply(this.L.get(id), r); }
+    this.placeGizmo(); this.handles.active = D.kind; this.handles.label(label, x, y); this.emit('preview');
+  }
+  previewPart(el) { const D = this.direct, e = this.L.get(D.part.id), r = clone(D.start.get(D.part.id)); r.slots = { ...(r.slots || {}), [D.part.slot]: el }; D.lastEl = el; this.L.apply(e, r); }
+  endDirect(cancel) {
+    const D = this.direct; this.direct = null; if (!D) return;
+    this.handles.active = null; this.handles.label(null); this.handles.highlight(null);
+    for (const id of D.ids) { const e = this.L.get(id); if (e && e.det) e.det.group.traverse(o => { delete o.userData.dynamicCaster; }); }
+    const what = D.kind === 'move' ? 'Move' : D.kind === 'up' ? 'Raise / lower' : D.kind === 'rot' ? 'Turn' : `Resize ${D.face.toLowerCase()} side`;
+    if (D.part) {
+      this.L.apply(this.L.get(D.part.id), D.start.get(D.part.id));
+      if (!cancel && D.lastEl) { const el = D.lastEl; this.editElement(() => el, `${what} — element ${D.part.slot}`); }
+    } else {
+      for (const [id, r] of D.start) this.L.apply(this.L.get(id), r);
+      if (!cancel && D.last) this.doc.edit([...D.last.keys()], (r, id) => D.last.get(id), what + (D.ids.length > 1 ? ` ${D.ids.length} objects` : ''));
+    }
+    for (const id of D.ids) this.picker.invalidate(id);
+    this.ed.refreshShadows && this.ed.refreshShadows();
+    this.placeGizmo(); this.emit('selection');
+  }
   // ---------------------------------------------------------------- commands
   editSel(fn, label) { const ids = this.sel.filter(id => this.L.get(id)); if (!ids.length) return 0; const n = this.doc.edit(ids, fn, label); for (const id of ids) this.picker.invalidate(id); this.refreshSelection(); return n; }
   // a new object record copying `id` (its look comes from its source), at an offset
@@ -241,11 +375,41 @@ export class Editor {
     const out = { id: nid, name: (r.name || labelOf(r.prefab || 'object')).replace(/ \(copy\)$/, '') + ' (copy)', prefab: r.prefab };
     if (src) out.source = src;
     out.position = r.position.map((v, i) => v + offset[i]); out.rotation = r.rotation.slice(); out.scale = r.scale.slice();
-    for (const k of ['material', 'materialOverrides', 'slots', 'tags']) if (r[k] !== undefined) out[k] = clone(r[k]);
+    for (const k of ['part', 'material', 'materialOverrides', 'slots', 'tags']) if (r[k] !== undefined) out[k] = clone(r[k]);
     if (r.group && e.kind === 'added') out.group = r.group;
     return out;
   }
+  // ---------------------------------------------------------------- one part as an object of its own
+  // the record of a new object holding just the part being edited (an element — every "stucco" part — or one piece),
+  // with its look (material, colour, texture, transparency...) and its own edits; it stands where the part is
+  partRecord(taken = new Set()) {
+    const P = this.part; if (!P) return null;
+    const r = this.doc.rec(P.id), e = this.L.get(P.id); if (!r || !e) return null;
+    const src = e.kind === 'added' ? (r.source || null) : P.id; if (!src) return null;
+    const base = P.slot.split('#')[0], key = e.kind === 'added' && r.part ? r.part : P.slot;
+    const gen = e.kind === 'added' ? null : this.L.generatedRecord(e), look = this.L.slotOverride(e, r, gen, base) || {};
+    const el = { ...((r.slots || {})[base] || {}), ...((r.slots || {})[P.slot] || {}) }; delete el.hidden;
+    const out = { id: this.doc.freshId('part', taken), name: `${labelOf(base)} (part of ${r.name || P.id})`.slice(0, 150), prefab: r.prefab || 'part', source: src, part: key,
+      position: r.position.slice(), rotation: r.rotation.slice(), scale: r.scale.slice() };
+    taken.add(out.id);
+    const mat = look.material, ov = { ...look }; delete ov.material; for (const k of ['offset', 'rotate', 'scale', 'hidden']) delete ov[k];
+    if (mat) out.material = mat; if (Object.keys(ov).length) out.materialOverrides = ov;
+    const elT = {}; for (const k of ['offset', 'rotate', 'scale']) if (el[k]) elT[k] = el[k];
+    if (Object.keys(elT).length) out.slots = { [base]: elT };
+    if (r.tags) out.tags = r.tags.slice();
+    return out;
+  }
+  duplicatePart() {
+    const rec = this.partRecord(); if (!rec) { toast('Pick a part first (double-click an object, or Alt+click)', 'warn'); return; }
+    // beside the original: to the viewer's right by the part's width
+    const box = this.selectionBox([this.part.id]), right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion); right.y = 0; right.normalize();
+    const w = box ? Math.abs(box.U[0].dot(right)) * box.H[0] * 2 + Math.abs(box.U[2].dot(right)) * box.H[2] * 2 : 1, step = w + 0.3;
+    rec.position = rec.position.map((v, i) => v + [right.x, 0, right.z][i] * step);
+    const ids = this.doc.add([rec], 'Duplicate part ' + this.part.slot);
+    this.select(ids); toast(`Copied the part as a new object (${ids[0]}) — it keeps its material and colour`);
+  }
   duplicate() {
+    if (this.part) { this.duplicatePart(); return; }
     const ids = this.sel.filter(id => { const r = this.doc.rec(id); return r && !r.deleted; }); if (!ids.length) return;
     // offset: along the object's own width (its local X axis, kept level) by its width plus a small gap, so repeated
     // Ctrl+D lines copies up side by side — benches in a row, houses along a street; with snapping a whole number of
@@ -259,17 +423,18 @@ export class Editor {
     const off = [ax.x * step, 0, ax.z * step];
     const recs = [], taken = new Set(); for (const id of ids) { const r = this.copyRecord(id, off, taken); if (r) recs.push(r); }
     const out = this.doc.add(recs, ids.length > 1 ? `Duplicate ${ids.length} objects` : 'Duplicate');
-    this.select(out); if (this.tool === 'select') this.setTool('translate');
+    this.select(out);
     toast(`Duplicated ${out.length} — drag the gizmo to place ${out.length > 1 ? 'them' : 'it'}`);
   }
   copy() {
     const ids = this.sel.filter(id => { const r = this.doc.rec(id); return r && !r.deleted; }); if (!ids.length) return;
-    const recs = ids.map(id => this.copyRecord(id)).filter(Boolean);
+    const recs = this.part ? [this.partRecord()].filter(Boolean) : ids.map(id => this.copyRecord(id)).filter(Boolean);
+    if (!recs.length) return;
     const c = new THREE.Vector3(); for (const r of recs) c.add(_v.fromArray(r.position)); c.divideScalar(recs.length);
     const text = JSON.stringify({ wildlands: 'objects', map: this.doc.map, center: c.toArray(), records: recs }, null, 1);
     try { localStorage.setItem('wl_ed_clipboard', text); } catch (e) {}
     if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
-    toast(`Copied ${recs.length} object${recs.length > 1 ? 's' : ''}`);
+    toast(this.part ? `Copied the part ${this.part.slot} — Ctrl+V pastes it as an object of its own` : `Copied ${recs.length} object${recs.length > 1 ? 's' : ''}`);
   }
   async paste() {
     let text = null;

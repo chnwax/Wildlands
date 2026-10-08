@@ -36,8 +36,10 @@ export async function startWorkspace(ed) {
   const tb = ui.tb;
   const bUndo = el('button', { class: 'tbtn', onclick: () => undo() }, icon('undo')), bRedo = el('button', { class: 'tbtn', onclick: () => redo() }, icon('redo'));
   tb.history.append(bUndo, bRedo);
-  const TOOLS = [['select', 'Select', 'Q'], ['translate', 'Move', 'W'], ['rotate', 'Rotate', 'E'], ['scale', 'Scale', 'R']];
-  const toolBtns = TOOLS.map(([t, label, k]) => el('button', { class: 'tbtn', title: `${label} (${k})`, onclick: () => E.setTool(t) }, icon(t === 'translate' ? 'move' : t), el('kbd', {}, k)));
+  // the main tool edits directly (grab faces, drag objects, lift, turn); the XYZ gizmo tools are the precise / advanced way
+  const TOOLS = [['direct', 'Edit directly: drag an object to move it, its face grips to resize one side, the ring to turn it, the arrow to raise it', 'Q'],
+    ['translate', 'Move along X / Y / Z (advanced)', 'W'], ['rotate', 'Rotate about X / Y / Z (advanced)', 'E'], ['scale', 'Scale along X / Y / Z (advanced)', 'R']];
+  const toolBtns = TOOLS.map(([t, label, k]) => el('button', { class: 'tbtn', title: `${label} (${k})`, onclick: () => E.setTool(t) }, icon(t === 'translate' ? 'move' : t), t === 'direct' ? 'Edit' : null, el('kbd', {}, k)));
   tb.tools.append(...toolBtns);
   const bSpace = el('button', { class: 'tbtn', title: 'Gizmo in world or object (local) axes (X)', onclick: () => { E.gizmo.space = E.gizmo.space === 'world' ? 'local' : 'world'; syncTb(); E.placeGizmo(); } });
   tb.space.append(bSpace);
@@ -139,7 +141,7 @@ export async function startWorkspace(ed) {
   // ---------------------------------------------------------------- keyboard
   const K = (code, run, o = {}) => ui.keys.push({ code, run, ...o });
   const has = () => E.sel.length > 0;
-  K('KeyQ', () => E.setTool('select')); K('KeyW', () => E.setTool('translate')); K('KeyE', () => E.setTool('rotate')); K('KeyR', () => E.setTool('scale'));
+  K('KeyQ', () => E.setTool('direct')); K('KeyW', () => E.setTool('translate')); K('KeyE', () => E.setTool('rotate')); K('KeyR', () => E.setTool('scale'));
   K('KeyX', () => { E.gizmo.space = E.gizmo.space === 'world' ? 'local' : 'world'; syncTb(); E.placeGizmo(); toast('Gizmo: ' + E.gizmo.space + ' axes'); });
   K('KeyG', () => { sn.on = !sn.on; saveSnap(); syncTb(); toast('Snapping ' + (sn.on ? 'on' : 'off')); });
   K('KeyZ', undo, { ctrl: true, shift: false }); K('KeyZ', redo, { ctrl: true, shift: true }); K('KeyY', redo, { ctrl: true });
@@ -160,7 +162,7 @@ export async function startWorkspace(ed) {
   K('KeyA', () => { const ids = E.picker.inRect(0, 0, innerWidth, innerHeight); E.select(ids); toast(`Selected ${ids.length} visible objects`); }, { ctrl: true });
   K('F2', () => { if (E.sel.length === 1) { showTab('Outliner'); outliner.startRename(E.primary); } });
   K('KeyF', () => { showTab('Outliner'); outliner.focusSearch(); }, { ctrl: true });
-  K('Escape', () => { if (E.gizmo.drag) E.gizmo.end(true); else if (E.part) E.selectElement(E.part.id, null); else if (E.placing) E.disarm(); else if (E.eyedropper) E.armEyedropper(); else E.select([]); });
+  K('Escape', () => { if (E.direct) E.endDirect(true); else if (E.gizmo.drag) E.gizmo.end(true); else if (E.part) E.selectElement(E.part.id, null); else if (E.placing) E.disarm(); else if (E.eyedropper) E.armEyedropper(); else E.select([]); });
   K('Equal', () => E.scaleGhost(1.25), { when: () => !!E.placing }); K('Minus', () => E.scaleGhost(0.8), { when: () => !!E.placing });
   K('NumpadAdd', () => E.scaleGhost(1.25), { when: () => !!E.placing }); K('NumpadSubtract', () => E.scaleGhost(0.8), { when: () => !!E.placing });
   K('BracketLeft', () => E.turnGhost(-Math.PI / 12), { when: () => !!E.placing }); K('BracketRight', () => E.turnGhost(Math.PI / 12), { when: () => !!E.placing });
@@ -184,7 +186,7 @@ export async function startWorkspace(ed) {
       { label: 'Hide', key: 'H', run: () => E.setFlag('hidden', true) }, { label: 'Lock', key: 'L', run: () => E.setFlag('locked', true) }]);
   });
   // ---------------------------------------------------------------- per frame: gizmo + overlays; status line
-  ui.afterRender.push(() => { E.gizmo.update(); E.outline.render(E.gizmo.visible ? E.gizmo.scene : null); });
+  ui.afterRender.push(() => { E.gizmo.update(); E.handles.update(); E.outline.render(E.gizmo.visible || E.handles.visible ? E.gizmo.scene : null); });
   const selInfo = el('span'), hovInfo = el('span');
   ui.statusMsg.after(hovInfo, selInfo);
   ui.statusItems.push(() => {

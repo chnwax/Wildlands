@@ -14,6 +14,8 @@ export function buildInspector(E, pane) {
   const body = el('div', { class: 'insp' }), scroll = el('div', { class: 'scroll' }, body);
   pane.append(scroll);
   const closed = new Set(JSON.parse(localStorage.getItem('wl_ed_closed') || '[]'));
+  // the X / Y / Z fields are the advanced way: folded until opened once
+  if (!localStorage.getItem('wl_ed_xyz_seen')) { closed.add('transform'); closed.add('elxyz'); try { localStorage.setItem('wl_ed_xyz_seen', '1'); localStorage.setItem('wl_ed_closed', JSON.stringify([...closed])); } catch (e) {} }
   let matMode = 'object', live = null; // live: preview while a slider / colour drags: { ids, before }
   const section = (key, title, tools, ...kids) => {
     const s = el('div', { class: 'sec' + (closed.has(key) ? ' closed' : '') });
@@ -79,10 +81,15 @@ export function buildInspector(E, pane) {
     const r0 = recs[0], ov = slotOv(r0, slot, slotInfo(r0.id)[0]);
     const base = L.sharedProps(ov.material || lib) || {};
     const cur = shared ? { ...base, ...(doc.mats.get(lib) || {}) } : { ...base, ...ov };
+    // the colour shown is the one the object really has: most kit materials are white and painted per vertex, textured
+    // ones multiply their picture, trees and rocks are tinted per instance (the material's own colour is only a factor)
+    const look = L.slotLook(L.get(r0.id), ov.material && ov.material !== lib ? ov.material : slot) || { hex: cur.color, source: 'material' };
+    const seen = shared ? (cur.color || '#ffffff') : (ov.color || look.hex || cur.color || '#ffffff');
+    const how = shared ? 'tint of every object using it' : ov.color ? 'this object’s colour' : { vertex: 'as painted (per-vertex colours)', tint: 'as tinted (per object)', texture: 'texture colour', material: 'material colour' }[look.source];
     const set = (k, v, preview) => shared ? setSharedProp(lib, k, v, preview) : setOverride(ids, slot, k, v, preview);
     const changed = k => shared ? doc.mats.get(lib) && doc.mats.get(lib)[k] !== undefined : ov[k] !== undefined;
     const reset = k => changed(k) ? el('button', { class: 'btn sm', title: shared ? 'Back to the generated value' : 'Remove this override', onclick: () => set(k, undefined) }, '↺') : null;
-    box.append(el('div', { class: 'slot-h' }, el('span', { class: 'ic', style: { width: '10px', height: '10px', borderRadius: '2px', background: cur.color || '#888', display: 'inline-block' } }), slot, isPrimary ? el('small', {}, 'main') : null,
+    box.append(el('div', { class: 'slot-h' }, el('span', { class: 'ic', style: { width: '10px', height: '10px', borderRadius: '2px', background: seen, display: 'inline-block' } }), slot, isPrimary ? el('small', {}, 'main') : null,
       el('small', { style: { marginLeft: 'auto' } }, shared ? `shared · ${users} objects` : 'this object')));
     if (!shared) {
       const names = [...L.matByName.keys()].sort();
@@ -90,9 +97,9 @@ export function buildInspector(E, pane) {
       sel.value = ov.material || lib;
       box.append(row('Material', sel));
     }
-    const color = el('input', { type: 'color', class: 'swatch', value: cur.color || '#ffffff' });
+    const color = el('input', { type: 'color', class: 'swatch', value: seen });
     color.addEventListener('input', e => set('color', e.target.value, true)); color.addEventListener('change', e => set('color', e.target.value));
-    box.append(row('Colour', el('div', { class: 'ib' }, color, el('span', { class: 'kv' }, cur.color || '—'), reset('color'))));
+    box.append(row(shared ? 'Tint' : 'Colour', el('div', { class: 'ib' }, color, el('span', { class: 'kv', title: how }, seen), reset('color')), el('div', { class: 'note', style: { marginTop: '2px' } }, how)));
     const slider = (k, label, max = 1, step = 0.01) => {
       const v = cur[k] ?? 0, num = el('input', { class: 'num', value: fmt(v, 2) }), rng = el('input', { type: 'range', min: 0, max, step, value: v });
       rng.addEventListener('input', e => { num.value = fmt(+e.target.value, 2); set(k, +e.target.value, true); }); rng.addEventListener('change', e => set(k, +e.target.value));
@@ -135,18 +142,31 @@ export function buildInspector(E, pane) {
       const slot = E.part.slot, ev = (r0.slots || {})[slot] || {};
       const evec = (key, label, def, digits, step) => row(label, el('div', { class: 'vec' }, [0, 1, 2].map(i => numField((ev[key] || def)[i], v => E.editElement(x => { const a = (x[key] || def).slice(); a[i] = v; x[key] = a; return x; }, `Element ${slot} ${key}`), { axis: 'XYZ'[i], digits, step })))) ;
       const piece = slot.includes('#'), base = slot.split('#')[0];
-      body.append(section('element', piece ? `Piece: ${base} ${+slot.split('#')[1] + 1}` : `Element: ${slot}`, [piece ? el('button', { class: 'btn sm', title: 'Every part of this material', onclick: () => E.selectElement(r0.id, base) }, 'All ' + base) : null, el('button', { class: 'btn sm', title: 'Back to the whole object (Esc)', onclick: () => E.selectElement(r0.id, null) }, 'Whole object')].filter(Boolean),
-        el('div', { class: 'note' }, (piece ? 'One connected piece of the “' + base + '” parts.' : 'Every part of this object made of “' + slot + '”.') + ' Move / turn / scale it with the gizmo or here (in the object’s own axes). Alt+click picks another element.'),
-        evec('offset', 'Move m', [0, 0, 0], 2, 0.05), evec('rotate', 'Turn °', [0, 0, 0], 1, 1), evec('scale', 'Scale', [1, 1, 1], 3, 0.01),
+      const eb = L.elementBox(e0, slot).getSize(new THREE.Vector3()).toArray(), ek = ev.scale || [1, 1, 1];
+      const eSize = (i, label) => row(label, numField(eb[i] * Math.abs(ek[i]), v => { if (eb[i] < 1e-4) return; E.editElement(x => { const k = (x.scale || [1, 1, 1]).slice(); k[i] = Math.sign(k[i] || 1) * v / eb[i]; x.scale = k; return x; }, `Element ${slot} ${label.split(' ')[0].toLowerCase()}`); }, { digits: 2, step: 0.05, min: 0.01 }));
+      body.append(section('element', piece ? `Piece: ${base} ${slot.split('#')[1].split('.').map(v => +v + 1).join('.')}` : `Element: ${slot}`, [piece ? el('button', { class: 'btn sm', title: 'Every part of this material', onclick: () => E.selectElement(r0.id, base) }, 'All ' + base) : null, el('button', { class: 'btn sm', title: 'Back to the whole object (Esc)', onclick: () => E.selectElement(r0.id, null) }, 'Whole object')].filter(Boolean),
+        el('div', { class: 'note' }, (piece ? 'One piece of the “' + base + '” parts (Alt+click it again for a finer piece: one face).' : 'Every part of this object made of “' + slot + '”.') + ' Move / turn / scale it with the gizmo or here (in the object’s own axes). Alt+click picks another element.'),
+        eSize(0, 'Width m'), eSize(1, 'Height m'), eSize(2, 'Depth m'),
+        el('details', { class: 'adv', open: !closed.has('elxyz'), ontoggle: ev2 => { if (ev2.target.open) closed.delete('elxyz'); else closed.add('elxyz'); localStorage.setItem('wl_ed_closed', JSON.stringify([...closed])); } },
+          el('summary', { class: 'note', style: { cursor: 'pointer', margin: '4px 0' } }, 'Advanced — X / Y / Z'),
+          evec('offset', 'Move m', [0, 0, 0], 2, 0.05), evec('rotate', 'Turn °', [0, 0, 0], 1, 1), evec('scale', 'Scale', [1, 1, 1], 3, 0.01)),
         el('div', { class: 'ib' },
           el('button', { class: 'btn sm', onclick: () => E.editElement(x => ({ ...x, hidden: x.hidden ? undefined : true }), ev.hidden ? 'Show element' : 'Hide element') }, icon(ev.hidden ? 'eye' : 'eyeoff'), ev.hidden ? 'Show' : 'Hide'),
-          el('button', { class: 'btn sm', title: 'Undo every change to this element', onclick: () => E.editElement(() => ({}), `Reset element ${slot}`) }, 'Reset element')),
+          el('button', { class: 'btn sm', title: 'Undo every change to this element', onclick: () => E.editElement(() => ({}), `Reset element ${slot}`) }, 'Reset element'),
+          el('button', { class: 'btn sm', title: 'A copy of just this part as an object of its own, with its material and colour (Ctrl+D)', onclick: () => E.duplicatePart() }, icon('copy'), 'Duplicate part'),
+          el('button', { class: 'btn sm', title: 'Copy just this part (Ctrl+C), then paste it anywhere with Ctrl+V', onclick: () => E.copy() }, 'Copy part')),
         materialEditor(ids, slot, !piece && slot === slotInfo(r0.id)[0], recs)));
     }
     // transform
     const vec = (key, label, digits, step) => row(label, el('div', { class: 'vec' }, [0, 1, 2].map(i => numField(common(recs, r => r[key][i]), (v, preview, end) => setVec(ids, key, i, v, preview, end), { axis: 'XYZ'[i], mixed: common(recs, r => r[key][i]) === null, digits, step }))));
     const sizes = ids.map(sizeOf);
-    body.append(section('transform', 'Transform', [el('button', { class: 'btn sm', title: 'Reset to the generated transform (or identity)', onclick: () => E.editSel(r => { const e = L.get(r.id), g = e.kind === 'added' ? null : L.generatedRecord(e); r.rotation = g ? g.rotation.slice() : [0, 0, 0]; r.scale = g ? g.scale.slice() : [1, 1, 1]; if (g) r.position = g.position.slice(); return r; }, 'Reset transform') }, 'Reset')],
+    const plain = (i, label) => row(label, numField(common(sizes.map(s => ({ s })), o => o.s[i]), v => setSize(ids, i, v), { mixed: common(sizes.map(s => ({ s })), o => o.s[i]) === null, digits: 2, step: 0.1, min: 0.01 }));
+    body.append(section('size', 'Size & direction', null,
+      el('div', { class: 'note' }, 'Drag the coloured grips on the object’s sides to resize one side, the object itself to move it, the ring to turn it. Or type here.'),
+      plain(0, 'Width m'), plain(1, 'Height m'), plain(2, 'Depth m'),
+      row('Turn °', numField(common(recs, r => r.rotation[1]), (v, preview, end) => setVec(ids, 'rotation', 1, v, preview, end), { mixed: common(recs, r => r.rotation[1]) === null, digits: 1, step: 5 })),
+      row('Height above ground m', numField(common(recs, r => r.position[1] - E.world.groundAt(r.position[0], r.position[2])), v => E.editSel(r => { r.position = r.position.slice(); r.position[1] = E.world.groundAt(r.position[0], r.position[2]) + v; return r; }, 'Height above ground'), { mixed: common(recs, r => r.position[1] - E.world.groundAt(r.position[0], r.position[2])) === null, digits: 2, step: 0.05 }))));
+    body.append(section('transform', 'Advanced — X / Y / Z', [el('button', { class: 'btn sm', title: 'Reset to the generated transform (or identity)', onclick: () => E.editSel(r => { const e = L.get(r.id), g = e.kind === 'added' ? null : L.generatedRecord(e); r.rotation = g ? g.rotation.slice() : [0, 0, 0]; r.scale = g ? g.scale.slice() : [1, 1, 1]; if (g) r.position = g.position.slice(); return r; }, 'Reset transform') }, 'Reset')],
       vec('position', 'Position m', 2, 0.1), vec('rotation', 'Rotation °', 1, 1), vec('scale', 'Scale', 3, 0.01),
       row('Size m', el('div', { class: 'vec' }, [0, 1, 2].map(i => numField(common(sizes.map((s, k) => ({ s })), o => o.s[i]), v => setSize(ids, i, v), { axis: 'XYZ'[i], mixed: common(sizes.map(s => ({ s })), o => o.s[i]) === null, digits: 2, step: 0.1, min: 0.01 })))),
       el('div', { class: 'ib' }, el('button', { class: 'btn sm', title: 'Drop onto the ground or the object below (End)', onclick: () => E.dropToGround(false) }, icon('ground'), 'Drop to ground'),

@@ -388,6 +388,6 @@
     { "id": "utility_pole_hills_006", "name": "Utility pole 6 · hills", "prefab": "utility_pole", "position": [-513.101, 6.019, -19.5], "rotation": [0, 90, 0], "scale": [1, 1, 1], "material": "concrete", "tags": ["lighting", "hills"] },
     { "id": "utility_pole_hills_007", "name": "Utility pole 7 · hills", "prefab": "utility_pole", "position": [-483.759, 6.019, -19.5], "rotation": [0, 90, 0], "scale": [1, 1, 1], "material": "concrete", "tags": ["lighting", "hills"] },
     { "id": "utility_pole_hills_008", "name": "Utility pole 8 · hills", "prefab": "utility_pole", "position": [673.47, 6.805, -19.5], "rotation": [0, 90, 0], "scale": [1, 1, 1], "material": "concrete", "tags": ["lighting", "hills"] },
-    { "id": "vending_machine_hills_001", "name": "Vending machine 1 · hills", "prefab": "vending_machine", "position": [-523.513, 6.038, -33.028], "rotation": [0, 0, 0], "scale": [1, 1, 1], "material": "meshstandard_6", "tags": ["furniture", "hills"] }
+    { "id": "vending_machine_hills_001", "name": "Vending machine 1 · hills", "prefab": "vending_machine", "position": [-523.513, 6.038, -33.028], "rotation": [0, 0, 0], "scale": [1, 1, 1], "material": "vending_machine_panel_4", "tags": ["furniture", "hills"] }
   ]
 }

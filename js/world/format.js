@@ -11,7 +11,7 @@ export const GEN_ID_RE = /^([a-z0-9_]+?)_([a-z0-9]+)_(\d{3,})$/;
 export const parseGeneratedId = id => { const m = GEN_ID_RE.exec(id); return m ? { prefab: m[1], area: m[2], n: +m[3] } : null; };
 
 // key order of an object record (also the list of allowed keys)
-export const OBJECT_KEYS = ['id', 'name', 'prefab', 'source', 'position', 'rotation', 'scale', 'material', 'materialOverrides', 'slots', 'group', 'tags', 'hidden', 'locked', 'deleted', 'origin'];
+export const OBJECT_KEYS = ['id', 'name', 'prefab', 'source', 'part', 'position', 'rotation', 'scale', 'material', 'materialOverrides', 'slots', 'group', 'tags', 'hidden', 'locked', 'deleted', 'origin'];
 export const ELEMENT_KEYS = ['hidden', 'offset', 'rotate', 'scale']; // per-slot element edits
 export const OVERRIDE_KEYS = ['material', 'color', 'roughness', 'metalness', 'emissive', 'emissiveIntensity', 'texture', 'opacity'];
 const FILE_KEYS = ['format', 'kind', 'map', 'area', 'name', 'note', 'areas', 'generated', 'edits', 'libraries', 'materialEdits', 'fields', 'prefabs', 'materials', 'textures', 'objects'];
@@ -93,6 +93,7 @@ export function validateObject(o, P, ctx = {}) {
   if ('tags' in o && (!Array.isArray(o.tags) || o.tags.some(t => typeof t !== 'string'))) P.error('tags', 'must be a list of strings');
   if ('group' in o && typeof o.group === 'string' && o.group && !ID_RE.test(o.group)) P.error('group', 'group names follow the id rules (lowercase, digits, "_", "-")');
   if ('source' in o && typeof o.source === 'string' && !ID_RE.test(o.source)) P.error('source', 'must be the id of an object');
+  if ('part' in o) { if (typeof o.part !== 'string' || !/^[a-z0-9_]+(#\d+(\.\d+)?)?$/.test(o.part)) P.error('part', 'must name one part of the source object: its material slot ("stucco"), or one piece of it ("stucco#3", "stucco#3.1")'); else if (!('source' in o)) P.error('part', 'a copied part needs the "source" object it is taken from'); }
   if (typeof o.material === 'string' && ctx.materials && !ctx.materials.has(o.material)) P.error('material', `unknown material "${o.material}"` + didYouMean(o.material, [...ctx.materials]));
   if (typeof o.prefab === 'string' && ctx.prefabs && !ctx.prefabs.has(o.prefab)) P.error('prefab', `unknown prefab "${o.prefab}"` + didYouMean(o.prefab, [...ctx.prefabs]));
   if ('materialOverrides' in o) checkOverride(o.materialOverrides, 'materialOverrides', P, ctx, false);

@@ -47,6 +47,13 @@ export function endEntity() {
   e.segs = e.segs.filter(s => s.v1 > s.v0 || s.i1 > s.i0);
   top = stack.length ? stack[stack.length - 1] : null;
 }
+// run fn with the capture paused: scratch builds (a building measured off-site to plan its plot) are not world objects
+export function uncaptured(fn) {
+  if (!CAP.active) return fn();
+  const saved = [capHooks.bucket, capHooks.collider, capHooks.prop, capHooks.frame, top, stack.length];
+  CAP.active = false; capHooks.bucket = capHooks.collider = capHooks.prop = capHooks.frame = null; top = null;
+  try { return fn(); } finally { CAP.active = true; [capHooks.bucket, capHooks.collider, capHooks.prop, capHooks.frame, top] = saved; stack.length = saved[5]; }
+}
 // run fn as one placed object (base null: taken from the builder's first frame, see capHooks.frame)
 export function entity(prefab, fn, base = null, opts) {
   if (!CAP.active) return fn();

@@ -45,6 +45,7 @@
         "name": { "type": "string", "maxLength": 160 },
         "prefab": { "type": "string", "description": "prefab name from prefabs.json (required for new objects unless source is given)" },
         "source": { "$ref": "#/$defs/id", "description": "new objects: copy the look of this object (any generated or added object)" },
+        "part": { "type": "string", "pattern": "^[a-z0-9_]+(#[0-9]+([.][0-9]+)?)?$", "description": "with source: only this part of the source object, an object of its own: its material slot (stucco) or one piece of it (stucco#3, stucco#3.1)" },
         "position": { "$ref": "#/$defs/vec3", "description": "metres, world space; y is up" },
         "rotation": { "$ref": "#/$defs/vec3", "description": "degrees, Euler angles applied X, then Y, then Z (Y turns the object round its vertical axis)" },
         "scale": { "$ref": "#/$defs/vec3" },

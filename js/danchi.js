@@ -52,7 +52,7 @@ import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PAL
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
 import { PedNet, snapWidth, LIFT } from './pednet.js';
-import { entity } from './world/capture.js';
+import { entity, uncaptured } from './world/capture.js';
 
 // The ground a building really covers — walls, balconies, galleries, stair towers, canopies, steps, garden fences:
 // everything it builds above the paving, projected onto the ground. Measured by building it once off-site (its own
@@ -62,7 +62,7 @@ import { entity } from './world/capture.js';
 const GEN = { S: walkupSlab, T: pointTower, M: mansion, L: centreBlock, K: cornerBlock, R: lowRise };
 export function solidField(fam, o) {
   const pal = PALETTES[o.pal] || PALETTES.cream, B = new GeoBuilder(1e5), lp = lampPoints.length, sc = scene.children.length;
-  GEN[fam](B, { ...o, x: 0, y: 0, z: 0, r: 0, pal, gy: () => -0.02 }, mulberry32(1), []);
+  uncaptured(() => GEN[fam](B, { ...o, x: 0, y: 0, z: 0, r: 0, pal, gy: () => -0.02 }, mulberry32(1), [])); // (a scratch build: not a world object)
   lampPoints.length = lp;
   while (scene.children.length > sc) { const m = scene.children[scene.children.length - 1]; scene.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); } }
   let ux0 = 1e9, vz0 = 1e9, ux1 = -1e9, vz1 = -1e9;

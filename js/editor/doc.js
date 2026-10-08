@@ -86,7 +86,7 @@ export class Doc {
     const L = this.layer;
     if (ent && ent.kind !== 'added') return L.apply(ent, L.effective(ent, v || {}));
     if (!v) { if (ent) L.removeAdded(ent); return; }
-    if (ent && ent.srcKey === (v.source || '') + '|' + (v.prefab || '')) return L.apply(ent, v); // same look: only move / recolour
+    if (ent && ent.srcKey === (v.source || '') + '|' + (v.prefab || '') + '|' + (v.part || '')) return L.apply(ent, v); // same look: only move / recolour
     if (!L.createAdded(v)) console.warn('could not create', v.id, v);
   }
   fileFor(id, rec) {
