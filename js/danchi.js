@@ -22,6 +22,7 @@ export const DANCHI_ROADS = [
   { id: 'DN', kind: 'lane', w: 5.0, walk: 2.0, district: true, noLots: true, mat: 'asphalt', age: 0.32, pts: [[398, 200], [400, 262], [404, 322]] },
 ];
 
+
 const inPoly = (P, x, z) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, zi] = P[i], [xj, zj] = P[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; };
 function polyDist(P, x, z) {
   let d = 1e9;

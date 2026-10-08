@@ -208,6 +208,7 @@ export class PedNet {
         const t = cands.find(clearAt) ?? tN; N.x = p[0] + (q[0] - p[0]) * t; N.z = p[1] + (q[1] - p[1]) * t;
         const ux = (o.x - N.x) / (hyp(o.x - N.x, o.z - N.z) || 1), uz = (o.z - N.z) / (hyp(o.x - N.x, o.z - N.z) || 1); if (ux * nx + uz * nz > 0.9995) continue;
         const run = Math.min(hw + 0.8, Math.max(hw + 0.45, hyp(o.x - N.x, o.z - N.z) * 0.6));
+        if (hyp(o.x - N.x, o.z - N.z) < run + 0.3) continue; // (too short to bend in: the bend would fold back over the path)
         const m = node(N.x + nx * run, N.z + nz * run); nodes[m].sq = true; const ei = N.e[0], ce = e.c; unlink(ei); edge(o === nodes[e.a] ? e.a : e.b, m, ce); edge(m, ni, ce); }
       for (const N of nodes) N.e = N.e.filter(k => !edges[k].dead);
       // an end on a footway meets its back edge square, and off a lowered kerb's slope (a crossing's or a
@@ -231,7 +232,8 @@ export class PedNet {
             const n2 = normalAt(p[0], p[1]); if (n2 && spread(p[0], p[1], n2) <= 0.02 && !this.onBuilding(p[0], p[1], hw)) { found = [p, n2]; break; } }
           if (found) { N.x = found[0][0]; N.z = found[0][1]; n = found[1]; } }
         if ((o.x - N.x) * n[0] + (o.z - N.z) * n[1] > 0.9995 * hyp(o.x - N.x, o.z - N.z)) continue;
-        const run = Math.min(hw + 0.8, Math.max(hw + 0.45, hyp(o.x - N.x, o.z - N.z) * 0.6)), m = node(N.x + n[0] * run, N.z + n[1] * run), ce = e.c; nodes[m].sq = true; unlink(N.e[0]); edge(oi, m, ce); edge(m, ni, ce); }
+        const run = Math.min(hw + 0.8, Math.max(hw + 0.45, hyp(o.x - N.x, o.z - N.z) * 0.6)); if (hyp(o.x - N.x, o.z - N.z) < run + 0.3) continue;
+        const m = node(N.x + n[0] * run, N.z + n[1] * run), ce = e.c; nodes[m].sq = true; unlink(N.e[0]); edge(oi, m, ce); edge(m, ni, ce); }
       for (const N of nodes) N.e = N.e.filter(k => !edges[k].dead);
     };
     square();

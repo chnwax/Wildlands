@@ -19,7 +19,7 @@ import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, upda
   vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin, canvasTex } from './townkit.js';
 import { RAIL, buildRailway, railFences, trackside, buildCrossing, pedCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
-import { planRoads } from './roads.js';
+import { planRoads, filletPolyline } from './roads.js';
 import { DANCHI, DANCHI_ROADS, danchiGround, inDanchi, buildDanchi } from './danchi.js';
 import { perf } from './perf.js';
 import { startCapture, stopCapture, entity } from './world/capture.js';
@@ -271,6 +271,19 @@ for (const R of ROADS) {
         if (d < 6 && !atEnd && (!best || d < best.d)) best = { d, q }; } }
     if (best && best.d > 1e-3) R.pts[end] = best.q;
   }
+}
+// the district's streets are designed roads: their bends are arcs (the loop road's sweep round the north, the avenue's
+// curve), so carriageway, kerbs and footways follow them smoothly. (After the ends are snapped onto the roads they meet,
+// so a junction's arm stays straight; then the ends are snapped again onto the rounded lines.)
+for (const R of ROADS) if (R.district && R.kind !== 'main') R.pts = filletPolyline(R.pts, { radius: R.kind === 'road' ? 70 : 45, maxDev: 1.4 });
+for (const R of ROADS) if (R.district && R.kind !== 'main') for (const end of [0, R.pts.length - 1]) {
+  const p = R.pts[end]; let best = null;
+  for (const O of ROADS) { if (O === R || O.kind === 'path') continue;
+    for (let i = 0; i + 1 < O.pts.length; i++) { const a = O.pts[i], b = O.pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+      const t = clamp((p[0] - a[0]) * dx + (p[1] - a[1]) * dz, 0, L), q = [a[0] + dx * t, a[1] + dz * t], d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+      const atEnd = (i === 0 && t < 0.5) || (i + 2 === O.pts.length && t > L - 0.5);
+      if (d < 3 && !atEnd && (!best || d < best.d)) best = { d, q }; } }
+  if (best && best.d > 1e-3) R.pts[end] = best.q;
 }
 // streets that stop at the edge of town carry on as gravel farm tracks (農道) out into the fields and up to the woods,
 // instead of ending in an asphalt cliff at the meadow
@@ -1089,7 +1102,25 @@ export async function build(progress, opts = {}) {
     }
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
-  RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470 }); // guide blocks in town, not out on the valley road
+  RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470, ground: (x, z) => hf.groundAt(x, z) }); // guide blocks in town, not out on the valley road
+  { // footways standing above the ground (embanked approaches out of town, the bridge ramps): the ground behind them is
+    // built up into a grassy bank at 1:1.6 to their back edge, instead of the back edge standing out of the lawn
+    const { HN, HALF, CELL, H } = hf, rotL = d => [-d[1], d[0]];
+    for (const [n, side, sa, sb, kind, rw] of RN.runs) { if (kind !== 'walk') continue;
+      for (let s = sa; s <= sb; s += 1) {
+        const q = RN.sampleAt(n, s), l0 = rotL(q.d), l = [l0[0] * side, l0[1] * side], u = n.hw + rw, bx = q.x + l[0] * u, bz = q.z + l[1] * u;
+        const top = RN.walkY(bx - l[0] * 0.15, bz - l[1] * 0.15); if (top === null || top - hf.groundAt(bx, bz) < 0.1) continue;
+        if (Math.abs(bx - riverX(bz)) < 20) continue;
+        for (let j = Math.floor((bz - 4 + HALF) / CELL); j <= Math.ceil((bz + 4 + HALF) / CELL); j++) for (let i = Math.floor((bx - 4 + HALF) / CELL); i <= Math.ceil((bx + 4 + HALF) / CELL); i++) {
+          const vx = -HALF + i * CELL, vz = -HALF + j * CELL, dd = (vx - bx) * l[0] + (vz - bz) * l[1], along = Math.abs((vx - bx) * q.d[0] + (vz - bz) * q.d[1]);
+          if (dd < 0 || dd > 3.8 || along > 1.2) continue;
+          const t = top - 0.05 - 0.62 * dd, k = j * HN + i; if (t <= H[k]) continue;
+          if (RN.roadAt(vx, vz) || occRect(vx, vz, 0.6, 0.6, 0, 0, true) || Math.abs(vx - riverX(vz)) < 20) continue;
+          H[k] = t;
+        }
+      }
+    }
+  }
   { // direction arrows in the approach lanes of the main road at its junction with road B (left-hand traffic)
     const I = inters.find(I2 => I2.roads.some(R => R.id === 'A') && I2.roads.some(R => R.id === 'B'));
     if (I) for (const dir of [1, -1]) for (const back of [20, 34]) {
