@@ -119,10 +119,11 @@ function geo(type) {
 // ---------------------------------------------------------------- registry + instancing
 const CH = 256, list = new Map();
 export const cropSet = {
-  // world position of the plant's base, heading, scale, tint (multiplies the plant's own colours)
-  add(type, x, y, z, yaw = 0, s = 1, tintC = null) {
-    const k = type + '|' + Math.floor(x / CH) + ',' + Math.floor(z / CH);
-    let L = list.get(k); if (!L) list.set(k, L = { type, items: [] });
+  // world position of the plant's base, heading, scale, tint (multiplies the plant's own colours); far: drawn within
+  // this distance only — garden plants (yards.js) are small and many, in 48 m chunks drawn within 90 m
+  add(type, x, y, z, yaw = 0, s = 1, tintC = null, far = 0) {
+    const ch = far ? 48 : CH, k = type + '|' + far + '|' + Math.floor(x / ch) + ',' + Math.floor(z / ch);
+    let L = list.get(k); if (!L) list.set(k, L = { type, items: [], far });
     L.items.push([x, y, z, yaw, s, tintC]);
   },
 };
@@ -135,7 +136,7 @@ export function buildCrops() {
   for (const L of list.values()) {
     const im = new THREE.InstancedMesh(geo(L.type), MAT, L.items.length); im.name = 'crop:' + L.type;
     L.items.forEach(([x, y, z, yaw, s, t], i) => { im.setMatrixAt(i, m4.compose(v.set(x, y, z), q.setFromAxisAngle(up, yaw), sc.setScalar(s))); im.setColorAt(i, t ? col.setRGB(t[0], t[1], t[2]) : col.setRGB(1, 1, 1)); });
-    im.computeBoundingSphere(); im.castShadow = false; im.receiveShadow = true;
+    im.computeBoundingSphere(); im.castShadow = false; im.receiveShadow = true; im.userData.far = L.far;
     scene.add(im); chunks.push(im); n += L.items.length;
   }
   list.clear();
@@ -143,5 +144,5 @@ export function buildCrops() {
 }
 const _c = new THREE.Vector3();
 export function updateCrops(cam, far = 320) {
-  for (const im of chunks) { const b = im.boundingSphere; if (!b) continue; im.visible = _c.copy(b.center).distanceTo(cam.position) - b.radius < far; }
+  for (const im of chunks) { const b = im.boundingSphere; if (!b) continue; im.visible = _c.copy(b.center).distanceTo(cam.position) - b.radius < (im.userData.far ? Math.min(far, im.userData.far) : far); }
 }

@@ -13,6 +13,8 @@ import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
 import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { buildCrops, updateCrops } from './crops.js';
+import { furnishYards } from './yards.js';
+import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
 import { loadCrowd } from './crowd.js';
 import { setTownGlow } from './sky.js';
 import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
@@ -417,6 +419,7 @@ export async function build(progress, opts = {}) {
     shore: { d: phTex('brown_mud', 'diff', '1k', true), n: phTex('brown_mud', 'nor_gl', '1k', false, NFLAT), s: 3, tint: [0.85, 0.82, 0.78] },
     urban: { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.1, 1.03, 0.9], norm: 0.44 },
   };
+  const clutterP = loadClutter().catch(e => { console.warn('clutter props:', e); return null; });
   const modelsP = Promise.all(['shrub_02', 'potted_plant_04', 'planter_box_01', 'plastic_crate_01', 'utility_box_02', 'weed_plant_02', 'water_manhole_cover'].map(loadModel));
   const rockModelsP = Promise.all(['rock_moss_set_01', 'boulder_01'].map(loadModel));
   await hf.generate(p => progress('Shaping the valley', p * 0.3));
@@ -1024,7 +1027,9 @@ export async function build(progress, opts = {}) {
       if (drng() < 0.35) { const [bx, bz] = lotW(lot, lot.w * 0.08, sfz + 0.7); standBoard(B, bx, y, bz, lot.r + (drng() - 0.5) * 0.4, [[0.92, 0.9, 0.86], [0.55, 0.36, 0.24], [0.2, 0.3, 0.45]][Math.floor(drng() * 3)]); addCircle(bx, bz, 0.3); }
       if (drng() < 0.4) for (let k = 0, n = 1 + Math.floor(drng() * 3); k < n; k++) { const [bx, bz] = lotW(lot, lot.w * 0.22 + k * 0.62, sfz + 1.05); bikeList.push({ x: bx, y, z: bz, r: lot.r + Math.PI / 2 + (drng() - 0.5) * 0.15 }); }
     } else {
+      const ex0 = extras.length; // (what the house registers — colliders of its service fittings — tells its yard where things are)
       const info = house(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d, district: lot.district, front: lot.front, fence: lot.fence, era: lot.era, back: lot.back }, rng, extras);
+      lot.ex0 = ex0; lot.ex1 = extras.length; lot.yardTaken = [];
       lot.info = info; // gardens, hedges and garden trees are planted from this layout (towngreen.js)
       if (info.carSpot) carSpots.push(info.carSpot);
       if (info.carSpot && !lot.back) { // lowered kerb in front of the parking space, wherever a footway runs past it
@@ -1035,8 +1040,9 @@ export async function build(progress, opts = {}) {
       // yard life: laundry in the side yard, a mailbox by the gate, bicycles beside the car
       const gapL = info.hx - info.W / 2 + lot.w / 2, gapR = lot.w / 2 - info.hx - info.W / 2;
       if (drng() < 0.3 && Math.max(gapL, gapR) > 1.5) { const left = gapL >= gapR, g = left ? gapL : gapR, lx = left ? -lot.w / 2 + g / 2 : lot.w / 2 - g / 2, [rx, rz] = lotW(lot, lx, info.hz - 0.5);
-        dryingRack(B, rx, y, rz, lot.r + Math.PI / 2, drng, Math.min(2.6, info.D - 2)); }
-      if (drng() < 0.45) { const [mx, mz] = lotW(lot, lot.w / 2 - 4.0, lot.d / 2 - 0.4); mailbox(B, mx, y, mz, lot.r, [[0.22, 0.32, 0.52], [0.86, 0.86, 0.84], [0.58, 0.26, 0.2], [0.26, 0.26, 0.28], [0.32, 0.48, 0.36]][Math.floor(drng() * 5)]); }
+        dryingRack(B, rx, y, rz, lot.r + Math.PI / 2, drng, Math.min(2.6, info.D - 2)); lot.hasLaundry = true; const hl = Math.min(2.6, info.D - 2) / 2 + 0.25; lot.yardTaken.push([lx - 0.55, lx + 0.55, info.hz - 0.5 - hl, info.hz - 0.5 + hl]); }
+      if (drng() < 0.45) { lot.yardTaken.push([lot.w / 2 - 4.35, lot.w / 2 - 3.65, lot.d / 2 - 0.75, lot.d / 2]); const [mx, mz] = lotW(lot, lot.w / 2 - 4.0, lot.d / 2 - 0.4); mailbox(B, mx, y, mz, lot.r, [[0.22, 0.32, 0.52], [0.86, 0.86, 0.84], [0.58, 0.26, 0.2], [0.26, 0.26, 0.28], [0.32, 0.48, 0.36]][Math.floor(drng() * 5)]); }
+      if (info.carSpot) lot.yardTaken.push([lot.w / 2 - 1.0, lot.w / 2, lot.d / 2 - 5.0, lot.d / 2 - 3.3]);
       if (info.carSpot && drng() < 0.35) for (let k = 0, n = 1 + Math.floor(drng() * 2); k < n; k++) { const [bx, bz] = lotW(lot, lot.w / 2 - 0.55, lot.d / 2 - 4.6 + k * 0.75); bikeList.push({ x: bx, y, z: bz, r: lot.r + Math.PI / 2 + (drng() - 0.5) * 0.1 }); }
       hf.paint2(0, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z, lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < lot.w / 2 && Math.abs(lz) < lot.d / 2 ? (lz > lot.d / 2 - 6 ? 0.9 : 0.25) : 0; });
       hf.paint2(2, lot.x - 10, lot.z - 10, lot.x + 10, lot.z + 10, (x, z) => { const c = Math.cos(lot.r), s = Math.sin(lot.r), dx = x - lot.x, dz = z - lot.z, lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < lot.w / 2 - 0.3 && Math.abs(lz) < lot.d / 2 - 0.3 && lz > lot.d / 2 - 6.5 ? 1 : 0; });
@@ -1384,6 +1390,9 @@ export async function build(progress, opts = {}) {
   for (const t of green.trees) { t.town = true; (t.kind === 'sakura' ? sakura : trees).push(t); }
   for (const t of estateSak) { const h = hf.groundAt(t.x, t.z); sakura.push({ town: true, x: t.x, y: h - 0.2, z: t.z, s: lerp(6.5, 8.5, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
   for (const t of schoolSak) { const h = hf.groundAt(t.x, t.z); sakura.push({ town: true, x: t.x, y: h - 0.2, z: t.z, s: lerp(7, 9, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) }); }
+  // the house plots' yards (yards.js): paths, beds, decks, vegetable beds, gates, bins and the props of daily life
+  const yardProps = new Map(), yardStats = /[?&]noyards/.test(location.search) ? { plots: 0, arch: {}, items: 0 } : furnishYards({ B, lots, lotW, gy: (x, z) => hf.groundAt(x, z), trees: green.trees, extras, out: { hydras: green.hydras, bushes: green.bushes, pots: green.pots }, props: yardProps, hydraColor });
+  console.info(`yards: ${yardStats.plots} plots furnished (${Object.entries(yardStats.arch).map(([k, v]) => k + ' ' + v).join(', ')}), ${yardStats.items} features`);
   for (const b of green.bushes) bushes.push(b);
   for (const b of danchi.bushes) bushes.push(b);
   for (const hd of danchi.hedges) { const [ax, az] = hd.a, [bx, bz] = hd.b, L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L)), yaw = Math.atan2(-(bz - az), bx - ax), col = new THREE.Color(0.3, 0.46, 0.26);
@@ -1489,6 +1498,12 @@ export async function build(progress, opts = {}) {
   scatterModel(weed, [...weeds, ...green.weeds], true, () => Q.props * 0.3, false, true, { prefab: 'weed', category: 'vegetation', field: 'weeds' });
   scatterModel(crate, crates, true, () => Q.props * 0.4, true, false, { prefab: 'crate', category: 'prop' });
   scatterModel(ubox, boxes, true, () => Q.props * 0.6, true, false, { prefab: 'utility_box', category: 'prop' });
+  { // the props of daily life from the clutter pack (yards, streets): one instanced world object kind per prop
+    const CP = await clutterP;
+    if (CP) { const all = new Map(clutterQueue); for (const [name, items] of yardProps) all.set(name, [...(all.get(name) || []), ...items]);
+      for (const [name, items] of all) clutterScatter(CP, name, items, { dist: 70 * Q.props + 10 }); }
+    clutterQueue.clear();
+  }
   // sewer manholes: flush cast-iron covers on the sewer line, which runs a little off the crown in one lane
   for (const R of ROADS) if (R.kind !== 'path') for (const [a, b] of roadSegs(R)) {
     const L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], off = (R.w / 2) * (0.25 + 0.2 * prng()) * (prng() < 0.5 ? -1 : 1);

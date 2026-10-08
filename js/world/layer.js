@@ -36,6 +36,11 @@ export const CATEGORY = {
   lantern_string: 'lighting', utility_pole: 'lighting', konbini_pole_sign: 'sign', curve_mirror: 'sign', traffic_signal: 'sign', clock_pole: 'sign',
   play_structure: 'play', swings: 'play', seesaw: 'play', horizontal_bars: 'play', climbing_dome: 'play', play_house: 'play', sandpit: 'play', spring_rider: 'play',
   route_bus: 'vehicle', bicycle: 'vehicle',
+  // yards (yards.js) and the props of daily life (clutter.js)
+  garden_path: 'structure', foundation_gravel: 'structure', flower_bed: 'structure', wood_deck: 'structure', vegetable_bed: 'structure', firewood_stack: 'structure',
+  garden_gate: 'fence', refuse_bins: 'furniture', laundry_poles: 'furniture', compost_bin: 'furniture', garden_bench: 'furniture', kiddie_slide: 'play', stone_lantern_small: 'lighting',
+  tires_pile: 'prop', tire_stack: 'prop', wood_planks: 'prop', shovel: 'prop', axe: 'prop', gas_can: 'prop', rain_barrel: 'prop', cardboard_boxes: 'prop', cardboard_stack: 'prop',
+  refuse_sack: 'prop', refuse_sacks: 'prop', brick_edging: 'prop', brick_paving: 'prop', skip_bin: 'furniture', site_pipes: 'prop', site_barrier: 'prop', debris_pile: 'prop',
 };
 const categoryOf = (prefab, meta) => CATEGORY[prefab] || (meta && meta.category) || (/^road_sign/.test(prefab) ? 'sign' : /^rock|boulder/.test(prefab) ? 'rock' : /^tree|bush|hedge|ivy|shrub|weed|bamboo|sapling|log|twigs|fern|stump|plant|hydrangea/.test(prefab) ? 'vegetation' : 'prop');
 export const labelOf = prefab => prefab.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());

@@ -9,6 +9,7 @@ import { cropSet } from './crops.js';
 import { crowdMeshes } from './crowd.js';
 import { torii, shimenawa, toro, offeringBox } from './shrine.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
+import { queueClutter } from './clutter.js';
 
 const plantAt = (B, type, lx, ly, lz, rng, s = 1) => { const p = B.P([lx, ly, lz]); cropSet.add(type, p[0], p[1], p[2], B.F.r + rng() * Math.PI * 2, s * (0.85 + rng() * 0.3)); };
 const addPlatformAt = (p, hx, hz, r, top) => addPlatform(p[0], p[2], hx, hz, r, top);
@@ -104,7 +105,8 @@ function garbagePoint_build(B, x, y, z, r, rng) {
   for (const yy of [0.02, 0.93]) { B.box('alu', 0, yy, -0.45, 1.64, 0.03, 0.03, { color: g }); B.box('alu', 0, yy, 0.45, 1.64, 0.03, 0.03, { color: g }); B.box('alu', -0.8, yy, 0, 0.03, 0.03, 0.94, { color: g }); B.box('alu', 0.8, yy, 0, 0.03, 0.03, 0.94, { color: g }); }
   for (let k = 0; k < 7; k++) B.box('alu', -0.8 + k * 0.267, 0.02, 0.45, 0.012, 0.92, 0.012, { color: g });
   const n = 1 + Math.floor(rng() * 4);
-  for (let k = 0; k < n; k++) B.box('plain', -0.5 + k * 0.33, 0.02, (rng() - 0.5) * 0.3, 0.3, 0.3 + rng() * 0.15, 0.3, { color: rng() < 0.6 ? [0.95, 0.95, 0.9] : [0.95, 0.86, 0.45] });
+  for (let k = 0; k < n; k++) { const z2 = (rng() - 0.5) * 0.3, h = 0.3 + rng() * 0.15; rng(); const p = B.P([-0.52 + k * 0.36, 0.02, z2]);
+    queueClutter(k % 3 === 2 ? 'refuse_sacks' : 'refuse_sack', p[0], p[1], p[2], r + k * 1.7, { s: h / 0.4 * 0.8 }); }
 }
 // drying rack (monohoshi) with laundry, local +X along the poles
 function dryingRack_build(B, x, y, z, r, rng, len = 2.4) {
@@ -172,6 +174,14 @@ function constructionSite_build(B, x, y, z, r, LW, LD, rng, extras) {
     g.fillStyle = '#fff'; g.font = `bold ${Hc * 0.14}px ${JP_FONT}`; g.textAlign = 'center'; g.fillText('工事中', Wc / 2, Hc * 0.16);
     g.fillStyle = '#222'; g.font = `${Hc * 0.1}px ${JP_FONT}`; ['建築主　山田様邸', '施工　桜川工務店', 'ご迷惑をおかけします'].forEach((t, i) => g.fillText(t, Wc / 2, Hc * (0.42 + i * 0.18))); }, 0.05);
   const sp = B.P([-LW / 2 + 2.2, 1.2, fz + 0.05]); sign.position.set(...sp); sign.rotation.y = r; scene.add(sign);
+  { // the yard of the site: a skip, a pile of rubble, pipes and barriers by the open gate (own seed: the town's draws stay)
+    const q = (name, lx, lz, dr = 0, o = {}) => { const p = B.P([lx, 0, lz]); queueClutter(name, p[0], p[1], p[2], r + dr, o); };
+    const back = -LD / 2 + 1.4, side = -LW / 2 + 1.5;
+    q('skip_bin', side + 0.6, back + 0.8, Math.PI / 2); extras.push({ t: 'box', p: B.P([side + 0.6, 0, back + 0.8]), hx: 0.55, hz: 1.0, r });
+    q('debris_pile', side + 0.4, hz + D / 2 + 1.0, 0.3, { s: 0.75 });
+    q('site_pipes', LW / 2 - 1.0, hz, 0); extras.push({ t: 'box', p: B.P([LW / 2 - 1.0, 0, hz]), hx: 0.4, hz: 1.6, r });
+    for (let k = 0; k < 2; k++) q('site_barrier', LW / 2 - 2.6 + k * 1.65, LD / 2 + 0.35, 0);
+  }
 }
 
 // mini excavator (~1.5 t): rubber tracks with rounded ends, dozer blade, slewing body with counterweight, open cab,

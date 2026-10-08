@@ -632,7 +632,7 @@ function house_build(B, lot, rng, extras) {
     inFrame(B, [sx * (LW / 2 - bw / 2 - 0.6), 0, hz], 0, () => barn(B, bw, bd, rng, extras));
   }
   B.defAttr = null;
-  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D, H: roofTop, eave: H, shedSide, hasWall, wallH, gate: doorGap(LW, gateW) };
+  return { carSpot, doorX: hx + doorX, planters: rng() < 0.6, hx, hz, W, D, H: roofTop, eave: H, shedSide, hasWall, wallH, gate: doorGap(LW, gateW), style };
 }
 function barn(B, w, d, rng, extras) {
   const h = 3.2 + rng() * 0.6, post = [0.42, 0.32, 0.24], clad = jitter(rng, pick(rng, [[0.55, 0.5, 0.44], [0.46, 0.5, 0.52], [0.6, 0.36, 0.28]]), 0.04);

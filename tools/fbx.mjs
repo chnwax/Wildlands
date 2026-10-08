@@ -68,19 +68,22 @@ function layer(el, key, idxKey, size, corners, cornerVerts, cornerPoly) {
   return out;
 }
 
-// meshes: [{ name, model, pos (triangle soup, model space), nor, uv }]; models: id -> { name, parent, T, R, S, preR }
+// meshes: [{ name, model, pos (triangle soup, model space), nor, uv, mat (per triangle: index into the model's
+// materials) }]; models: id -> { name, parent, T, R, S, preR, materials: [{ name, color: [r, g, b] }] }
 export function fbxScene(fbx) {
   const objects = fbx.roots.find(n => n.name === 'Objects'), conns = fbx.roots.find(n => n.name === 'Connections');
-  const geos = new Map(), models = new Map(), parent = new Map(), geoModel = new Map();
+  const geos = new Map(), models = new Map(), parent = new Map(), geoModel = new Map(), mats = new Map();
   for (const n of objects.children) {
     const [id, nm] = n.props;
     if (n.name === 'Geometry' && n.props[2] === 'Mesh') geos.set(id, n);
+    if (n.name === 'Material') { const p = P70(n); mats.set(id, { name: String(nm).split('::')[0], color: (p.DiffuseColor || p.Diffuse || [0.8, 0.8, 0.8]).map(Number) }); }
     if (n.name === 'Model') { const p = P70(n); models.set(id, { id, name: String(nm).split('::')[0], kind: n.props[2], T: p['Lcl Translation'] || [0, 0, 0], R: p['Lcl Rotation'] || [0, 0, 0], S: p['Lcl Scaling'] || [1, 1, 1], preR: p.PreRotation || [0, 0, 0], order: p.RotationOrder?.[0] || 0 }); }
   }
   for (const c of conns.children) {
     if (c.props[0] !== 'OO') continue;
     const [, a, b] = c.props;
     if (geos.has(a) && models.has(b)) geoModel.set(a, b);
+    else if (mats.has(a) && models.has(b)) { const m = models.get(b); (m.materials ||= []).push(mats.get(a)); }
     else if (models.has(a)) parent.set(a, b);
   }
   for (const [id, m] of models) m.parent = models.has(parent.get(id)) ? parent.get(id) : null;
@@ -92,10 +95,13 @@ export function fbxScene(fbx) {
     const N = cornerVerts.length;
     const nor = layer(child(g, 'LayerElementNormal'), 'Normals', 'NormalsIndex', 3, N, cornerVerts, cornerPoly);
     const uv = layer(child(g, 'LayerElementUV'), 'UV', 'UVIndex', 2, N, cornerVerts, cornerPoly);
-    const pos = [], nn = [], tt = [];
+    const lm = child(g, 'LayerElementMaterial'), mlist = lm ? child(lm, 'Materials').props[0] : null, mmap = lm ? child(lm, 'MappingInformationType').props[0] : 'AllSame';
+    const pos = [], nn = [], tt = [], mt = [];
     let start = 0;
     for (let c = 0; c < N; c++) {
       if (PI[c] >= 0) continue;
+      const pm = mlist ? (mmap === 'AllSame' ? mlist[0] : mlist[cornerPoly[start]] ?? 0) : 0;
+      for (let k = start + 1; k + 1 <= c; k++) mt.push(pm);
       for (let k = start + 1; k + 1 <= c; k++) for (const q of [start, k, k + 1]) {  // fan-triangulate each polygon
         const v = cornerVerts[q]; pos.push(V[v * 3], V[v * 3 + 1], V[v * 3 + 2]);
         if (nor) nn.push(nor[q * 3], nor[q * 3 + 1], nor[q * 3 + 2]);
@@ -103,7 +109,7 @@ export function fbxScene(fbx) {
       }
       start = c + 1;
     }
-    meshes.push({ name: String(g.props[1]).split('::')[0], model: geoModel.get(id), pos, nor: nn, uv: tt });
+    meshes.push({ name: String(g.props[1]).split('::')[0], model: geoModel.get(id), pos, nor: nn, uv: tt, mat: mt });
   }
   const settings = P70(fbx.roots.find(n => n.name === 'GlobalSettings'));
   return { meshes, models, settings };

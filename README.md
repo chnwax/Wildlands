@@ -42,4 +42,5 @@ Press `?` in the editor for every shortcut. The world files are described in [WO
 ## Credits
 
 - Cars: *Low Poly Soviet Car Pack* (poly.pizza), imported with `node tools/cars-import.mjs` from `AssetsToUse/` into `assets/models/cars/`.
+- Yard and street props (tyres, rain barrel, tools, refuse sacks, skip, site pipes and barriers): *Urban Clutter* (poly.pizza), imported with `node tools/clutter-import.mjs` into `assets/models/clutter/`.
 - People: Quaternius (CC0). Scanned models and textures: Poly Haven (CC0).
