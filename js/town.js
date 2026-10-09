@@ -464,10 +464,33 @@ export async function build(progress, opts = {}) {
   // bridgeheads (橋詰): where lane R's footway comes round the corner off a bridge road, the riverside walkway runs a few
   // metres behind it — the gap between the two is paved into one bridgehead square, its surface eased from the footway's
   // level to the walkway's (and to its ramp's, up to the bridge road)
+  // The walkway ramps up to the bridge road (1:12 over BRAMP) to the height of the road's footway at its back edge, read
+  // from the footway itself, so the ramp meets it without a step
+  const BRAMP = 5.0, rampTops = new Map();
+  const rampTop = (bz, E, sd, e) => { const k = bz + ',' + sd + ',' + e; if (!rampTops.has(k)) { const z = bz + e * (E - 0.06); let y = null;
+    for (const rd of [16.1, 15.4, 16.9]) { y = RN.walkY(riverX(z) + sd * rd, z); if (y !== null) break; } rampTops.set(k, y ?? Y0 + 0.5); } return rampTops.get(k); };
+  const bankRampY = (bz, E, sd, z) => { const d = Math.abs(z - bz); return lerp(rampTop(bz, E, sd, z >= bz ? 1 : -1), Y0 + 0.12, clamp((d - E) / BRAMP, 0, 1)); };
   for (const [bz, , id] of BRIDGES) { const E = BRIDGE_EDGE[id], rx = riverX(bz);
-    RN.FW.joins.push({ max: 3.8, box: [rx - 26, bz - E - 24, rx - 17, bz + E + 24],
+    let r0 = Infinity, r1 = -Infinity; for (let z = bz - E - 24; z <= bz + E + 24; z += 1) { r0 = Math.min(r0, riverX(z)); r1 = Math.max(r1, riverX(z)); } // (the river curves past the bridge)
+    RN.FW.joins.push({ max: 7.0, box: [r0 - 30, bz - E - 24, r1 - 14, bz + E + 24],
       dist: (x, z) => { const d = Math.abs(z - bz); if (d < E || d > E + 24) return null; const rd = riverX(z) - x; return rd < 15 ? null : rd - 17.6; },
-      y: (x, z) => { const d = Math.abs(z - bz); return lerp(Y0 + 0.385, Y0 + 0.12, clamp((d - E) / 3, 0, 1)); } }); }
+      y: (x, z) => bankRampY(bz, E, -1, z) }); }
+  { // the ground along the riverside walkways' outer edge lies level with them (the lawn running flat up to the paving's
+    // edge instead of sagging away below it), easing back to the natural ground over a few metres; clear of the roads,
+    // the bridge approaches and the railway embankment
+    const { HN, HALF, CELL, H } = hf, target = Y0 + 0.08;
+    for (let j = 0; j < HN; j++) { const z = -HALF + j * CELL; if (Math.abs(z) > RIVER_END + 1 || Math.abs(z + 80) < 12) continue;
+      if (BRIDGES.some(([bz, , id]) => Math.abs(z - bz) < BRIDGE_EDGE[id] + 1.5)) continue;
+      const rx = riverX(z);
+      for (let i = Math.max(0, Math.floor((rx - 24 + HALF) / CELL)); i <= Math.min(HN - 1, Math.ceil((rx + 24 + HALF) / CELL)); i++) {
+        const x = -HALF + i * CELL, rd = Math.abs(x - riverX(z)); if (rd < 14.9 || rd > 22.5) continue;
+        if ([[0, 0], [1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].some(([dx, dz]) => RN.roadAt(x + dx, z + dz))) continue;
+        // (beside the bridgeheads on the west bank, out to lane R, the ground lies under the bridgehead square's paving)
+        const head = x < rx && BRIDGES.some(([bz, , id]) => Math.abs(z - bz) < BRIDGE_EDGE[id] + 24);
+        const w = head ? 1 : 1 - smoothstep(19.6, 22.5, rd), k = j * HN + i; H[k] = head ? Math.min(lerp(H[k], target, w), target) : lerp(H[k], target, w);
+      }
+    }
+  }
   const topY = (x, z) => RN.topY(x, z, (a, b) => hf.groundAt(a, b));
   const nearInter = (x, z, R, pad = 1.2) => inters.some(I => I.roads.includes(R) && (() => { const o = I.roads[0] === R ? I.roads[1] : I.roads[0]; return Math.hypot(x - I.p[0], z - I.p[1]) < o.w / 2 + (o.walk || 0) + pad; })());
   const sOf = (id, x, z) => { const n = RN.byId.get(id); let best = null; for (const g of n.PL.segs) { const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t); if (!best || d < best.d) best = { d, s: g.s0 + t }; } return best.s; };
@@ -483,7 +506,8 @@ export async function build(progress, opts = {}) {
     for (const arm of I.arms) {
       const R = arm.n.R, other = arm.n.R === r1 ? r2 : r1;
       const hasX = ((R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340 || R.district && other.district || R.district && other.id === 'A') && !other.noMarks; // no zebras across alley mouths
-      const d = other.w / 2 + I.rF + 0.4 + band / 2;
+      // (past the curb returns on both sides — on a skewed or curving junction their tangent points lie further out)
+      const tc = Math.max(0, ...Object.values(arm.cornerT).map(Math.abs)), d = Math.max(other.w / 2 + I.rF + 0.4, tc + 1.4) + band / 2;
       const cq = RN.sampleAt(arm.n, clamp(arm.s + arm.dir * d, 0, arm.n.PL.len));
       if (hasX && !onBridge(cq.x, cq.z)) zebras.push({ id: R.id, s: arm.s + arm.dir * d, band, I }); else if (hasX) continue;
       if (isSignal(I)) { // every approach stops at its line on red
@@ -624,12 +648,12 @@ export async function build(progress, opts = {}) {
   const stationCars = [], forecourt = stationForecourt(B, { Y0, RN, sOf, rng: mulberry32(55), parked: stationCars });
   // river banks: concrete revetments with railings, plus bridges. Nothing grows through the revetment slabs or
   // under the walkway deck (the ground there sits below the concrete)
-  hf.paintPave(100, -RIVER_END - 1, 330, RIVER_END + 1, (x, z) => Math.abs(z) < RIVER_END + 0.4 && Math.abs(x - riverX(z)) < 17.65 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
+  hf.paintPave(100, -RIVER_END - 1, 330, RIVER_END + 1, (x, z) => Math.abs(z) < RIVER_END + 0.4 && Math.abs(x - riverX(z)) < 17.5 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
   // nothing grows anywhere in the channel, along its whole length (the bed under the water; the grass rule keeps blades
   // off the water's edge as well)
   hf.paint2(2, -hf.HALF, -hf.HALF, hf.HALF, hf.HALF, (x, z) => smoothstep(REV_WL - 0.4, REV_WL - 1.6, Math.abs(x - riverX(z))));
   // where the bank walkway stops: the two road bridges (it meets their footways at the parapet line) and the railway
-  const WALK_GAPS = [...BRIDGES.map(([bz, , id]) => [bz - BRIDGE_EDGE[id] - 3.0, bz + BRIDGE_EDGE[id] + 3.0]), [-90.6, -69.4]]; // (ramps up to the roads / pedestrian crossings take over there)
+  const WALK_GAPS = [...BRIDGES.map(([bz, , id]) => [bz - BRIDGE_EDGE[id] - BRAMP, bz + BRIDGE_EDGE[id] + BRAMP]), [-90.6, -69.4]]; // (ramps up to the roads / pedestrian crossings take over there)
   // the revetment's colour by height: [y, vertex colour] (the slab's photo texture and weathering stay continuous)
   const REV_S = Math.hypot(2.4, Y0 - 0.3) / (Y0 - 0.3), DRY = [0.8, 0.8, 0.78];
   const REV_BANDS = [[0.45, [0.42, 0.43, 0.36]], [RIVER_LV - 0.45, [0.4, 0.44, 0.34]], [RIVER_LV - 0.06, [0.25, 0.32, 0.19]], [RIVER_LV + 0.08, [0.29, 0.33, 0.24]],
@@ -664,7 +688,7 @@ export async function build(progress, opts = {}) {
         B.beam('alu', [ra, Y0 + 1.07, za], [rb, Y0 + 1.07, zb], 0.07, 0.07, rc);
         B.beam('alu', [ra, Y0 + 0.62, za], [rb, Y0 + 0.62, zb], 0.035, 0.035, rc);
         for (let zp = za; zp <= zb + 1e-3; zp += Math.max(0.5, L / Math.max(1, Math.round(L / 2)))) { const t = (zp - za) / L; B.box('alu', lerp(ra, rb, t), Y0 + 0.1, zp, 0.06, 0.97, 0.06, rc); }
-        addBox((ra + rb) / 2, (za + zb) / 2, 0.1, L / 2 + 0.05, Math.atan2(rb - ra, L));
+        addBox((ra + rb) / 2, (za + zb) / 2, 0.06, L / 2, Math.atan2(rb - ra, L));
       }
     }
   }
@@ -710,19 +734,21 @@ export async function build(progress, opts = {}) {
   }
   // the bank walkways meet each bridge road at grade: a ramp up from the walkway to the back of the road's footway (or
   // its gutter), a railing along the river side, and a zebra crossing over the road on the walkway's line
-  const RAMP = 3.0, TOPY = Y0 + 0.385;
   for (const [bz, , id] of BRIDGES) for (const sd of [-1, 1]) for (const e of [-1, 1]) {
-    const E = BRIDGE_EDGE[id], z1 = bz + e * (E + RAMP), z2 = bz + e * E, N = 5, rc = { color: [0.3, 0.52, 0.47] };
-    const W = (z, rd, y) => [riverX(z) + sd * rd, y, z], yAt = z => lerp(Y0 + 0.12, TOPY, Math.abs(z - z1) / RAMP);
+    const E = BRIDGE_EDGE[id], z1 = bz + e * (E + BRAMP), z2 = bz + e * E, N = 10, rc = { color: [0.3, 0.52, 0.47] };
+    const W = (z, rd, y) => [riverX(z) + sd * rd, y, z], yAt = z => bankRampY(bz, E, sd, z);
     B.frame(0, 0, 0, 0);
     for (let k = 0; k < N; k++) { const za = lerp(z1, z2, k / N), zb = lerp(z1, z2, (k + 1) / N), q = [W(za, 14.6, yAt(za)), W(zb, 14.6, yAt(zb)), W(zb, 17.6, yAt(zb)), W(za, 17.6, yAt(za))];
       B.poly('pavement', q, [0, 1, 0], { uv: 1.5, color: [0.88, 0.86, 0.82] });
       B.poly('concrete', [W(za, 17.6, Y0 - 1.2), W(zb, 17.6, Y0 - 1.2), q[2], q[3]], [sd, 0, 0], { uv: 2, color: [0.72, 0.72, 0.7] });
       B.poly('stone', [W(za, 14.6, Y0 - 0.2), W(zb, 14.6, Y0 - 0.2), q[1], q[0]], [-sd, 0, 0], { uv: 2, color: [0.8, 0.8, 0.78] }); }
-    const ra = W(z1, 15.0, yAt(z1)), rb = W(z2 - e * 0.15, 15.0, yAt(z2));
-    B.beam('alu', [ra[0], ra[1] + 0.95, z1], [rb[0], rb[1] + 0.95, rb[2]], 0.07, 0.07, rc); B.beam('alu', [ra[0], ra[1] + 0.5, z1], [rb[0], rb[1] + 0.5, rb[2]], 0.035, 0.035, rc);
-    for (const t of [0, 0.5, 1]) { const p = [lerp(ra[0], rb[0], t), lerp(ra[1], rb[1], t), lerp(z1, rb[2], t)]; B.box('alu', p[0], p[1] - 0.02, p[2], 0.06, 0.97, 0.06, rc); }
-    addBox((ra[0] + rb[0]) / 2, (z1 + rb[2]) / 2, 0.1, Math.abs(rb[2] - z1) / 2, 0);
+    // the railing goes on from the walkway's along the river's curve (in pieces, its collider too: a single straight
+    // box from the ramp's foot cut across the walkway's line and stopped walkers there)
+    const RN2 = 5, rp = []; for (let k = 0; k <= RN2; k++) { const zz = lerp(z1, z2 - e * 0.15, k / RN2); rp.push(W(zz, 15.0, yAt(zz))); }
+    for (let k = 0; k < RN2; k++) { const a = rp[k], b2 = rp[k + 1];
+      B.beam('alu', [a[0], a[1] + 0.95, a[2]], [b2[0], b2[1] + 0.95, b2[2]], 0.07, 0.07, rc); B.beam('alu', [a[0], a[1] + 0.5, a[2]], [b2[0], b2[1] + 0.5, b2[2]], 0.035, 0.035, rc);
+      addBox((a[0] + b2[0]) / 2, (a[2] + b2[2]) / 2, 0.06, Math.hypot(b2[0] - a[0], b2[2] - a[2]) / 2, Math.atan2(b2[0] - a[0], b2[2] - a[2])); }
+    for (const k of [0, 2, 4, RN2]) { const p = rp[k]; B.box('alu', p[0], p[1] - 0.02, p[2], 0.06, 0.97, 0.06, rc); }
     hf.paintPave(riverX(z2) + sd * 14.4 - 3.5, Math.min(z1, z2) - 0.2, riverX(z2) + sd * 14.4 + 3.5, Math.max(z1, z2) + 0.2, (x, z) => { const rd = Math.abs(x - riverX(z)); return rd > 14.3 && rd < 17.65 ? 1 : 0; });
   }
   // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
@@ -1124,12 +1150,12 @@ export async function build(progress, opts = {}) {
   RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470 }); // guide blocks in town, not out on the valley road
   // the footways (footways.js): their paving, and their edges where they meet no kerb — edging, a skirt to the ground
   RN.FW.build(B);
-  RN.FW.buildEdges(B, { ground: (x, z) => hf.groundAt(x, z) });
+  RN.FW.buildEdges(B, { ground: (x, z) => hf.groundAt(x, z), skirt: (x, z) => Math.abs(x - riverX(z)) > 17.8 });
   { // footways standing above the ground (embanked approaches out of town, the bridge ramps): the ground behind their back
     // edges is built up into a grassy bank at about 1:1.6, instead of the edge standing out of the lawn
     const { HN, HALF, CELL, H } = hf;
     for (const ch of RN.FW.chains) for (let i = 0; i < ch.pts.length; i++) {
-      const p = ch.pts[i], o = ch.n[i]; if (p.term === 'kerb' || p.term === 'join') continue;
+      const p = ch.pts[i], o = ch.n[i]; if (p.term === 'kerb' || p.term === 'join' || p.term === 'deck') continue;
       const top = p.Hs; if (top - hf.groundAt(p.x, p.z) < 0.1 || Math.abs(p.x - riverX(p.z)) < 20) continue;
       for (let j = Math.floor((p.z - 4 + HALF) / CELL); j <= Math.ceil((p.z + 4 + HALF) / CELL); j++) for (let ii = Math.floor((p.x - 4 + HALF) / CELL); ii <= Math.ceil((p.x + 4 + HALF) / CELL); ii++) {
         const vx = -HALF + ii * CELL, vz = -HALF + j * CELL, dd = (vx - p.x) * o[0] + (vz - p.z) * o[1], across = Math.abs((vx - p.x) * o[1] - (vz - p.z) * o[0]);
@@ -1370,8 +1396,7 @@ export async function build(progress, opts = {}) {
     // benches facing the water between the trees on the east promenade
     if (n % 5 === 2 && Math.abs(z) < 360 && bankClear(z + 4)) { const bx = riverX(z + 4) + 16.4; bench(LB, bx, Y0 + 0.12, z + 4, -Math.PI / 2); }
   }
-  // gravel promenade on the east bank
-  hf.paint2(0, 150, -760, 280, 760, (x, z) => { const d = Math.abs(x - riverX(z)); return d > 14 && d < 18.6 ? 1 : 0; });
+  // (no gravel strip along the walkways: the lawn runs up to their edge)
   for (let z = -284; z < -228; z += 9) for (const sd of [-1, 1]) {
     const x = SHRINE.x + sd * (6.2 + srng() * 0.6), zz = z + (srng() - 0.5) * 1.5;
     if (!occRect(x, zz, 1.0, 1.0, 0, 0, true)) riverTrees.push({ x, y: hf.groundAt(x, zz) - 0.2, z: zz, s: lerp(7, 9, srng()), sx: 1, r: srng() * 6.28, c: sakuraColor(srng) });
@@ -1435,7 +1460,7 @@ export async function build(progress, opts = {}) {
     // a row of the verge at each point of the footways' edges that are not a kerb, facing out from the paving; the bank is
     // wider where the paving stands higher above the lawn (1:1.6 or so), and stops at whatever else is there
     const edges = [];
-    for (const ch of RN.FW.chains) edges.push(ch.pts.map((p, i) => { const l = ch.n[i]; if (p.term === 'kerb' || p.term === 'join') return { bx: p.x, bz: p.z, l, top: null, w: 0 };
+    for (const ch of RN.FW.chains) edges.push(ch.pts.map((p, i) => { const l = ch.n[i]; if (p.term === 'kerb' || p.term === 'join' || p.term === 'deck') return { bx: p.x, bz: p.z, l, top: null, w: 0 };
       const top = p.Hs, g0 = hf.groundAt(p.x + l[0] * 0.2, p.z + l[1] * 0.2); let w = 0;
       if (top - g0 > 0.04) { const want = clamp(0.6 + (top - g0) * 1.6, 0.6, 2.4); for (let d = 0.15; d <= want + 0.01; d += 0.15) { if (blocked(p.x + l[0] * d, p.z + l[1] * d)) break; w = d; } }
       return { bx: p.x, bz: p.z, l, top, w }; }));
@@ -1675,12 +1700,20 @@ export async function build(progress, opts = {}) {
       const rd = Math.abs(x - riverX(z)), dz = Math.abs(z + 80);
       if (rd > 14.55 && rd < 17.65 && dz < 6.6) return Y0 + 0.447;                                                   // pedestrian level crossing
       if (rd > 14.55 && rd < 17.65 && dz < 10.6) return Math.max(g, lerp(Y0 + 0.447, Y0 + 0.12, (dz - 6.6) / 4.0)); // its ramps
-      if (rd > 14.55 && rd < 17.65) for (const [bz, , id] of BRIDGES) { const E = BRIDGE_EDGE[id], d = Math.abs(z - bz); if (d >= E && d < E + 3.0) return lerp(Y0 + 0.385, Y0 + 0.12, (d - E) / 3.0); }
+      if (rd > 14.55 && rd < 17.65) for (const [bz, , id] of BRIDGES) { const E = BRIDGE_EDGE[id], d = Math.abs(z - bz); if (d >= E && d < E + BRAMP) return bankRampY(bz, E, Math.sign(x - riverX(z)), z); }
       if (Math.abs(z) > RIVER_END + 0.4) return g; // past the revetments: natural banks
       if (rd > 14.55 && rd < 17.65) return Math.max(g, Y0 + 0.12); // bank-top walkway
       return rd > 12.2 && rd <= 14.55 ? Math.max(g, revY(rd)) : g; // the revetment slab (the ground lies under it) and its end wall
     },
-    normalAt: (x, z, out) => { const rd = x - riverX(z); if (Math.abs(rd) > 12.2 && Math.abs(rd) <= 14.55 && Math.abs(z) <= RIVER_END) { const l = Math.hypot(REV_K, 1); return out.set(-Math.sign(rd) * REV_K / l, 1 / l, 0); } return hf.normalAt(x, z, out); },
+    normalAt: (x, z, out) => {
+      // on anything built (footway, road, bridge deck, walkway, crossing): the normal of the walked surface itself, not of
+      // the terrain or the revetment slope under it (on the bridges the revetment's slope made level paving push the
+      // player back as if it were a steep bank)
+      const y0 = world.groundAt(x, z);
+      if (Math.abs(y0 - hf.groundAt(x, z)) > 0.03 || RN.roadAt(x, z)) { const h = 0.3, gx = world.groundAt(x + h, z) - world.groundAt(x - h, z), gz = world.groundAt(x, z + h) - world.groundAt(x, z - h);
+        return out.set(-gx / (2 * h), 1, -gz / (2 * h)).normalize(); }
+      const rd = x - riverX(z); if (Math.abs(rd) > 12.2 && Math.abs(rd) <= 14.55 && Math.abs(z) <= RIVER_END) { const l = Math.hypot(REV_K, 1); return out.set(-Math.sign(rd) * REV_K / l, 1 / l, 0); }
+      return hf.normalAt(x, z, out); },
     waterAt: (x, z) => Math.abs(x - riverX(z)) < 16 ? RIVER_LV : -1e9,
     waterLevel: RIVER_LV,
     district: danchi,

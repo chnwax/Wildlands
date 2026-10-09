@@ -652,7 +652,7 @@ export function updateCrossings(dt, t) {
 // between the tracks, black rubber gauge panels inside each track, every rail in its own flangeway with steel guard
 // angles, concrete edge beams holding back the ballast on both sides, yellow edge lines and warning tactile blocks at
 // both ends. Each approach ramps up from the path at 1 in 12 with a grated drain across its foot, a railing on the
-// open (river) side, a pipe guard fence on the other and a pair of staggered bollard hoops; at the top of each ramp a
+// open (river) side and a pipe guard fence on the other; at the top of each ramp a
 // pedestrian barrier machine with a short striped boom, a warning post with twin lamps, crossbuck, bell, a name
 // plate, an emergency button and a stop sign. Returns the crossing (animated with the road crossings).
 export function pedCrossing(B, { cx, sd, y0, hw = 1.5, name = '桜川河畔踏切', zA = -86.6, zB = -73.4, ramp = 4.0, pathY = y0 + 0.12 }) {
@@ -727,13 +727,6 @@ export function pedCrossing(B, { cx, sd, y0, hw = 1.5, name = '桜川河畔踏�
       for (const f of [1, 0.5]) { const a = E(zs[0], u, yAt(zs[0]) + h * f), b = E(zs[2], u, yAt(zs[2]) + h * f); B.beam('steel', a, b, f === 1 ? r * 2 : r, f === 1 ? r * 2 : r, C); }
       const a = E(zs[0], u, 0), b = E(zs[2], u, 0); addBox((a[0] + b[0]) / 2, (a[2] + b[2]) / 2, 0.06, Math.abs(b[2] - a[2]) / 2, Math.atan2(b[0] - a[0], b[2] - a[2]), -1e9, pathY + h + 0.3);
     }
-    // staggered bollard hoops (車止め) at the foot: one from each side, a bicycle slows through, a car can't enter
-    for (const [s, dz] of [[-1, 0.9], [1, 1.9]]) { const zz = zf + e * dz, uc = s * hw * 0.35, W2 = hw * 0.9, H2 = 0.85, BY = pathY, uL = uc - W2 / 2, uR = uc + W2 / 2;
-      const hoop = [E(zz, uL, BY - 0.05), E(zz, uL, BY + H2 - 0.1), E(zz, uL + 0.1, BY + H2), E(zz, uR - 0.1, BY + H2), E(zz, uR, BY + H2 - 0.1), E(zz, uR, BY - 0.05)];
-      const YB = [0.95, 0.78, 0.1], BK = [0.1, 0.1, 0.1];
-      for (let k = 0; k + 1 < hoop.length; k++) B.beam('steel', hoop[k], hoop[k + 1], 0.055, 0.055, { color: k === 2 ? BK : YB });
-      for (const u of [uL, uR]) for (const f of [0.3, 0.6]) { const p = E(zz, u, BY + H2 * f); B.cyl('steel', p[0], p[1], p[2], 0.032, 0.032, 0.09, 10, { color: BK }); }
-      const p = E(zz, uc, 0); addBox(p[0], p[2], W2 / 2, 0.06, 0, -1e9, BY + 0.9); }
   }
   // ---- warning equipment at the top of each ramp, on the land side of the path
   const c = { x: cx((zA + zB) / 2), active: false, t: 0, arms: [], lamps: [], bell: new Emitter('bell'), roadW: 2 * hw + 0.4, ped: true };

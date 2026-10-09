@@ -87,9 +87,12 @@ export class GeoBuilder {
   // triangle or quad with its winding chosen so it faces along `hint` (local frame)
   poly(mat, pts, hint, opt = {}) {
     const n = cross(sub(pts[1], pts[0]), sub(pts[pts.length - 1], pts[0]));
-    let p = pts, uvs = opt.uvs, colors = opt.colors;
-    if (n[0] * hint[0] + n[1] * hint[1] + n[2] * hint[2] < 0) { p = [...pts].reverse(); if (uvs) uvs = [...uvs].reverse(); if (colors) colors = [...colors].reverse(); }
-    const o = uvs || colors ? Object.assign({}, opt, { uvs, colors }) : opt;
+    let p = pts, uvs = opt.uvs, colors = opt.colors, normals = opt.normals, attr = opt.attr;
+    // (turned over: every per-vertex list turns with the points — the paving's slab coordinates (attr) did not, and the
+    // slabs smeared across every flipped polygon)
+    if (n[0] * hint[0] + n[1] * hint[1] + n[2] * hint[2] < 0) { p = [...pts].reverse(); if (uvs) uvs = [...uvs].reverse(); if (colors) colors = [...colors].reverse(); if (normals) normals = [...normals].reverse();
+      if (attr) { attr = Object.assign({}, attr); for (const k in attr) if (Array.isArray(attr[k]) && attr[k].length === pts.length) attr[k] = [...attr[k]].reverse(); } }
+    const o = uvs || colors || normals || attr ? Object.assign({}, opt, { uvs, colors, normals, attr }) : opt;
     if (p.length === 3) this.tri(mat, p[0], p[1], p[2], o); else this.quad(mat, p[0], p[1], p[2], p[3], o);
   }
   // box with chamfered edges (bevel b): edges and corners catch the light, so things stop reading as raw primitives

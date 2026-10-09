@@ -471,10 +471,16 @@ export function buildDanchi(ctx) {
 
   // ---- parking courts
   const visitorBays = [];
-  for (const [id, ex0, ez0, yaw, len0, rows, visitors = 0] of PARKING) {
+  for (const [id, ex1, ez1, yaw, len0, rows, visitors = 0] of PARKING) {
     const n = RN.byId.get(id), fx = Math.sin(yaw), fz = Math.cos(yaw), lx = Math.cos(yaw), lz = -Math.sin(yaw), D = rows === 2 ? 16 : 11;
+    // the court starts behind the street's footway: its entry is moved in along its own axis until its front (both
+    // corners and the middle) is clear of the footway and the carriageway — on the curving avenue the planned entry lay
+    // on the footway, and the court's front corner over it
+    const offStreet = (x, z) => RN.walkY(x, z) === null && !RN.roadAt(x, z);
+    let t0 = 0; for (; t0 < 8; t0 += 0.25) if ([-1, 0, 1].every(e => offStreet(ex1 + fx * (t0 + 0.4) + lx * e * (D / 2 + 0.3), ez1 + fz * (t0 + 0.4) + lz * e * (D / 2 + 0.3)))) break;
+    const ex0 = ex1 + fx * t0, ez0 = ez1 + fz * t0;
     // a court runs in from its street only as far as the buildings' envelopes (with its hedges and lamps) leave room
-    let len = len0; const fits = L => { const cx = ex0 + fx * (L / 2 + 0.5), cz = ez0 + fz * (L / 2 + 0.5); return !conflicts([{ x: cx, z: cz, hw: D / 2 + 1.6, hd: L / 2 + 0.3, r: yaw }], false, true).length; };
+    let len = len0 - Math.ceil(t0 / 2) * 2; const fits = L => { const cx = ex0 + fx * (L / 2 + 0.5), cz = ez0 + fz * (L / 2 + 0.5); return !conflicts([{ x: cx, z: cz, hw: D / 2 + 1.6, hd: L / 2 + 0.3, r: yaw }], false, true).length; };
     while (len >= 14 && !fits(len)) len -= 2; if (len < 14) continue;
     const cx = ex0 + fx * (len / 2 + 0.5), cz = ez0 + fz * (len / 2 + 0.5), y = gy(cx, cz) + 0.02;
     // the court: asphalt slab in a concrete kerb, the aisle down the middle, a driveway apron across the footway
@@ -508,14 +514,27 @@ export function buildDanchi(ctx) {
       B.frame(cx, y, cz, yaw); }
     for (const vp of visitorBays.splice(0)) { const m = signMesh(1.2, 0.5, (g, W2, H2) => { g.clearRect(0, 0, W2, H2); g.fillStyle = '#e8eee6'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `bold ${H2 * 0.8}px ${JP_FONT}`; g.fillText('来客', W2 / 2, H2 * 0.55); }, 0.05, 128, { back: 'flat', alpha: 0.4, transparent: true, roughness: 0.62 }); // (painted on the bay)
       m.position.set(vp[0], vp[1] + 0.001, vp[2]); m.rotation.set(-Math.PI / 2, 0, yaw + Math.PI / 2, 'YXZ'); scene.add(m); }
-    // driveway apron through the kerb line of the street, and a lamp at the court's far corners
-    B.bbox('concrete', 0, -0.1, -len / 2 - 0.8, 6.2, 0.12, 1.6, 0.01, { color: [0.74, 0.74, 0.72], skip: 'ny' });
+    // the driveway apron from the back of the street's footway (its kerb lowered there) to the court's front, its two
+    // sides run back along the court's axis until they meet the footway, so it closes on the footway's own edge
     B.frame(0, 0, 0, 0);
+    const apron = [-1, 1].map(e => { const fxp = ex0 + fx * 0.5 + lx * e * 3.1, fzp = ez0 + fz * 0.5 + lz * e * 3.1;
+      let bk = null; for (let t = 0; t <= 9; t += 0.05) { const px = fxp - fx * t, pz = fzp - fz * t, wy = RN.walkY(px, pz); if (wy !== null) { bk = [px + fx * 0.02, wy, pz + fz * 0.02]; break; } if (RN.roadAt(px, pz)) break; }
+      return { f: [fxp, y + 0.04, fzp], b: bk || [fxp - fx * 1.6, gy(fxp - fx * 1.6, fzp - fz * 1.6) + 0.02, fzp - fz * 1.6] }; });
+    { const q = [apron[0].b, apron[1].b, apron[1].f, apron[0].f], m = 4;
+      for (let k = 0; k < m; k++) { const a0 = q[0].map((v, i) => lerp(v, q[3][i], k / m)), a1 = q[0].map((v, i) => lerp(v, q[3][i], (k + 1) / m)), b0 = q[1].map((v, i) => lerp(v, q[2][i], k / m)), b1 = q[1].map((v, i) => lerp(v, q[2][i], (k + 1) / m));
+        B.poly('concrete', [a0, b0, b1, a1], [0, 1, 0], { color: [0.74, 0.74, 0.72], uv: 1.5 }); }
+      for (const e of [0, 1]) { const A = apron[e]; B.poly('concrete', [[A.b[0], A.b[1] - 0.25, A.b[2]], [A.f[0], A.f[1] - 0.25, A.f[2]], A.f, A.b], [lx * (e ? 1 : -1), 0, lz * (e ? 1 : -1)], { color: [0.7, 0.7, 0.68] }); } }
     const sEntry = RN.byId.get(id) ? (() => { let best = null; for (const g of n.PL.segs) { const t = clamp((ex0 - g.a[0]) * g.d[0] + (ez0 - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(ex0 - g.a[0] - g.d[0] * t, ez0 - g.a[1] - g.d[1] * t); if (!best || d < best.d) best = { d, s: g.s0 + t, side: Math.sign((ex0 - g.a[0]) * -g.d[1] + (ez0 - g.a[1]) * g.d[0]) }; } return best; })() : null;
     if (sEntry) RN.cuts.push({ id, side: sEntry.side, s0: sEntry.s - 3.2, s1: sEntry.s + 3.2 });
     for (const e of [-1, 1]) { const px = cx + lx * e * (D / 2 + 0.8) + fx * (len / 2 - 2), pz = cz + lz * e * (D / 2 + 0.8) + fz * (len / 2 - 2); streetLamp(px, pz, yaw + Math.PI + e * 0.4); }
     occRect(cx, cz, D / 2 + 0.3, len / 2 + 0.3, yaw, 1, 4);
-    pave(cx - len, cz - len, cx + len, cz + len, (px, pz) => inRect(px, pz, cx, cz, yaw, D / 2 + 0.3, len / 2 + 0.3) || inRect(px, pz, ex0 - fx * 0.3, ez0 - fz * 0.3, yaw, 3.3, 1.4) ? 1 : 0);
+    { const ap = [apron[0].b, apron[1].b, apron[1].f, apron[0].f].map(v => [v[0], v[2]]);
+      pave(cx - len, cz - len, cx + len, cz + len, (px, pz) => inRect(px, pz, cx, cz, yaw, D / 2 + 0.3, len / 2 + 0.3) || inPoly(ap, px, pz) ? 1 : 0); }
+    // the court is paving of its own for the district's paths: one that reaches it ends at its edge (walkers cross the
+    // court on its asphalt) instead of being laid on under the slab
+    net.addArea([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => [cx + lx * u * (D / 2 + 0.16) + fx * v * (len / 2 + 0.16), cz + lz * u * (D / 2 + 0.16) + fz * v * (len / 2 + 0.16)]), { draw: false, y: () => y + 0.04 });
+    // (and its apron, reaching just into the footway: the court is reached from the street over it)
+    net.addArea([apron[0].b, apron[1].b, apron[1].f, apron[0].f].map((v, i) => i < 2 ? [v[0] - fx * 0.12, v[2] - fz * 0.12] : [v[0], v[2]]), { draw: false, y: (px, pz) => { const t = clamp(((px - apron[0].b[0]) * fx + (pz - apron[0].b[2]) * fz) / Math.max(0.1, (apron[0].f[0] - apron[0].b[0]) * fx + (apron[0].f[2] - apron[0].b[2]) * fz), 0, 1); return lerp(apron[0].b[1], y + 0.04, t); } });
     // hedge along the court's long sides, a walkway from its far end
     for (const e of [-1, 1]) { const a = [cx + lx * e * (D / 2 + 1.2) - fx * (len / 2 - 1), cz + lz * e * (D / 2 + 1.2) - fz * (len / 2 - 1)], b = [cx + lx * e * (D / 2 + 1.2) + fx * (len / 2 - 1), cz + lz * e * (D / 2 + 1.2) + fz * (len / 2 - 1)];
       if (clear((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.8)) { out.hedges.push({ a, b, h: 1.0 }); navRect((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.45, Math.hypot(b[0] - a[0], b[1] - a[1]) / 2, Math.atan2(b[0] - a[0], b[1] - a[1]), 2); } }
@@ -610,7 +629,7 @@ export function buildDanchi(ctx) {
     net.addArea([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], { rid, color });
     occRect((x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2, 0, 1, 1, rid); };
   // C1 south-west: a lawn court under a group of big zelkovas, a curving path between the two slabs, a wisteria pergola
-  { const pts = []; for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push([lerp(366, 410, t), lerp(96, 114, t) + Math.sin(t * Math.PI * 2) * 3.5]); } pathLine(pts, 2.0);
+  { const pts = []; for (let k = 3; k <= 8; k++) { const t = k / 8; pts.push([lerp(366, 410, t), lerp(96, 114, t) + Math.sin(t * Math.PI * 2) * 3.5]); } pathLine(pts, 2.0); // (from the parking court's far end)
     for (const [x, z, s] of [[375, 106, 1.0], [392, 99, 0.9], [404, 110, 0.85], [383, 113, 0.75]]) tree('zelkova', x, z, s);
     pergola(396, 104, 0.12, 5.4, 3.0); benchAt(371, 101, Math.PI * 0.5); benchAt(398, 108.5, Math.PI); benchAt(407, 102, -Math.PI / 2); }
   // C2, C3, C6: the playground, the fountain park and the lake park are designed spaces of their own (danchipark.js)

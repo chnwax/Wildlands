@@ -350,7 +350,10 @@ export class PedNet {
       const ga = this.gy(p[0] + out[0] * 0.15, p[1] + out[1] * 0.15), gb = this.gy(q[0] + out[0] * 0.15, q[1] + out[1] * 0.15), ha = a[1] + 0.04, hb = b[1] + 0.04;
       if (ha - ga > LIFT + 0.05 || hb - gb > LIFT + 0.05) B.poly('concrete', [[a[0] + ex, ga - 0.06, a[2] + ez], [b[0] + ex, gb - 0.06, b[2] + ez], [b[0] + ex, hb - 0.03, b[2] + ez], [a[0] + ex, ha - 0.03, a[2] + ez]], [out[0], 0, out[1]], { color: EDGE });
       for (const [x, z, y] of [[p[0], p[1], ha], [q[0], q[1], hb]]) if (y - LIFT - this.gy(x, z) > 0.015) this.raised.push([x + out[0] * 0.1, z + out[1] * 0.1, y - LIFT - 0.008]); };
-    const pave = (C, pts, along, across) => B.poly(C.mat, pts, [0, 1, 0], { color: C.color, uvs: pts.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: C.mat === 'pavement' ? { aPave: along.map((s, i) => [s, across[i]]) } : undefined });
+    // (smooth normals from the paving's height field: draped on H, flat-shaded triangles showed every fan and strip piece
+    // as a facet of its own in the toon light)
+    const nrmAt = (x, z) => { const h = 0.25, gx = (H(x + h, z) - H(x - h, z)) / (2 * h), gz = (H(x, z + h) - H(x, z - h)) / (2 * h), L = Math.hypot(gx, 1, gz); return [-gx / L, 1 / L, -gz / L]; };
+    const pave = (C, pts, along, across) => B.poly(C.mat, pts, [0, 1, 0], { color: C.color, uvs: pts.map(v => [v[0] / 1.2, v[2] / 1.2]), normals: pts.map(v => nrmAt(v[0], v[2])), attr: C.mat === 'pavement' ? { aPave: along.map((s, i) => [s, across[i]]) } : undefined });
     B.frame(0, 0, 0, 0);
     // strips
     for (const [ei, e] of edges.entries()) { if (e.dead) continue;
@@ -368,7 +371,7 @@ export class PedNet {
       const N = nodes[J.ni], W = J.inc.reduce((a, b) => b.hw > a.hw ? b : a), e = edges[W.ei], C = this.chains[e.c], A = nodes[e.a], Bq = nodes[e.b], L = hyp(Bq.x - A.x, Bq.z - A.z), d = [(Bq.x - A.x) / L, (Bq.z - A.z) / L], nn = [-d[1], d[0]];
       const al = p => (p[0] - A.x) * d[0] + (p[1] - A.z) * d[1], ac = p => 0.5 + (p[0] - A.x) * nn[0] + (p[1] - A.z) * nn[1] + C.w / 2, c = V(N.x, N.z), cp = [N.x, N.z];
       for (let i = 0; i < J.poly.length; i++) { const p = J.poly[i], q = J.poly[(i + 1) % J.poly.length]; if (hyp(q[0] - p[0], q[1] - p[1]) < 1e-4) continue;
-        B.poly(C.mat, [c, V(...p), V(...q)], [0, 1, 0], { color: C.color, uvs: [c, V(...p), V(...q)].map(v => [v[0] / 1.2, v[2] / 1.2]), attr: C.mat === 'pavement' ? { aPave: [cp, p, q].map(r => [al(r), ac(r)]) } : undefined });
+        pave(C, [c, V(...p), V(...q)], [cp, p, q].map(al), [cp, p, q].map(ac));
         if (J.kind[i] && J.inc.some(I => this.chains[edges[I.ei].c].edge)) { const mx = (p[0] + q[0]) / 2 - N.x, mz = (p[1] + q[1]) / 2 - N.z, ml = hyp(mx, mz) || 1, tx = q[0] - p[0], tz = q[1] - p[1], tl = hyp(tx, tz);
           let ox = tz / tl, oz = -tx / tl; if (ox * mx + oz * mz < 0) { ox = -ox; oz = -oz; } void ml; edging(p, q, C.rid, [ox, oz]); } }
     }

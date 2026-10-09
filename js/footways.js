@@ -49,12 +49,13 @@ export function planFootways(RN, { baseY }) {
   const rot = d => [-d[1], d[0]];
   // ---- the kerb lines: a run along a road side ([s0, s1] at u = side * hw) or a curb return (arc round O at rF)
   const runs = net.map(() => ({ 1: [], [-1]: [] })), arcs = [];
-  for (const [n, side, s0, s1, kind, rw] of RN.runs) runs[NI.get(n)][side].push({ type: 'run', n, side, s0, s1, kind, walk: kind === 'walk', w: rw, freeA: true, freeB: true });
+  let nid = 0;
+  for (const [n, side, s0, s1, kind, rw] of RN.runs) runs[NI.get(n)][side].push({ id: nid++, type: 'run', n, side, s0, s1, kind, walk: kind === 'walk', w: rw, freeA: true, freeB: true });
   for (const L of runs) for (const side of [1, -1]) L[side].sort((a, b) => a.s0 - b.s0);
   for (const I of RN.inters) for (const cr of I.corners) {
     const p0 = cr.arc[0], p1 = cr.arc[cr.arc.length - 1], a1 = Math.atan2(p0[1] - cr.O[1], p0[0] - cr.O[0]), a2 = Math.atan2(p1[1] - cr.O[1], p1[0] - cr.O[0]);
     let span = a2 - a1; while (span > Math.PI) span -= 2 * Math.PI; while (span < -Math.PI) span += 2 * Math.PI;
-    arcs.push({ type: 'arc', cr, kind: cr.kind, walk: cr.kind === 'walk', a1, span, arcL: Math.abs(span) * cr.rF, p0, p1 });
+    arcs.push({ id: nid++, type: 'arc', cr, kind: cr.kind, walk: cr.kind === 'walk', a1, span, arcL: Math.abs(span) * cr.rF, p0, p1 });
   }
   // a run's end is joined where a curb return starts at it (the corner takes over); elsewhere it is free and the footway
   // ends square across there
@@ -64,6 +65,8 @@ export function planFootways(RN, { baseY }) {
     for (const a of arcs) { if (at(A, a.p0) || at(A, a.p1)) e.freeA = false; if (at(Bp, a.p0) || at(Bp, a.p1)) e.freeB = false; }
     // (a run continued by the next run of the same side — a change of kind or width — is joined to it as well)
     for (const o of L[side]) if (o !== e) { if (Math.abs(o.s1 - e.s0) < 0.05) e.freeA = !(o.walk && e.walk) && e.freeA; if (Math.abs(o.s0 - e.s1) < 0.05) e.freeB = !(o.walk && e.walk) && e.freeB; }
+    // (a free end where the road runs on onto a level-crossing deck: the deck's own footway panels take over flush)
+    e.deckA = e.freeA && e.s0 > 0.3 && RN.skipAt(e.n, e.s0 - 0.3); e.deckB = e.freeB && e.s1 < e.n.PL.len - 0.3 && RN.skipAt(e.n, e.s1 + 0.3);
   }
   // ---- spatial index (8 m cells): road segments and curb returns reaching into each cell
   const CS = 8, grid = new Map(), key = (i, j) => i * 73856093 ^ j * 19349663;
@@ -88,7 +91,7 @@ export function planFootways(RN, { baseY }) {
   // ---- the probe: which kerb line a point belongs to, and the footway's surface there
   const stamp = new Int32Array(net.length), bd = new Float64Array(net.length), bs = new Float64Array(net.length), bu = new Float64Array(net.length), bpast = new Float64Array(net.length), seen = [];
   let tickN = 0;
-  const C = [], cand = () => { const c = { e: null, sd: 0, s: 0, along: 0, w: 0, endM: Infinity, drop: 0, semi: false, nk: -1 }; C.push(c); return c; };
+  const C = [], cand = () => { const c = { e: null, sd: 0, s: 0, along: 0, w: 0, endM: Infinity, deck: false, drop: 0, semi: false, nk: -1 }; C.push(c); return c; };
   for (let i = 0; i < 12; i++) cand();
   const _kp = Array.from({ length: 9 }, () => [0, 0]), _d = { drop: 0, semi: false };
   // P: { phi (paving: > 0 inside), phiK (the whole footway incl. the kerb strip), H (surface), Hs (paving), along, sd, w, term, e }
@@ -110,7 +113,7 @@ export function planFootways(RN, { baseY }) {
       const sd = cr.rF - r;
       if (sd < 0) { carr = Math.max(carr, -sd); }
       if (nc >= C.length) cand();
-      const c = C[nc++]; c.e = a; c.sd = sd; c.s = sa; c.along = 1000 + sa; c.endM = Infinity; c.nk = -1;
+      const c = C[nc++]; c.e = a; c.sd = sd; c.s = sa; c.along = 1000 + sa; c.endM = Infinity; c.deck = false; c.nk = -1;
       if (a.walk) { const q = RN.cornerAt(cr, clamp(sa, 0, a.arcL), a.arcL); c.w = q.w; c.drop = q.drop; c.semi = q.semi; } else c.w = CLAIM[a.kind] || 0.16;
     }
     for (const k of seen) {
@@ -119,44 +122,49 @@ export function planFootways(RN, { baseY }) {
       // the run of that side covering s (or the nearest one within reach of a joined end)
       // the run of that side covering s; and the footway run there — the covering one, or one whose free end lies just
       // behind (its end then has a gradient for the grid to cut it square on)
-      let en = null, ew = null, ewM = -Infinity;
+      let en = null, ew = null, ewM = -Infinity, ewD = false;
       for (const r of runs[k][side]) {
         const lo = r.s0 - (r.freeA ? 0 : OVER), hi = r.s1 + (r.freeB ? 0 : OVER);
         if (s < lo - 0.8 || s > hi + 0.8) continue;
-        const m = Math.min(r.freeA ? s - r.s0 : Infinity, r.freeB ? r.s1 - s : Infinity, past > 0 ? -past : Infinity);
-        if (s >= lo && s <= hi) { if (r.walk) { ew = r; ewM = m; } else en = r; continue; }
-        if (r.walk && (s < lo ? r.freeA : r.freeB) && m > ewM && !(ew && ewM >= 0)) { ew = r; ewM = m; }
+        const mA = r.freeA ? s - r.s0 : Infinity, mB = r.freeB ? r.s1 - s : Infinity, m = Math.min(mA, mB, past > 0 ? -past : Infinity), dk = m === mA ? r.deckA : m === mB ? r.deckB : false;
+        if (s >= lo && s <= hi) { if (r.walk) { ew = r; ewM = m; ewD = dk; } else en = r; continue; }
+        if (r.walk && (s < lo ? r.freeA : r.freeB) && m > ewM && !(ew && ewM >= 0)) { ew = r; ewM = m; ewD = dk; }
       }
-      if (en) { if (nc >= C.length) cand(); const c = C[nc++]; c.e = en; c.sd = sd; c.s = s; c.along = s; c.endM = Infinity; c.nk = k; c.w = CLAIM[en.kind] || 0.16; }
-      if (ew) { if (nc >= C.length) cand(); const c = C[nc++]; c.e = ew; c.sd = sd; c.s = s; c.along = s; c.endM = ewM; c.nk = k; c.w = ew.w;
+      if (en) { if (nc >= C.length) cand(); const c = C[nc++]; c.e = en; c.sd = sd; c.s = s; c.along = s; c.endM = Infinity; c.deck = false; c.nk = k; c.w = CLAIM[en.kind] || 0.16; }
+      if (ew) { if (nc >= C.length) cand(); const c = C[nc++]; c.e = ew; c.sd = sd; c.s = s; c.along = s; c.endM = ewM; c.deck = ewD; c.nk = k; c.w = ew.w;
         dropAt(n, side, clamp(s, ew.s0, ew.s1), _d); c.drop = _d.drop; c.semi = _d.semi; }
     }
     // the footway's own kerb: the nearest kerb line that carries one (a little way into the road still counts, so the
     // edge along the kerb has a gradient for the grid to cut it on)
     let b1 = null, b2 = null;
     for (let i = 0; i < nc; i++) { const c = C[i]; if (!c.e.walk || c.sd < -0.8) continue; if (!b1 || c.sd < b1.sd) { b2 = b1; b1 = c; } else if (!b2 || c.sd < b2.sd) b2 = c; }
-    if (!b1) { P.phi = P.phiK = -1; P.term = 'none'; P.e = null; P.H = P.Hs = NaN; return P; }
+    if (!b1) { P.phi = P.phiK = -1; P.term = 'none'; P.e = null; P.H = P.Hs = NaN; P.T = null; if (P.wantC) P.cands = []; return P; }
     let phiN = Infinity;   // ground kept by road sides without a footway (not the one the footway itself ends against)
     for (let i = 0; i < nc; i++) { const c = C[i]; if (c.e.walk || c.sd < -0.3 || (c.nk === b1.nk && c.nk >= 0 && Math.sign(c.sd + 1e-9) === Math.sign(b1.sd + 1e-9) && b1.endM < 0.8)) continue; phiN = Math.min(phiN, c.sd - c.w); }
     // another road's carriageway (or a junction pad): the footway stops at its edge
     const phiC = carr > 0 && !(b1.sd < 0) ? -carr : Infinity;
     const tK = b1.sd - SEAM, tE = b1.endM;
-    let tB = b1.w - b1.sd, backTerm = 'back', jy = 0, jt = 0;
+    let tB = b1.w - b1.sd, backTerm = 'back', jy = 0, jd = 0, jmax = 0, hasJ = false;
     // joins: other paving close behind the footway (a riverside walkway): the narrow gap between them is paved too, the
     // footway's back carried on to that paving's edge, its surface eased from the footway's level to that paving's
     for (const J of joins) { if (tB > 0.6) break; const dJ = J.dist(x, z); if (dJ === null || dJ < -0.8) continue;
       const gap = (b1.sd - b1.w) + dJ; if (gap > J.max || gap < 0.05) continue;
-      if (dJ > tB) { tB = dJ; backTerm = 'join'; jt = clamp((b1.sd - b1.w) / gap, 0, 1); jy = J.y(x, z); } }
+      if (dJ > tB) { tB = dJ; backTerm = 'join'; hasJ = true; jy = J.y(x, z); jd = dJ; jmax = J.max; } }
     let phi = tK, term = 'kerb';
-    if (tB < phi) { phi = tB; term = backTerm; } if (tE < phi) { phi = tE; term = 'end'; } if (phiN < phi) { phi = phiN; term = 'other'; } if (phiC < phi) { phi = phiC; term = 'road'; }
+    if (tB < phi) { phi = tB; term = backTerm; } if (tE < phi) { phi = tE; term = b1.deck ? 'deck' : 'end'; } if (phiN < phi) { phi = phiN; term = 'other'; } if (phiC < phi) { phi = phiC; term = 'road'; }
+    if (P.wantC) { const T = P.T || (P.T = {}); T.kerb = tK; T.back = backTerm === 'back' ? tB : Infinity; T.join = backTerm === 'join' ? tB : Infinity; T.end = b1.deck ? Infinity : tE; T.deck = b1.deck ? tE : Infinity; T.other = phiN; T.road = phiC; }
     P.phi = phi; P.phiK = Math.min(b1.sd, tB, tE, phiN, phiC); P.term = term; P.e = b1.e; P.along = b1.along; P.sd = b1.sd; P.w = b1.w;
     if (needH) {
-      P.H = heightOf(b1, x, z, Math.max(0, b1.sd)); P.Hs = heightOf(b1, x, z, Math.max(KERB_IN, b1.sd)) + LIFT;
+      // (in a join, each footway's surface is eased from its back to the joined paving across the gap behind it)
+      const hOf = (c, q0) => { let h = heightOf(c, x, z, Math.max(q0, c.sd));
+        if (hasJ && c.sd > c.w) { const gap = (c.sd - c.w) + jd; if (gap > 0.05 && gap < jmax + 0.6) { const t = clamp((c.sd - c.w) / gap, 0, 1); h = lerp(h, jy, t * t * (3 - 2 * t)); } } return h; };
+      P.H = hOf(b1, 0); P.Hs = hOf(b1, KERB_IN) + LIFT;
       // where two footways meet, their surfaces are blended across the seam
       if (b2 && b2.sd - b1.sd < 0.6 && b2.sd >= 0) { const f = 0.5 * (1 - smoothstep(0, 0.6, b2.sd - b1.sd));
-        P.H = lerp(P.H, heightOf(b2, x, z, Math.max(0, b2.sd)), f); P.Hs = lerp(P.Hs, heightOf(b2, x, z, Math.max(KERB_IN, b2.sd)) + LIFT, f); }
-      if (jt > 0) { const e = jt * jt * (3 - 2 * jt); P.H = lerp(P.H, jy, e); P.Hs = lerp(P.Hs, jy + LIFT, e); }
+        P.H = lerp(P.H, hOf(b2, 0), f); P.Hs = lerp(P.Hs, hOf(b2, KERB_IN) + LIFT, f); }
     }
+    // (for the paving's builder: every footway kerb line near the point, with the point's paving coordinates from each)
+    if (P.wantC) { P.cands = []; for (let i = 0; i < nc; i++) { const c = C[i]; if (c.e.walk && c.sd > -0.8) P.cands.push({ e: c.e, sd: c.sd, along: c.along }); } }
     return P;
   }
   // footway top at a point (kerb strip included), or null where there is none
@@ -177,85 +185,132 @@ export function planFootways(RN, { baseY }) {
     for (const a of arcs) { if (!a.walk) continue; const cr = a.cr;
       for (let sa = -0.3; sa <= a.arcL + 0.3; sa += 0.35) { const ang = a.a1 + Math.sign(a.span) * sa / cr.rF;
         for (let r = cr.rF + 0.3; r >= cr.rF - Math.max(cr.walk, 3) - 0.4; r -= 0.35) mark(cr.O[0] + Math.cos(ang) * r, cr.O[1] + Math.sin(ang) * r); } }
-    // grid vertices and edge crossings, each computed once (cells sharing an edge share its crossing exactly)
-    const verts = new Map();
+    // Grid vertices and the points where a limit crosses a cell's edge are computed once and shared by the cells either
+    // side, so no crack can open between them. A cell along the area's edge is clipped by each limit in turn (kerb,
+    // back, end, another road's ground, a carriageway, a join, a deck): where two limits meet — the back and the end of a
+    // footway — the corner comes out sharp, inside the cell, instead of cut off across it.
+    const TERMS = ['kerb', 'back', 'join', 'end', 'deck', 'other', 'road'];
+    const verts = new Map(); P.wantC = true;
+    const fin = q => q > 50 ? 50 : q < -50 ? -50 : q;   // (a limit that does not apply here is far away, not infinite: crossings stay finite)
+    const mk = (k, x, z, p, eks, g) => { const T = p.T ? {} : null; if (T) for (const t of TERMS) T[t] = fin(p.T[t]); return { k, x, z, Hs: p.Hs, along: p.along, sd: p.sd, o: p.e, cands: p.cands, T, eks, g }; };
     const vAt = (i, j) => { const k = 'v' + i + ',' + j; let v = verts.get(k); if (v) return v;
-      const x = i * CELL, z = j * CELL, p = probe(x, z); v = { k, i, j, x, z, phi: p.phi, Hs: p.Hs, along: p.along, sd: p.sd }; verts.set(k, v); return v; };
-    const xAt = (A, Bv) => { const k = A.k < Bv.k ? A.k + '|' + Bv.k : Bv.k + '|' + A.k; let v = verts.get(k); if (v) return v;
-      let lo = A.phi >= 0 ? A : Bv, hi = lo === A ? Bv : A, t = lo.phi / (lo.phi - hi.phi), x = lerp(lo.x, hi.x, t), z = lerp(lo.z, hi.z, t);
-      for (let it = 0; it < 2; it++) { const f = probe(x, z, false).phi; if (Math.abs(f) < 1e-3) break;            // (secant refinement on the true field)
-        const m = { x, z, phi: f }; if (f >= 0) lo = m; else hi = m; t = lo.phi / (lo.phi - hi.phi); x = lerp(lo.x, hi.x, t); z = lerp(lo.z, hi.z, t); }
-      // its height and paving coordinates from just inside (the edge belongs to the paving); its kind from just outside
-      const pin = probe(x + (lo.x - x) * 0.08, z + (lo.z - z) * 0.08);
-      v = { k, x, z, phi: 0, Hs: pin.Hs, along: pin.along, sd: pin.sd, edge: true, g: A.phi >= 0 ? A : Bv };
-      v.term = probe(x + (hi.x - x) * 0.15, z + (hi.z - z) * 0.15, false).term; verts.set(k, v); return v; };
+      const x = i * CELL, z = j * CELL, p = probe(x, z); v = mk(k, x, z, p, ['H' + i + ',' + j, 'H' + (i - 1) + ',' + j, 'V' + i + ',' + j, 'V' + i + ',' + (j - 1)], null); v.i = i; v.j = j; v.g = v;
+      v.phi = p.phi; verts.set(k, v); return v; };
+    const tv = (v, t) => v.T ? v.T[t] : -1;
+    const common = (U, W) => { for (const e of U.eks) if (W.eks.includes(e)) return e; return null; };
+    // a crossing on U-W, made once: on a cell edge shared with the neighbouring cell, inside a cell by its two ends
+    const crossKey = (U, W, key) => { const ek = common(U, W); return [ek, (ek || (U.k < W.k ? U.k + '|' + W.k : W.k + '|' + U.k)) + '#' + key]; };
+    // the point on U-W where field f is zero (regula falsi on the true field, from the two ends' values)
+    const root = (U, W, fu, fw, f) => { let ax = U.x, az = U.z, fa = fu, bx = W.x, bz = W.z, fb = fw, x = ax, z = az;
+      for (let it = 0; it < 6; it++) { const t = clamp(fa / (fa - fb), 0, 1); x = lerp(ax, bx, t); z = lerp(az, bz, t); const fm = f(x, z); if (Math.abs(fm) < 5e-4) break;
+        if ((fm >= 0) === (fa >= 0)) { ax = x; az = z; fa = fm; } else { bx = x; bz = z; fb = fm; } } return [x, z]; };
+    const newV = (k, ek, x, z, U, W, t) => { const p = probe(x, z), okU = Number.isFinite(U.Hs), okW = Number.isFinite(W.Hs);
+      // (its grid vertex — for the normal and, where the probe finds no footway at the very edge, the surface — is one with a surface)
+      const gU = U.g || U, gW = W.g || W, g = Number.isFinite(gU.Hs) && (t < 0.5 || !Number.isFinite(gW.Hs)) ? gU : Number.isFinite(gW.Hs) ? gW : gU, v = mk(k, x, z, p, ek ? [ek] : [], g);
+      if (!Number.isFinite(v.Hs)) v.Hs = okU && okW ? lerp(U.Hs, W.Hs, t) : okU ? U.Hs : okW ? W.Hs : g.Hs;
+      if (!v.cands || !v.T) { v.cands = (okU ? U : W).cands || g.cands; v.o = (okU ? U : W).o || g.o; v.along = g.along; v.sd = g.sd; } verts.set(k, v); return v; };
+    const termCross = t => { const f = (x, z) => { const p = probe(x, z, false); return p.T ? fin(p.T[t]) : -1; };
+      return (U, W, fu, fw) => { const [ek, k] = crossKey(U, W, t), v = verts.get(k); if (v) return v; const [x, z] = root(U, W, fu, fw, f);
+        return newV(k, ek, x, z, U, W, Math.hypot(x - U.x, z - U.z) / (Math.hypot(W.x - U.x, W.z - U.z) || 1)); }; };
+    const TC = Object.fromEntries(TERMS.map(t => [t, termCross(t)]));
+    // Sutherland-Hodgman against val >= 0; tags[i]: what the edge from vertex i to the next is (null: inside the paving)
+    const clip = (poly, tags, vs, cross, tag) => {
+      const n = poly.length; if (vs.every(q => q >= 0)) return [poly, tags]; if (vs.every(q => q < 0)) return [[], []];
+      const out = [], tagIn = [];
+      for (let i = 0; i < n; i++) { const U = poly[i], W = poly[(i + 1) % n], fu = vs[i], fw = vs[(i + 1) % n], t = tags[i];
+        if (fu >= 0 && fw >= 0) { out.push(W); tagIn.push(t); }
+        else if (fu >= 0 && fw < 0) { out.push(cross(U, W, fu, fw)); tagIn.push(t); }
+        else if (fu < 0 && fw >= 0) { out.push(cross(U, W, fu, fw)); tagIn.push(tag); out.push(W); tagIn.push(t); } }
+      return [out, out.map((_, i) => tagIn[(i + 1) % out.length])]; };
+    // seams: where the paving passes from one kerb line's footway to another's, a piece is cut along the line where the
+    // two lie equally far (the footways' own boundary), so every piece carries one kerb line's paving coordinates and no
+    // slab is smeared across the seam (sd to each line is near linear across a cell: the cut is interpolated)
+    const sdOf = (v, X) => { if (v.cands) for (const c of v.cands) if (c.e === X) return c.sd; return null; };
+    const splitBy = (poly, tags, A, Bo) => { const g = poly.map(v => { const a = sdOf(v, A), b = sdOf(v, Bo); return a === null || b === null ? null : a - b; });
+      if (g.some(q => q === null)) return null;
+      const key = 's' + Math.min(A.id, Bo.id) + ',' + Math.max(A.id, Bo.id);
+      const cross = (U, W, fu, fw) => { const [ek, k] = crossKey(U, W, key), v = verts.get(k); if (v) return v; const t = Math.abs(fu) / (Math.abs(fu) + Math.abs(fw));
+        return newV(k, ek, lerp(U.x, W.x, t), lerp(U.z, W.z, t), U, W, t); };
+      return [clip(poly, tags, g.map(q => -q), cross, 'seam'), clip(poly, tags, g, cross, 'seam')]; };
     const segs = [];
-    // smooth normals: the surface's gradient over the grid (flat-shaded triangles showed every cell in the toon light)
-    const nrm = v => { if (v.edge) v = v.g; if (v.n) return v.n;
+    const nrm = v => { v = v.g || v; if (v.n) return v.n;
       const H = (a, b) => { const q = vAt(v.i + a, v.j + b); return Number.isFinite(q.Hs) ? q.Hs : v.Hs; };
       const gx = (H(1, 0) - H(-1, 0)) / (2 * CELL), gz = (H(0, 1) - H(0, -1)) / (2 * CELL), L = Math.hypot(gx, 1, gz);
       return (v.n = [-gx / L, 1 / L, -gz / L]); };
-    // (the grid's cells run clockwise seen from above: each polygon is turned over to face up, its attributes with it;
-    // a polygon spanning a seam between two kerb lines takes one line's paving coordinates, so its slabs don't smear)
-    const emit = poly0 => {
-      const poly = [...poly0].reverse(), a0 = poly[0].along;
+    // (the grid's cells run clockwise seen from above: each polygon is turned over to face up, its attributes with it)
+    const emitOwned = (poly0, X) => {
+      if (poly0.length < 3) return;
+      if (poly0.some(v => !Number.isFinite(v.Hs))) return;
+      const poly = [...poly0].reverse();
       const pts = poly.map(v => [v.x, v.Hs, v.z]), uvs = poly.map(v => [v.x / 1.2, v.z / 1.2]), normals = poly.map(nrm);
-      const mixed = poly.some(v => Math.abs(v.along - a0) > 3), ap = poly.map(v => mixed ? [a0, v.sd] : [v.along, v.sd]);
+      const ap = poly.map(v => { if (X && v.cands) for (const c of v.cands) if (c.e === X) return [c.along, c.sd]; return [v.along, v.sd]; });
       if (poly.length === 4) { B.quad('pavement', pts[0], pts[1], pts[2], pts[3], { color, uvs, normals, attr: { aPave: ap } }); return; }
       for (let i = 1; i + 1 < poly.length; i++) B.tri('pavement', pts[0], pts[i], pts[i + 1], { color, uvs: [uvs[0], uvs[i], uvs[i + 1]], normals: [normals[0], normals[i], normals[i + 1]], attr: { aPave: [ap[0], ap[i], ap[i + 1]] } });
     };
+    const piece = (poly, tags, X) => { emitOwned(poly, X); for (let i = 0; i < poly.length; i++) { const t = tags[i]; if (t && t !== 'seam') segs.push([poly[i], poly[(i + 1) % poly.length], t]); } };
+    const emit = (poly, tags) => {
+      const cnt = new Map(); for (const v of poly) if (v.o) cnt.set(v.o, (cnt.get(v.o) || 0) + 1);
+      const own = [...cnt.entries()].sort((a, b) => b[1] - a[1]).map(q => q[0]);
+      if (own.length < 2) { piece(poly, tags, own[0]); return; }
+      const parts = splitBy(poly, tags, own[0], own[1]);
+      if (!parts) { piece(poly, tags, own[0]); return; }
+      // (a third kerb line in the same cell — where three footways meet — is cut away from each half in turn)
+      for (const [[half, ht], X] of [[parts[0], own[0]], [parts[1], own[1]]]) {
+        const other = own.slice(2).find(Y => half.some(v => v.o === Y)), sub = other ? splitBy(half, ht, X, other) : null;
+        if (sub) { piece(sub[0][0], sub[0][1], X); piece(sub[1][0], sub[1][1], other); } else piece(half, ht, X); } };
     for (const c of cells) {
       const i = Math.floor(c / 65536) - 32768, j = c % 65536 - 32768;
       const Q = [vAt(i, j), vAt(i + 1, j), vAt(i + 1, j + 1), vAt(i, j + 1)];
-      const ins = Q.map(v => v.phi >= 0), nIn = ins.filter(Boolean).length;
-      if (!nIn) continue;
-      if (nIn === 4) { emit(Q); continue; }
-      // Sutherland-Hodgman against phi >= 0 (a saddle stays one polygon through the cell)
-      const out = [];
-      for (let a = 0; a < 4; a++) { const A = Q[a], Bv = Q[(a + 1) % 4];
-        if (ins[a]) out.push(A);
-        if (ins[a] !== ins[(a + 1) % 4]) out.push(xAt(A, Bv)); }
-      if (out.length >= 3) emit(out);
-      // its boundary inside the cell: from a crossing to the next crossing (the area on the polygon's inner side)
-      for (let a = 0; a < out.length; a++) { const A = out[a], Bv = out[(a + 1) % out.length]; if (A.edge && Bv.edge) segs.push([A, Bv]); }
+      if (Q.every(v => v.phi < 0) && Q.every(v => !v.T || TERMS.some(t => v.T[t] < -1.2))) continue;
+      let poly = Q, tags = [null, null, null, null];
+      for (const t of TERMS) { if (!poly.length) break; [poly, tags] = clip(poly, tags, poly.map(v => tv(v, t)), TC[t], t); }
+      if (poly.length >= 3) emit(poly, tags);
     }
     // ---- the edges that are not a kerb, traced into chains
+    for (const sg of segs) { sg[0].term = sg[0].term && sg[0].term !== 'kerb' && sg[0].term !== 'join' && sg[0].term !== 'deck' ? sg[0].term : sg[2]; if (!sg[1].term) sg[1].term = sg[2]; }
     const next = new Map(), prev = new Map(); for (const sg of segs) { next.set(sg[0].k, sg); prev.set(sg[1].k, sg); }
     const used = new Set(), chains = [];
     for (const sg of segs) { if (used.has(sg)) continue;
       // walk back to the chain's start (or round a loop), then forward
       let st = sg, guard = 0;
       while (prev.has(st[0].k) && !used.has(prev.get(st[0].k)) && prev.get(st[0].k) !== sg && guard++ < 100000) st = prev.get(st[0].k);
-      const pts = [st[0]]; let cur = st;
-      while (cur && !used.has(cur)) { used.add(cur); pts.push(cur[1]); cur = next.get(cur[1].k); }
+      const pts = [st[0]], tg = []; let cur = st;
+      while (cur && !used.has(cur)) { used.add(cur); pts.push(cur[1]); tg.push(cur[2]); cur = next.get(cur[1].k); }
       const closed = pts.length > 2 && pts[pts.length - 1] === pts[0];
-      chains.push({ pts, closed });
+      chains.push({ pts, closed, tags: tg });
     }
     // outward normals (horizontal) along each chain, from its segments, averaged at the vertices
     for (const ch of chains) {
       const P2 = ch.pts, m = P2.length, sn = [];
       for (let i = 0; i + 1 < m; i++) { const a = P2[i], b = P2[i + 1], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz) || 1; let nx = dz / L, nz = -dx / L;
-        if (probe((a.x + b.x) / 2 + nx * 0.06, (a.z + b.z) / 2 + nz * 0.06, false).phi > 0) { nx = -nx; nz = -nz; } sn.push([nx, nz]); }
+        if (probe((a.x + b.x) / 2 + nx * 0.03, (a.z + b.z) / 2 + nz * 0.03, false).phi > probe((a.x + b.x) / 2 - nx * 0.03, (a.z + b.z) / 2 - nz * 0.03, false).phi) { nx = -nx; nz = -nz; } sn.push([nx, nz]); }
+      ch.sn = sn;
       ch.n = P2.map((_, i) => { const a = sn[Math.max(0, i - 1)] || sn[0], b = sn[Math.min(sn.length - 1, i)] || a; let nx = a[0] + b[0], nz = a[1] + b[1];
         if (ch.closed && (i === 0 || i === m - 1)) { const c = sn[sn.length - 1], d = sn[0]; nx = c[0] + d[0]; nz = c[1] + d[1]; }
         const L = Math.hypot(nx, nz) || 1; return [nx / L, nz / L]; });
     }
-    FW.chains = chains;
+    FW.chains = chains; P.wantC = false;
     return chains;
   };
   // the edges that are not a kerb: an edging strip along the paving's edge and a skirt down to the ground
   // ground(x, z): the terrain under the edge
-  FW.buildEdges = (B, { ground }) => {
+  // skirt(x, z): whether a skirt may go down to the ground there (not over water, nor off a bridge deck); it reaches at
+  // most SKIRT_MAX below the paving
+  FW.buildEdges = (B, { ground, skirt = () => true } = {}) => {
     B.frame(0, 0, 0, 0);
+    const EW = 0.12, SKIRT_MAX = 1.6, kerbish = t => t === 'kerb' || t === 'join' || t === 'deck';
     for (const ch of FW.chains) {
-      const P2 = ch.pts, N = ch.n;
-      for (let i = 0; i + 1 < P2.length; i++) {
-        const a = P2[i], b = P2[i + 1], na = N[i], nb = N[i + 1];
-        const kerbish = (a.term === 'kerb' || a.term === 'join') && (b.term === 'kerb' || b.term === 'join'); if (kerbish) continue; // (along the kerb the kerb strip is the edge; a join meets other paving)
-        const ga = ground(a.x, a.z) - 0.06, gb = ground(b.x, b.z) - 0.06;
-        if (Math.max(a.Hs - ga, b.Hs - gb) > 0.08) B.poly('concrete', [[a.x, ga, a.z], [b.x, gb, b.z], [b.x, b.Hs, b.z], [a.x, a.Hs, a.z]], [(na[0] + nb[0]) / 2, 0, (na[1] + nb[1]) / 2], { color: BACK, uv: 1.5 });
+      const P2 = ch.pts, sn = ch.sn, m = P2.length, on = i => i >= 0 && i < m - 1 && !kerbish(ch.tags[i]);
+      // the edging's inner line, mitred at its corners; where it meets a kerb it is cut square to its own segment
+      const inner = i => { const a = on(i - 1) || (ch.closed && i === 0 && on(m - 2)) ? sn[i > 0 ? i - 1 : m - 2] : null, b = on(i) || (ch.closed && i === m - 1 && on(0)) ? sn[i < m - 1 ? i : 0] : null;
+        const n0 = a && b ? [a[0] + b[0], a[1] + b[1]] : (a || b), L = Math.hypot(n0[0], n0[1]) || 1, nn = [n0[0] / L, n0[1] / L], ref = b || a, k = EW / Math.max(0.5, nn[0] * ref[0] + nn[1] * ref[1]);
+        return [P2[i].x - nn[0] * k, P2[i].z - nn[1] * k]; };
+      for (let i = 0; i + 1 < m; i++) { if (!on(i)) continue;
+        const a = P2[i], b = P2[i + 1], s = sn[i];
+        if (skirt(a.x, a.z) && skirt(b.x, b.z)) { const ga = Math.max(ground(a.x, a.z) - 0.06, a.Hs - SKIRT_MAX), gb = Math.max(ground(b.x, b.z) - 0.06, b.Hs - SKIRT_MAX);
+          if (Math.max(a.Hs - ga, b.Hs - gb) > 0.08) B.poly('concrete', [[a.x, ga, a.z], [b.x, gb, b.z], [b.x, b.Hs, b.z], [a.x, a.Hs, a.z]], [s[0], 0, s[1]], { color: BACK, uv: 1.5 }); }
         // edging: 12 cm of plain concrete along the edge, flush with the paving (a hair above it)
-        const ia = [a.x - na[0] * 0.12, a.z - na[1] * 0.12], ib = [b.x - nb[0] * 0.12, b.z - nb[1] * 0.12];
+        const ia = inner(i), ib = inner(i + 1);
         B.poly('concrete', [[a.x, a.Hs + 0.003, a.z], [b.x, b.Hs + 0.003, b.z], [ib[0], b.Hs + 0.003, ib[1]], [ia[0], a.Hs + 0.003, ia[1]]], [0, 1, 0], { color: EDGE, uv: 1.2 });
       }
     }

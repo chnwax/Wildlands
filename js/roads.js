@@ -437,6 +437,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     const arcL = Math.abs(span) * cr.rF, sa = clamp(rel * Math.sign(span), 0, Math.abs(span)) * cr.rF; return cornerAt(cr, sa, arcL).w; };
   // the footways as one area (footways.js): RN.walkY(x, z) is their top, or null off them
   RN.cornerAt = cornerAt; RN.cutAt = cutAt; RN.semiAt = semiAt;
+  RN.skipAt = (n, s) => { const q = sampleAt(n.PL, s); return skip(q.x, q.z, n.R); };
   RN.FW = planFootways(RN, { baseY });
   RN.walkY = RN.FW.walkY;
   RN.topY = (x, z, fallback) => { const w = RN.walkY(x, z); if (w !== null) return w; const r = roadAt(x, z); if (r) return baseY(x, z) + crown(r.n, r.s, r.u); return fallback(x, z); };
