@@ -45,7 +45,11 @@ const WALK = [0.91, 0.885, 0.835], EDGE = [0.8, 0.79, 0.755], BACK = [0.66, 0.64
 
 // RN: the road network (roads.js); baseY(x, z): the road base height. -> FW { walkY, probe, build, chains, paint }
 export function planFootways(RN, { baseY }) {
-  const net = RN.net, NI = new Map(net.map((n, i) => [n, i])), joins = [];
+  const net = RN.net, NI = new Map(net.map((n, i) => [n, i])), joins = [], cuts = [];
+  const sdPoly = (P, x, z) => { let d = 1e9, inside = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, zi] = P[i], [xj, zj] = P[j];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+    const dx = xi - xj, dz = zi - zj, L2 = dx * dx + dz * dz, t = L2 ? clamp(((x - xj) * dx + (z - zj) * dz) / L2, 0, 1) : 0; d = Math.min(d, Math.hypot(x - xj - dx * t, z - zj - dz * t)); }
+    return inside ? d : -d; };
   const rot = d => [-d[1], d[0]];
   // ---- the kerb lines: a run along a road side ([s0, s1] at u = side * hw) or a curb return (arc round O at rF)
   const runs = net.map(() => ({ 1: [], [-1]: [] })), arcs = [];
@@ -150,10 +154,12 @@ export function planFootways(RN, { baseY }) {
     for (const J of joins) { if (tB > 0.6) break; const dJ = J.dist(x, z); if (dJ === null || dJ < -0.8) continue;
       const gap = (b1.sd - b1.w) + dJ; if (gap > J.max || gap < 0.05) continue;
       if (dJ > tB) { tB = dJ; backTerm = 'join'; hasJ = true; jy = J.y(x, z); jd = dJ; jmax = J.max; } }
+    // cuts: paving another builder lays in place of the footway (a bridgehead square): the footway ends on its outline
+    let tX = Infinity; for (const Q of cuts) if (x > Q.bb[0] - 2 && x < Q.bb[2] + 2 && z > Q.bb[1] - 2 && z < Q.bb[3] + 2) tX = Math.min(tX, -sdPoly(Q.poly, x, z));
     let phi = tK, term = 'kerb';
-    if (tB < phi) { phi = tB; term = backTerm; } if (tE < phi) { phi = tE; term = b1.deck ? 'deck' : 'end'; } if (phiN < phi) { phi = phiN; term = 'other'; } if (phiC < phi) { phi = phiC; term = 'road'; }
-    if (P.wantC) { const T = P.T || (P.T = {}); T.kerb = tK; T.back = backTerm === 'back' ? tB : Infinity; T.join = backTerm === 'join' ? tB : Infinity; T.end = b1.deck ? Infinity : tE; T.deck = b1.deck ? tE : Infinity; T.other = phiN; T.road = phiC; }
-    P.phi = phi; P.phiK = Math.min(b1.sd, tB, tE, phiN, phiC); P.term = term; P.e = b1.e; P.along = b1.along; P.sd = b1.sd; P.w = b1.w;
+    if (tB < phi) { phi = tB; term = backTerm; } if (tE < phi) { phi = tE; term = b1.deck ? 'deck' : 'end'; } if (phiN < phi) { phi = phiN; term = 'other'; } if (phiC < phi) { phi = phiC; term = 'road'; } if (tX < phi) { phi = tX; term = 'cut'; }
+    if (P.wantC) { const T = P.T || (P.T = {}); T.kerb = tK; T.back = backTerm === 'back' ? tB : Infinity; T.join = backTerm === 'join' ? tB : Infinity; T.end = b1.deck ? Infinity : tE; T.deck = b1.deck ? tE : Infinity; T.other = phiN; T.road = phiC; T.cut = tX; }
+    P.phi = phi; P.phiK = Math.min(b1.sd, tB, tE, phiN, phiC, tX); P.term = term; P.e = b1.e; P.along = b1.along; P.sd = b1.sd; P.w = b1.w;
     if (needH) {
       // (in a join, each footway's surface is eased from its back to the joined paving across the gap behind it)
       const hOf = (c, q0) => { let h = heightOf(c, x, z, Math.max(q0, c.sd));
@@ -176,7 +182,8 @@ export function planFootways(RN, { baseY }) {
   // FW.joins: [{ dist(x, z): distance outside the other paving's edge (null: not here), y(x, z): its surface, max: widest
   // gap joined, box: [x0, z0, x1, z1] where it applies }]
   // FW.flush: [(x, z) => bool] — other paving built against the footway there: its edge gets no edging or skirt
-  const FW = { probe, walkY, chains: [], joins, flush: [] };
+  // FW.cuts: [{ poly }] — outlines the footway gives way to (FW.cut(poly) adds one)
+  const FW = { probe, walkY, chains: [], joins, flush: [], cuts, cut: poly => { const xs = poly.map(p => p[0]), zs = poly.map(p => p[1]); cuts.push({ poly, bb: [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)] }); } };
   FW.build = (B, { color = WALK } = {}) => {
     B.frame(0, 0, 0, 0);
     const cells = new Set(), ck = (i, j) => (i + 32768) * 65536 + (j + 32768);
@@ -192,7 +199,7 @@ export function planFootways(RN, { baseY }) {
     // side, so no crack can open between them. A cell along the area's edge is clipped by each limit in turn (kerb,
     // back, end, another road's ground, a carriageway, a join, a deck): where two limits meet — the back and the end of a
     // footway — the corner comes out sharp, inside the cell, instead of cut off across it.
-    const TERMS = ['kerb', 'back', 'join', 'end', 'deck', 'other', 'road'];
+    const TERMS = ['kerb', 'back', 'join', 'end', 'deck', 'other', 'road', 'cut'];
     const verts = new Map(); P.wantC = true;
     const fin = q => q > 50 ? 50 : q < -50 ? -50 : q;   // (a limit that does not apply here is far away, not infinite: crossings stay finite)
     const mk = (k, x, z, p, eks, g) => { const T = p.T ? {} : null; if (T) for (const t of TERMS) T[t] = fin(p.T[t]); return { k, x, z, Hs: p.Hs, along: p.along, sd: p.sd, o: p.e, cands: p.cands, T, eks, g }; };
@@ -306,7 +313,7 @@ export function planFootways(RN, { baseY }) {
   // most SKIRT_MAX below the paving
   FW.buildEdges = (B, { ground, skirt = () => true } = {}) => {
     B.frame(0, 0, 0, 0);
-    const EW = 0.12, SKIRT_MAX = 1.6, kerbish = t => t === 'kerb' || t === 'join' || t === 'deck';
+    const EW = 0.12, SKIRT_MAX = 1.6, kerbish = t => t === 'kerb' || t === 'join' || t === 'deck' || t === 'cut';
     for (const ch of FW.chains) {
       const P2 = ch.pts, sn = ch.sn, m = P2.length, on = i => i >= 0 && i < m - 1 && !kerbish(ch.tags[i]);
       // the edging's inner line, mitred at its corners; where it meets a kerb it is cut square to its own segment

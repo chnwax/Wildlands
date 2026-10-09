@@ -12,6 +12,7 @@ import { THREE, scene, scatters, props, setPropMatrix, colRemove, colInsert, all
 import { buildCityLights } from '../citylights.js';
 import { CAP, owner as meshOwner } from './capture.js';
 import * as F from './format.js';
+import { catalogSet, catalogPrefabs, inCatalog } from './catalog.js';
 
 const DEG = Math.PI / 180, RAD = 180 / Math.PI;
 const pad3 = n => String(n).padStart(3, '0');
@@ -681,8 +682,19 @@ export class WorldLayer {
     let t = null;
     for (const e of this.geo) if (e.prefab === prefab) { t = e.id; break; }
     if (!t && this.scatterPrefabs.has(prefab)) for (const l of this.table(prefab).values()) { if (l.length) { const [s, i] = l[0]; t = this.scatterEnt(s, i).id; break; } }
+    if (!t && inCatalog(prefab)) t = this.catalogEnt(prefab).id; // (a model the world itself does not contain: catalog.js)
     this.templates.set(prefab, t);
     return t;
+  }
+  // a catalogue model as an instanced object of its own, never drawn in the world: the template its copies are built from
+  catalogEnt(prefab) {
+    const id = 'catalog_' + prefab; let ent = this.ents.get(id); if (ent) return ent;
+    const s = catalogSet(prefab), it = s.items[0];
+    s.lods[0].parts.forEach((part, k) => { if (!this.matName.has(part.material)) this.nameMaterial(part.material, part.material.name ? part.material.name.toLowerCase().replace(/[^a-z0-9]+/g, '_') : prefab + '_' + (k + 1)); });
+    ent = { kind: 'scatter', id, prefab, area: 'catalog', n: 1, set: s, i: 0, item: it, field: null, category: categoryOf(prefab, s.meta), det: null, state: null, parent: null, catalog: true };
+    ent.base = { p: [0, 0, 0], r: [0, 0, 0], s: [it.s * (it.sx || 1), it.s * (it.sy || 1), it.s * (it.sz || it.sx || 1)] };
+    this.ents.set(id, ent);
+    return ent;
   }
   // ---------------------------------------------------------------- files
   async loadFiles() {
@@ -708,7 +720,7 @@ export class WorldLayer {
   }
   validationContext(seen = new Map()) {
     return { generated: id => { const e = this.get(id); return e && e.kind !== 'added' ? e : null; }, exists: id => this.has(id) || [...this.files.values()].some(f => f.doc && f.doc.objects && f.doc.objects.some(o => o.id === id)),
-      prefabs: new Set([...this.geo.map(e => e.prefab), ...this.scatterPrefabs.keys(), ...Object.keys(PRIMITIVES)]), materials: new Set(this.matByName.keys()), seen, strictIds: true };
+      prefabs: new Set([...this.geo.map(e => e.prefab), ...this.scatterPrefabs.keys(), ...Object.keys(PRIMITIVES), ...catalogPrefabs().map(c => c.name)]), materials: new Set(this.matByName.keys()), seen, strictIds: true };
   }
   // parse + validate one edit file (path relative to world/<map>/); keeps the valid records
   readFile(path, text, ctx = this.validationContext()) {
@@ -813,6 +825,7 @@ export class WorldLayer {
       const e = this.scatterEnt(s, i), r = this.generatedRecord(e);
       if (!byArea.has(area)) byArea.set(area, []); byArea.get(area).push(r); p.count++; if (!p.template) p.template = e.id;
     }
+    for (const c of catalogPrefabs()) if (!prefabs.has(c.name)) pf(c.name, 'catalog', categoryOf(c.name, c));
     for (const [P] of prefabs) { const p = prefabs.get(P); if (!p.template) p.template = this.templateOf(P); if (p.template) { const sz = new THREE.Vector3(); const e = this.get(p.template); this.localBounds(e).getSize(sz); sz.multiply(_v.fromArray(e.base.s)); p.size = sz.toArray().map(v => +v.toFixed(2)); } }
     for (const [k, def] of Object.entries(PRIMITIVES)) prefabs.set(k, { name: k, label: def.label, category: 'primitive', source: 'primitive', count: 0, fieldCount: 0, template: null, size: [1, 1, 1] });
     const areas = [...byArea.keys()].sort(), base = `world/${this.map}/`;

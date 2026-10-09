@@ -11,6 +11,7 @@ import { withScatterMeta, THREE, S, Q, mulberry32, lerp, clamp, phTex, Scatter, 
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { windPatch } from './terrain.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
+import { addCatalog } from './world/catalog.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const TAU = Math.PI * 2;
@@ -1245,3 +1246,16 @@ const HYDRA = ['#7f9cff', '#9a86ff', '#c38cf0', '#ff9ccf', '#8fb6ff', '#b4a2ff']
 export const sakuraColor = rng => pick(SAKURA, rng);
 export const bushColor = rng => pick(BUSH, rng);
 export const hydraColor = rng => pick(HYDRA, rng);
+
+// ---------------------------------------------------------------- the world builder's catalogue (world/catalog.js)
+// every seeded variant of every species (and the red-leaved maple), at a typical height and colour
+{
+  const HEIGHT = { young: 8, spruce: 18, tall: 22, old: 28, pine: 15, jpine: 4.5, sapling: 1.6, snag: 14, broken: 16, twigs: 1, leaf: 11, oak: 13, birch: 12, zelkova: 12, maple: 8, willow: 10, sakura: 8.5, bamboo: 11 };
+  const tone = (kind, red) => { const rng = mulberry32(77); const sp = SPECIES[kind];
+    return sp.mat === 'fir' || sp.mat === 'jpine' ? coniferColor(rng, kind === 'jpine' ? 'pine' : kind) : sp.mat === 'dead' ? deadColor(rng, kind === 'broken') : kind === 'sakura' ? sakuraColor(rng) : broadColor(rng, red ? 'mapleRed' : kind); };
+  const entry = (kind, v, name, red = false) => addCatalog(name, 'vegetation', () => { const sp = SPECIES[kind];
+    return { parts: speciesParts(sp, materials(sp.mat), sp.geo(0, v), 0), item: { s: HEIGHT[kind] || 8, c: tone(kind, red), bc: barkColor(mulberry32(5), 0.4) } }; });
+  for (const [kind, sp] of Object.entries(SPECIES)) { const base = TREE_PREFAB[kind] || 'tree_' + kind;
+    for (let v = 0; v < sp.n; v++) entry(kind, v, sp.n > 1 ? `${base}_${v + 1}` : base); }
+  for (let v = 0; v < SPECIES.maple.n; v++) entry('maple', v, `tree_maple_red_${v + 1}`, true);
+}

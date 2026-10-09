@@ -3,6 +3,7 @@
 // each prop is one vertex-coloured geometry (one shared material) for instancing: clutterScatter() lays a list of them
 // out as an instanced world object (editable in the World Builder like the other instanced props).
 import { THREE, Scatter, withScatterMeta } from './core.js';
+import { addCatalog } from './world/catalog.js';
 
 const DIR = new URL('../assets/models/clutter/', import.meta.url);
 let pack = null;
@@ -25,6 +26,8 @@ export async function loadClutter() {
     g.computeBoundingSphere(); g.computeBoundingBox();
     geos[name] = g;
   }
+  // every prop of the pack in the world builder's catalogue (world/catalog.js), also the ones the town does not use
+  for (const name of Object.keys(geos)) addCatalog(name, 'prop', () => ({ parts: [{ geometry: geos[name], material, castShadow: true }] }));
   return (pack = { meta, geos, material, size: name => meta.props[name] && meta.props[name].size });
 }
 // props placed while the town is built (builders that know nothing of the pack queue them; the town lays them out)

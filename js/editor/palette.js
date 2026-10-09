@@ -4,7 +4,8 @@
 import { THREE, renderer } from '../core.js';
 import { el, icon, ui } from './ui.js';
 import { CAT_COLOR } from './outliner.js';
-import { PRIMITIVES, labelOf } from '../world/layer.js';
+import { PRIMITIVES, labelOf, CATEGORY } from '../world/layer.js';
+import { catalogPrefabs } from '../world/catalog.js';
 
 const CATS = ['all', 'building', 'structure', 'furniture', 'lighting', 'fence', 'play', 'sign', 'vegetation', 'rock', 'prop', 'vehicle', 'primitive'];
 export function buildPalette(E, pane) {
@@ -54,6 +55,7 @@ export function prefabList(L) {
     const s0 = sets[0], field = s0.meta.field; let n = 0, nf = 0; for (const s of sets) for (const it of s.items) (it.field || field ? nf++ : n++);
     m.set(P, { name: P, label: labelOf(P), category: (L.get(L.templateOf(P)) || {}).category || 'vegetation', count: n + nf });
   }
+  for (const c of catalogPrefabs()) if (!m.has(c.name)) m.set(c.name, { name: c.name, label: labelOf(c.name), category: CATEGORY[c.name] || c.category, count: 0 }); // (models the world does not contain)
   for (const [k, d] of Object.entries(PRIMITIVES)) m.set(k, { name: k, label: d.label, category: 'primitive', count: 0 });
   for (const p of m.values()) if (p.category !== 'primitive') { const t = L.get(L.templateOf(p.name)); if (t) { const s = L.localBounds(t).getSize(new THREE.Vector3()).multiply(new THREE.Vector3().fromArray(t.base.s)); p.size = s.toArray(); p.template = t.id; } }
   const order = c => CATS.indexOf(c) < 0 ? 99 : CATS.indexOf(c);

@@ -125,7 +125,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         const arm = { I, n, dir, d, base, Lm, tQ, h: n.hw, L, s, cornerT: {} };
         I.arms.push(arm); n.arms.push(arm);
       }
-      n.clips.push([s - L, s + L]);
+      n.clips.push([s - L, s + L]); (I.clipIx = I.clipIx || []).push([n, n.clips.length - 1]);
     });
     I.arms.sort((a, b) => Math.atan2(a.d[1], a.d[0]) - Math.atan2(b.d[1], b.d[0]));
     const c = I.p, arms = I.arms, m = arms.length;
@@ -174,6 +174,12 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
       const kinds = [edgeKind(a.n), edgeKind(b.n)];
       I.corners.push({ a, b, O, rF, arc, T1, T2, walk: Math.max(a.n.walk, b.n.walk), kind: kinds.includes('walk') ? 'walk' : kinds.includes('gutter') ? 'gutter' : 'skirt' });
     }
+    // a corner whose tangent point lies further out than the junction's end (a skewed junction, a road bending away)
+    // carries the junction's pad out to it: the carriageway stops there, and pad and carriageway never lie one over
+    // the other (two asphalt sheets at one height flickered against each other)
+    for (const a of arms) { const t = Math.max(a.L, ...Object.values(a.cornerT)); if (t > a.L + 0.02) a.L = t; }
+    for (const [n, ix] of I.clipIx || []) { const k = I.nets.indexOf(n), s = I.s[k], lo = arms.find(a => a.n === n && a.dir < 0), hi = arms.find(a => a.n === n && a.dir > 0);
+      n.clips[ix] = [s - (lo ? lo.L : n.clips[ix][1] - s), s + (hi ? hi.L : s - n.clips[ix][0])]; }
   }
   // ---- the pedestrian network: footway spans per road side, n.ws[side] = [[s0, s1, width]]
   // Roads with footways carry them along their whole length. Where a footway comes round a corner onto a street without
@@ -366,6 +372,7 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
           if (Math.abs(den) > 0.02) { const t = ((p2[0] - p1[0]) * b.d[1] - (p2[1] - p1[1]) * b.d[0]) / den, C = [p1[0] + a.d[0] * t, p1[1] + a.d[1] * t];
             if (Math.hypot(C[0] - c[0], C[1] - c[1]) < a.L + 2) pts.push(V(C[0], baseY(C[0], C[1]), C[1])); } }
       }
+      I.pad = pts.map(p => [p[0], p[2]]); // (its outline, for surface queries)
       const top = arms.reduce((best, a) => !best || RANK[a.n.R.kind] > RANK[best.n.R.kind] ? a : best, null).n;
       const ag = Math.min(...I.nets.map(age));
       // the pad is laid in rings from the centre out to its outline, every vertex on the ground's grade, so it follows

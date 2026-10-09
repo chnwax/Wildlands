@@ -4,6 +4,7 @@
 import { THREE, scene, Q, clamp, lerp, mulberry32, addBox } from './core.js';
 import { Emitter } from './audio.js';
 import { night, canvasTex, JP_FONT } from './townkit.js';
+import { addCatalog } from './world/catalog.js';
 
 // ---------------------------------------------------------------- geometry helpers
 // far level of detail (cars beyond Fleet.lodDist): the occupants and cabin with fewer segments on their rounds
@@ -631,3 +632,19 @@ export class Traffic {
     }
   }
 }
+
+// ---------------------------------------------------------------- the world builder's catalogue (world/catalog.js)
+// every car model as a parked car to place: body, glass, trim, lamps (off), cabin and four wheels, a colour of the
+// fleet's paints
+for (const [k, m] of Object.entries(PART_MAT)) if (!m.name) m.name = 'car_' + k.toLowerCase();
+Object.keys(TYPES).forEach((id, n) => addCatalog('car_' + id, 'vehicle', () => {
+  const T = TYPES[id], G = buildType(T), parts = [];
+  for (const key of BODY) { if (key === 'shadow') continue; const g = G.parts[key]; if (!g) continue;
+    parts.push({ geometry: g, material: PART_MAT[key], tint: TINTED.includes(key) ? (key === 'paint' ? true : key) : undefined, castShadow: !!CASTS[key] }); }
+  const tires = [], rims = [], m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  for (let a = 0; a < 2; a++) for (const side of [-1, 1]) { e.set(side > 0 ? 0 : Math.PI, 0, 0); q.setFromEuler(e); m.compose(new THREE.Vector3(T.axles[a], T.r, side * T.wz), q, new THREE.Vector3(1, 1, 1));
+    tires.push(G.tire.clone().applyMatrix4(m)); rims.push(G.rim.clone().applyMatrix4(m)); }
+  parts.push({ geometry: merge(tires), material: tireMat, castShadow: true }, { geometry: merge(rims), material: rimMat });
+  const col = T.taxi ? [0.72, 0.55, 0.05] : PAINTS[(n * 3) % PAINTS.length];
+  return { parts, item: { s: 1, c: new THREE.Color(...col), plate: new THREE.Color(1, 1, 1), head: new THREE.Color(0.04, 0.04, 0.04), tail: new THREE.Color(0.08, 0.08, 0.08) } };
+}));
