@@ -66,7 +66,8 @@ export class GeoBuilder {
     const wa = this.P(a), B = this.bucket(mat, wa[0], wa[2]), base = B.pos.length / 3, col = opt.color || WHITE;
     const ax = norm(sub(b, a)), ay = norm(cross(cross(ax, sub(c, a)), ax));
     const uvs = opt.uvs;
-    for (const [i, p] of [a, b, c].entries()) { const w = this.P(p), d = sub(p, a); B.pos.push(w[0], w[1], w[2]); B.nor.push(n[0], n[1], n[2]);
+    const ns = opt.normals; // optional per-vertex normals (local frame) for smooth shading
+    for (const [i, p] of [a, b, c].entries()) { const w = this.P(p), d = sub(p, a), nn = ns ? this.N(norm(ns[i])) : n; B.pos.push(w[0], w[1], w[2]); B.nor.push(nn[0], nn[1], nn[2]);
       if (uvs) B.uv.push(uvs[i][0], uvs[i][1]); else B.uv.push((d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2]) / s, -(d[0] * ay[0] + d[1] * ay[1] + d[2] * ay[2]) / s);
       const cc = opt.colors ? opt.colors[i] : col; B.col.push(cc[0], cc[1], cc[2]); }
     this._extra(B, 3, opt.attr);

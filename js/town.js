@@ -461,6 +461,13 @@ export async function build(progress, opts = {}) {
   const onBridge = (x, z) => Math.abs(x - riverX(z)) < 17;
   const RN = planRoads(ROADS, { baseY: roadY, skip: (x, z, R) => onRail(z) && R.kind !== 'path', inBounds: (x, z) => Math.abs(x) < 900 && Math.abs(z) < 700, noEdge: (x, z, R) => onBridge(x, z) && !R.walk });
   const inters = RN.inters, surfaceY = RN.surfaceY;
+  // bridgeheads (橋詰): where lane R's footway comes round the corner off a bridge road, the riverside walkway runs a few
+  // metres behind it — the gap between the two is paved into one bridgehead square, its surface eased from the footway's
+  // level to the walkway's (and to its ramp's, up to the bridge road)
+  for (const [bz, , id] of BRIDGES) { const E = BRIDGE_EDGE[id], rx = riverX(bz);
+    RN.FW.joins.push({ max: 3.8, box: [rx - 26, bz - E - 24, rx - 17, bz + E + 24],
+      dist: (x, z) => { const d = Math.abs(z - bz); if (d < E || d > E + 24) return null; const rd = riverX(z) - x; return rd < 15 ? null : rd - 17.6; },
+      y: (x, z) => { const d = Math.abs(z - bz); return lerp(Y0 + 0.385, Y0 + 0.12, clamp((d - E) / 3, 0, 1)); } }); }
   const topY = (x, z) => RN.topY(x, z, (a, b) => hf.groundAt(a, b));
   const nearInter = (x, z, R, pad = 1.2) => inters.some(I => I.roads.includes(R) && (() => { const o = I.roads[0] === R ? I.roads[1] : I.roads[0]; return Math.hypot(x - I.p[0], z - I.p[1]) < o.w / 2 + (o.walk || 0) + pad; })());
   const sOf = (id, x, z) => { const n = RN.byId.get(id); let best = null; for (const g of n.PL.segs) { const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t); if (!best || d < best.d) best = { d, s: g.s0 + t }; } return best.s; };
@@ -512,22 +519,22 @@ export async function build(progress, opts = {}) {
         if (Math.abs(x) > 800 || Math.abs(z) > 800) continue;
         occRect(x, z, hw + (R.walk ? R.walk + 0.05 : 0.45), 1, Math.atan2(dx, dz), 1); // footways have a hard edge; lanes keep their L-gutter
       }
-      // paved: the carriageway and its footways (or a lane's L-gutter) exactly — the verge beyond stays lawn to the kerb
-      const ext = hw + (R.walk || 0) + (R.kind === 'lane' ? 0.5 : 0) + 0.12;
+      // paved: the carriageway and its kerb (or a lane's L-gutter) exactly — the footways are painted from their own area
+      const ext = hw + (R.walk ? 0.4 : R.kind === 'lane' ? 0.5 : 0) + 0.12;
       hf.paintPave(Math.min(a[0], b[0]) - ext, Math.min(a[1], b[1]) - ext, Math.max(a[0], b[0]) + ext, Math.max(a[1], b[1]) + ext, (x, z) => nearestOnRoad({ pts: [a, b] }, x, z).d < ext ? 1 : 0);
     }
   }
-  // junction corners: the footway round the kerb arc and the carriageway inside the corner's sector
+  // junction corners: the kerb round the arc and the carriageway inside the corner's sector
   for (const I of inters) for (const cr of I.corners) {
     const u1 = [(cr.T1[0] - cr.O[0]) / cr.rF, (cr.T1[1] - cr.O[1]) / cr.rF], u2 = [(cr.T2[0] - cr.O[0]) / cr.rF, (cr.T2[1] - cr.O[1]) / cr.rF], k = u1[0] * u2[1] - u1[1] * u2[0], E = cr.rF + 1;
     hf.paintPave(cr.O[0] - E, cr.O[1] - E, cr.O[0] + E, cr.O[1] + E, (x, z) => { const vx = x - cr.O[0], vz = z - cr.O[1], r = Math.hypot(vx, vz);
-      return r > cr.rF - (cr.kind === 'walk' ? RN.cornerW(cr, x, z) : 0.5) - 0.12 && (u1[0] * vz - u1[1] * vx) * k >= -0.3 * r && (vx * u2[1] - vz * u2[0]) * k >= -0.3 * r ? 1 : 0; });
+      return r > cr.rF - 0.5 - 0.12 && (u1[0] * vz - u1[1] * vx) * k >= -0.3 * r && (vx * u2[1] - vz * u2[0]) * k >= -0.3 * r ? 1 : 0; });
   }
+  RN.FW.paint(hf.paintPave.bind(hf));
   // footways the pedestrian network carries on round corners onto lanes: lots keep off them, nothing grows through
   for (const n of RN.net) if (!n.walk) for (const side of [1, -1]) for (const [s0, s1, w] of n.ws[side]) for (let s = s0; s <= s1 + 0.5; s += 0.8) {
     const q = RN.sampleAt(n, Math.min(s, s1)), l = [-q.d[1], q.d[0]], off = side * (n.hw + w / 2), x = q.x + l[0] * off, z = q.z + l[1] * off;
     occRect(x, z, w / 2 + 0.05, 0.5, Math.atan2(q.d[0], q.d[1]), 1);
-    hf.paintPave(x - w, z - w, x + w, z + w, (px, pz) => { const dx = px - x, dz = pz - z; return Math.abs(dx * q.d[0] + dz * q.d[1]) < 0.5 && Math.abs(-dx * q.d[1] + dz * q.d[0]) < w / 2 + 0.12 ? 1 : 0; });
   }
   // footway width in front of a stretch [s0, s1] of road R on one side (0 where there is none)
   const walkAlong = (R, side, s0, s1) => { const n = RN.byId.get(R.id); let w = 0; for (let k = 0; k <= 4; k++) w = Math.max(w, RN.walkAt(n, side, lerp(s0, s1, k / 4))); return w; };
@@ -617,7 +624,7 @@ export async function build(progress, opts = {}) {
   const stationCars = [], forecourt = stationForecourt(B, { Y0, RN, sOf, rng: mulberry32(55), parked: stationCars });
   // river banks: concrete revetments with railings, plus bridges. Nothing grows through the revetment slabs or
   // under the walkway deck (the ground there sits below the concrete)
-  hf.paintPave(100, -RIVER_END - 1, 330, RIVER_END + 1, (x, z) => Math.abs(z) < RIVER_END + 0.4 && Math.abs(x - riverX(z)) < 18.3 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
+  hf.paintPave(100, -RIVER_END - 1, 330, RIVER_END + 1, (x, z) => Math.abs(z) < RIVER_END + 0.4 && Math.abs(x - riverX(z)) < 17.65 && Math.abs(x - riverX(z)) > 11.9 ? 1 : 0); // revetment + bank-top walkway
   // nothing grows anywhere in the channel, along its whole length (the bed under the water; the grass rule keeps blades
   // off the water's edge as well)
   hf.paint2(2, -hf.HALF, -hf.HALF, hf.HALF, hf.HALF, (x, z) => smoothstep(REV_WL - 0.4, REV_WL - 1.6, Math.abs(x - riverX(z))));
@@ -716,7 +723,7 @@ export async function build(progress, opts = {}) {
     B.beam('alu', [ra[0], ra[1] + 0.95, z1], [rb[0], rb[1] + 0.95, rb[2]], 0.07, 0.07, rc); B.beam('alu', [ra[0], ra[1] + 0.5, z1], [rb[0], rb[1] + 0.5, rb[2]], 0.035, 0.035, rc);
     for (const t of [0, 0.5, 1]) { const p = [lerp(ra[0], rb[0], t), lerp(ra[1], rb[1], t), lerp(z1, rb[2], t)]; B.box('alu', p[0], p[1] - 0.02, p[2], 0.06, 0.97, 0.06, rc); }
     addBox((ra[0] + rb[0]) / 2, (z1 + rb[2]) / 2, 0.1, Math.abs(rb[2] - z1) / 2, 0);
-    hf.paintPave(riverX(z2) + sd * 14.4 - 3.5, Math.min(z1, z2) - 0.2, riverX(z2) + sd * 14.4 + 3.5, Math.max(z1, z2) + 0.2, (x, z) => { const rd = Math.abs(x - riverX(z)); return rd > 14.3 && rd < 17.9 ? 1 : 0; });
+    hf.paintPave(riverX(z2) + sd * 14.4 - 3.5, Math.min(z1, z2) - 0.2, riverX(z2) + sd * 14.4 + 3.5, Math.max(z1, z2) + 0.2, (x, z) => { const rd = Math.abs(x - riverX(z)); return rd > 14.3 && rd < 17.65 ? 1 : 0; });
   }
   // road bridges: deck slab on concrete girders and cross-beams, round-nosed piers with caps, abutments; parapet wall with
   // an aluminium railing, name pillars (親柱) at the four corners, lamps, and steel expansion joints across the road
@@ -1114,55 +1121,22 @@ export async function build(progress, opts = {}) {
     }
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
-  RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470, ground: (x, z) => hf.groundAt(x, z) }); // guide blocks in town, not out on the valley road
-  { // bridgeheads (橋詰): where the riverside lane R meets a bridge road, the bank-top walkway, the walkway's ramp up to
-    // the road and the lane's own footway round the corner lay side by side with a strip of lawn between them — two
-    // parallel paths a few metres apart and an unpaved wedge at the bridge end. That strip is paved into one small
-    // bridgehead square: from the walkway's outer edge to the back of the lane's footway (wherever the curb return puts
-    // it), from the bridge road's footway out along the bank as far as the lane's footway runs, its surface eased from
-    // the walkway's (and its ramp's) level to the footway's, a kerb along its open end
-    const RAMP_L = 3.0, TOP_Y = Y0 + 0.385, rdW = 17.6;
-    for (const [bz, , id] of BRIDGES) for (const e of [-1, 1]) {
-      const sd = -1, E = BRIDGE_EDGE[id];                                     // (lane R runs along the west bank only)
-      const yW = z => { const d = Math.abs(z - bz); return d < E + RAMP_L ? lerp(TOP_Y, Y0 + 0.12, clamp((d - E) / RAMP_L, 0, 1)) : Y0 + 0.12; };
-      const backAt = z => { for (let rd = rdW + 0.05; rd < 25; rd += 0.05) { const y = RN.walkY(riverX(z) + sd * rd, z); if (y !== null) return { rd: rd - 0.02, y }; } return null; };
-      const rows = []; for (let d = E + 0.02; d < E + 30; d += 0.5) { const z = bz + e * d, b = backAt(z); if (!b || b.rd - rdW > 6) break; rows.push({ z, ...b }); }
-      if (rows.length < 3) continue;
-      entity('bridgehead_square', () => {
-        B.frame(0, 0, 0, 0);
-        const Wp = (z, rd, y) => [riverX(z) + sd * rd, y, z], col = [0.88, 0.86, 0.82];
-        for (let i = 0; i + 1 < rows.length; i++) {
-          const a = rows[i], b = rows[i + 1], n = Math.max(1, Math.ceil(Math.max(a.rd, b.rd) - rdW) / 1.2 | 0);
-          for (let k = 0; k < n; k++) { const t0 = k / n, t1 = (k + 1) / n;
-            const ra0 = lerp(rdW, a.rd, t0), ra1 = lerp(rdW, a.rd, t1), rb0 = lerp(rdW, b.rd, t0), rb1 = lerp(rdW, b.rd, t1);
-            const ya0 = lerp(yW(a.z), a.y, t0), ya1 = lerp(yW(a.z), a.y, t1), yb0 = lerp(yW(b.z), b.y, t0), yb1 = lerp(yW(b.z), b.y, t1);
-            const q = [Wp(a.z, ra0, ya0), Wp(b.z, rb0, yb0), Wp(b.z, rb1, yb1), Wp(a.z, ra1, ya1)], al = [a.z * e, b.z * e, b.z * e, a.z * e], ac = [ra0, rb0, rb1, ra1].map(r => r - rdW + 0.5);
-            B.poly('pavement', q, [0, 1, 0], { color: col, uvs: q.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: { aPave: al.map((v, j) => [v, ac[j]]) } }); }
-        }
-        // the open end: a kerb down to the lawn
-        const L = rows[rows.length - 1], n = 6;
-        for (let k = 0; k < n; k++) { const r0 = lerp(rdW, L.rd, k / n), r1 = lerp(rdW, L.rd, (k + 1) / n), y0 = lerp(yW(L.z), L.y, k / n), y1 = lerp(yW(L.z), L.y, (k + 1) / n);
-          B.poly('concrete', [Wp(L.z, r0, y0 - 0.25), Wp(L.z, r1, y1 - 0.25), Wp(L.z, r1, y1 + 0.004), Wp(L.z, r0, y0 + 0.004)], [0, 0, e], { color: [0.76, 0.75, 0.72] });
-          B.poly('concrete', [Wp(L.z, r0, y0 + 0.004), Wp(L.z, r1, y1 + 0.004), Wp(L.z + e * 0.12, r1, y1 + 0.004), Wp(L.z + e * 0.12, r0, y0 + 0.004)], [0, 1, 0], { color: [0.8, 0.79, 0.76] }); }
-        hf.paintPave(riverX(bz) - 26, Math.min(bz + e * E, L.z) - 0.3, riverX(bz) - 16, Math.max(bz + e * E, L.z) + 0.3, (x, z) => { const rd = riverX(z) - x, d = (z - bz) * e; if (d < E - 0.2 || d > Math.abs(L.z - bz) + 0.15) return 0; const b = backAt(z); return rd > rdW - 0.1 && b && rd < b.rd + 0.15 ? 1 : 0; });
-      });
-    }
-  }
-  { // footways standing above the ground (embanked approaches out of town, the bridge ramps): the ground behind them is
-    // built up into a grassy bank at 1:1.6 to their back edge, instead of the back edge standing out of the lawn
-    const { HN, HALF, CELL, H } = hf, rotL = d => [-d[1], d[0]];
-    for (const [n, side, sa, sb, kind, rw] of RN.runs) { if (kind !== 'walk') continue;
-      for (let s = sa; s <= sb; s += 1) {
-        const q = RN.sampleAt(n, s), l0 = rotL(q.d), l = [l0[0] * side, l0[1] * side], u = n.hw + rw, bx = q.x + l[0] * u, bz = q.z + l[1] * u;
-        const top = RN.walkY(bx - l[0] * 0.15, bz - l[1] * 0.15); if (top === null || top - hf.groundAt(bx, bz) < 0.1) continue;
-        if (Math.abs(bx - riverX(bz)) < 20) continue;
-        for (let j = Math.floor((bz - 4 + HALF) / CELL); j <= Math.ceil((bz + 4 + HALF) / CELL); j++) for (let i = Math.floor((bx - 4 + HALF) / CELL); i <= Math.ceil((bx + 4 + HALF) / CELL); i++) {
-          const vx = -HALF + i * CELL, vz = -HALF + j * CELL, dd = (vx - bx) * l[0] + (vz - bz) * l[1], along = Math.abs((vx - bx) * q.d[0] + (vz - bz) * q.d[1]);
-          if (dd < 0 || dd > 3.8 || along > 1.2) continue;
-          const t = top - 0.05 - 0.62 * dd, k = j * HN + i; if (t <= H[k]) continue;
-          if (RN.roadAt(vx, vz) || occRect(vx, vz, 0.6, 0.6, 0, 0, true) || Math.abs(vx - riverX(vz)) < 20) continue;
-          H[k] = t;
-        }
+  RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470 }); // guide blocks in town, not out on the valley road
+  // the footways (footways.js): their paving, and their edges where they meet no kerb — edging, a skirt to the ground
+  RN.FW.build(B);
+  RN.FW.buildEdges(B, { ground: (x, z) => hf.groundAt(x, z) });
+  { // footways standing above the ground (embanked approaches out of town, the bridge ramps): the ground behind their back
+    // edges is built up into a grassy bank at about 1:1.6, instead of the edge standing out of the lawn
+    const { HN, HALF, CELL, H } = hf;
+    for (const ch of RN.FW.chains) for (let i = 0; i < ch.pts.length; i++) {
+      const p = ch.pts[i], o = ch.n[i]; if (p.term === 'kerb' || p.term === 'join') continue;
+      const top = p.Hs; if (top - hf.groundAt(p.x, p.z) < 0.1 || Math.abs(p.x - riverX(p.z)) < 20) continue;
+      for (let j = Math.floor((p.z - 4 + HALF) / CELL); j <= Math.ceil((p.z + 4 + HALF) / CELL); j++) for (let ii = Math.floor((p.x - 4 + HALF) / CELL); ii <= Math.ceil((p.x + 4 + HALF) / CELL); ii++) {
+        const vx = -HALF + ii * CELL, vz = -HALF + j * CELL, dd = (vx - p.x) * o[0] + (vz - p.z) * o[1], across = Math.abs((vx - p.x) * o[1] - (vz - p.z) * o[0]);
+        if (dd < 0 || dd > 3.8 || across > 0.8) continue;
+        const t = top - 0.05 - 0.62 * dd, k = j * HN + ii; if (t <= H[k]) continue;
+        if (RN.roadAt(vx, vz) || RN.walkY(vx, vz) !== null || occRect(vx, vz, 0.6, 0.6, 0, 0, true) || Math.abs(vx - riverX(vz)) < 20) continue;
+        H[k] = t;
       }
     }
   }
@@ -1458,27 +1432,13 @@ export async function build(progress, opts = {}) {
       for (const g of n.PL.segs) { if (x < Math.min(g.a[0], g.b[0]) - ext || x > Math.max(g.a[0], g.b[0]) + ext || z < Math.min(g.a[1], g.b[1]) - ext || z > Math.max(g.a[1], g.b[1]) + ext) continue;
         const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L); if (Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t) < ext) return true; } } return false; };
     const blocked = (x, z) => RN.roadAt(x, z) || RN.walkY(x, z) !== null || hf.paveAt(x, z) > 0.3 || (occRect(x, z, 0.15, 0.15, 0, 0, true) && !inBand(x, z)) || (danchi.net && danchi.net.onPaving(x, z, 0.15)) || Math.abs(x - riverX(z)) < 18.5;
-    const SW = 1.6;
-    // a row of the verge at a point of a footway's back edge (bx, bz) facing out along l
-    const row = (bx, bz, l) => { const top = RN.walkY(bx - l[0] * 0.06, bz - l[1] * 0.06);
-      let w = 0; if (top !== null && top - hf.groundAt(bx, bz) > 0.06) { for (let d = 0.15; d <= SW + 0.01; d += 0.15) { if (blocked(bx + l[0] * d, bz + l[1] * d)) break; w = d; } }
-      return { bx, bz, l, top, w }; };
+    // a row of the verge at each point of the footways' edges that are not a kerb, facing out from the paving; the bank is
+    // wider where the paving stands higher above the lawn (1:1.6 or so), and stops at whatever else is there
     const edges = [];
-    for (const [n, side, sa, sb, kind, rw] of RN.runs) { if (kind !== 'walk') continue;
-      const prof = [];
-      for (let s = sa; s <= sb + 1e-6; s = s + 1 > sb && s < sb ? sb : s + 1) {
-        const q = RN.sampleAt(n, s), l0 = rotL(q.d), l = [l0[0] * side, l0[1] * side], u = n.hw + rw;
-        prof.push(row(q.x + l[0] * u, q.z + l[1] * u, l));
-        if (s >= sb) break;
-      }
-      edges.push(prof); }
-    // round the curb returns: the back edge found by walking in from the kerb line toward the corner's centre
-    for (const I of RN.inters) for (const cr of I.corners) { if (cr.kind !== 'walk') continue;
-      const prof = [];
-      for (const p of cr.arc) { const L = Math.hypot(cr.O[0] - p[0], cr.O[1] - p[1]), l = [(cr.O[0] - p[0]) / L, (cr.O[1] - p[1]) / L];
-        let d = 0.5; while (d < 4.5 && RN.walkY(p[0] + l[0] * d, p[1] + l[1] * d) !== null) d += 0.03;
-        prof.push(row(p[0] + l[0] * d, p[1] + l[1] * d, l)); }
-      edges.push(prof); }
+    for (const ch of RN.FW.chains) edges.push(ch.pts.map((p, i) => { const l = ch.n[i]; if (p.term === 'kerb' || p.term === 'join') return { bx: p.x, bz: p.z, l, top: null, w: 0 };
+      const top = p.Hs, g0 = hf.groundAt(p.x + l[0] * 0.2, p.z + l[1] * 0.2); let w = 0;
+      if (top - g0 > 0.04) { const want = clamp(0.6 + (top - g0) * 1.6, 0.6, 2.4); for (let d = 0.15; d <= want + 0.01; d += 0.15) { if (blocked(p.x + l[0] * d, p.z + l[1] * d)) break; w = d; } }
+      return { bx: p.x, bz: p.z, l, top, w }; }));
     if (vmat) for (const prof of edges) {
       // the width eased along the edge (no saw-tooth where an obstacle cuts it short): each row at most a little wider
       // than its neighbours' mean, so the strip tapers in and out instead of stepping

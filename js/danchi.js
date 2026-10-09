@@ -117,7 +117,7 @@ const BUILDINGS = [
   // south-west block: two walk-up slabs framing a lawn court, a point tower at the avenue corner, a low-rise block by F
   ['S', 384, 80, Math.PI, { w: 41.4, floors: 5, pal: 'cream', no: 1 }],
   ['S', 393, 126, Math.PI - 0.12, { w: 27.6, floors: 4, pal: 'salmon', no: 2, bal: 'rail' }],
-  ['T', 420, 168, Math.PI + 0.25, { floors: 14, pal: 'white', no: 1, name: 'サクラタワー 壱番館' }],
+  ['T', 420, 170.3, Math.PI + 0.25, { floors: 14, pal: 'white', no: 1, name: 'サクラタワー 壱番館' }],
   ['S', 394, 150, Math.PI, { w: 27.6, floors: 4, pal: 'sand', no: 9, bal: 'rail' }],
   ['R', 372, 176, Math.PI, { w: 22, pal: 'cream', name: 'コーポ桜' }],
   // south-east block A: the neighbourhood centre on the F / avenue corner, a U of flats round the playground court
