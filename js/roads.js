@@ -129,25 +129,48 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
     });
     I.arms.sort((a, b) => Math.atan2(a.d[1], a.d[0]) - Math.atan2(b.d[1], b.d[0]));
     const c = I.p, arms = I.arms, m = arms.length;
+    // an arm's straight line as the road runs at distance t from the crossing point: { d, base, Lm, tQ }
+    // (its direction from a chord across a metre and a half either side: a road's bends are polylines, and a direction that
+    // jumps from segment to segment made the corner's tangent point swing between two places)
+    const frameAt = (a, t) => { const n = a.n, sQ = clamp(a.s + a.dir * t, 0, n.PL.len), q = sampleAt(n.PL, sQ), qa = sampleAt(n.PL, clamp(sQ - 1.5, 0, n.PL.len)), qb = sampleAt(n.PL, clamp(sQ + 1.5, 0, n.PL.len));
+      const cd = norm2([qb.x - qa.x, qb.z - qa.z]), d = t > a.L - 0.05 ? [cd[0] * a.dir, cd[1] * a.dir] : [q.d[0] * a.dir, q.d[1] * a.dir];
+      const tQ = (q.x - c[0]) * d[0] + (q.z - c[1]) * d[1]; return { d, base: [q.x - d[0] * tQ, q.z - d[1] * tQ], Lm: Math.abs(sQ - a.s), tQ }; };
     for (let i = 0; i < m && m > 1; i++) {
       const a = arms[i], b = arms[(i + 1) % m];
       let ang = Math.atan2(b.d[1], b.d[0]) - Math.atan2(a.d[1], a.d[0]); if (ang <= 0) ang += Math.PI * 2;
       if (ang > Math.PI * 0.94) continue;                 // straight kerb line (the through side of a T)
-      const na = rot(a.d), nb = rot(b.d), phi = Math.acos(clamp(dot(a.d, b.d), -1, 1));
-      const p1 = [a.base[0] + na[0] * a.h, a.base[1] + na[1] * a.h], p2 = [b.base[0] - nb[0] * b.h, b.base[1] - nb[1] * b.h];
-      const den = a.d[0] * b.d[1] - a.d[1] * b.d[0]; if (Math.abs(den) < 1e-6) continue;
-      const t = ((p2[0] - p1[0]) * b.d[1] - (p2[1] - p1[1]) * b.d[0]) / den;
-      const C = [p1[0] + a.d[0] * t, p1[1] + a.d[1] * t];
-      const td = rF / Math.tan(phi / 2), bis = norm2([a.d[0] + b.d[0], a.d[1] + b.d[1]]), oc = rF / Math.sin(phi / 2);
-      const O = [C[0] + bis[0] * oc, C[1] + bis[1] * oc], T1 = [C[0] + a.d[0] * td, C[1] + a.d[1] * td], T2 = [C[0] + b.d[0] * td, C[1] + b.d[1] * td];
+      // The fillet is laid between the two kerb lines as the roads run where it meets them: first from the arms' lines at
+      // the end of the junction; where a tangent point falls further out on a road that curves (a corner wider than the
+      // junction), the fillet is laid again against that road's line at the tangent point, until it sits on the kerb
+      // (otherwise the curb return started off the road's kerb line and left a step or a gap where they should meet)
+      let fa = frameAt(a, a.L), fb = frameAt(b, b.L), F = null;
+      for (let it = 0; it < 24; it++) {
+        const na = rot(fa.d), nb = rot(fb.d), phi = Math.acos(clamp(dot(fa.d, fb.d), -1, 1));
+        const p1 = [fa.base[0] + na[0] * a.h, fa.base[1] + na[1] * a.h], p2 = [fb.base[0] - nb[0] * b.h, fb.base[1] - nb[1] * b.h];
+        const den = fa.d[0] * fb.d[1] - fa.d[1] * fb.d[0]; if (Math.abs(den) < 1e-6) { F = null; break; }
+        const t = ((p2[0] - p1[0]) * fb.d[1] - (p2[1] - p1[1]) * fb.d[0]) / den;
+        const C = [p1[0] + fa.d[0] * t, p1[1] + fa.d[1] * t];
+        const td = rF / Math.tan(phi / 2), bis = norm2([fa.d[0] + fb.d[0], fa.d[1] + fb.d[1]]), oc = rF / Math.sin(phi / 2);
+        const O = [C[0] + bis[0] * oc, C[1] + bis[1] * oc], T1 = [C[0] + fa.d[0] * td, C[1] + fa.d[1] * td], T2 = [C[0] + fb.d[0] * td, C[1] + fb.d[1] * td];
+        const tA = fa.Lm - fa.tQ + dot([T1[0] - fa.base[0], T1[1] - fa.base[1]], fa.d), tB = fb.Lm - fb.tQ + dot([T2[0] - fb.base[0], T2[1] - fb.base[1]], fb.d);
+        F = { O, T1, T2, tA, tB };
+        // (each arm's line taken again where the tangent point now lies along its road, nearer or further)
+        // (damped: on a road that curves round the corner the plain fixed point can swing between two solutions)
+        const ra = Math.abs(tA - fa.Lm) > 0.02 && tA > 0.5 ? frameAt(a, it < 2 ? tA : (fa.Lm + tA) / 2) : fa, rb = Math.abs(tB - fb.Lm) > 0.02 && tB > 0.5 ? frameAt(b, it < 2 ? tB : (fb.Lm + tB) / 2) : fb;
+        if (ra === fa && rb === fb) break;
+        fa = ra; fb = rb;
+      }
+      if (!F) continue;
+      const { O, T1, T2 } = F;
       const a1 = Math.atan2(T1[1] - O[1], T1[0] - O[0]), a2 = Math.atan2(T2[1] - O[1], T2[0] - O[0]);
       let da = a2 - a1; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
       const k = Math.max(6, Math.ceil(Math.abs(da) * rF / 0.5)), arc = [];
       for (let j = 0; j <= k; j++) { const aa = a1 + da * j / k; arc.push([O[0] + Math.cos(aa) * rF, O[1] + Math.sin(aa) * rF]); }
-      // (the tangent point's distance along the road from the crossing point: measured from where the arm line meets
-      // the road at the end of the junction, back along the road)
-      a.cornerT[a.dir] = a.Lm - a.tQ + dot([T1[0] - a.base[0], T1[1] - a.base[1]], a.d);
-      b.cornerT[-b.dir] = b.Lm - b.tQ + dot([T2[0] - b.base[0], T2[1] - b.base[1]], b.d);
+      // (the tangent point's distance along the road from the crossing point: where it projects onto the road itself)
+      const along = (arm, T, t0) => { let best = null; for (const g of arm.n.PL.segs) { const tt = clamp((T[0] - g.a[0]) * g.d[0] + (T[1] - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(T[0] - g.a[0] - g.d[0] * tt, T[1] - g.a[1] - g.d[1] * tt), sv = g.s0 + tt;
+        if (Math.abs(Math.abs(sv - arm.s) - t0) < 6 && (!best || d < best.d)) best = { d, t: Math.abs(sv - arm.s) }; } return best ? best.t : t0; };
+      a.cornerT[a.dir] = along(a, T1, F.tA);
+      b.cornerT[-b.dir] = along(b, T2, F.tB);
       const kinds = [edgeKind(a.n), edgeKind(b.n)];
       I.corners.push({ a, b, O, rF, arc, T1, T2, walk: Math.max(a.n.walk, b.n.walk), kind: kinds.includes('walk') ? 'walk' : kinds.includes('gutter') ? 'gutter' : 'skirt' });
     }
@@ -337,6 +360,11 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         for (const u of us) pts.push(P(n, sC, u));
         const cr = I.corners.find(k => k.a === a);
         if (cr) for (const q of cr.arc) pts.push(V(q[0], baseY(q[0], q[1]), q[1]));
+        else if (m > 1) { // a straight side: where the road kinks at the junction, the pad reaches out to the kink of its kerb lines
+          const b = arms[(i + 1) % m], na = rot(a.d), nb = rot(b.d), p1 = [a.base[0] + na[0] * a.h, a.base[1] + na[1] * a.h], p2 = [b.base[0] - nb[0] * b.h, b.base[1] - nb[1] * b.h];
+          const den = a.d[0] * b.d[1] - a.d[1] * b.d[0];
+          if (Math.abs(den) > 0.02) { const t = ((p2[0] - p1[0]) * b.d[1] - (p2[1] - p1[1]) * b.d[0]) / den, C = [p1[0] + a.d[0] * t, p1[1] + a.d[1] * t];
+            if (Math.hypot(C[0] - c[0], C[1] - c[1]) < a.L + 2) pts.push(V(C[0], baseY(C[0], C[1]), C[1])); } }
       }
       const top = arms.reduce((best, a) => !best || RANK[a.n.R.kind] > RANK[best.n.R.kind] ? a : best, null).n;
       const ag = Math.min(...I.nets.map(age));
@@ -396,6 +424,14 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         raw.push([n, side, s0, s1, noEdge(p[0], p[2], n.R) ? 'skirt' : k, w]);
       }
     }
+    // where a curb return's tangent point lies beyond the junction's clip (a skewed junction, a road bending at it) the
+    // corner takes over from there: the straight kerb along the road stops at the tangent point instead of running on
+    // to the clip beside the arc (two kerbs, the straight one sticking out past the curve)
+    const gaps = [];
+    for (const n of net) for (const a of n.arms) for (const side of [1, -1]) { const t = a.cornerT[side]; if (t === undefined || t <= a.L + 0.02) continue;
+      const s0 = clamp(a.s + a.dir * a.L, 0, n.PL.len), s1 = clamp(a.s + a.dir * t, 0, n.PL.len); gaps.push([n, side, Math.min(s0, s1), Math.max(s0, s1)]); }
+    for (const [n, side, g0, g1] of gaps) for (let i = raw.length - 1; i >= 0; i--) { const r = raw[i]; if (r[0] !== n || r[1] !== side || r[3] <= g0 + 1e-6 || r[2] >= g1 - 1e-6) continue;
+      const parts = []; if (r[2] < g0 - 0.02) parts.push([...r.slice(0, 2), r[2], g0, ...r.slice(4)]); if (r[3] > g1 + 0.02) parts.push([...r.slice(0, 2), g1, r[3], ...r.slice(4)]); raw.splice(i, 1, ...parts); }
     raw.sort((A, Bq) => A[0] === Bq[0] ? A[1] - Bq[1] || A[2] - Bq[2] : net.indexOf(A[0]) - net.indexOf(Bq[0]));
     const out = [];
     for (const r of raw) {

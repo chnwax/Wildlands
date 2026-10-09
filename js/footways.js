@@ -61,7 +61,7 @@ export function planFootways(RN, { baseY }) {
   // ends square across there
   const edgePt = (n, s, side) => { const q = RN.sampleAt(n, s), l = rot(q.d); return [q.x + l[0] * side * n.hw, q.z + l[1] * side * n.hw]; };
   for (const L of runs) for (const side of [1, -1]) for (const e of L[side]) {
-    const A = edgePt(e.n, e.s0, side), Bp = edgePt(e.n, e.s1, side), at = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.15;
+    const A = edgePt(e.n, e.s0, side), Bp = edgePt(e.n, e.s1, side), at = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.45;
     for (const a of arcs) { if (at(A, a.p0) || at(A, a.p1)) e.freeA = false; if (at(Bp, a.p0) || at(Bp, a.p1)) e.freeB = false; }
     // (a run continued by the next run of the same side — a change of kind or width — is joined to it as well)
     for (const o of L[side]) if (o !== e) { if (Math.abs(o.s1 - e.s0) < 0.05) e.freeA = !(o.walk && e.walk) && e.freeA; if (Math.abs(o.s0 - e.s1) < 0.05) e.freeB = !(o.walk && e.walk) && e.freeB; }
@@ -168,12 +168,15 @@ export function planFootways(RN, { baseY }) {
     return P;
   }
   // footway top at a point (kerb strip included), or null where there is none
-  const walkY = (x, z) => { const p = probe(x, z); return p.phiK >= -1e-6 ? p.H : null; };
+  // (on the paving: the paving's own top, which lies a few millimetres over the kerb profile — what stands or is painted
+  // on the footway sits on what is drawn)
+  const walkY = (x, z) => { const p = probe(x, z); return p.phiK >= -1e-6 ? (p.sd >= KERB_IN ? p.Hs : p.H) : null; };
 
   // ---- the paving: a 0.5 m world grid clipped to the area
   // FW.joins: [{ dist(x, z): distance outside the other paving's edge (null: not here), y(x, z): its surface, max: widest
   // gap joined, box: [x0, z0, x1, z1] where it applies }]
-  const FW = { probe, walkY, chains: [], joins };
+  // FW.flush: [(x, z) => bool] — other paving built against the footway there: its edge gets no edging or skirt
+  const FW = { probe, walkY, chains: [], joins, flush: [] };
   FW.build = (B, { color = WALK } = {}) => {
     B.frame(0, 0, 0, 0);
     const cells = new Set(), ck = (i, j) => (i + 32768) * 65536 + (j + 32768);
@@ -225,7 +228,12 @@ export function planFootways(RN, { baseY }) {
     // seams: where the paving passes from one kerb line's footway to another's, a piece is cut along the line where the
     // two lie equally far (the footways' own boundary), so every piece carries one kerb line's paving coordinates and no
     // slab is smeared across the seam (sd to each line is near linear across a cell: the cut is interpolated)
-    const sdOf = (v, X) => { if (v.cands) for (const c of v.cands) if (c.e === X) return c.sd; return null; };
+    // (a kerb line's distance where a vertex did not list it: from the line itself)
+    const sdTo = (X, x, z) => { if (X.type === 'arc') return X.cr.rF - Math.hypot(x - X.cr.O[0], z - X.cr.O[1]);
+      let d = Infinity; for (const g of X.n.PL.segs) { const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L); d = Math.min(d, Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t)); } return d - X.n.hw; };
+    const sdOf = (v, X) => { if (v.cands) for (const c of v.cands) if (c.e === X) return c.sd; return sdTo(X, v.x, v.z); };
+    const alongTo = (X, x, z) => { if (X.type === 'arc') { let rel = Math.atan2(z - X.cr.O[1], x - X.cr.O[0]) - X.a1; while (rel > Math.PI) rel -= 2 * Math.PI; while (rel < -Math.PI) rel += 2 * Math.PI; return 1000 + rel * Math.sign(X.span) * X.cr.rF; }
+      let best = Infinity, sb = 0; for (const g of X.n.PL.segs) { const t = clamp((x - g.a[0]) * g.d[0] + (z - g.a[1]) * g.d[1], 0, g.L), d = Math.hypot(x - g.a[0] - g.d[0] * t, z - g.a[1] - g.d[1] * t); if (d < best) { best = d; sb = g.s0 + t; } } return sb; };
     const splitBy = (poly, tags, A, Bo) => { const g = poly.map(v => { const a = sdOf(v, A), b = sdOf(v, Bo); return a === null || b === null ? null : a - b; });
       if (g.some(q => q === null)) return null;
       const key = 's' + Math.min(A.id, Bo.id) + ',' + Math.max(A.id, Bo.id);
@@ -243,7 +251,7 @@ export function planFootways(RN, { baseY }) {
       if (poly0.some(v => !Number.isFinite(v.Hs))) return;
       const poly = [...poly0].reverse();
       const pts = poly.map(v => [v.x, v.Hs, v.z]), uvs = poly.map(v => [v.x / 1.2, v.z / 1.2]), normals = poly.map(nrm);
-      const ap = poly.map(v => { if (X && v.cands) for (const c of v.cands) if (c.e === X) return [c.along, c.sd]; return [v.along, v.sd]; });
+      const ap = poly.map(v => { if (X) { if (v.cands) for (const c of v.cands) if (c.e === X) return [c.along, c.sd]; return [alongTo(X, v.x, v.z), sdTo(X, v.x, v.z)]; } return [v.along, v.sd]; });
       if (poly.length === 4) { B.quad('pavement', pts[0], pts[1], pts[2], pts[3], { color, uvs, normals, attr: { aPave: ap } }); return; }
       for (let i = 1; i + 1 < poly.length; i++) B.tri('pavement', pts[0], pts[i], pts[i + 1], { color, uvs: [uvs[0], uvs[i], uvs[i + 1]], normals: [normals[0], normals[i], normals[i + 1]], attr: { aPave: [ap[0], ap[i], ap[i + 1]] } });
     };
@@ -306,7 +314,8 @@ export function planFootways(RN, { baseY }) {
         const n0 = a && b ? [a[0] + b[0], a[1] + b[1]] : (a || b), L = Math.hypot(n0[0], n0[1]) || 1, nn = [n0[0] / L, n0[1] / L], ref = b || a, k = EW / Math.max(0.5, nn[0] * ref[0] + nn[1] * ref[1]);
         return [P2[i].x - nn[0] * k, P2[i].z - nn[1] * k]; };
       for (let i = 0; i + 1 < m; i++) { if (!on(i)) continue;
-        const a = P2[i], b = P2[i + 1], s = sn[i];
+        const a = P2[i], b = P2[i + 1], s = sn[i], fx = (a.x + b.x) / 2 + s[0] * 0.1, fz = (a.z + b.z) / 2 + s[1] * 0.1;
+        if (FW.flush.some(f => f(fx, fz))) continue;
         if (skirt(a.x, a.z) && skirt(b.x, b.z)) { const ga = Math.max(ground(a.x, a.z) - 0.06, a.Hs - SKIRT_MAX), gb = Math.max(ground(b.x, b.z) - 0.06, b.Hs - SKIRT_MAX);
           if (Math.max(a.Hs - ga, b.Hs - gb) > 0.08) B.poly('concrete', [[a.x, ga, a.z], [b.x, gb, b.z], [b.x, b.Hs, b.z], [a.x, a.Hs, a.z]], [s[0], 0, s[1]], { color: BACK, uv: 1.5 }); }
         // edging: 12 cm of plain concrete along the edge, flush with the paving (a hair above it)

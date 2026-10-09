@@ -343,7 +343,20 @@ export class PedNet {
   // o: { cover(x, z, rid): another surface's paving lies here (no edging), raise(x, z, y): lift the lawn to y there }
   build(B, o = {}) {
     const { nodes, edges } = this, H = (x, z) => this.H(x, z), V = (x, z) => [x, H(x, z), z], EDGE = [0.74, 0.74, 0.72];
-    const edging = (p, q, rid, out) => { if (o.cover && o.cover((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, rid)) return;
+    // other paving of the network just outside an edge: a strip, a junction or an area (the edging stops there — a
+    // path's edging laid on across the paving it joins showed as a kerb lying on the walk)
+    const otherPaving = (x, z) => { if (this.areaAt(x, z) >= 0) return true;
+      for (const J of this.junctions) if (J.bb ? (x >= J.bb[0] && x <= J.bb[2] && z >= J.bb[1] && z <= J.bb[3]) : true) { if (!J.bb) { const xs = J.poly.map(p => p[0]), zs = J.poly.map(p => p[1]); J.bb = [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)]; if (x < J.bb[0] || x > J.bb[2] || z < J.bb[1] || z > J.bb[3]) continue; } if (inPoly(J.poly, x, z)) return true; }
+      for (const e of edges) { if (e.dead) continue; const A = nodes[e.a], Bq = nodes[e.b], hw = this.chains[e.c].w / 2 - 0.02;
+        if (x < Math.min(A.x, Bq.x) - hw || x > Math.max(A.x, Bq.x) + hw || z < Math.min(A.z, Bq.z) - hw || z > Math.max(A.z, Bq.z) + hw) continue;
+        if (segDist(x, z, A.x, A.z, Bq.x, Bq.z).d < hw) return true; } return false; };
+    // the edging laid in pieces of at most half a metre, each only where nothing else is paved just outside it
+    const edging = (p0, q0, rid, out) => { const L = hyp(q0[0] - p0[0], q0[1] - p0[1]), n = Math.max(1, Math.ceil(L / 0.5));
+      for (let k = 0; k < n; k++) { const p = [p0[0] + (q0[0] - p0[0]) * k / n, p0[1] + (q0[1] - p0[1]) * k / n], q = [p0[0] + (q0[0] - p0[0]) * (k + 1) / n, p0[1] + (q0[1] - p0[1]) * (k + 1) / n];
+        const mx = (p[0] + q[0]) / 2 + out[0] * 0.14, mz = (p[1] + q[1]) / 2 + out[1] * 0.14;
+        if ((o.cover && (o.cover(mx, mz, rid) || o.cover((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, rid))) || otherPaving(mx, mz)) continue;
+        edgePiece(p, q, rid, out); } };
+    const edgePiece = (p, q, rid, out) => {
       const ex = out[0] * 0.05, ez = out[1] * 0.05, a = [p[0] + ex, 0, p[1] + ez], b = [q[0] + ex, 0, q[1] + ez]; a[1] = H(p[0], p[1]) - 0.04; b[1] = H(q[0], q[1]) - 0.04;
       B.detail(1, () => B.beam('concrete', a, b, 0.1, 0.12, { color: EDGE }));
       // a skirt where the paving stands above the lawn
@@ -369,9 +382,15 @@ export class PedNet {
     // junctions: a fan round the node, paved in the frame of its widest edge
     for (const J of this.junctions) {
       const N = nodes[J.ni], W = J.inc.reduce((a, b) => b.hw > a.hw ? b : a), e = edges[W.ei], C = this.chains[e.c], A = nodes[e.a], Bq = nodes[e.b], L = hyp(Bq.x - A.x, Bq.z - A.z), d = [(Bq.x - A.x) / L, (Bq.z - A.z) / L], nn = [-d[1], d[0]];
-      const al = p => (p[0] - A.x) * d[0] + (p[1] - A.z) * d[1], ac = p => 0.5 + (p[0] - A.x) * nn[0] + (p[1] - A.z) * nn[1] + C.w / 2, c = V(N.x, N.z), cp = [N.x, N.z];
+      const c = V(N.x, N.z), cp = [N.x, N.z];
+      // the fan's sectors each continue the slab pattern of the strip they face (its along and across), so the slabs run
+      // on from every path into the junction instead of one grid laid across all of them
+      const frames = J.inc.map(I => { const e2 = edges[I.ei], A2 = nodes[e2.a], B2 = nodes[e2.b], C2 = this.chains[e2.c], L2 = hyp(B2.x - A2.x, B2.z - A2.z) || 1, d2 = [(B2.x - A2.x) / L2, (B2.z - A2.z) / L2];
+        const out = e2.a === J.ni ? d2 : [-d2[0], -d2[1]]; return { out, al: p => (p[0] - A2.x) * d2[0] + (p[1] - A2.z) * d2[1], ac: p => 0.5 + (p[0] - A2.x) * -d2[1] + (p[1] - A2.z) * d2[0] + C2.w / 2 }; });
+      void C; void d; void nn; void L;
       for (let i = 0; i < J.poly.length; i++) { const p = J.poly[i], q = J.poly[(i + 1) % J.poly.length]; if (hyp(q[0] - p[0], q[1] - p[1]) < 1e-4) continue;
-        pave(C, [c, V(...p), V(...q)], [cp, p, q].map(al), [cp, p, q].map(ac));
+        const mx = (p[0] + q[0]) / 2 - N.x, mz = (p[1] + q[1]) / 2 - N.z; let F = frames[0], best = -Infinity; for (const f of frames) { const dd = f.out[0] * mx + f.out[1] * mz; if (dd > best) { best = dd; F = f; } }
+        pave(C, [c, V(...p), V(...q)], [cp, p, q].map(F.al), [cp, p, q].map(F.ac));
         if (J.kind[i] && J.inc.some(I => this.chains[edges[I.ei].c].edge)) { const mx = (p[0] + q[0]) / 2 - N.x, mz = (p[1] + q[1]) / 2 - N.z, ml = hyp(mx, mz) || 1, tx = q[0] - p[0], tz = q[1] - p[1], tl = hyp(tx, tz);
           let ox = tz / tl, oz = -tx / tl; if (ox * mx + oz * mz < 0) { ox = -ox; oz = -oz; } void ml; edging(p, q, C.rid, [ox, oz]); } }
     }

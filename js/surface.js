@@ -229,7 +229,7 @@ export function paving(mat, key) {
           diffuseColor.rgb *= mix(0.95, 1.05, h);
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.05, 1.05, 1.07), step(0.955, h2));   // replaced slab
           float ex = vPave.x / 9.0, exj = aaLine(abs(fract(ex + 0.5) - 0.5) * 9.0, 0.012, fwidth(vPave.x));
-          diffuseColor.rgb *= 1.0 - 0.28 * max(jx, jy) - 0.5 * exj;
+          diffuseColor.rgb *= 1.0 - 0.28 * max(jx, jy) - 0.22 * exj;
           diffuseColor.rgb *= 1.0 - 0.08 * (1.0 - smoothstep(0.0, 0.5, vPave.y - 0.46));                      // grime at the kerb
         }`);
   });
