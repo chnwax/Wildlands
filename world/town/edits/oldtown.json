@@ -1,0 +1,199 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "oldtown",
+  "objects": [
+    {
+      "id": "garbage_point_oldtown_010",
+      "deleted": true,
+      "origin": [-349.087, 6.011, -279.05]
+    },
+    {
+      "id": "hedge_oldtown_1069",
+      "deleted": true,
+      "origin": [-374.665, 5.975, -277.716]
+    },
+    {
+      "id": "hedge_oldtown_1070",
+      "deleted": true,
+      "origin": [-375.599, 5.975, -277.716]
+    },
+    {
+      "id": "hedge_oldtown_1071",
+      "deleted": true,
+      "origin": [-376.533, 5.976, -277.716]
+    },
+    {
+      "id": "hedge_oldtown_1072",
+      "deleted": true,
+      "origin": [-377.466, 5.976, -277.716]
+    },
+    {
+      "id": "hedge_oldtown_1101",
+      "position": [-344.541, 5.953, -278.8],
+      "origin": [-344.541, 5.953, -278.507]
+    },
+    {
+      "id": "hedge_oldtown_1102",
+      "position": [-345.688, 5.955, -278.807],
+      "origin": [-345.688, 5.955, -278.507]
+    },
+    {
+      "id": "hedge_oldtown_1103",
+      "position": [-346.836, 5.957, -278.823],
+      "origin": [-346.836, 5.957, -278.507]
+    },
+    {
+      "id": "hedge_oldtown_1122",
+      "position": [-350.86, 5.959, -263.101],
+      "origin": [-350.86, 5.959, -268.63]
+    },
+    {
+      "id": "hedge_oldtown_1123",
+      "position": [-350.86, 5.96, -263.437],
+      "origin": [-350.86, 5.96, -269.636]
+    },
+    {
+      "id": "hedge_oldtown_1124",
+      "position": [-350.86, 5.961, -273.987],
+      "origin": [-350.86, 5.961, -270.642]
+    },
+    {
+      "id": "house_oldtown_050",
+      "position": [-392.358, 5.946, 231.998],
+      "rotation": [0, 179.67, 0],
+      "origin": [-392.358, 5.946, 230.804]
+    },
+    {
+      "id": "house_oldtown_051",
+      "rotation": [0, 179.83, 0],
+      "origin": [-382.925, 5.959, 231.122]
+    },
+    {
+      "id": "house_oldtown_052",
+      "rotation": [0, 179.59, 0],
+      "origin": [-373.337, 5.958, 231.803]
+    },
+    {
+      "id": "house_oldtown_053",
+      "rotation": [0, 178.92, 0],
+      "origin": [-363.563, 5.962, 232.532]
+    },
+    {
+      "id": "house_oldtown_084",
+      "slots": {
+        "wood#0": { "offset": [-0.0113, -3.1275, -0.1191] }
+      },
+      "origin": [-196.429, 5.947, -111.518]
+    },
+    {
+      "id": "house_oldtown_087",
+      "slots": {
+        "wood#0": { "offset": [0.0059, -3.3028, -0.1179] }
+      },
+      "origin": [-164.103, 5.935, -111.69]
+    },
+    {
+      "id": "house_oldtown_088",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-142.045, 5.918, -112.434]
+    },
+    {
+      "id": "house_oldtown_091",
+      "slots": {
+        "wood#0": { "hidden": true, "offset": [0.014, 0, -0.154] }
+      },
+      "origin": [-94.352, 5.966, -111.844]
+    },
+    {
+      "id": "house_oldtown_147",
+      "slots": {
+        "wood#0": { "offset": [0, -3.5191, -0.1185] }
+      },
+      "origin": [-138.973, 5.889, -165.85]
+    },
+    {
+      "id": "house_oldtown_172",
+      "slots": {
+        "wood#0": { "offset": [0, 0, -0.1359] }
+      },
+      "origin": [-389.204, 6.055, -161.824]
+    },
+    {
+      "id": "house_oldtown_184",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-409.944, 6.017, -193.179]
+    },
+    {
+      "id": "house_oldtown_222",
+      "slots": {
+        "wood#0": { "offset": [0, -3.4743, -0.1343] }
+      },
+      "origin": [-410.575, 6.049, 166.88]
+    },
+    {
+      "id": "house_oldtown_235",
+      "slots": {
+        "wood#0": { "offset": [0, -3.4453, -0.1369] }
+      },
+      "origin": [-375.89, 6.049, 58.015]
+    },
+    {
+      "id": "house_oldtown_249",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-323.29, 6.009, 109.762]
+    },
+    {
+      "id": "house_oldtown_395",
+      "slots": {
+        "wood#0": { "hidden": true, "offset": [0, -3.5761, 0] }
+      },
+      "origin": [-285.022, 5.979, 163.869]
+    },
+    {
+      "id": "house_oldtown_415",
+      "slots": {
+        "wood": { "offset": [0.0106, 0, -0.1148] }
+      },
+      "origin": [-275.577, 5.941, -292.041]
+    },
+    {
+      "id": "hydrangea_oldtown_346",
+      "position": [-343.835, 5.955, -278.395],
+      "origin": [-345.424, 5.955, -278.057]
+    },
+    {
+      "id": "hydrangea_oldtown_362",
+      "position": [-209.514, 6.036, -278.249],
+      "origin": [-210.311, 6.036, -277.829]
+    },
+    {
+      "id": "hydrangea_oldtown_366",
+      "position": [-191.146, 6.05, -277.309],
+      "origin": [-192.735, 6.05, -277.889]
+    },
+    {
+      "id": "mailbox_oldtown_205",
+      "position": [-378.532, 6.076, -278.345],
+      "origin": [-377.883, 6.024, -278.345]
+    },
+    {
+      "id": "tree_broadleaf_oldtown_106",
+      "position": [-373.907, 5.874, -277.475],
+      "origin": [-374.957, 5.874, -277.475]
+    },
+    {
+      "id": "utility_box_oldtown_021",
+      "position": [-342.157, 5.999, -286.135],
+      "rotation": [0, -91.88, 0],
+      "origin": [-342.381, 5.999, -284.743]
+    }
+  ]
+}

@@ -1,8 +1,21 @@
 // Procedural audio: ambience beds, birds/insects, footsteps, and 3D positional emitters (bells, trains, engines).
 import { toastMsg } from './ui.js';
 
+// footsteps by surface: thud [Hz, decay s, level]; noise layers [buffer w|b, filter, Hz, Q, attack, decay, level, delay?,
+// highpass Hz?]; grains [count, spread s, Hz, level]
+const STEPS = {
+  asphalt: { thud: [85, 0.055, 0.22], noise: [['w', 'bandpass', 1700, 0.9, 0.002, 0.022, 0.05], ['w', 'bandpass', 3200, 1.0, 0.002, 0.026, 0.02, 0.05]] },
+  rock: { thud: [100, 0.045, 0.22], noise: [['w', 'bandpass', 2400, 1.0, 0.002, 0.018, 0.055], ['w', 'bandpass', 3800, 1.0, 0.002, 0.02, 0.02, 0.045]] },
+  wood: { thud: [175, 0.09, 0.2], noise: [['w', 'bandpass', 850, 2.2, 0.002, 0.04, 0.06], ['w', 'bandpass', 2600, 1.2, 0.002, 0.02, 0.02, 0.05]] },
+  grass: { thud: [62, 0.06, 0.12], noise: [['b', 'lowpass', 2400, 0.5, 0.03, 0.11, 0.5, 0, 380], ['w', 'lowpass', 6000, 0.4, 0.025, 0.07, 0.025, 0.02, 2500]] },
+  forest: { thud: [60, 0.065, 0.12], noise: [['b', 'lowpass', 2000, 0.5, 0.03, 0.13, 0.55, 0, 320], ['w', 'lowpass', 5000, 0.4, 0.025, 0.08, 0.025, 0.02, 2200]], grains: [3, 0.08, 2600, 0.12] },
+  sand: { thud: [58, 0.06, 0.1], noise: [['w', 'lowpass', 1500, 0.5, 0.025, 0.1, 0.09]], grains: [9, 0.07, 3000, 0.05] },
+  gravel: { thud: [78, 0.05, 0.14], noise: [['w', 'bandpass', 2200, 0.6, 0.004, 0.055, 0.05]], grains: [14, 0.07, 3400, 0.11] },
+  water: { noise: [['b', 'lowpass', 900, 0.5, 0.015, 0.22, 0.6], ['w', 'bandpass', 1800, 0.8, 0.01, 0.12, 0.08, 0.03]] },
+};
+
 export const audio = {
-  ctx: null, master: null, muted: false, vol: 0.8, emitters: new Set(),
+  ctx: null, master: null, muted: false, vol: 0.8, emitters: new Set(), lp: { x: 0, y: 0, z: 0 },
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const ctx = this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -30,6 +43,7 @@ export const audio = {
   listen(cam) {
     if (!this.ctx) return;
     const L = this.ctx.listener, p = cam.position, t = this.ctx.currentTime;
+    this.lp.x = p.x; this.lp.y = p.y; this.lp.z = p.z;
     const f = { x: -Math.sin(cam.rotation.y), z: -Math.cos(cam.rotation.y) };
     if (L.positionX) {
       L.positionX.setTargetAtTime(p.x, t, 0.02); L.positionY.setTargetAtTime(p.y, t, 0.02); L.positionZ.setTargetAtTime(p.z, t, 0.02);
@@ -50,7 +64,7 @@ export const audio = {
     this.nextBird -= dt;
     if (this.nextBird < 0) { this.nextBird = 0.8 + Math.random() * 5 / (0.3 + (st.forest || 0) + (st.town || 0) * 0.3); if (st.day > 0.5 && !st.under) this.bird((st.forest || 0) + 0.3); }
     this.nextCricket -= dt;
-    if (this.nextCricket < 0) { this.nextCricket = 0.35 + Math.random() * 0.9; if (st.night > 0.5 && !st.under) this.cricket(); }
+    if (this.nextCricket < 0) { this.nextCricket = 0.5 + Math.random() * 1.2; if (st.night > 0.5 && !st.under && Math.random() < 1 - 0.75 * (st.town || 0)) this.cricket(); }
     this.nextCicada -= dt;
     if (this.nextCicada < 0) { this.nextCicada = 6 + Math.random() * 14; if (st.insects && st.day > 0.7 && !st.under) this.cicada(st.insects); }
   },
@@ -72,38 +86,53 @@ export const audio = {
     }
     o.start(t0); o.stop(t + 0.1);
   },
-  cricket() {
+  cricket() { // a short trill (ringing-cricket style): a band-limited tone pulsed ~30 times a second, soft edges
     const ctx = this.ctx, t0 = ctx.currentTime + 0.01, g = this.voice();
-    const o = ctx.createOscillator(); o.frequency.value = 4300 + Math.random() * 500; o.connect(g);
-    const vol = 0.008 + Math.random() * 0.015;
-    for (let i = 0; i < 3; i++) { const t = t0 + i * 0.045; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.linearRampToValueAtTime(0, t + 0.03); }
-    o.start(t0); o.stop(t0 + 0.2);
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 3300 + Math.random() * 500;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = o.frequency.value; bp.Q.value = 4;
+    o.connect(bp).connect(g);
+    const vol = 0.004 + Math.random() * 0.007, n = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < n; i++) { const t = t0 + i * 0.034; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.01); g.gain.linearRampToValueAtTime(0, t + 0.026); }
+    o.start(t0); o.stop(t0 + n * 0.034 + 0.05);
   },
   // Japanese summer cicada (minmin-zemi style): pulsed buzzy tone with a slow swell and fade
   cicada(level) {
     const ctx = this.ctx, t0 = ctx.currentTime + 0.05, dur = 4 + Math.random() * 5, g = this.voice(Math.random() * 1.6 - 0.8);
-    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 3800 + Math.random() * 900;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 4200; bp.Q.value = 3;
-    const am = ctx.createGain(); am.gain.value = 0;
-    const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 5 + Math.random() * 3;
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 3600 + Math.random() * 700;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = o.frequency.value; bp.Q.value = 2;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000;
+    const am = ctx.createGain(); am.gain.value = 0.5;                                  // 0.5 ± 0.5: a real 0..1 swell
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 2.2 + Math.random() * 1.2;
     const lg = ctx.createGain(); lg.gain.value = 0.5; lfo.connect(lg).connect(am.gain);
-    o.connect(bp).connect(am).connect(g);
-    const v = 0.035 * level;
+    const buzz = ctx.createGain(); buzz.gain.value = 0.7;                              // wing-buzz texture
+    const bz = ctx.createOscillator(); bz.frequency.value = 90 + Math.random() * 40; const bzg = ctx.createGain(); bzg.gain.value = 0.3; bz.connect(bzg).connect(buzz.gain);
+    o.connect(bp).connect(lp).connect(buzz).connect(am).connect(g);
+    const v = 0.016 * level;
     g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t0 + 1.2); g.gain.setValueAtTime(v, t0 + dur - 1.5); g.gain.linearRampToValueAtTime(0, t0 + dur);
-    o.start(t0); lfo.start(t0); o.stop(t0 + dur + 0.1); lfo.stop(t0 + dur + 0.1);
+    o.start(t0); lfo.start(t0); bz.start(t0); o.stop(t0 + dur + 0.1); lfo.stop(t0 + dur + 0.1); bz.stop(t0 + dur + 0.1);
   },
+  // A footstep: a soft heel thump (a low sine falling in pitch) under the surface's own sound — a short dry scuff and toe
+  // tap on asphalt and paving, a hollow knock on boards, a soft brushing swish through grass (leaves and twigs in the
+  // forest), grains crunching on gravel and sand, a splash in water. Every step varies a little in pitch and level.
   step(surface, intensity) {
     if (!this.ctx) return;
-    const ctx = this.ctx, t0 = ctx.currentTime;
-    const s = ctx.createBufferSource(); s.buffer = this.white; s.playbackRate.value = 0.7 + Math.random() * 0.5;
-    const f = ctx.createBiquadFilter(); const g = ctx.createGain();
-    const cfg = { grass: [2400, 0.8, 0.12, 0.09], forest: [1500, 1.2, 0.16, 0.08], sand: [900, 0.7, 0.12, 0.11], rock: [700, 2.5, 0.14, 0.05],
-      water: [500, 0.6, 0.25, 0.22], asphalt: [1100, 1.6, 0.13, 0.045], gravel: [2800, 0.9, 0.2, 0.1], wood: [420, 3.0, 0.18, 0.06] }[surface] || [1500, 1, 0.12, 0.07];
-    f.type = 'bandpass'; f.frequency.value = cfg[0] * (0.85 + Math.random() * 0.3); f.Q.value = cfg[1];
-    const v = cfg[2] * intensity;
-    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0005, t0 + cfg[3] + 0.05);
-    s.connect(f).connect(g).connect(this.master);
-    s.start(t0, Math.random() * 3); s.stop(t0 + cfg[3] + 0.08);
+    const ctx = this.ctx, t0 = ctx.currentTime + 0.002, R = Math.random, S = STEPS[surface] || STEPS.grass;
+    const out = ctx.createGain(); out.gain.value = intensity * 0.4; out.connect(this.master);
+    if (S.thud) { const [f, d, v] = S.thud, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(f * (1.3 + R() * 0.2), t0); o.frequency.exponentialRampToValueAtTime(f * (0.75 + R() * 0.1), t0 + d);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v * (0.85 + R() * 0.3), t0 + 0.005); g.gain.exponentialRampToValueAtTime(0.0003, t0 + d + 0.02);
+      o.connect(g).connect(out); o.start(t0); o.stop(t0 + d + 0.05); }
+    for (const [buf, type, f, q, a, d, v, at = 0, hp = 0] of S.noise || []) { const t = t0 + at * (0.8 + R() * 0.4);
+      const src = ctx.createBufferSource(); src.buffer = buf === 'b' ? this.brown : this.white; src.playbackRate.value = 0.85 + R() * 0.3;
+      const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f * (0.85 + R() * 0.3); fl.Q.value = q;
+      let node = src.connect(fl); if (hp) { const h = ctx.createBiquadFilter(); h.type = 'highpass'; h.frequency.value = hp; node = node.connect(h); }
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * (0.8 + R() * 0.4), t + a); g.gain.exponentialRampToValueAtTime(0.0003, t + a + d);
+      node.connect(g).connect(out); src.start(t, R() * 3); src.stop(t + a + d + 0.03); }
+    if (S.grains) { const [n, spread, f, v] = S.grains; // (separate little cracks: stones or twigs shifting under the sole)
+      for (let i = 0; i < n; i++) { const t = t0 + 0.003 + R() * spread, src = ctx.createBufferSource(); src.buffer = this.white;
+        const fl = ctx.createBiquadFilter(); fl.type = 'bandpass'; fl.frequency.value = f * (0.6 + R() * 0.9); fl.Q.value = 1.8;
+        const g = ctx.createGain(), dd = 0.004 + R() * 0.01; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * (0.4 + R() * 0.8), t + 0.001); g.gain.exponentialRampToValueAtTime(0.0003, t + dd);
+        src.connect(fl).connect(g).connect(out); src.start(t, R() * 3); src.stop(t + dd + 0.01); } }
   },
 };
 
@@ -113,8 +142,10 @@ export class Emitter {
   _build() {
     const ctx = audio.ctx;
     this.pan = ctx.createPanner(); this.pan.panningModel = 'equalpower'; this.pan.distanceModel = 'inverse';
-    this.pan.refDistance = this.kind === 'engine' ? 4 : 12; this.pan.rolloffFactor = 1.1; this.pan.maxDistance = 2000;
+    this.pan.refDistance = this.kind === 'engine' ? 4 : this.kind === 'bell' ? 8 : 12; this.pan.rolloffFactor = this.kind === 'bell' ? 1.6 : 1.1; this.pan.maxDistance = 2000;
+    this.range = { bell: [120, 320], train: [500, 900], engine: [60, 95] }[this.kind] || [300, 600];
     this.out = ctx.createGain(); this.out.gain.value = 0; this.out.connect(this.pan).connect(audio.master);
+    if (this.kind === 'bell') { this.lpf = ctx.createBiquadFilter(); this.lpf.type = 'lowpass'; this.lpf.frequency.value = 2600; this.lpf.connect(this.out); }
     if (this.kind === 'train') {
       const rum = ctx.createBufferSource(); rum.buffer = audio.brown; rum.loop = true; rum.start();
       this.rumF = ctx.createBiquadFilter(); this.rumF.type = 'lowpass'; this.rumF.frequency.value = 220;
@@ -124,7 +155,7 @@ export class Emitter {
       this.hisG = ctx.createGain(); this.hisG.gain.value = 0; hiss.connect(this.hisF).connect(this.hisG).connect(this.out);
       // VVVF traction inverter whine: two tones that track speed
       this.mot = [ctx.createOscillator(), ctx.createOscillator()]; this.motG = ctx.createGain(); this.motG.gain.value = 0;
-      this.mot.forEach((o, i) => { o.type = i ? 'triangle' : 'sawtooth'; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.5; o.connect(f).connect(this.motG); o.start(); });
+      this.mot.forEach((o, i) => { o.type = i ? 'triangle' : 'sawtooth'; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.5; const l = ctx.createBiquadFilter(); l.type = 'lowpass'; l.frequency.value = 1600; o.connect(f).connect(l).connect(this.motG); o.start(); });
       this.motG.connect(this.out);
       this.nextJoint = 0;
     } else if (this.kind === 'engine') {
@@ -144,36 +175,42 @@ export class Emitter {
     if (P.positionX) { P.positionX.setTargetAtTime(x, t, 0.03); P.positionY.setTargetAtTime(y, t, 0.03); P.positionZ.setTargetAtTime(z, t, 0.03); }
     else P.setPosition(x, y, z);
   }
-  update(dt, dist) {
+  update(dt) {
     if (!audio.ctx || !this.pan) return;
     const ctx = audio.ctx, t = ctx.currentTime, p = this.p;
+    const d = Math.hypot(this.x - audio.lp.x, this.y - audio.lp.y, this.z - audio.lp.z), fade = 1 - Math.min(1, Math.max(0, (d - this.range[0]) / (this.range[1] - this.range[0])));
     if (this.kind === 'bell') {
-      this.out.gain.setTargetAtTime(this.on ? 0.55 : 0, t, 0.05);
-      if (this.on) {
+      // level-crossing alarm (警報音): an electronic "kan-kan" alternating between two pitches ~2.6 times a second.
+      // Harmonic partials, lowpassed, short decay — the old inharmonic bell partials (x2.76, x5.4, x8.9 up to 6.6 kHz)
+      // rang like clinking glasses. Out of earshot the strikes stop altogether instead of queueing up.
+      const audible = this.on && fade > 0.001;
+      this.out.gain.setTargetAtTime(audible ? 0.5 * fade : 0, t, 0.05);
+      if (audible) {
         this.nextStrike -= dt;
+        if (this.nextStrike < -0.4) this.nextStrike = 0; // after a stall: resume the rhythm, never a burst of strikes
         if (this.nextStrike <= 0) {
           this.nextStrike += 0.38; this.alt = !this.alt;
-          const f0 = this.alt ? 740 : 690;
-          for (const [m, a] of [[1, 1], [2.76, 0.45], [5.4, 0.25], [8.9, 0.1]]) {
-            const o = ctx.createOscillator(); o.frequency.value = f0 * m; const g = ctx.createGain();
-            g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25 * a, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.34 / Math.sqrt(m));
-            o.connect(g).connect(this.out); o.start(t); o.stop(t + 0.4);
+          const f0 = this.alt ? 750 : 700;
+          for (const [m, a, type] of [[1, 1, 'square'], [2, 0.3, 'sine'], [3, 0.12, 'sine']]) {
+            const o = ctx.createOscillator(); o.type = type; o.frequency.value = f0 * m; const g = ctx.createGain();
+            g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16 * a, t + 0.006); g.gain.setValueAtTime(0.16 * a, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.3);
+            o.connect(g).connect(this.lpf); o.start(t); o.stop(t + 0.32);
           }
         }
       } else this.nextStrike = 0;
     } else if (this.kind === 'train') {
-      const v = p.speed || 0, on = this.on ? 1 : 0;
+      const v = p.speed || 0, on = this.on ? fade : 0;
       this.out.gain.setTargetAtTime(on, t, 0.2);
       this.rumG.gain.setTargetAtTime(Math.min(1, v / 12) * 0.9, t, 0.2);
       this.rumF.frequency.setTargetAtTime(120 + v * 9, t, 0.2);
       this.hisG.gain.setTargetAtTime(Math.min(1, v / 20) * 0.12, t, 0.2);
       const acc = Math.abs(p.accel || 0);
-      this.motG.gain.setTargetAtTime(acc > 0.05 && v < 22 ? 0.05 * Math.min(1, acc) : 0.004, t, 0.25);
+      this.motG.gain.setTargetAtTime(acc > 0.05 && v > 0.3 && v < 22 ? 0.03 * Math.min(1, acc) : 0, t, 0.25);
       const band = v < 7 ? v * 95 : v < 14 ? 420 + (v - 7) * 60 : 300 + (v - 14) * 40;
       this.mot[0].frequency.setTargetAtTime(Math.max(40, band), t, 0.1); this.mot[1].frequency.setTargetAtTime(Math.max(40, band * 1.5), t, 0.1);
       // rail-joint "ta-tan" clacks: one per bogie passing each joint
-      if (this.on && v > 0.5) {
-        this.nextJoint -= dt * v;
+      if (this.on && v > 0.5 && fade > 0.01) {
+        this.nextJoint -= dt * v; if (this.nextJoint < -30) this.nextJoint = 0;
         if (this.nextJoint <= 0) {
           this.nextJoint += 25 / (p.cars || 4) * (0.8 + Math.random() * 0.4);
           for (const d of [0, 2.1 / Math.max(v, 1)]) this.clack(t + d, Math.min(1, v / 15));
@@ -181,7 +218,7 @@ export class Emitter {
       }
     } else if (this.kind === 'engine') {
       const v = p.speed || 0;
-      this.out.gain.setTargetAtTime(this.on ? 1 : 0, t, 0.3);
+      this.out.gain.setTargetAtTime(this.on ? fade : 0, t, 0.3);
       this.osc.frequency.setTargetAtTime(32 + v * 4.5 + (p.accel > 0 ? 12 : 0), t, 0.2);
       this.lp.frequency.setTargetAtTime(180 + v * 20, t, 0.2);
       this.oscG.gain.setTargetAtTime(0.12 + (p.accel > 0 ? 0.12 : 0), t, 0.2);

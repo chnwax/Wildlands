@@ -1,0 +1,153 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "farmland",
+  "objects": [
+    {
+      "id": "house_farmland_007",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [123.837, 5.942, 258.732]
+    },
+    {
+      "id": "house_farmland_008",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [122.7, 5.937, 272.201]
+    },
+    {
+      "id": "house_farmland_011",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [124.532, 5.942, 323.071]
+    },
+    {
+      "id": "house_farmland_012",
+      "slots": {
+        "wood": { "offset": [0.22, 0, -0.1294] }
+      },
+      "origin": [96.512, 5.96, 286.858]
+    },
+    {
+      "id": "house_farmland_071",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [-63.352, 5.987, 268.951]
+    },
+    {
+      "id": "house_farmland_073",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [-21.157, 6.025, 269.617]
+    },
+    {
+      "id": "vegetable_field_farmland_009",
+      "slots": {
+        "plain": { "offset": [0, 0, 0.0305] }
+      },
+      "origin": [-104.739, 6.013, 297.64]
+    },
+    {
+      "id": "vegetable_field_farmland_012",
+      "slots": {
+        "plain#0": { "offset": [0, 0, 0.0057] }
+      },
+      "origin": [-39.502, 6.027, 299.197]
+    },
+    {
+      "id": "vegetable_field_farmland_013",
+      "slots": {
+        "plain#0": { "offset": [0, 0, -0.0055] }
+      },
+      "origin": [-22.537, 6.019, 298.483]
+    },
+    {
+      "id": "vegetable_field_farmland_015",
+      "slots": {
+        "plain#4": { "offset": [0, 0, 0] },
+        "plain": { "offset": [0, 0, 0.0211] }
+      },
+      "origin": [64.371, 5.938, 297.721]
+    },
+    {
+      "id": "vegetable_field_farmland_018",
+      "slots": {
+        "plain#0": { "offset": [0, 0, 0.0229] },
+        "plain#1": { "offset": [0, 0, 0.0497] },
+        "plain#2": { "offset": [0, 0, 0.0487] }
+      },
+      "origin": [-364.999, 6.229, 325.165]
+    },
+    {
+      "id": "vegetable_field_farmland_020",
+      "slots": {
+        "plain#0": { "offset": [0, 0, 0.0211] }
+      },
+      "origin": [-338.839, 6.237, 326.457]
+    },
+    {
+      "id": "vegetable_field_farmland_027",
+      "slots": {
+        "plain#0": { "offset": [0, 0, 0.0231] },
+        "plain#1": { "offset": [0, 0, 0.0927] },
+        "plain#2": { "offset": [0, 0, 0.0414] },
+        "plain#3": { "offset": [0, 0, 0.0837] }
+      },
+      "origin": [-199.636, 5.955, 327.099]
+    },
+    {
+      "id": "vegetable_field_farmland_028",
+      "slots": {
+        "plain#0": { "offset": [0, 0, 0.1008] },
+        "plain#1": { "offset": [0, 0, 0.0487] },
+        "plain#2": { "offset": [0, 0, 0.0539] },
+        "plain": { "offset": [0, 0, -0.0279] }
+      },
+      "origin": [-182.442, 5.968, 327.997]
+    },
+    {
+      "id": "vegetable_field_farmland_029",
+      "slots": {
+        "plain#2": { "offset": [0, 0, 0.0307] },
+        "plain": { "offset": [0, 0, 0.0395] }
+      },
+      "origin": [-164.794, 5.999, 325.451]
+    },
+    {
+      "id": "vegetable_field_farmland_036",
+      "slots": {
+        "plain#0": { "offset": [0, 0, 0.1161] },
+        "plain#1": { "offset": [0, 0, 0.0687] },
+        "plain#2": { "offset": [0, 0, 0.0435] },
+        "plain#3": { "offset": [0, 0, 0.0449] }
+      },
+      "origin": [-25.702, 5.987, 325.192]
+    },
+    {
+      "id": "vegetable_field_farmland_037",
+      "slots": {
+        "plain#0": { "offset": [0, 0, 0.0472] },
+        "plain#1": { "offset": [0, 0, 0.0968] },
+        "plain#2": { "offset": [0, 0, 0.0696] },
+        "plain#3": { "offset": [0, 0, 0.0488] },
+        "plain#4": { "offset": [0, 0, 0.0555] },
+        "plain#5": { "offset": [0, 0, 0.027] }
+      },
+      "origin": [-10.537, 5.979, 324.628]
+    },
+    {
+      "id": "vegetable_field_farmland_039",
+      "slots": {
+        "plain#4": { "offset": [0, 0, -0.003] },
+        "plain": { "offset": [0, 0, 0.0109] }
+      },
+      "origin": [20.167, 5.975, 327.868]
+    }
+  ]
+}

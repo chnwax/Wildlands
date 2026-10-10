@@ -1,0 +1,241 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "midtown",
+  "objects": [
+    {
+      "id": "detail_m785_t360",
+      "deleted": true,
+      "origin": [-67.28, 7.202, -85.9]
+    },
+    {
+      "id": "hedge_midtown_056",
+      "position": [-130.67, 5.963, -50.951],
+      "origin": [-130.67, 5.963, -51.077]
+    },
+    {
+      "id": "hedge_midtown_057",
+      "position": [-131.583, 5.96, -50.945],
+      "origin": [-131.583, 5.96, -51.1]
+    },
+    {
+      "id": "hedge_midtown_058",
+      "position": [-132.496, 5.957, -50.92],
+      "origin": [-132.496, 5.957, -51.123]
+    },
+    {
+      "id": "hedge_midtown_059",
+      "position": [-133.409, 5.954, -50.907],
+      "origin": [-133.409, 5.954, -51.145]
+    },
+    {
+      "id": "house_midtown_002",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [33.264, 6.067, -242.317]
+    },
+    {
+      "id": "house_midtown_010",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-204.291, 5.91, -62.279]
+    },
+    {
+      "id": "house_midtown_011",
+      "slots": {
+        "wood#0": { "offset": [0.0059, -3.2881, -0.1174] }
+      },
+      "origin": [-231.845, 5.944, -44.023]
+    },
+    {
+      "id": "house_midtown_013",
+      "slots": {
+        "wood#0": { "offset": [0.0058, -3.22, -0.1165] }
+      },
+      "origin": [-203.104, 5.966, -45.812]
+    },
+    {
+      "id": "house_midtown_019",
+      "slots": {
+        "wood#0": { "offset": [-4.2331, -2.2817, -0.1189] }
+      },
+      "origin": [-133.881, 6.03, -44.983]
+    },
+    {
+      "id": "house_midtown_026",
+      "slots": {
+        "wood#0": { "offset": [0.0129, 0, -0.129] }
+      },
+      "origin": [-201.232, 6.04, 5.588]
+    },
+    {
+      "id": "house_midtown_031",
+      "slots": {
+        "wood#0": { "offset": [0.0056, -3.101, -0.1284] }
+      },
+      "origin": [-179.159, 6.035, 4.151]
+    },
+    {
+      "id": "house_midtown_034",
+      "slots": {
+        "wood#0": { "offset": [0.0051, -2.9589, -0.1163] }
+      },
+      "origin": [-188.084, 6.044, 22.359]
+    },
+    {
+      "id": "house_midtown_035",
+      "slots": {
+        "wood#0": { "offset": [0.0058, 0, -0.1335] }
+      },
+      "origin": [-178.791, 6.044, 22.568]
+    },
+    {
+      "id": "house_midtown_037",
+      "slots": {
+        "wood#0": { "offset": [0.0054, -3.4362, -0.1245] }
+      },
+      "origin": [-158.954, 6.052, 22.023]
+    },
+    {
+      "id": "house_midtown_038",
+      "slots": {
+        "wood#0": { "hidden": true, "offset": [0, -3.7247, 0] },
+        "wood#1": { "offset": [0, 0.0064, 0], "scale": [1, 1.0353, 1] }
+      },
+      "origin": [-143.111, 6.078, 2.678]
+    },
+    {
+      "id": "house_midtown_040",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-132.638, 6.109, 20.319]
+    },
+    {
+      "id": "house_midtown_046",
+      "slots": {
+        "wood#0": { "offset": [-5.0685, -3.1984, -0.1328] }
+      },
+      "origin": [-236.495, 5.937, -97.927]
+    },
+    {
+      "id": "house_midtown_059",
+      "slots": {
+        "wood": { "offset": [-0.0067, -3.5367, -0.1291] }
+      },
+      "origin": [71.614, 6.089, -160.365]
+    },
+    {
+      "id": "house_midtown_065",
+      "slots": {
+        "wood": { "offset": [0.0127, -3.402, -0.1179] }
+      },
+      "origin": [71.175, 6.089, -205.12]
+    },
+    {
+      "id": "house_midtown_075",
+      "slots": {
+        "wood#0": { "offset": [0, -3.5392, -0.1155] }
+      },
+      "origin": [138.442, 6.053, -247.263]
+    },
+    {
+      "id": "house_midtown_083",
+      "slots": {
+        "plain#2": { "hidden": true },
+        "plain#3": { "hidden": true }
+      },
+      "origin": [123.623, 6.019, -135.467]
+    },
+    {
+      "id": "house_midtown_086",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [123.716, 5.975, -108.836]
+    },
+    {
+      "id": "house_midtown_090",
+      "slots": {
+        "wood": { "offset": [0, -3.0733, -0.1364] }
+      },
+      "origin": [96.042, 6.125, -300.333]
+    },
+    {
+      "id": "house_midtown_092",
+      "slots": {
+        "wood#0": { "offset": [0, 0, -0.1164] }
+      },
+      "origin": [97.199, 6.061, -262.5]
+    },
+    {
+      "id": "house_midtown_111",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [123.21, 6.041, 139.165]
+    },
+    {
+      "id": "house_midtown_115",
+      "slots": {
+        "wood": { "offset": [0, -1.4089, -0.1192], "scale": [1, 0.5011, 1] }
+      },
+      "origin": [97.011, 6.069, 138.079]
+    },
+    {
+      "id": "house_midtown_203",
+      "slots": {
+        "wood": { "offset": [-2.0165, -11.4296, 0.0158], "rotate": [0, 0, -90], "scale": [2.7231, 0.7467, 1] }
+      },
+      "origin": [54.03, 5.989, -141.625]
+    },
+    {
+      "id": "house_midtown_206",
+      "slots": {
+        "wood": { "offset": [0, -2.9389, -0.1353] }
+      },
+      "origin": [62.694, 6.027, -235.163]
+    },
+    {
+      "id": "house_midtown_208",
+      "slots": {
+        "wood": { "hidden": true }
+      },
+      "origin": [77.51, 6.019, -249.727]
+    },
+    {
+      "id": "mailbox_midtown_008",
+      "position": [-132.77, 5.973, -57.801],
+      "origin": [-133.442, 5.973, -57.801]
+    },
+    {
+      "id": "tree_broadleaf_midtown_057",
+      "position": [-131.252, 5.865, -50.244],
+      "origin": [-131.252, 5.865, -50.366]
+    },
+    {
+      "id": "tree_japanese_pine_midtown_010",
+      "position": [118.566, 6.03, -134.232],
+      "origin": [117.704, 5.88, -138.544]
+    },
+    {
+      "id": "tree_japanese_pine_midtown_017",
+      "position": [118.022, 5.932, -260.125],
+      "origin": [119.64, 5.932, -264.87]
+    },
+    {
+      "id": "tree_japanese_pine_midtown_019",
+      "position": [117.302, 5.82, -109.582],
+      "rotation": [1.09, 9.42, 0.57],
+      "origin": [118.042, 5.82, -112.977]
+    },
+    {
+      "id": "tree_sakura_midtown_018",
+      "position": [41.392, 5.765, -108.799],
+      "origin": [40.011, 5.765, -109.338]
+    }
+  ]
+}

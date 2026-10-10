@@ -99,8 +99,11 @@ export function weather(mat, w, key) {
     sh.uniforms.tNoise = S.tNoise;
     sh.uniforms.uWx = { value: new THREE.Vector4(w.grime ?? 0.6, w.streaks ?? 0.5, w.moss ?? 0.3, w.vary ?? 1) };
     sh.uniforms.uGround = { value: w.ground ?? 6 };
+    // per-building wear (aWear = [0 new .. 1 old, 1 = present]): older buildings carry more grime, rain streaks and moss
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aWear; varying float vWear;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvWear = aWear.y > 0.5 ? mix(0.35, 3.2, aWear.x) : 1.0;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; uniform vec4 uWx; uniform float uGround; float wxRough = 0.0;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; uniform vec4 uWx; uniform float uGround; float wxRough = 0.0; varying float vWear;')
       .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
         {
           vec3 wn = normalize(vSWNrm), wp = vSWPos;
@@ -112,9 +115,9 @@ export function weather(mat, w, key) {
           vec4 nC = texture2D(tNoise, wuv * 0.45 + wp.xz * 0.01);
           float hg = wp.y - uGround;
           diffuseColor.rgb *= mix(vec3(1.0), mix(0.86, 1.1, nA.g) * mix(vec3(1.02, 1.0, 0.96), vec3(0.97, 1.0, 1.03), nA.r), uWx.w);
-          float streak = smoothstep(0.42, 0.78, nB.r) * smoothstep(0.2, 0.7, nC.b) * vert * uWx.y;
-          float gg = (1.0 - smoothstep(0.0, 0.5 + nC.r * 0.9, hg)) * vert * uWx.x;
-          float up = smoothstep(0.55, 0.95, wn.y) * smoothstep(0.35, 0.75, nA.b + nC.g * 0.3) * uWx.z;
+          float streak = smoothstep(0.42, 0.78, nB.r) * smoothstep(0.2, 0.7, nC.b) * vert * uWx.y * vWear;
+          float gg = (1.0 - smoothstep(0.0, 0.5 + nC.r * 0.9, hg)) * vert * uWx.x * vWear;
+          float up = smoothstep(0.55, 0.95, wn.y) * smoothstep(0.35, 0.75, nA.b + nC.g * 0.3) * uWx.z * vWear;
           vec3 dirt = diffuseColor.rgb * vec3(0.55, 0.52, 0.47);
           diffuseColor.rgb = mix(diffuseColor.rgb, dirt, clamp(streak * 0.45 + gg * 0.55, 0.0, 0.8));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.14, 0.08), clamp(gg * nC.g * uWx.z * 1.2 + up * 0.55, 0.0, 0.75));
@@ -127,51 +130,158 @@ export function weather(mat, w, key) {
 }
 
 // ---------------------------------------------------------------- roads
+// Road-local data comes in per vertex (aRoad = [lateral offset u in metres, floor(10 hw) + age]); pads and parking
+// lots without it read as fresh surface. Everything thin (cracks, seams, sealing tar) is filtered against the pixel
+// footprint, so it fades to its average tone instead of sparkling at distance or at grazing angles.
+const ROADFN = /* glsl */`
+float aaLine(float d, float w, float fw) { float W = max(w, fw); return (1.0 - smoothstep(W - fw * 0.5, W + fw * 0.5, d)) * (w / W); }
+float aaBand(float x, float a, float b, float fw) { return smoothstep(a - fw, a + fw, x) * (1.0 - smoothstep(b - fw, b + fw, x)); }
+float sqr1(float x) { return x * x; }`;
 export function asphaltAge(mat, key) {
-  return patch(mat, 'asp' + key, sh => {
+  return patch(mat, 'asp2' + key, sh => {
     worldVaryings(sh);
     sh.uniforms.tNoise = S.tNoise;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aRoad, aRoadS; varying vec2 vRoad; varying float vRoadS;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvRoad = aRoad; vRoadS = aRoadS.x;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; float aspRough = 0.0;' + HASH)
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; varying vec2 vRoad; varying float vRoadS; float aspRough = 0.0;' + HASH + ROADFN)
       .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
         {
+          #ifndef ASP_PLAIN
           vec2 p = vSWPos.xz;
-          vec4 a = texture2D(tNoise, p * 0.017), b = texture2D(tNoise, p * 0.09), c = texture2D(tNoise, p * 0.7);
-          diffuseColor.rgb *= mix(0.8, 1.18, a.r) * mix(0.95, 1.05, c.g);
-          vec2 cell = floor(p / vec2(3.2, 2.4));
-          float pm = step(0.94, h31(vec3(cell, 1.7))) * step(0.35, b.g);            // cut-and-fill repair patches
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.68, pm);
-          float cr = (1.0 - smoothstep(0.0, 0.012, abs(b.b - 0.5))) * step(0.52, a.g); // cracks
-          diffuseColor.rgb *= 1.0 - cr * 0.55;
-          diffuseColor.rgb *= 1.0 - smoothstep(0.62, 0.88, c.r) * 0.16;                   // stains
-          aspRough = cr * 0.3 - pm * 0.1;
+          float fp = length(fwidth(p));                          // metres per pixel
+          float hw = max(floor(vRoad.y) * 0.1, 0.0), age = fract(vRoad.y), u = vRoad.x;
+          bool strip = hw > 0.5;
+          float s = strip ? vRoadS : dot(p, vec2(0.7071));
+          vec4 a = texture2D(tNoise, p * 0.017), b = texture2D(tNoise, p * 0.09), c = texture2D(tNoise, p * 0.7), d = texture2D(tNoise, vec2(s * 0.031, u * 0.4 + 0.37));
+          // binder colour: fresh asphalt is near black and even; with age it greys and the aggregate shows
+          float tone = mix(0.9, 1.22, age) * mix(0.86, 1.14, a.r) * mix(1.0 - 0.1 * age, 1.0 + 0.1 * age, c.g);
+          diffuseColor.rgb *= tone;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.33))) * vec3(1.0, 0.99, 0.96), 0.3 + 0.4 * age);
+          float rough = mix(0.02, 0.1, age);
+          if (strip) {
+            float au = abs(u);
+            // wheel paths: two per lane, polished darker bands; a faint oil drip line between them
+            float two = step(2.9, hw), lc = two * hw * 0.5;
+            float du = abs(au - lc);
+            float tq = (du - 0.85) / 0.32, track = exp(-tq * tq) * (0.6 + 0.4 * b.r);
+            float dq = du / 0.35, drip = exp(-dq * dq) * smoothstep(0.35, 0.7, b.g) * (1.0 - 0.6 * age);
+            diffuseColor.rgb *= 1.0 - track * mix(0.1, 0.2, age) - drip * 0.14;
+            rough -= track * 0.07 + drip * 0.06;
+            // ravelled, lighter edge strip where the asphalt meets the gutter, broken up by noise
+            float edge = smoothstep(hw - 0.55 - 0.25 * c.r, hw - 0.05, au) * (0.35 + 0.65 * age);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.16, 1.12), edge * 0.7);
+            rough += edge * 0.08;
+            // utility-trench reinstatement patches across the lane, and long patches along a wheel path
+            float cellS = floor(s / 11.0), hx = h31(vec3(cellS, hw, 3.1)), s0 = cellS * 11.0 + hx * 5.0;
+            float wide = mix(0.7, 1.6, fract(hx * 17.0));
+            float on = step(0.72 - age * 0.25, fract(hx * 7.3)), uM = aaBand(u, -hw - 1.0, mix(-0.2, hw + 1.0, step(0.5, fract(hx * 3.7))), fp);
+            float across = aaBand(s, s0, s0 + wide, fp) * on * uM;
+            float cellL = floor(s / 37.0), hl = h31(vec3(cellL, hw, 8.4)), l0 = cellL * 37.0 + hl * 12.0;
+            float along = aaBand(s, l0, l0 + 6.0 + hl * 14.0, fp) * aaBand(u * sign(hl - 0.5), lc - 0.2, lc + 1.5, fp) * step(0.8 - age * 0.35, fract(hl * 5.1));
+            float pm = max(across, along);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(0.62, 0.74, age), pm);
+            rough -= pm * 0.1;
+            // sealing tar along patch edges and along the centre joint of older roads
+            float seam = aaLine(min(abs(s - s0), abs(s - s0 - wide)), 0.03, fp) * on * uM;
+            float joint = aaLine(abs(u + (d.r - 0.5) * 0.3), 0.035, fp) * smoothstep(0.35, 0.6, age) * smoothstep(0.3, 0.5, d.g) * two;
+            float tar = max(seam, joint);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.035, 0.035, 0.038), tar * 0.85);
+            rough -= tar * 0.35;
+          }
+          // cracks, only where the surface is old enough: on the strips they run along the road (longitudinal, strongest
+          // near the edges and the centre joint) and across it (transverse), stretched noise iso-lines; fine alligator
+          // cracking in the wheel paths; elsewhere (junction pads) short irregular ones
+          vec2 rc = strip ? vec2(s, vRoad.x) : p;
+          float n1 = texture2D(tNoise, strip ? vec2(rc.x * 0.035, rc.y * 0.55) + 0.3 : p * 0.11 + 0.3).b;
+          float n3 = texture2D(tNoise, strip ? vec2(rc.x * 0.5, rc.y * 0.045) + 0.61 : p * 0.23 + 0.5).b;
+          float n2 = texture2D(tNoise, p * 0.45 + 0.7).a;
+          float crW = 0.007, old = smoothstep(0.3, 0.85, age);
+          float cr = aaLine(abs(n1 - 0.5), crW, fwidth(n1)) * smoothstep(0.5, 0.62, a.g) * old;
+          cr = max(cr, aaLine(abs(n3 - 0.5), crW, fwidth(n3)) * smoothstep(0.58, 0.7, b.r) * old);
+          float wheel = strip ? exp(-sqr1((abs(abs(vRoad.x) - step(2.9, hw) * hw * 0.5) - 0.85) / 0.4)) : 0.0;
+          cr = max(cr, aaLine(abs(n2 - 0.5), crW * 0.7, fwidth(n2)) * smoothstep(0.6, 0.9, age) * smoothstep(0.45, 0.6, b.b) * (0.3 + 0.7 * wheel));
+          diffuseColor.rgb *= 1.0 - cr * 0.45;
+          // oil and water stains
+          diffuseColor.rgb *= 1.0 - smoothstep(0.62, 0.88, c.r) * 0.12 * (0.5 + age);
+          aspRough = rough + cr * 0.25;
+          #endif
         }`)
-      .replace('#include <metalnessmap_fragment>', 'roughnessFactor = clamp(roughnessFactor + aspRough, 0.3, 1.0);\n#include <metalnessmap_fragment>');
+      .replace('#include <metalnessmap_fragment>', 'roughnessFactor = clamp(roughnessFactor + aspRough, 0.62, 1.0);\n#include <metalnessmap_fragment>'); // dry asphalt: never glossy
   });
 }
+// Footway paving laid along the kerb: 60 cm slabs with filtered joints, a sealed expansion joint every 9 m, a few
+// replaced slabs in a fresher tone, per-slab tone drift and grime collecting along the kerb. aPave = [along, from kerb].
+export function paving(mat, key) {
+  return patch(mat, 'pave' + key, sh => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aPave; varying vec2 vPave;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvPave = aPave;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vPave;' + HASH + ROADFN)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        if (vPave.y > 0.3) {
+          vec2 q = vec2(vPave.x, vPave.y - 0.46) / 0.6, cell = floor(q), fq = fract(q);
+          vec2 fw = fwidth(q);
+          float jx = aaLine(min(fq.x, 1.0 - fq.x), 0.008, fw.x), jy = aaLine(min(fq.y, 1.0 - fq.y), 0.008, fw.y);
+          float h = h31(vec3(cell, 7.3)), h2 = h31(vec3(cell, 19.1));
+          diffuseColor.rgb *= mix(0.95, 1.05, h);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.05, 1.05, 1.07), step(0.955, h2));   // replaced slab
+          float ex = vPave.x / 9.0, exj = aaLine(abs(fract(ex + 0.5) - 0.5) * 9.0, 0.012, fwidth(vPave.x));
+          diffuseColor.rgb *= 1.0 - 0.28 * max(jx, jy) - 0.22 * exj;
+          diffuseColor.rgb *= 1.0 - 0.08 * (1.0 - smoothstep(0.0, 0.5, vPave.y - 0.46));                      // grime at the kerb
+        }`);
+  });
+}
+// thermoplastic road paint: worn through in patches (and where tyres run), dissolved with alpha-to-coverage under MSAA
+// so the worn edges never alias
 export function wornPaint(mat, key) {
-  return patch(mat, 'paint' + key, sh => {
+  mat.alphaToCoverage = true;
+  return patch(mat, 'paint2' + key, sh => {
     worldVaryings(sh);
     sh.uniforms.tNoise = S.tNoise;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aRoad; varying vec2 vRoad;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvRoad = aRoad;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tNoise; varying vec2 vRoad;')
       .replace('#include <color_fragment>', `#include <color_fragment>
         { vec2 p = vSWPos.xz; float wr = texture2D(tNoise, p * 1.6).r * 0.65 + texture2D(tNoise, p * 0.23).g * 0.55;
-          if (wr > 0.8) discard;
-          diffuseColor.rgb *= mix(1.0, 0.72, smoothstep(0.55, 0.8, wr)); }`);
+          float hw = floor(vRoad.y) * 0.1, age = fract(vRoad.y);
+          if (hw > 0.5) { float lc = step(2.9, hw) * hw * 0.5, du = abs(abs(vRoad.x) - lc), tq = (du - 0.85) / 0.3; wr = wr * mix(0.72, 1.08, age) + exp(-tq * tq) * 0.22 * age; }
+          float fw = max(fwidth(wr), 1e-3);
+          diffuseColor.a *= 1.0 - smoothstep(0.86 - fw, 0.86 + fw, wr);
+          diffuseColor.rgb *= mix(1.0, 0.74, smoothstep(0.55, 0.8, wr)); }`);
   });
 }
 
 // ---------------------------------------------------------------- interior-mapped windows
+// soft anime palette for shop goods, curtains and pictures
+const SHOP_PAL = /* glsl */`
+vec3 shopPal(float h) {
+  float i = floor(h * 8.0);
+  return i < 1.0 ? vec3(0.96, 0.62, 0.66) : i < 2.0 ? vec3(0.56, 0.84, 0.7) : i < 3.0 ? vec3(0.99, 0.84, 0.46) : i < 4.0 ? vec3(0.56, 0.74, 0.96)
+       : i < 5.0 ? vec3(0.96, 0.58, 0.42) : i < 6.0 ? vec3(0.72, 0.62, 0.92) : i < 7.0 ? vec3(0.36, 0.68, 0.74) : vec3(0.95, 0.9, 0.78);
+}`;
 // Rooms are laid out on a world-space grid (floor height, room width) behind every window quad; UVs 0..1 across the pane
 // drive curtains. Reflections come from the physically based glass (black diffuse, low roughness).
-export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, roomH = 2.85, depth = 4.2 } = {}) {
+// Room archetypes (homes): living room, bedroom, kitchen, tatami room, study / kids' room, dining room, storage.
+// Shops (picked by the sign above them, via vertex colour b): goods shelves, café, restaurant counter, salon / clinic,
+// office, workshop, bookshop, bakery. Furniture stands on a "mid-plane" between the window and the back wall, so it
+// shifts against the room with parallax; people sometimes pass in lit rooms at night; TVs flicker.
+export function windowMaterial({ shop = false, school = false, night, base = 6.45, roomW = 3.4, roomH = 2.85, depth = 4.2 } = {}) {
   const m = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.03, metalness: 0.0, envMapIntensity: 1.25, vertexColors: true });
-  return patch(m, shop ? 'winShop' : 'winHome', sh => {
+  // the pane's own 0..1 uv places curtains, blinds and glints; without a map three leaves uv out unless asked
+  m.defines = Object.assign({}, m.defines, { USE_UV: '' });
+  return patch(m, shop ? 'winShop2' : school ? 'winSchool1' : 'winHome2', sh => {
     worldVaryings(sh);
-    Object.assign(sh.uniforms, { uNightW: night, uAmbW: S.uAmb, uRoom: { value: new THREE.Vector4(roomW, roomH, depth, base) } });
+    Object.assign(sh.uniforms, { uNightW: night, uAmbW: S.uAmb, uSunW: S.uSunCol, uTimeW: S.uTime, uRoom: { value: new THREE.Vector4(roomW, roomH, depth, base) } });
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uNightW; uniform vec3 uAmbW; uniform vec4 uRoom;' + HASH)
+      .replace('#include <common>', '#include <common>\nuniform float uNightW, uTimeW; uniform vec3 uAmbW, uSunW; uniform vec4 uRoom;' + HASH + SHOP_PAL + /* glsl */`
+        // anti-aliased box mask in 2D (half extents h, centre c), e = pixel footprint
+        float boxM(vec2 p, vec2 c, vec2 h, float e){ vec2 q = abs(p - c) - h; return 1.0 - smoothstep(-e, e, max(q.x, q.y)); }
+        float discM(vec2 p, vec2 c, float r, float e){ return 1.0 - smoothstep(r - e, r + e, length(p - c)); }`)
       .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
       {
         vec3 N = normalize(vSWNrm);
@@ -182,7 +292,7 @@ export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, 
         vec2 cell = vec2(dot(vSWPos, T) / RW, (vSWPos.y - uRoom.w) / RH);
         vec2 ci = floor(cell), f = fract(cell);
         vec3 id = vec3(ci, floor(dot(vSWPos, N) * 0.5 + 0.5) + floor(dot(vSWPos.xz, vec2(0.013, 0.017))));
-        float r1 = h31(id), r2 = h31(id + 7.13), r3 = h31(id + 3.71), r4 = h31(id + 1.37);
+        float r1 = h31(id), r2 = h31(id + 7.13), r3 = h31(id + 3.71), r4 = h31(id + 1.37), r5 = h31(id + 5.29), r6 = h31(id + 9.61);
         float D = uRoom.z * (0.75 + 0.5 * r2);
         vec3 p0 = vec3(f.x * RW, f.y * RH, 0.0);
         float tx = d.x > 0.0 ? (RW - p0.x) / max(d.x, 1e-5) : p0.x / max(-d.x, 1e-5);
@@ -191,44 +301,307 @@ export function windowMaterial({ shop = false, night, base = 6.45, roomW = 3.4, 
         float t = min(min(tx, ty), tz);
         vec3 hp = p0 + d * t;
         vec3 col;
+        vec3 fwp = fwidth(hp);
+        float e = max(max(fwp.x, fwp.y), fwp.z) + 0.004;
+        float detail = 1.0 - smoothstep(0.025, 0.08, e);
+        float back = clamp(-hp.z / D, 0.0, 1.0);
+        // the furniture plane, part-way into the room
+        float mz = D * (0.45 + 0.2 * r6), tm = mz / max(-d.z, 1e-5);
+        vec3 mp = p0 + d * tm;
+        bool midOk = tm < t && mp.x > 0.0 && mp.x < RW && mp.y > 0.0;
+        float em = max(fwidth(mp.x), fwidth(mp.y)) + 0.004;
+        float mid = 0.0; vec3 midC = vec3(0.0);
         #ifdef WIN_SHOP
-          vec3 wallC = vec3(0.92, 0.92, 0.9);
-          if (t == tz || t == tx) {
-            col = wallC;
-            float row = floor(hp.y / 0.32);
-            if (hp.y > 0.15 && hp.y < 1.9) {             // shelves full of goods
-              float item = h31(vec3(floor((hp.x - hp.z) * 4.5), row, r1 * 9.0));
-              vec3 prod = pow(vec3(h31(vec3(item, 1, 2)), h31(vec3(item, 3, 4)), h31(vec3(item, 5, 6))), vec3(1.6)) * 0.85 + 0.05;
-              float fy = fract(hp.y / 0.32);
-              col = mix(vec3(0.55), prod, step(0.1, fy)) * mix(0.35, 1.0, smoothstep(0.1, 0.9, fy)); // shadow under each shelf
+          float kind = floor(fract(vColor.b) * 8.0 + 0.01);
+          vec3 pa = shopPal(r1), pb = shopPal(fract(r1 + 0.41)), pc = shopPal(fract(r1 + 0.73));
+          bool warm = kind == 1.0 || kind == 2.0 || kind == 7.0;
+          vec3 wallC = kind == 2.0 ? vec3(0.62, 0.46, 0.32) : kind == 1.0 ? vec3(0.9, 0.82, 0.7) : kind == 3.0 ? vec3(0.96, 0.97, 0.98)
+                     : kind == 4.0 ? vec3(0.9, 0.92, 0.93) : mix(vec3(0.97, 0.94, 0.88), pa * 0.3 + 0.68, 0.45);
+          if (t == ty) {
+            if (d.y < 0.0) {
+              vec3 fl = warm ? vec3(0.55, 0.4, 0.28) : r3 < 0.5 ? vec3(0.82, 0.7, 0.55) : vec3(0.88, 0.87, 0.84);
+              float seam = warm || r3 < 0.5 ? abs(fract(hp.x * 2.0) - 0.5) : max(abs(fract(hp.x * 1.5) - 0.5), abs(fract(hp.z * 1.5) - 0.5));
+              col = fl * (1.0 - 0.07 * smoothstep(0.45, 0.49, seam) * detail);
+            } else {
+              vec2 q = vec2(abs(fract(hp.x / 1.8) - 0.5), abs(fract(hp.z / 1.6) - 0.5));
+              float panel = warm ? 0.0 : (1.0 - smoothstep(0.17, 0.23, q.x)) * (1.0 - smoothstep(0.2, 0.26, q.y));
+              col = (warm ? vec3(0.5, 0.38, 0.28) : vec3(0.95, 0.95, 0.93)) + panel * vec3(1.2, 1.15, 1.05) * (0.4 + 0.6 * uNightW);
+              if (warm) for (int k = 0; k < 3; k++) col += vec3(1.3, 0.9, 0.5) * discM(hp.xz, vec2(RW * (0.25 + 0.25 * float(k)), -D * 0.4), 0.25, e) ; // pendant lamps
             }
-          } else col = d.y < 0.0 ? vec3(0.78, 0.78, 0.75) : vec3(0.96) + step(0.7, fract(hp.x * 0.5)) * step(0.6, fract(hp.z * 0.4)) * 4.0;
-          vec3 light = vec3(1.0, 0.98, 0.95) * (0.75 + uNightW * 0.7) * vColor.r;
-          col *= light + uAmbW * 0.2;
+          } else {
+            float u = t == tz ? hp.x : hp.z, du = t == tz ? fwp.x : fwp.z;
+            col = wallC;
+            if (kind == 0.0 || kind == 6.0 || kind == 7.0 || kind == 5.0) {
+              // shelves: packaged goods, book spines, bread trays or hanging tools
+              float sh2 = kind == 6.0 ? 0.36 : 0.45, sy = (hp.y - 0.1) / sh2, row = floor(sy), fy = fract(sy);
+              float sw = kind == 6.0 ? 0.07 : kind == 7.0 ? 0.5 : 0.36, slot = u / sw, si = floor(slot), fx = fract(slot);
+              float k = h31(vec3(si, row, r1 * 17.0)), k2 = h31(vec3(si + 0.5, row, r2 * 11.0 + 3.0));
+              vec3 prod = kind == 7.0 ? mix(vec3(0.86, 0.6, 0.3), vec3(0.95, 0.8, 0.5), k) : kind == 5.0 ? vec3(0.3, 0.32, 0.36) : k < 0.4 ? pa : k < 0.75 ? pb : pc;
+              if (kind == 6.0) prod = shopPal(k) * mix(0.7, 1.0, k2);
+              prod = mix(prod, vec3(0.97, 0.95, 0.9), step(0.82, k2) * 0.75 * float(kind == 0.0));
+              float hgt = kind == 6.0 ? 0.7 + 0.25 * k2 : kind == 7.0 ? 0.3 + 0.1 * k2 : 0.52 + 0.36 * k2, ex = kind == 6.0 ? 0.04 : 0.06 + 0.06 * k;
+              float ax = du / sw + 1e-3, ay = fwp.y / sh2 + 1e-3;
+              float item = smoothstep(ex - ax, ex + ax, fx) * (1.0 - smoothstep(1.0 - ex - ax, 1.0 - ex + ax, fx))
+                         * smoothstep(0.13 - ay, 0.13 + ay, fy) * (1.0 - smoothstep(hgt - ay, hgt + ay, fy));
+              if (kind == 5.0) item *= step(0.55, k);                                   // tools hang sparsely on a pegboard
+              vec3 goods = mix(prod * 0.9, prod * 1.06 + 0.06, smoothstep(0.13, hgt, fy));
+              float board = 1.0 - smoothstep(0.09, 0.09 + ay, fy);
+              vec3 shelf = mix(wallC * 0.8, goods, item);
+              shelf = mix(shelf, kind == 5.0 ? vec3(0.62, 0.5, 0.36) : vec3(0.84, 0.76, 0.66), board * float(kind != 5.0)) * mix(0.8, 1.0, smoothstep(0.09, 0.42, fy));
+              vec3 avg = mix(wallC * 0.8, (pa + pb + pc) / 3.0, 0.45) * 0.93;
+              col = mix(col, mix(avg, shelf, detail), step(0.0, sy) * step(sy, kind == 7.0 ? 3.0 : 4.0));
+            } else if (kind == 2.0) {
+              // restaurant: bottle shelf behind the counter, a menu board of wooden tags
+              float sy = (hp.y - 1.3) / 0.32, fy = fract(sy), fx = fract(u / 0.16), k = h31(vec3(floor(u / 0.16), floor(sy), r1));
+              float bottle = step(0.0, sy) * step(sy, 2.0) * (1.0 - smoothstep(0.3, 0.36, abs(fx - 0.5))) * step(fy, 0.3 + 0.55 * step(fx, 0.62) * step(0.38, fx)) * step(0.35, k);
+              col = mix(col, mix(vec3(0.25, 0.45, 0.3), vec3(0.55, 0.3, 0.2), k) * 1.2, bottle * detail);
+              float tag = step(2.1, hp.y) * step(hp.y, 2.55) * (1.0 - smoothstep(0.08, 0.1, abs(fract(u / 0.3) - 0.5) - 0.3));
+              col = mix(col, vec3(0.95, 0.9, 0.78), tag * detail);
+            } else if (kind == 3.0) {
+              // salon / clinic: mirrors and a pale wainscot
+              float mir = boxM(vec2(u, hp.y), vec2(floor(u / 1.4) * 1.4 + 0.7, 1.45), vec2(0.4, 0.5), e);
+              col = mix(col, vec3(0.75, 0.85, 0.92), mir);
+              col *= mix(0.9, 1.0, step(1.0, hp.y));
+            } else if (kind == 4.0) {
+              // office: posters and a wall calendar
+              float post = boxM(vec2(u, hp.y), vec2(floor(u / 1.2) * 1.2 + 0.6, 1.6), vec2(0.28, 0.38), e);
+              col = mix(col, shopPal(h31(vec3(floor(u / 1.2), r1, 2.0))) * 0.9, post);
+            } else {
+              // café: warm wainscot, framed art, a chalk menu
+              col = mix(col, vec3(0.55, 0.38, 0.26), 1.0 - smoothstep(0.95, 0.95 + fwp.y, hp.y));
+              float art = boxM(vec2(u, hp.y), vec2(floor(u / 1.6) * 1.6 + 0.8, 1.7), vec2(0.3, 0.24), e);
+              col = mix(col, shopPal(h31(vec3(floor(u / 1.6), r2, 5.0))) * 0.8, art);
+            }
+          }
+          // mid-plane: counters, tables, chairs, racks, desks
+          if (midOk) {
+            vec2 q = mp.xy;
+            if (kind == 2.0 || kind == 7.0 || kind == 1.0) {       // a long counter with stools (café / restaurant / bakery)
+              float counter = boxM(q, vec2(RW * 0.5, 0.52), vec2(RW * 0.45, 0.52), em);
+              midC = mix(vec3(0.62, 0.44, 0.3), vec3(0.8, 0.62, 0.42), smoothstep(0.9, 1.04, q.y)); mid = counter;
+              if (kind == 1.0) { float tab = boxM(q, vec2(RW * 0.3, 0.72), vec2(0.45, 0.03), em) + boxM(q, vec2(RW * 0.3, 0.36), vec2(0.03, 0.36), em);
+                mid = max(counter * step(RW * 0.55, q.x), min(tab, 1.0)); }
+            } else if (kind == 3.0) {                               // salon / clinic chairs
+              float ch = boxM(q, vec2(floor(q.x / 1.4) * 1.4 + 0.7, 0.55), vec2(0.28, 0.08), em) + boxM(q, vec2(floor(q.x / 1.4) * 1.4 + 0.7, 0.85), vec2(0.26, 0.32), em) * 0.95;
+              mid = min(ch, 1.0); midC = mix(vec3(0.3, 0.3, 0.34), vec3(0.8, 0.5, 0.45), step(0.5, r2));
+            } else if (kind == 4.0) {                               // desks with monitors
+              float x0 = floor(q.x / 1.6) * 1.6 + 0.8;
+              float desk = boxM(q, vec2(x0, 0.74), vec2(0.62, 0.03), em) + boxM(q, vec2(x0 - 0.55, 0.37), vec2(0.03, 0.37), em) + boxM(q, vec2(x0 + 0.55, 0.37), vec2(0.03, 0.37), em);
+              float mon = boxM(q, vec2(x0, 1.0), vec2(0.24, 0.16), em);
+              mid = min(desk + mon, 1.0); midC = mix(vec3(0.85, 0.85, 0.83), vec3(0.15, 0.18, 0.22) + vec3(0.25, 0.35, 0.5) * (0.4 + 0.6 * uNightW), mon);
+            } else if (kind == 0.0 || kind == 6.0) {                // a low display gondola
+              float gon = boxM(q, vec2(RW * (0.3 + 0.4 * r3), 0.65), vec2(0.9, 0.65), em);
+              float rows = step(0.5, fract(q.y / 0.32));
+              mid = gon; midC = mix(mix(pb, pc, step(0.5, fract(q.x * 3.0))) * 0.95, vec3(0.9, 0.88, 0.84), rows * 0.5);
+            } else if (kind == 5.0) {                               // a bicycle on the stand
+              float wh = max(1.0 - smoothstep(0.03, 0.03 + em, abs(length(q - vec2(RW * 0.35, 0.34)) - 0.32)), 1.0 - smoothstep(0.03, 0.03 + em, abs(length(q - vec2(RW * 0.35 + 1.05, 0.34)) - 0.32)));
+              mid = wh; midC = vec3(0.12);
+            }
+            col = mix(col, midC, mid);
+          }
+          vec3 lampC = kind == 2.0 || kind == 7.0 ? vec3(1.0, 0.82, 0.58) : kind == 1.0 ? vec3(1.0, 0.88, 0.7) : kind == 4.0 ? vec3(0.9, 0.96, 1.0) : vec3(1.0, 0.97, 0.9);
+          vec3 light = lampC * (0.55 + uNightW * 0.3) * vColor.r * mix(1.08, 0.78, back);
+          col *= light + uAmbW * 0.12;
+        #elif defined(WIN_SCHOOL)
+          // ---- school: three classrooms repeating along the facade — the front of a classroom (blackboard, clock,
+          // notices), the back of one (cubby lockers with bags, a board of pupils' drawings), and a science room (glass-
+          // fronted cabinets of jars, a periodic table, black-topped benches); desks and chairs in rows, wood floor,
+          // fluorescent tubes in the ceiling, cream curtains gathered at the sides of the windows
+          float kind = mod(ci.x, 3.0);
+          vec3 wallC = vec3(0.95, 0.93, 0.86), wain = vec3(0.72, 0.56, 0.39);
+          float lit = step(r3, mix(0.35, 0.5, uNightW));
+          vec3 lamp = vec3(0.92, 0.97, 1.0);
+          if (t == tz) {
+            float u = hp.x, v = hp.y;
+            col = mix(wain, wallC, smoothstep(0.9, 0.9 + fwp.y, v));
+            if (kind == 0.0) {
+              float bw = min(2.1, RW * 0.32);
+              col = mix(col, vec3(0.5, 0.38, 0.27), boxM(vec2(u, v), vec2(RW * 0.5, 1.45), vec2(bw + 0.05, 0.6), e));
+              float chalk = step(0.9, h31(vec3(floor(u * 7.0), floor(v * 10.0), r1))) * detail * step(abs(u - RW * 0.5), bw - 0.2);
+              col = mix(col, mix(vec3(0.1, 0.27, 0.2), vec3(0.82, 0.86, 0.8), chalk * 0.7), boxM(vec2(u, v), vec2(RW * 0.5, 1.45), vec2(bw, 0.55), e));
+              col = mix(col, vec3(0.62, 0.52, 0.4), boxM(vec2(u, v), vec2(RW * 0.5, 0.87), vec2(bw, 0.025), e));
+              col = mix(col, vec3(0.97), discM(vec2(u, v), vec2(RW * 0.5, 2.43), 0.15, e));
+              col = mix(col, vec3(0.2), discM(vec2(u, v), vec2(RW * 0.5, 2.43), 0.025, e));
+              for (int k = 0; k < 3; k++) col = mix(col, vec3(0.98, 0.97, 0.9), boxM(vec2(u, v), vec2(0.3 + float(k) * 0.42, 1.55), vec2(0.16, 0.22), e) * detail);
+            } else if (kind == 1.0) {
+              float cx = u / 0.38, cy = v / 0.32, k = h31(vec3(floor(cx), floor(cy), r1));
+              float inC = step(0.03, fract(cx)) * step(fract(cx), 0.95) * step(0.06, fract(cy)) * step(fract(cy), 0.94);
+              vec3 bag = k < 0.3 ? vec3(0.72, 0.16, 0.14) : k < 0.55 ? vec3(0.1, 0.11, 0.13) : k < 0.8 ? vec3(0.22, 0.36, 0.66) : vec3(0.85, 0.55, 0.2);
+              float hasBag = step(0.2, k) * step(0.22, fract(cy)) * step(0.18, fract(cx)) * step(fract(cx), 0.82);
+              col = mix(col, mix(vec3(0.42, 0.31, 0.21), mix(vec3(0.66, 0.51, 0.36), bag, hasBag), inC), step(v, 0.97));
+              float board = boxM(vec2(u, v), vec2(RW * 0.5, 1.75), vec2(RW * 0.42, 0.45), e);
+              col = mix(col, vec3(0.6, 0.48, 0.34), board);
+              vec2 dq = vec2(u / 0.55, (v - 1.32) / 0.43);
+              float draw = board * step(0.12, fract(dq.x)) * step(fract(dq.x), 0.88) * step(0.12, fract(dq.y)) * step(fract(dq.y), 0.88);
+              col = mix(col, shopPal(h31(vec3(floor(dq), r2))) * 0.45 + 0.5, draw * detail);
+            } else {
+              float cab = boxM(vec2(u, v), vec2(RW * 0.3, 0.95), vec2(RW * 0.26, 0.95), e);
+              float gl = cab * step(0.95, v) * step(v, 1.8) * step(0.06, fract(u / 0.6)) * step(fract(u / 0.6), 0.94);
+              float jar = gl * step(0.45, fract(v / 0.28)) * step(0.3, fract(u / 0.13)) * step(fract(u / 0.13), 0.75) * step(0.3, h31(vec3(floor(u / 0.13), floor(v / 0.28), r1)));
+              col = mix(col, vec3(0.64, 0.68, 0.72), cab);
+              col = mix(col, vec3(0.3, 0.38, 0.43), gl);
+              col = mix(col, vec3(0.72, 0.84, 0.76), jar * detail);
+              float pt = boxM(vec2(u, v), vec2(RW * 0.78, 1.62), vec2(0.62, 0.42), e);
+              vec2 pq = fract(vec2(u * 8.0, v * 9.0));
+              col = mix(col, mix(vec3(0.96), shopPal(h31(vec3(floor(u * 8.0), floor(v * 9.0), 4.0))) * 0.45 + 0.45, step(0.15, pq.x) * step(0.15, pq.y) * detail), pt);
+            }
+          } else if (t == ty) {
+            if (d.y < 0.0) col = vec3(0.72, 0.52, 0.34) * (1.0 - 0.1 * step(0.46, abs(fract(hp.x * 5.5) - 0.5)) * detail) * mix(0.94, 1.05, h31(vec3(floor(hp.x * 5.5), floor(hp.z * 0.8), 1.0)));
+            else {
+              col = vec3(0.96, 0.96, 0.94);
+              float tube = (1.0 - smoothstep(0.035, 0.035 + fwp.x, abs(fract(hp.x / 1.8) - 0.5) * 1.8)) * step(0.35, fract(-hp.z / 2.4));
+              col += tube * (lit * 1.1 + 0.25 * (1.0 - uNightW)) * vec3(1.2, 1.3, 1.3);
+            }
+          } else {
+            float u = -hp.z, v = hp.y;
+            col = mix(wain, wallC, smoothstep(0.9, 0.9 + fwp.y, v)) * 0.94;
+            col = mix(col, vec3(0.6, 0.62, 0.66), boxM(vec2(u, v), vec2(D * 0.78, 1.0), vec2(0.45, 1.0), e) * step(0.0, d.x)); // sliding door
+          }
+          if (midOk) {
+            vec2 q = mp.xy;
+            if (kind == 2.0) { mid = boxM(q, vec2(RW * 0.5, 0.45), vec2(RW * 0.38, 0.45), em); midC = mix(vec3(0.56, 0.59, 0.62), vec3(0.08), step(0.83, q.y)); }
+            else {
+              float x0 = floor(q.x / 0.95) * 0.95 + 0.475;
+              float desk = boxM(q, vec2(x0, 0.7), vec2(0.3, 0.025), em) + boxM(q, vec2(x0, 0.6), vec2(0.28, 0.07), em)
+                         + boxM(q, vec2(x0 - 0.26, 0.33), vec2(0.018, 0.33), em) + boxM(q, vec2(x0 + 0.26, 0.33), vec2(0.018, 0.33), em);
+              float chair = boxM(q, vec2(x0 + 0.36, 0.43), vec2(0.17, 0.02), em) + boxM(q, vec2(x0 + 0.52, 0.66), vec2(0.02, 0.22), em)
+                          + boxM(q, vec2(x0 + 0.22, 0.2), vec2(0.015, 0.2), em);
+              mid = min(desk + chair, 1.0); midC = mix(vec3(0.76, 0.6, 0.42), vec3(0.42, 0.44, 0.48), min(chair, 1.0));
+            }
+            col = mix(col, midC, mid);
+          }
+          {
+            float back2 = clamp(-hp.z / D, 0.0, 1.0), dayW = 1.0 - uNightW;
+            vec3 dayC = mix(vec3(dot(uAmbW, vec3(0.3, 0.59, 0.11))), uAmbW, 0.25) * vec3(1.05, 1.0, 0.95);
+            col *= dayC * 0.85 * mix(1.1, 0.65, back2) * dayW + uSunW * 0.02 * dayW + uAmbW * 0.2 * uNightW + lit * lamp * (0.35 + 0.4 * uNightW);
+            vec2 fwu = fwidth(vSUv) + 1e-4;
+            float cw = 0.07 + 0.08 * r4, curtain = max(1.0 - smoothstep(cw - fwu.x, cw + fwu.x, vSUv.x), smoothstep(1.0 - cw - fwu.x, 1.0 - cw + fwu.x, vSUv.x));
+            vec3 dressLight = dayC * 0.7 * dayW + uAmbW * 0.35 * uNightW + lit * lamp * (0.4 + 0.4 * uNightW);
+            col = mix(col, vec3(0.95, 0.9, 0.78) * dressLight * (1.0 - 0.1 * detail * (0.5 + 0.5 * sin(vSUv.x * 80.0))), curtain * 0.95);
+          }
         #else
-          vec3 wallC = mix(vec3(0.86, 0.83, 0.76), vec3(0.78, 0.82, 0.8), r1) * mix(0.8, 1.05, r4);
-          vec3 floorC = r2 < 0.55 ? vec3(0.42, 0.29, 0.18) : vec3(0.6, 0.57, 0.38);   // wood or tatami
+          // ---- homes
+          float kind = floor(r5 * 7.0);                       // 0 living 1 bed 2 kitchen 3 tatami 4 study 5 dining 6 storage
+          vec3 wallC = mix(vec3(0.96, 0.91, 0.8), vec3(0.86, 0.92, 0.9), r1) * mix(0.9, 1.02, r4);
+          if (kind == 3.0) wallC = vec3(0.9, 0.84, 0.7);
+          if (kind == 6.0) wallC *= 0.85;
+          vec3 floorC = r2 < 0.55 ? vec3(0.62, 0.45, 0.31) : vec3(0.8, 0.76, 0.52);
+          if (kind == 3.0) floorC = vec3(0.72, 0.72, 0.46);
+          if (kind == 2.0) floorC = vec3(0.86, 0.84, 0.8);
+          float lit = step(r3, mix(0.1, kind == 6.0 ? 0.15 : 0.68, uNightW));
+          // warm incandescent or cool daylight LED; kitchens run cool fluorescent
+          vec3 lamp = kind == 2.0 ? vec3(0.9, 0.97, 1.0) : mix(vec3(1.0, 0.8, 0.56), vec3(0.92, 0.96, 1.0), step(0.7, r1));
           if (t == tz) {
             col = wallC * 0.95;
-            float fx = RW * (0.2 + 0.6 * r1), fw = 0.4 + 0.7 * r2, fh = 0.5 + 1.3 * r3;  // wardrobe / shelf / sofa silhouette
-            if (hp.y < fh && abs(hp.x - fx) < fw) col = mix(vec3(0.18, 0.13, 0.1), vec3(0.55, 0.5, 0.45), r4);
-          } else if (t == ty) col = d.y < 0.0 ? floorC : vec3(0.93, 0.93, 0.9);
-          else col = wallC * 0.85;
-          float lit = step(r3, mix(0.1, 0.62, uNightW));
-          vec3 lamp = mix(vec3(1.0, 0.8, 0.58), vec3(0.88, 0.94, 1.0), step(0.72, r1));
-          float nearCeil = mix(0.55, 1.2, hp.y / RH) * mix(1.1, 0.7, clamp(-hp.z / D, 0.0, 1.0));
-          vec3 light = uAmbW * 0.3 + lit * lamp * (0.7 + 0.8 * uNightW) * nearCeil;
+            float u = hp.x, v = hp.y;
+            if (kind == 0.0) {        // TV on a low cabinet, framed picture
+              float cab = boxM(vec2(u, v), vec2(RW * 0.5, 0.25), vec2(0.8, 0.25), e), tv = boxM(vec2(u, v), vec2(RW * 0.5, 0.85), vec2(0.55, 0.32), e);
+              col = mix(col, vec3(0.45, 0.33, 0.25), cab);
+              float onTV = step(0.45, r2) * uNightW;
+              col = mix(col, mix(vec3(0.05), vec3(0.3, 0.45, 0.7) * (0.8 + 0.4 * sin(uTimeW * 3.0 + r1 * 20.0)) * 2.2, onTV), tv);
+            } else if (kind == 1.0) { // wardrobe and a poster
+              col = mix(col, vec3(0.8, 0.7, 0.58), boxM(vec2(u, v), vec2(RW * (0.25 + 0.5 * r4), 1.0), vec2(0.5, 1.0), e));
+              col = mix(col, shopPal(r2) * 0.9, boxM(vec2(u, v), vec2(RW * (0.75 - 0.5 * r4), 1.6), vec2(0.26, 0.36), e) * detail);
+            } else if (kind == 2.0) { // counter, wall cabinets, fridge, tiled splashback
+              float ctr = boxM(vec2(u, v), vec2(RW * 0.45, 0.45), vec2(RW * 0.4, 0.45), e), cabs = boxM(vec2(u, v), vec2(RW * 0.45, 1.9), vec2(RW * 0.4, 0.32), e);
+              float tiles = step(0.9, v) * step(v, 1.58) * (1.0 - 0.12 * detail * max(step(0.45, abs(fract(u * 6.0) - 0.5)), step(0.45, abs(fract(v * 6.0) - 0.5))));
+              col = mix(col, vec3(0.9, 0.92, 0.9) * mix(1.0, tiles, step(0.9, v) * step(v, 1.58)), step(0.9, v) * step(v, 1.58));
+              col = mix(col, mix(vec3(0.95, 0.94, 0.9), vec3(0.62, 0.46, 0.34), step(0.5, r4)), max(ctr, cabs));
+              col = mix(col, vec3(0.94, 0.95, 0.96), boxM(vec2(u, v), vec2(RW * 0.9, 0.9), vec2(0.32, 0.9), e));
+            } else if (kind == 3.0) { // shoji grid, tokonoma alcove with a hanging scroll
+              float gx = abs(fract(u / 0.45) - 0.5), gy = abs(fract(v / 0.5) - 0.5), grid = max(step(0.46, gx), step(0.46, gy)) * detail;
+              col = mix(vec3(0.97, 0.95, 0.88), vec3(0.5, 0.36, 0.24), grid * step(u, RW * 0.55));
+              col = mix(col, vec3(0.78, 0.7, 0.55) * 0.85, step(RW * 0.6, u));
+              col = mix(col, vec3(0.94, 0.92, 0.84), boxM(vec2(u, v), vec2(RW * 0.8, 1.5), vec2(0.18, 0.55), e));
+            } else if (kind == 4.0) { // bookshelf with coloured spines, a pin board
+              float sy = v / 0.34, fx = fract(u / 0.06), bk = h31(vec3(floor(u / 0.06), floor(sy), r1));
+              float shelfA = step(u, RW * 0.45) * step(v, 1.9);
+              float book = shelfA * step(0.12, fract(sy)) * step(fract(sy), 0.62 + 0.3 * bk) * step(0.15, fx) * step(bk, 0.85);
+              col = mix(col, vec3(0.55, 0.42, 0.3), shelfA);
+              col = mix(col, shopPal(bk) * 0.85, book * detail);
+              col = mix(col, vec3(0.72, 0.58, 0.42), boxM(vec2(u, v), vec2(RW * 0.75, 1.55), vec2(0.4, 0.3), e));
+            } else if (kind == 5.0) { // sideboard and a clock
+              col = mix(col, vec3(0.5, 0.36, 0.26), boxM(vec2(u, v), vec2(RW * 0.5, 0.45), vec2(0.9, 0.45), e));
+              col = mix(col, vec3(0.95), discM(vec2(u, v), vec2(RW * 0.5, 2.0), 0.16, e));
+            } else {                  // storage: stacked cardboard boxes
+              float bx = floor(u / 0.55), by = floor(v / 0.42), k = h31(vec3(bx, by, r1));
+              float boxes = step(v, 0.42 * (1.0 + floor(h31(vec3(bx, 0.0, r2)) * 4.0))) * step(0.08, fract(u / 0.55)) * step(0.06, fract(v / 0.42));
+              col = mix(col, vec3(0.72, 0.56, 0.38) * mix(0.85, 1.05, k), boxes);
+            }
+          } else if (t == ty) {
+            if (d.y < 0.0) {
+              if (kind == 3.0) { // tatami mats with dark borders
+                vec2 tq = vec2(hp.x / 0.9, -hp.z / 1.8), tf = abs(fract(tq) - 0.5);
+                col = floorC * (1.0 - 0.3 * detail * max(step(0.47, tf.x), step(0.48, tf.y))) * (0.96 + 0.04 * sin(hp.x * 80.0) * detail);
+              } else col = floorC * mix(1.0, 0.94, step(0.5, fract(hp.x * 2.2)) * detail);
+              if (kind == 0.0 || kind == 1.0) col = mix(col, shopPal(r4) * 0.7 + 0.2, boxM(hp.xz, vec2(RW * 0.5, -D * 0.55), vec2(RW * 0.3, D * 0.2), e)); // rug
+            } else {
+              col = vec3(0.96, 0.95, 0.92);
+              col += lit * lamp * 1.6 * (1.0 - smoothstep(0.18, 0.5, length(hp.xz - vec2(RW * 0.5, -D * 0.45))));
+            }
+          } else col = wallC * 0.86;
+          // furniture on the mid-plane
+          if (midOk) {
+            vec2 q = mp.xy; float cx = RW * (0.3 + 0.4 * r4);
+            if (kind == 0.0) { mid = min(boxM(q, vec2(cx, 0.25), vec2(0.95, 0.2), em) + boxM(q, vec2(cx, 0.55), vec2(0.95, 0.12), em) + boxM(q, vec2(cx - 0.95, 0.4), vec2(0.1, 0.22), em) + boxM(q, vec2(cx + 0.95, 0.4), vec2(0.1, 0.22), em), 1.0);
+              midC = mix(vec3(0.42, 0.5, 0.62), vec3(0.7, 0.55, 0.42), step(0.5, r6)); }           // sofa
+            else if (kind == 1.0) { mid = min(boxM(q, vec2(cx, 0.25), vec2(0.8, 0.25), em) + boxM(q, vec2(cx - 0.75, 0.55), vec2(0.06, 0.55), em), 1.0);
+              midC = mix(shopPal(r6) * 0.6 + 0.35, vec3(0.95), smoothstep(0.44, 0.5, q.y)); }          // bed with a headboard
+            else if (kind == 3.0) { mid = min(boxM(q, vec2(cx, 0.3), vec2(0.55, 0.04), em) + boxM(q, vec2(cx, 0.15), vec2(0.45, 0.14), em), 1.0); midC = vec3(0.38, 0.24, 0.16); } // chabudai
+            else if (kind == 4.0) { mid = min(boxM(q, vec2(cx, 0.74), vec2(0.6, 0.03), em) + boxM(q, vec2(cx + 0.55, 0.37), vec2(0.04, 0.37), em) + boxM(q, vec2(cx - 0.3, 0.45), vec2(0.18, 0.45), em) + discM(q, vec2(cx + 0.35, 1.0), 0.07, em), 1.0);
+              midC = mix(vec3(0.72, 0.58, 0.42), vec3(1.0, 0.95, 0.75) * (1.0 + 2.0 * uNightW * lit), step(0.95, q.y)); }  // desk, chair, lamp
+            else if (kind == 5.0) { mid = min(boxM(q, vec2(cx, 0.72), vec2(0.7, 0.03), em) + boxM(q, vec2(cx - 0.6, 0.36), vec2(0.03, 0.36), em) + boxM(q, vec2(cx + 0.6, 0.36), vec2(0.03, 0.36), em)
+                + boxM(q, vec2(cx - 0.95, 0.45), vec2(0.03, 0.45), em) + boxM(q, vec2(cx + 0.95, 0.45), vec2(0.03, 0.45), em), 1.0); midC = vec3(0.55, 0.4, 0.28); } // dining table and chairs
+            else if (kind == 6.0) { mid = boxM(q, vec2(cx, 0.35), vec2(0.5, 0.35), em); midC = vec3(0.7, 0.55, 0.38); }
+            // somebody at home: a figure crosses some lit rooms at night
+            float who = step(0.82, r2) * lit * uNightW;
+            if (who > 0.0) { float px = RW * (0.5 + 0.35 * sin(uTimeW * 0.15 + r1 * 30.0));
+              float fig = min(discM(q, vec2(px, 1.52), 0.12, em) + boxM(q, vec2(px, 0.95), vec2(0.18, 0.42), em) + boxM(q, vec2(px, 0.3), vec2(0.13, 0.3), em), 1.0);
+              mid = max(mid, fig); midC = mix(midC, vec3(0.2, 0.2, 0.25), fig); }
+            col = mix(col, midC, mid);
+          }
+          // light: lamps when lit; by day the room is lit through the window (brightest near the glass)
+          float nearCeil = mix(0.6, 1.15, hp.y / RH) * mix(1.1, 0.72, back);
+          float dayW = 1.0 - uNightW;
+          // daylight indoors is soft and nearly neutral (the sky's blue only tints it a little)
+          vec3 dayC = mix(vec3(dot(uAmbW, vec3(0.3, 0.59, 0.11))), uAmbW, 0.25) * vec3(1.05, 1.0, 0.92);
+          vec3 daylight = (dayC * 0.8 + uSunW * 0.04) * mix(1.15, 0.6, back) * dayW;
+          vec3 light = uAmbW * 0.3 * uNightW + daylight + lit * lamp * (0.75 + 0.8 * uNightW) * nearCeil;
+          if (kind == 0.0) light += vec3(0.25, 0.4, 0.8) * step(0.45, r2) * uNightW * (1.0 - lit) * 0.5 * (0.8 + 0.3 * sin(uTimeW * 3.0 + r1 * 20.0)); // TV glow in a dark room
           col *= light;
-          // curtains (side panels) and lace
-          float cw = 0.08 + 0.3 * r4;
-          float curtain = step(vSUv.x, cw) + step(1.0 - cw * (0.4 + r2), vSUv.x) + step(0.86, r2) * step(0.2, vSUv.y);
-          vec3 curtC = mix(vec3(0.82, 0.76, 0.64), vec3(0.42, 0.47, 0.56), r1) * (0.85 + 0.15 * sin(vSUv.x * 70.0));
-          vec3 curtLight = uAmbW * 0.55 + lit * lamp * (0.6 + 0.6 * uNightW);
-          col = mix(col, curtC * curtLight, clamp(curtain, 0.0, 1.0) * 0.96);
-          col = mix(col, vec3(0.9) * curtLight, step(0.5, r4) * 0.55 * (1.0 - clamp(curtain, 0.0, 1.0)));
+          // window dressing: curtains / lace, blinds, or shoji screens in tatami rooms
+          vec2 fwu = fwidth(vSUv) + 1e-4;
+          float blinds = kind == 2.0 || kind == 4.0 ? step(0.35, r6) : kind == 6.0 ? step(0.4, r6) : step(0.85, r6);
+          // curtains and blinds catch the same soft daylight as the room (not the pure sky blue), or the lamp at night
+          vec3 dressLight = dayC * 0.95 * dayW + uAmbW * 0.45 * uNightW + lit * lamp * (0.65 + 0.6 * uNightW);
+          if (kind == 3.0) {
+            float sh = step(1.0 - (0.3 + 0.6 * r4), vSUv.x);                                           // a slid-across shoji
+            float gridS = max(step(0.46, abs(fract(vSUv.x * 4.0) - 0.5)), step(0.46, abs(fract(vSUv.y * 5.0) - 0.5))) * detail;
+            col = mix(col, mix(vec3(0.97, 0.94, 0.86), vec3(0.45, 0.32, 0.22), gridS) * (dressLight + lit * lamp * 0.6), sh);
+          } else if (blinds > 0.5) {
+            float down = 0.35 + 0.6 * r4, slat = step(1.0 - down, vSUv.y) * (0.75 + 0.25 * smoothstep(0.2, 0.5, abs(fract(vSUv.y * 22.0) - 0.5)));
+            col = mix(col, vec3(0.9, 0.9, 0.88) * dressLight * slat, step(1.0 - down, vSUv.y) * 0.97);
+          } else {
+            float cw = 0.08 + 0.3 * r4, cr = 1.0 - cw * (0.4 + r2);
+            float curtain = max(1.0 - smoothstep(cw - fwu.x, cw + fwu.x, vSUv.x), smoothstep(cr - fwu.x, cr + fwu.x, vSUv.x));
+            curtain = max(curtain, step(0.86, r2) * smoothstep(0.2 - fwu.y, 0.2 + fwu.y, vSUv.y));
+            vec3 curtC = mix(vec3(0.95, 0.88, 0.74), shopPal(r1) * 0.8 + 0.1, step(0.5, r3)) * (1.0 - 0.1 * detail * (0.5 + 0.5 * sin(vSUv.x * 60.0)));
+            col = mix(col, curtC * dressLight, clamp(curtain, 0.0, 1.0) * 0.96);
+            col = mix(col, vec3(0.92) * dressLight, step(0.5, r4) * 0.4 * (1.0 - clamp(curtain, 0.0, 1.0)));
+          }
         #endif
         totalEmissiveRadiance += col;
+        // daylight: sky tint and two painted highlight streaks across the glass (kept light so the rooms show through)
+        { float sk = vSUv.x + vSUv.y * 0.75, dayW = 1.0 - uNightW;
+          float band = (1.0 - smoothstep(0.0, 0.06, abs(sk - 0.5))) * 0.55 + (1.0 - smoothstep(0.0, 0.025, abs(sk - 0.7))) * 0.4;
+          #if defined(WIN_SHOP) || defined(WIN_SCHOOL)
+            totalEmissiveRadiance += vec3(0.85, 0.92, 1.0) * band * dayW * 0.16;
+          #else
+            totalEmissiveRadiance += (vec3(0.08, 0.13, 0.22) + vec3(0.85, 0.92, 1.0) * band * 0.8) * dayW * 0.5;
+          #endif
+        }
       }`);
     if (shop) sh.fragmentShader = '#define WIN_SHOP\n' + sh.fragmentShader;
+    if (school) sh.fragmentShader = '#define WIN_SCHOOL\n' + sh.fragmentShader;
   });
 }
