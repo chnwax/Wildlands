@@ -457,7 +457,10 @@ function house_build(B, lot, rng, extras) {
     const revC = frameMat === 'plain' ? mul(wc, 0.95) : [0.9, 0.9, 0.88];
     if (style === 'traditional') {
       boxWalls(B, 0, W, D, base, H, [['wood', lc, 2, base + 1.0], [wallMat, wc, 3]], fi => [...holesOf('L')(fi), ...holesOf('L2')(fi)], revC);
-      faces.forEach(([fr, off, fw]) => inFrame(B, [Math.sin(fr) * off, 0, Math.cos(fr) * off], fr, () => B.bbox('wood', 0, base + 0.98, 0.02, fw + 0.06, 0.06, 0.05, 0.008, { color: [0.3, 0.22, 0.16] })));
+      // the rail capping the boarding, broken at the windows and the door it would otherwise run across
+      faces.forEach(([fr, off, fw], fi) => inFrame(B, [Math.sin(fr) * off, 0, Math.cos(fr) * off], fr, () => {
+        const cuts = [...holesOf('L')(fi), ...holesOf('L2')(fi)].filter(h => h.y0 < base + 1.06 && h.y1 > base + 0.96).map(h => [h.x0 - 0.06, h.x1 + 0.06]).sort((p, q) => p[0] - q[0]);
+        let x = -fw / 2 - 0.03; for (const [c0, c1] of [...cuts, [fw / 2 + 0.03, fw / 2 + 0.03]]) { if (c0 - x > 0.05) B.bbox('wood', (x + c0) / 2, base + 0.98, 0.02, c0 - x, 0.06, 0.05, 0.008, { color: [0.3, 0.22, 0.16] }); x = Math.max(x, c1); } }));
     } else if (floors === 1) boxWalls(B, 0, W, D, base, H, [[lowMat, lc, uvW(lowMat)]], holesOf('L'), revC);
     else if (!upperOnly) boxWalls(B, 0, W, D, base, H, [[lowMat, lc, uvW(lowMat), g1], [wallMat, wc, uvW(wallMat)]], fi => [...holesOf('L')(fi), ...holesOf('L2')(fi)], revC);
     else { boxWalls(B, 0, W, D, base, g1, [[lowMat, lc, uvW(lowMat)]], holesOf('L'), revC); boxWalls(B, x2, W2, D, g1, H, [[wallMat, wc, uvW(wallMat)]], holesOf('U'), revC); }
@@ -465,7 +468,10 @@ function house_build(B, lot, rng, extras) {
     if (wallMat === 'siding' || lowMat === 'siding') for (const [cxx, cw, y0c, y1c] of upperOnly ? [[0, W, base, g1], [x2, W2, g1, H]] : [[0, W, base, H]])
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) B.bbox('plain', cxx + sx * (cw / 2 + 0.01), y0c, sz * (D / 2 + 0.01), 0.1, y1c - y0c, 0.1, 0.01, { color: trimC });
     if (floors === 2 && style !== 'traditional' && style !== 'modern') B.bbox('plain', x2, g1 - 0.08, 0, W2 + 0.07, 0.14, D + 0.07, 0.012, { color: style === 'twoTone' ? frameC : trimC, skip: 'ny py' });
-    if (style === 'modern') inFrame(B, [W / 2 - 1.3, 0, D / 2], 0, () => B.bbox('wood', 0, base, 0.03, 1.6, floors * fh - 0.02, 0.06, 0.01, { color: [1.0, 0.76, 0.52], uv: 2 }));
+    if (style === 'modern') { // a full-height timber panel on the front, where it covers no window or door
+      const hs = [...holesOf('L')(0), ...holesOf('L2')(0)], free = cx => !hs.some(h => h.x1 > cx - 0.86 && h.x0 < cx + 0.86);
+      const at = [W / 2 - 1.3, -(W / 2 - 1.3), W / 2 - 0.85, -(W / 2 - 0.85)].find(free);
+      if (at !== undefined) inFrame(B, [at, 0, D / 2], 0, () => B.bbox('wood', 0, base, 0.03, 1.6, floors * fh - 0.02, 0.06, 0.01, { color: [1.0, 0.76, 0.52], uv: 2 })); }
     // ---- openings: frames, glass, sills
     faces.forEach((_, fi) => { build('L:' + fi, fi); build('L2:' + fi, fi); });
     if (upperOnly) faces.forEach(([fr, off, fw, isSide], fi) => inFrame(B, [x2 + Math.sin(fr) * (isSide ? W2 / 2 : off), 0, Math.cos(fr) * off], fr, () => {

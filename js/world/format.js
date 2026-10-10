@@ -104,7 +104,9 @@ export function validateObject(o, P, ctx = {}) {
   if (typeof o.id === 'string' && ctx.generated) {
     const gen = ctx.generated(o.id);
     if (!gen) {
-      if (o.deleted) P.warn('deleted', 'marks an object deleted that the generator does not create (nothing to delete) — remove the entry instead');
+      // (a deletion carrying its object's origin is matched by position when the world loads, like any other edit of a
+      // renumbered object; when nothing is left there, the object is gone as the edit wanted — nothing to report)
+      if (o.deleted) { if (!isVec3(o.origin)) P.warn('deleted', 'marks an object deleted that the generator does not create (nothing to delete) — remove the entry instead'); }
       else {
         // Loose details are addressed by their merged-mesh triangle. Generator changes can move that triangle to a
         // different id; an edit carrying its old origin is rebound by WorldLayer before it is applied.

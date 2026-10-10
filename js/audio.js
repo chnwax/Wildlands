@@ -1,6 +1,19 @@
 // Procedural audio: ambience beds, birds/insects, footsteps, and 3D positional emitters (bells, trains, engines).
 import { toastMsg } from './ui.js';
 
+// footsteps by surface: thud [Hz, decay s, level]; noise layers [buffer w|b, filter, Hz, Q, attack, decay, level, delay?,
+// highpass Hz?]; grains [count, spread s, Hz, level]
+const STEPS = {
+  asphalt: { thud: [85, 0.055, 0.22], noise: [['w', 'bandpass', 1700, 0.9, 0.002, 0.022, 0.05], ['w', 'bandpass', 3200, 1.0, 0.002, 0.026, 0.02, 0.05]] },
+  rock: { thud: [100, 0.045, 0.22], noise: [['w', 'bandpass', 2400, 1.0, 0.002, 0.018, 0.055], ['w', 'bandpass', 3800, 1.0, 0.002, 0.02, 0.02, 0.045]] },
+  wood: { thud: [175, 0.09, 0.2], noise: [['w', 'bandpass', 850, 2.2, 0.002, 0.04, 0.06], ['w', 'bandpass', 2600, 1.2, 0.002, 0.02, 0.02, 0.05]] },
+  grass: { thud: [62, 0.06, 0.12], noise: [['b', 'lowpass', 2400, 0.5, 0.03, 0.11, 0.5, 0, 380], ['w', 'lowpass', 6000, 0.4, 0.025, 0.07, 0.025, 0.02, 2500]] },
+  forest: { thud: [60, 0.065, 0.12], noise: [['b', 'lowpass', 2000, 0.5, 0.03, 0.13, 0.55, 0, 320], ['w', 'lowpass', 5000, 0.4, 0.025, 0.08, 0.025, 0.02, 2200]], grains: [3, 0.08, 2600, 0.12] },
+  sand: { thud: [58, 0.06, 0.1], noise: [['w', 'lowpass', 1500, 0.5, 0.025, 0.1, 0.09]], grains: [9, 0.07, 3000, 0.05] },
+  gravel: { thud: [78, 0.05, 0.14], noise: [['w', 'bandpass', 2200, 0.6, 0.004, 0.055, 0.05]], grains: [14, 0.07, 3400, 0.11] },
+  water: { noise: [['b', 'lowpass', 900, 0.5, 0.015, 0.22, 0.6], ['w', 'bandpass', 1800, 0.8, 0.01, 0.12, 0.08, 0.03]] },
+};
+
 export const audio = {
   ctx: null, master: null, muted: false, vol: 0.8, emitters: new Set(), lp: { x: 0, y: 0, z: 0 },
   init() {
@@ -98,18 +111,28 @@ export const audio = {
     g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t0 + 1.2); g.gain.setValueAtTime(v, t0 + dur - 1.5); g.gain.linearRampToValueAtTime(0, t0 + dur);
     o.start(t0); lfo.start(t0); bz.start(t0); o.stop(t0 + dur + 0.1); lfo.stop(t0 + dur + 0.1); bz.stop(t0 + dur + 0.1);
   },
+  // A footstep: a soft heel thump (a low sine falling in pitch) under the surface's own sound — a short dry scuff and toe
+  // tap on asphalt and paving, a hollow knock on boards, a soft brushing swish through grass (leaves and twigs in the
+  // forest), grains crunching on gravel and sand, a splash in water. Every step varies a little in pitch and level.
   step(surface, intensity) {
     if (!this.ctx) return;
-    const ctx = this.ctx, t0 = ctx.currentTime;
-    const s = ctx.createBufferSource(); s.buffer = this.white; s.playbackRate.value = 0.7 + Math.random() * 0.5;
-    const f = ctx.createBiquadFilter(); const g = ctx.createGain();
-    const cfg = { grass: [2400, 0.8, 0.12, 0.09], forest: [1500, 1.2, 0.16, 0.08], sand: [900, 0.7, 0.12, 0.11], rock: [700, 2.5, 0.14, 0.05],
-      water: [500, 0.6, 0.25, 0.22], asphalt: [1100, 1.6, 0.13, 0.045], gravel: [2800, 0.9, 0.2, 0.1], wood: [420, 3.0, 0.18, 0.06] }[surface] || [1500, 1, 0.12, 0.07];
-    f.type = 'bandpass'; f.frequency.value = cfg[0] * (0.85 + Math.random() * 0.3); f.Q.value = cfg[1];
-    const v = cfg[2] * intensity;
-    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0005, t0 + cfg[3] + 0.05);
-    s.connect(f).connect(g).connect(this.master);
-    s.start(t0, Math.random() * 3); s.stop(t0 + cfg[3] + 0.08);
+    const ctx = this.ctx, t0 = ctx.currentTime + 0.002, R = Math.random, S = STEPS[surface] || STEPS.grass;
+    const out = ctx.createGain(); out.gain.value = intensity * 0.4; out.connect(this.master);
+    if (S.thud) { const [f, d, v] = S.thud, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(f * (1.3 + R() * 0.2), t0); o.frequency.exponentialRampToValueAtTime(f * (0.75 + R() * 0.1), t0 + d);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(v * (0.85 + R() * 0.3), t0 + 0.005); g.gain.exponentialRampToValueAtTime(0.0003, t0 + d + 0.02);
+      o.connect(g).connect(out); o.start(t0); o.stop(t0 + d + 0.05); }
+    for (const [buf, type, f, q, a, d, v, at = 0, hp = 0] of S.noise || []) { const t = t0 + at * (0.8 + R() * 0.4);
+      const src = ctx.createBufferSource(); src.buffer = buf === 'b' ? this.brown : this.white; src.playbackRate.value = 0.85 + R() * 0.3;
+      const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f * (0.85 + R() * 0.3); fl.Q.value = q;
+      let node = src.connect(fl); if (hp) { const h = ctx.createBiquadFilter(); h.type = 'highpass'; h.frequency.value = hp; node = node.connect(h); }
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * (0.8 + R() * 0.4), t + a); g.gain.exponentialRampToValueAtTime(0.0003, t + a + d);
+      node.connect(g).connect(out); src.start(t, R() * 3); src.stop(t + a + d + 0.03); }
+    if (S.grains) { const [n, spread, f, v] = S.grains; // (separate little cracks: stones or twigs shifting under the sole)
+      for (let i = 0; i < n; i++) { const t = t0 + 0.003 + R() * spread, src = ctx.createBufferSource(); src.buffer = this.white;
+        const fl = ctx.createBiquadFilter(); fl.type = 'bandpass'; fl.frequency.value = f * (0.6 + R() * 0.9); fl.Q.value = 1.8;
+        const g = ctx.createGain(), dd = 0.004 + R() * 0.01; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * (0.4 + R() * 0.8), t + 0.001); g.gain.exponentialRampToValueAtTime(0.0003, t + dd);
+        src.connect(fl).connect(g).connect(out); src.start(t, R() * 3); src.stop(t + dd + 0.01); } }
   },
 };
 

@@ -3,9 +3,9 @@
 // F2 / double-click on the name renames, the eye and lock buttons hide / lock.
 import { el, icon, ui } from './ui.js';
 
-export const CAT_COLOR = { building: '#d9a35a', structure: '#c9b48a', furniture: '#7fb6d9', lighting: '#f0d264', vegetation: '#6fbf6a', rock: '#a8a29a', prop: '#b48fd9',
+export const CAT_COLOR = { building: '#d9a35a', structure: '#c9b48a', path: '#cfc8b8', furniture: '#7fb6d9', lighting: '#f0d264', vegetation: '#6fbf6a', rock: '#a8a29a', prop: '#b48fd9',
   sign: '#e07b5f', play: '#e79bc4', vehicle: '#8fd0c4', fence: '#b9a07a', primitive: '#9aa4b8' };
-const CATS = [['all', 'All objects'], ['building', 'Buildings'], ['structure', 'Structures'], ['furniture', 'Furniture'], ['lighting', 'Lighting'], ['vegetation', 'Vegetation'], ['rock', 'Rocks'],
+const CATS = [['all', 'All objects'], ['building', 'Buildings'], ['structure', 'Structures'], ['path', 'Paving'], ['furniture', 'Furniture'], ['lighting', 'Lighting'], ['vegetation', 'Vegetation'], ['rock', 'Rocks'],
   ['prop', 'Props'], ['sign', 'Signs & poles'], ['play', 'Play equipment'], ['vehicle', 'Vehicles'], ['fence', 'Fences'], ['primitive', 'Primitives'], ['-', ''], ['edited', 'Edited (any change)'], ['new', 'Added'], ['deleted', 'Deleted'], ['hidden', 'Hidden'], ['locked', 'Locked']];
 const ROW = 24;
 

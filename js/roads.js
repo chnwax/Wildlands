@@ -201,7 +201,12 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
       let reach = arm.L + (n.R.noMarks ? CONT * 0.6 : CONT), limit = dir > 0 ? n.PL.len - arm.s : arm.s;
       for (const [ca, cb] of n.clips) { const d = dir > 0 ? ca - arm.s : arm.s - cb; if (d > arm.L + 0.5 && d < limit) limit = d; }
       if (limit - reach < 8) reach = limit;                                                   // on to the next junction / the end
-      const sA = arm.s + dir * t0, sB = arm.s + dir * reach;
+      const sA = arm.s + dir * t0; let sB = arm.s + dir * reach;
+      // (an end beside a bend of the lane's line falls where the whole outer wedge of the bend has one distance along the
+      // road, and could not be cut square — its edge came out in steps: it ends clear of the bend instead)
+      if (reach < limit) for (let i = 1; i < n.PL.segs.length; i++) { const g = n.PL.segs[i], gp = n.PL.segs[i - 1], sv = g.s0, clr = wMax + 0.8;
+        if (Math.abs(gp.d[0] * g.d[1] - gp.d[1] * g.d[0]) < 0.03 || Math.abs(sB - sv) >= clr) continue;
+        const back = sv - dir * clr; sB = Math.abs(back - arm.s) > arm.L + 2 ? back : sv + dir * clr; }
       n.ws[side].push([Math.min(sA, sB), Math.max(sA, sB), wMax]);
       n.ends.push({ side, s: sB, dir });
     }
@@ -274,10 +279,17 @@ export function planRoads(roads, { baseY, skip = () => false, inBounds = () => t
         if (on && a0 === null) a0 = edges[i]; if (!on && a0 !== null) { n.flats.push([a0, edges[i]]); a0 = null; } }
       if (a0 !== null) n.flats.push([a0, n.PL.len]); }
     for (const [a, b] of n.flats) for (let k = 0; k <= FADE; k++) { if (a - k > 0) cuts.add(a - k); if (b + k < n.PL.len) cuts.add(b + k); }
-    const ss = [...cuts].sort((a, b) => a - b);
+    // (cuts closer than 2 cm merge into one — the exact ones kept: the road's ends, the junction clips, the edges of the
+    // skipped stretches; a sliver piece dropped instead left a crack across the whole road, the ground showing through)
+    const hard = new Set([0, n.PL.len, ...n.clips.flat(), ...n.flats.flat()]), ss = [];
+    for (const c of [...cuts].sort((a, b) => a - b)) {
+      const L = ss.length ? ss[ss.length - 1] : -1;
+      if (ss.length && c - L < 0.02) { if (hard.has(c) && !hard.has(L)) ss[ss.length - 1] = c; continue; }
+      ss.push(c);
+    }
     n.pieces = [];
     for (let i = 0; i + 1 < ss.length; i++) {
-      const s0 = ss[i], s1 = ss[i + 1]; if (s1 - s0 < 0.02) continue;
+      const s0 = ss[i], s1 = ss[i + 1];
       const sm = (s0 + s1) / 2, q = sampleAt(n.PL, sm);
       if (inClip(n, sm) || !inBounds(q.x, q.z) || skip(q.x, q.z, n.R)) continue;
       n.pieces.push([s0, s1]);

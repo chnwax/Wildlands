@@ -3,6 +3,7 @@ import { capHooks, lampPoints, withScatterMeta, THREE, scene, S, Q, clamp, lerp,
 import { env } from './sky.js';
 import { relief, weather, asphaltAge, wornPaint, windowMaterial, paving } from './surface.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
+import { addCatalog } from './world/catalog.js';
 
 // ---------------------------------------------------------------- batched builder
 // Geometry is accumulated per (material, 96 m chunk) and flushed into a few hundred meshes.
@@ -968,3 +969,59 @@ export const curveMirror = placeable('curve_mirror', curveMirror_build, atXYZR);
 export const roadSign = placeable((B, x, y, z, r, kind) => 'road_sign_' + kind, roadSign_build, atXYZR);
 export const signalMast = placeable('traffic_signal', signalMast_build, atXYZR);
 export const clockPole = placeable('clock_pole', clockPole_build, (B, x, y, z, r = 0) => [x, y, z, r]);
+
+// ---------------------------------------------------------------- paving pieces for the world builder
+// Ready-made pieces of footway and paving in the world builder's catalogue (world/catalog.js), in the town's own
+// materials: a footway section with its kerb (2 m and 4 m), a footway corner round a curb return, a park path with
+// edging, a paved square and a line of kerb stones. Each stands on its origin (y = 0 the ground), +z along it; the
+// editor's scale stretches a section to any length or width.
+function pieceParts(build) {
+  const B = new GeoBuilder(1e6), M = materials(); build(B);
+  const parts = [];
+  for (const b of B.parts.values()) {
+    if (!b.idx.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(b.pos.view().slice(), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(b.nor.view().slice(), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(b.uv.view().slice(), 2));
+    g.setAttribute('color', new THREE.BufferAttribute(b.col.view().slice(), 3));
+    for (const name in b.extra) g.setAttribute(name, new THREE.BufferAttribute(b.extra[name].view().slice(), 2));
+    g.setIndex(new THREE.BufferAttribute(Uint32Array.from(b.idx.view()), 1)); g.computeBoundingSphere(); g.computeBoundingBox();
+    parts.push({ geometry: g, material: M[b.mat], castShadow: b.mat !== 'pavement' });
+  }
+  return { parts };
+}
+const WALK_C = [0.86, 0.84, 0.8], KERB_C = [0.78, 0.77, 0.74], EDGE_C = [0.72, 0.71, 0.68];
+// paving from x0 to x1 (x0 at the kerb side), z0..z1, its top at y, slabs laid with aPave = [along, from kerb]; its
+// open sides dropped to the ground as a skirt
+function slabPave(B, x0, x1, z0, z1, y, { skirt = [true, true, true, true], color = WALK_C } = {}) {
+  const q = [[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]];
+  B.poly('pavement', q, [0, 1, 0], { color, uvs: q.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: { aPave: q.map(v => [v[2], v[0] - x0]) } });
+  const side = (a, b, n) => B.poly('concrete', [[a[0], -0.12, a[1]], [b[0], -0.12, b[1]], [b[0], y, b[1]], [a[0], y, a[1]]], n, { color: EDGE_C });
+  if (skirt[0]) side([x0, z0], [x1, z0], [0, 0, -1]); if (skirt[1]) side([x1, z0], [x1, z1], [1, 0, 0]);
+  if (skirt[2]) side([x1, z1], [x0, z1], [0, 0, 1]); if (skirt[3]) side([x0, z1], [x0, z0], [-1, 0, 0]);
+}
+// a kerb stone line along z at x (its road face toward -x), top at y
+const kerbLine = (B, x, z0, z1, y = 0.17) => B.bbox('concrete', x + 0.09, -0.12, (z0 + z1) / 2, 0.18, y + 0.12, z1 - z0, 0.015, { color: KERB_C, uv: 1.2 });
+const footway = L => () => pieceParts(B => { B.frame(0, 0, 0, 0); kerbLine(B, -1.25, 0, L); slabPave(B, -1.07, 1.25, 0, L, 0.15, { skirt: [true, true, true, false] }); });
+addCatalog('footway_2m', 'path', footway(2));
+addCatalog('footway_4m', 'path', footway(4));
+// a footway round a curb return: kerb on the inner arc (radius 4), the paving out to radius 6.5, a quarter turn
+addCatalog('footway_corner', 'path', () => pieceParts(B => { B.frame(0, 0, 0, 0); const R0 = 4, R1 = 6.5, n = 12, y = 0.15;
+  for (let k = 0; k < n; k++) { const a0 = k / n * Math.PI / 2, a1 = (k + 1) / n * Math.PI / 2, P = (r, a) => [Math.cos(a) * r - R0, Math.sin(a) * r];
+    const ri = R0 + 0.18, q = [[...P(ri, a0)], [...P(R1, a0)], [...P(R1, a1)], [...P(ri, a1)]].map(([x, z]) => [x, y, z]);
+    B.poly('pavement', q, [0, 1, 0], { color: WALK_C, uvs: q.map(v => [v[0] / 1.2, v[2] / 1.2]), attr: { aPave: [[a0 * R0, 0.2], [a0 * R0, R1 - ri], [a1 * R0, R1 - ri], [a1 * R0, 0.2]] } });
+    const kq = [[...P(R0, a0)], [...P(ri, a0)], [...P(ri, a1)], [...P(R0, a1)]];
+    B.poly('concrete', kq.map(([x, z]) => [x, 0.17, z]), [0, 1, 0], { color: KERB_C });
+    B.poly('concrete', [[P(R0, a0)[0], -0.12, P(R0, a0)[1]], [P(R0, a1)[0], -0.12, P(R0, a1)[1]], [P(R0, a1)[0], 0.17, P(R0, a1)[1]], [P(R0, a0)[0], 0.17, P(R0, a0)[1]]], [-Math.cos((a0 + a1) / 2), 0, -Math.sin((a0 + a1) / 2)], { color: KERB_C });
+    B.poly('concrete', [[P(R1, a1)[0], -0.12, P(R1, a1)[1]], [P(R1, a0)[0], -0.12, P(R1, a0)[1]], [P(R1, a0)[0], y, P(R1, a0)[1]], [P(R1, a1)[0], y, P(R1, a1)[1]]], [Math.cos((a0 + a1) / 2), 0, Math.sin((a0 + a1) / 2)], { color: EDGE_C }); }
+  for (const [a, sg] of [[0, -1], [Math.PI / 2, 1]]) { const P = r => [Math.cos(a) * r - R0, Math.sin(a) * r], i = P(R0), o = P(R1), nx = -Math.sin(a) * -sg, nz = Math.cos(a) * -sg;
+    B.poly('concrete', [[i[0], -0.12, i[1]], [o[0], -0.12, o[1]], [o[0], y, o[1]], [i[0], 0.17, i[1]]], [nx, 0, nz], { color: EDGE_C }); } }));
+// a park path: paving flush with the ground between concrete edging, 1.6 m wide, 2 m long
+addCatalog('path_2m', 'path', () => pieceParts(B => { B.frame(0, 0, 0, 0); slabPave(B, -0.8, 0.8, 0, 2, 0.04, { skirt: [true, false, true, false] });
+  for (const e of [-1, 1]) B.bbox('concrete', e * 0.86, -0.12, 1, 0.12, 0.18, 2, 0.01, { color: EDGE_C }); }));
+// a paved square, 4 x 4 m, edged all round
+addCatalog('paving_square', 'path', () => pieceParts(B => { B.frame(0, 0, 0, 0); slabPave(B, -2, 2, -2, 2, 0.05, { skirt: [false, false, false, false] });
+  for (const [cx, cz, w, d] of [[0, -2.06, 4.24, 0.12], [0, 2.06, 4.24, 0.12], [-2.06, 0, 0.12, 4], [2.06, 0, 0.12, 4]]) B.bbox('concrete', cx, -0.12, cz, w, 0.19, d, 0.01, { color: EDGE_C }); }));
+// a line of kerb stones, 2 m
+addCatalog('kerb_2m', 'path', () => pieceParts(B => { B.frame(0, 0, 0, 0); kerbLine(B, -0.09, 0, 2); }));

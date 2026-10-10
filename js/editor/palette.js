@@ -7,7 +7,7 @@ import { CAT_COLOR } from './outliner.js';
 import { PRIMITIVES, labelOf, CATEGORY } from '../world/layer.js';
 import { catalogPrefabs } from '../world/catalog.js';
 
-const CATS = ['all', 'building', 'structure', 'furniture', 'lighting', 'fence', 'play', 'sign', 'vegetation', 'rock', 'prop', 'vehicle', 'primitive'];
+const CATS = ['all', 'building', 'structure', 'path', 'furniture', 'lighting', 'fence', 'play', 'sign', 'vegetation', 'rock', 'prop', 'vehicle', 'primitive'];
 export function buildPalette(E, pane) {
   const L = E.L;
   const items = prefabList(L);
@@ -19,7 +19,7 @@ export function buildPalette(E, pane) {
   const opts = el('div', { class: 'ol-foot' }, opt('align', 'Align to surface', 'Tilt placed objects to the slope / face under the cursor'), opt('randomYaw', 'Random turn', 'Turn each placed object to a random heading'));
   pane.append(el('div', { class: 'ph' }, el('div', { class: 'search' }, icon('search'), search)), chips, scroll, opts);
   const counts = {}; for (const it of items) counts[it.category] = (counts[it.category] || 0) + 1;
-  const CL = { all: 'All', building: 'Buildings', structure: 'Structures', furniture: 'Furniture', lighting: 'Lighting', fence: 'Fences', play: 'Play', sign: 'Signs', vegetation: 'Plants', rock: 'Rocks', prop: 'Props', vehicle: 'Vehicles', primitive: 'Primitives' };
+  const CL = { all: 'All', building: 'Buildings', structure: 'Structures', path: 'Paving', furniture: 'Furniture', lighting: 'Lighting', fence: 'Fences', play: 'Play', sign: 'Signs', vegetation: 'Plants', rock: 'Rocks', prop: 'Props', vehicle: 'Vehicles', primitive: 'Primitives' };
   for (const c of CATS) if (c === 'all' || counts[c]) chips.append(el('button', { class: 'chip' + (c === cat ? ' on' : ''), onclick: e => { cat = c; chips.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', b === e.target)); draw(); } }, CL[c] + (c === 'all' ? '' : ` ${counts[c]}`)));
   search.addEventListener('input', () => { q = search.value.trim().toLowerCase(); draw(); });
   search.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') search.blur(); });

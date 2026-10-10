@@ -160,22 +160,39 @@ function stairRail(B, kind, x, z0, z1, pitch, { color = [0.62, 0.64, 0.66], wall
   if (kind === 'balustrade') { bar(B, 'steel', [x, pitch(z0) + 0.12, z0], [x, pitch(z1) + 0.12, z1], 0.03, { color });
     B.detail(1, () => { for (let z = z0 + 0.11; z < z1 - 0.05; z += 0.11) B.box('steel', x, pitch(z) + 0.12, z, 0.018, h - 0.14, 0.018, { color }); }); }
 }
+// a solid parapet wall of thickness T along a plan polyline pts [[x, z, yTop, yBottom], ...] (current frame): one
+// closed solid, mitred at every corner, its top and bottom running straight from vertex to vertex (level along a
+// landing, raking along a flight), so a stair's landings and flights share one unbroken wall with nothing overlapping
+function ribbonWall(B, pts, { T = 0.12, color = [0.9, 0.88, 0.84], cope = [0.8, 0.8, 0.78] } = {}) {
+  const n = pts.length, off = [];
+  for (let i = 0; i < n; i++) { // the mitred offset (to the wall's left face) at each vertex
+    const a = pts[Math.max(0, i - 1)], b = pts[i], c = pts[Math.min(n - 1, i + 1)];
+    const d1 = i > 0 ? [b[0] - a[0], b[1] - a[1]] : [c[0] - b[0], c[1] - b[1]], d2 = i < n - 1 ? [c[0] - b[0], c[1] - b[1]] : d1;
+    const l1 = Math.hypot(...d1) || 1, l2 = Math.hypot(...d2) || 1, n1 = [-d1[1] / l1, d1[0] / l1], n2 = [-d2[1] / l2, d2[0] / l2];
+    const m = [n1[0] + n2[0], n1[1] + n2[1]], ml = Math.hypot(...m) || 1, k = (T / 2) / Math.max(0.3, (m[0] * n1[0] + m[1] * n1[1]) / ml);
+    off.push([m[0] / ml * k, m[1] / ml * k]); }
+  const L = i => [pts[i][0] + off[i][0], pts[i][1] + off[i][1]], R = i => [pts[i][0] - off[i][0], pts[i][1] - off[i][1]];
+  const o = { color, uv: 2.5 };
+  for (let i = 0; i + 1 < n; i++) { const j = i + 1, a = pts[i], b = pts[j], [lx0, lz0] = L(i), [lx1, lz1] = L(j), [rx0, rz0] = R(i), [rx1, rz1] = R(j);
+    const dx = b[0] - a[0], dz = b[1] - a[1], dl = Math.hypot(dx, dz) || 1, nx = -dz / dl, nz = dx / dl;
+    B.poly('tiles', [[lx0, a[3], lz0], [lx1, b[3], lz1], [lx1, b[2], lz1], [lx0, a[2], lz0]], [nx, 0, nz], o);
+    B.poly('tiles', [[rx1, b[3], rz1], [rx0, a[3], rz0], [rx0, a[2], rz0], [rx1, b[2], rz1]], [-nx, 0, -nz], o);
+    B.poly('concrete', [[lx0, a[2], lz0], [lx1, b[2], lz1], [rx1, b[2], rz1], [rx0, a[2], rz0]], [0, 1, 0], { color: cope });
+    B.poly('concrete', [[rx0, a[3], rz0], [rx1, b[3], rz1], [lx1, b[3], lz1], [lx0, a[3], lz0]], [0, -1, 0], { color: mul(color, 0.8) }); }
+  for (const [i, sg] of [[0, -1], [n - 1, 1]]) { const p = pts[i], q = pts[i - sg] || p, [lx, lz] = L(i), [rx, rz] = R(i), dx = p[0] - q[0], dz = p[1] - q[1], dl = Math.hypot(dx, dz) || 1;
+    B.poly('concrete', [[lx, p[3], lz], [rx, p[3], rz], [rx, p[2], rz], [lx, p[2], lz]], [dx / dl, 0, dz / dl], { color: cope }); }
+}
 
 // balcony run along the current (wall) frame: x0..x1, floor level fy, depth dp; kind 'solid' | 'rail' | 'glass';
 // partitions at `parts`; laundry and AC units on some. ends [left, right]: close that end with a return guard back to
 // the wall (off where a fin, a wall or another run already closes it)
 function balconyRun(B, rng, x0, x1, fy, dp, { kind = 'solid', color, trim, parts = [], acs = [], laundry = 0.3, fh = 2.8, ground = false, ends = [true, true], lift = 0 }) {
   const len = x1 - x0, cx = (x0 + x1) / 2;
-  if (!ground) B.bbox('concrete', cx, fy - 0.17, dp / 2, len, 0.19, dp, 0.015, { color: [0.72, 0.71, 0.69] });           // slab with its edge
-  if (ground) { // a garden terrace instead: paving, a low fence round it and between the flats' gardens
-    const fz = dp + 1.15;
-    B.box('pavement', cx, fy - 0.33 + lift, dp / 2 + 0.6, len, 0.05, dp + 1.2, { color: [0.82, 0.8, 0.76] });
-    guard(B, 'fence', x0, fz, x1, fz, fy, { trim, ext: 0 });
-    if (ends[0]) guard(B, 'fence', x0, 0.05, x0, fz, fy, { trim, ext: 0 });
-    if (ends[1]) guard(B, 'fence', x1, fz, x1, 0.05, fy, { trim, ext: 0 });
-    for (const px of parts) guard(B, 'fence', px, 0.05, px, fz, fy, { trim, ext: 0 });
-    return;
-  }
+  // (a ground-floor balcony is one like those above, its slab standing on a plinth down into the ground: the same
+  // guard, the same full-height partitions between the flats)
+  if (ground) B.bbox('concrete', cx, -1.2, dp / 2, len, fy + 1.22, dp, 0.015, { color: [0.72, 0.71, 0.69] });
+  else B.bbox('concrete', cx, fy - 0.17, dp / 2, len, 0.19, dp, 0.015, { color: [0.72, 0.71, 0.69] });           // slab with its edge
+  void lift;
   const pz = dp - 0.06, g = { color, trim };
   guard(B, kind, x0, pz, x1, pz, fy, { ...g, ext: 0 });
   if (ends[0]) guard(B, kind, x0 + 0.06, 0.02, x0 + 0.06, pz, fy, g);
@@ -393,9 +410,11 @@ function approach(B, gy, { w, y0, land = 1.3, ramp = 0, court = 2.4, extraW = 0,
   }
   let rampEnd = null;
   if (ramp && rise > 0.06) {
-    const L = Math.max(1.2, rise * 12), x0 = ramp * (w / 2 + 0.16), x1 = ramp * (w / 2 + 0.16 + L), rw = 1.3, zi = 0.08, zo = zi + rw, zc = (zi + zo) / 2;
+    // (the ramp starts right at the landing's edge — the edge of its finish plate — so no slot opens between the two)
+    const L = Math.max(1.2, rise * 12), x0 = ramp * (w / 2 + 0.01), x1 = ramp * (w / 2 + 0.01 + L), rw = 1.3, zi = 0.08, zo = zi + rw, zc = (zi + zo) / 2;
     B.poly('concrete', [[x0, y0, zi], [x1, g0 + 0.02, zi], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 1, 0], { color: TREAD, uv: 1.5 });
     B.poly('concrete', [[x0, g0 - 0.2, zo], [x1, g0 - 0.2, zo], [x1, g0 + 0.02, zo], [x0, y0, zo]], [0, 0, 1], { color: BODY, uv: 1.5 });
+    B.poly('concrete', [[x1, g0 - 0.2, zi], [x0, g0 - 0.2, zi], [x0, y0, zi], [x1, g0 + 0.02, zi]], [0, 0, -1], { color: BODY, uv: 1.5 });
     for (const zz of [zi - 0.06, zo + 0.06]) { B.beam(G ? 'stone' : 'concrete', [x0, y0 - 0.03, zz], [x1, g0 - 0.03, zz], 0.12, 0.34, { color: CHEEK });
       B.detail(1, () => { B.beam('steel', [x0, y0 + 0.9, zz], [x1, g0 + 0.92, zz], 0.045, 0.045, { color: RAIL }); B.beam('steel', [x1, g0 + 0.92, zz], [x1 + ramp * 0.3, g0 + 0.92, zz], 0.045, 0.045, { color: RAIL });
         B.box('steel', x1 + ramp * 0.3, g0 + 0.8, zz, 0.045, 0.12, 0.045, { color: RAIL });
@@ -642,8 +661,8 @@ function mansion_build(B, s, rng, ex) {
       for (let u = 0; u < nU; u++) {
         const x0 = -w / 2 + u * uw, x1 = x0 + uw, pil = !podium && f === 0 && u >= nU - pilotis;
         if (pil) continue;
-        const gnd = f === 0 && !podium;
-        balconyRun(B, rng, x0 + (gnd ? 0 : 0.125), x1 - (gnd ? 0 : 0.125), fy, 1.8, { kind: (u + (f > floors - 3 ? 1 : 0)) % 3 === 1 ? 'solid' : 'glass', color: u % 3 === 1 ? pal.accent : pal.parapet, trim: pal.trim, parts: [], acs: rng() < 0.6 ? [x0 + 0.7] : [], fh, laundry: 0.25, ground: gnd, ends: gnd ? [u === 0, true] : [false, false] });
+        const gnd = f === 0 && !podium, lastG = nU - 1 - (pilotis || 0);
+        balconyRun(B, rng, x0 + (gnd ? 0 : 0.125), x1 - (gnd ? 0 : 0.125), fy, 1.8, { kind: (u + (f > floors - 3 ? 1 : 0)) % 3 === 1 ? 'solid' : 'glass', color: u % 3 === 1 ? pal.accent : pal.parapet, trim: pal.trim, parts: [], acs: rng() < 0.6 ? [x0 + 0.7] : [], fh, laundry: 0.25, ground: gnd, ends: gnd ? [u === 0, u === lastG] : [false, false], ...(gnd && u < lastG ? { parts: [x1] } : {}) });
       }
     }
     // the balcony slabs' edges read as bands across the face; slim fins between the columns of balconies
@@ -718,11 +737,13 @@ function mansion_build(B, s, rng, ex) {
     const rail = (kind, xa, xb, zr, S) => { const dir = Math.sign(xb - xa); inFrame(B, [xa, 0, zr], dir * Math.PI / 2, () => stairRail(B, kind, 0, -0.15, Math.abs(xb - xa) + 0.15, S.pitch, { color: RAIL, wall: pc })); };
     for (let f = 0; f < floors; f++) {
       const fy = y0 + f * fh, hy = fy + fh / 2, last = f === floors - 1;
-      if (f > 0) { B.bbox('concrete', -(2.25 + LX) / 2, fy - 0.16, 1.3, 2.25 - LX, 0.16, 2.6, 0.01, { color: SC });
-        guard(B, 'solid', -LX, 2.54, -2.19, 2.54, fy, g); guard(B, 'solid', -2.19, 2.54, -2.19, 0.02, fy, g); }
+      if (f > 0) B.bbox('concrete', -(2.25 + LX) / 2, fy - 0.16, 1.3, 2.25 - LX, 0.16, 2.6, 0.01, { color: SC });
       if (last) continue;                                                                                                // (the stair ends at the top floor)
       B.bbox('concrete', (2.25 + LX) / 2, hy - 0.16, 1.3, 2.25 - LX, 0.16, 2.6, 0.01, { color: SC });
-      guard(B, 'solid', 2.19, 0.02, 2.19, 2.54, hy, g); guard(B, 'solid', 2.19, 2.54, LX, 2.54, hy, g);
+      // the outer wall of this storey, one piece: round the half landing, raking down along the outer flight, round the
+      // next floor's landing — level 1.1 m over each landing, its foot 0.28 m under the slabs, 2 cm proud of their edges
+      { const ny = fy + fh, P = 2.56, E = 2.21; void g;
+        ribbonWall(B, [[E, 0.02, hy + 1.1, hy - 0.28], [E, P, hy + 1.1, hy - 0.28], [LX, P, hy + 1.1, hy - 0.28], [-LX, P, ny + 1.1, ny - 0.28], [-E, P, ny + 1.1, ny - 0.28], [-E, 0.02, ny + 1.1, ny - 0.28]], { color: pc, cope: pal.trim }); }
       // up along the wall to the half landing (from the ground: a longer flight starting further back), back along the
       // outer face to the next floor
       let xa = -LX, ya = fy, base = fy - 0.16;
@@ -730,7 +751,6 @@ function mansion_build(B, s, rng, ex) {
       if (f === 0) { ya = podium ? 0.06 : Math.max(gl(-LX, 0.65), gl(-2.0, 0.65), gl(LX, 0.65)) + 0.05; const n0 = Math.ceil((hy - ya) / 0.19 - 1e-6); xa = Math.max(-2.25 + 0.75, LX - (n0 - 1) * 0.25); base = ya - (podium ? 0.06 : 0.35); }
       const SA = flight(xa, LX, ya, hy, 0.65, base), SB = flight(LX, -LX, hy, fy + fh, 1.95, hy - 0.16);
       B.detail(1, () => { rail('handrail', xa, LX, 1.22, SA); rail('handrail', xa, LX, 0.09, SA); rail('handrail', LX, -LX, 1.38, SB); });
-      rail('parapet', LX, -LX, 2.54, SB);
       // the stair's foot: a paved landing the corridor's width, from under the corridor's end to past the first step
       // (its far part runs on under the first treads), which the walk under the corridor joins
       if (f === 0 && !podium) out.entrances.push({ p: B.P([(xa - 2.25) / 2, 0, 0.65]), out: [B.N([-1, 0, 0])[0], B.N([-1, 0, 0])[2]], kind: 'stair foot', viaWalk: true,
@@ -947,7 +967,7 @@ function lowRise_build(B, s, rng, ex) {
     for (const h of back) windowUnit(B, h, { rng, type: 'slide', sill: false, shutterBox: rng() < 0.4 });
     for (let u = 0; u < nU; u++) { const cx = -(-w / 2 + (u + 0.5) * uw);
       balconyRun(B, rng, cx - 2.3, cx + 0.9, y0 + fh, 0.9, { kind: 'rail', trim: [0.4, 0.42, 0.44], fh, laundry: 0.5 });
-      balconyRun(B, rng, cx - uw / 2, cx + uw / 2, y0, 1.0, { ground: true, trim: [0.55, 0.56, 0.56], ends: [u === nU - 1, true] }); }
+      balconyRun(B, rng, cx - uw / 2, cx + uw / 2, y0, 1.0, { kind: 'rail', ground: true, trim: [0.4, 0.42, 0.44], fh, laundry: 0.3, ends: [u === nU - 1, u === 0], parts: u > 0 ? [cx + uw / 2] : [] }); }
   });
   ex.push({ t: 'box', p: B.P([0, 0, 0.3]), hx: w / 2 + 1.2, hz: d / 2 + 1.3, r, h: H + 1 });
   out.footprint = [[-w / 2 - 1.3, -d / 2 - 2.2], [w / 2 + 1.3, d / 2 + 1.4]]; out.H = H; out.walk = { w, d, foot: out.stairRun + 0.25 };

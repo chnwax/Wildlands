@@ -48,7 +48,7 @@ export function danchiGround(x, z, h, Y0) {
 
 // ---------------------------------------------------------------- building the district
 import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle, buildCompound, addCompound } from './core.js';
-import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed, clockPole } from './townkit.js';
+import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed, clockPole, vendingMachine } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
@@ -290,7 +290,7 @@ export function buildDanchi(ctx) {
     { const T = []; for (const [k, b] of B.parts) { const P = b.pos.a, I = b.idx.a; for (let t = mark.get(k) || 0; t < b.idx.length; t++) { const v = I[t] * 3; T.push(P[v], P[v + 1], P[v + 2]); } }
       info.collider = addCompound(buildCompound(new Float32Array(T), { x, y, z, r, ground: gy }));
       for (let i = extras.length - 1; i >= ex0; i--) if (extras[i].t === 'box') extras.splice(i, 1); }
-    info.fam = fam; info.x = x; info.z = z; info.r = r; info.y = y; info.x0 = x0; info.z0 = z0; info.wa = o.wa; blds.push(info);
+    info.fam = fam; info.x = x; info.z = z; info.r = r; info.y = y; info.x0 = x0; info.z0 = z0; info.wa = o.wa; info.wb = o.wb; info.dp = o.dp; blds.push(info);
     // keep everything else off its footprint (one rectangle, or several for the L-shaped centre); no grass against it
     info.boxes = [];
     for (const fp of info.boxes0 || [info.footprint || [[-30, -12], [30, 12]]]) {
@@ -485,12 +485,7 @@ export function buildDanchi(ctx) {
     let len = len0 - Math.ceil(t0 / 2) * 2; const fits = L => { const cx = ex0 + fx * (L / 2 + 0.5), cz = ez0 + fz * (L / 2 + 0.5); return !conflicts([{ x: cx, z: cz, hw: D / 2 + 1.6, hd: L / 2 + 0.3, r: yaw }], false, true).length; };
     while (len >= 14 && !fits(len)) len -= 2; if (len < 14) continue;
     const cx = ex0 + fx * (len / 2 + 0.5), cz = ez0 + fz * (len / 2 + 0.5), y = gy(cx, cz) + 0.02;
-    { // the ground under the court cut down to its level (on a slope the lawn stood over the asphalt), easing back to the
-      // lawn round it
-      const { HN, HALF, CELL, H } = hf, M = 2.5, top = y - 0.05, R = Math.hypot(D / 2, len / 2) + M + CELL;
-      for (let j = Math.floor((cz - R + HALF) / CELL); j <= Math.ceil((cz + R + HALF) / CELL); j++) for (let i = Math.floor((cx - R + HALF) / CELL); i <= Math.ceil((cx + R + HALF) / CELL); i++) {
-        const vx = -HALF + i * CELL, vz = -HALF + j * CELL, u = Math.abs((vx - cx) * lx + (vz - cz) * lz) - (D / 2 + 0.6), v = Math.abs((vx - cx) * fx + (vz - cz) * fz) - (len / 2 + 0.6), d = Math.max(u, v, 0), k = j * HN + i;
-        if (d > M || k < 0 || k >= H.length) continue; const lim = top + (H[k] - top) * (d / M) ** 2; if (H[k] > lim) H[k] = lim; } }
+    cutGround(cx, cz, lx, lz, D / 2 + 0.6, len / 2 + 0.6, y - 0.05); // (on a slope the lawn stood over the asphalt)
     // the court: asphalt slab edged with a low concrete strip on three sides, the aisle down the middle; its open front
     // runs on in asphalt right up to the street's footway (below)
     B.frame(cx, y, cz, yaw);
@@ -591,6 +586,7 @@ export function buildDanchi(ctx) {
         const ds = (hx - best.q[0]) * best.d[0] + (hz - best.q[1]) * best.d[1]; best.s += ds; best.q = [best.q[0] + best.d[0] * ds, best.q[1] + best.d[1] * ds]; } }
     const ex0 = best.q[0] + l[0] * off, ez0 = best.q[1] + l[1] * off, yaw = Math.atan2(l[0], l[1]);
     const y = gy(ex0 + l[0] * dep / 2, ez0 + l[1] * dep / 2) + 0.02, per = 3, gap = 3.6;
+    for (const e of [-1, 1]) { const xc = e * (gap / 2 + per * 1.25); cutGround(ex0 + Math.cos(yaw) * xc + l[0] * dep / 2, ez0 - Math.sin(yaw) * xc + l[1] * dep / 2, Math.cos(yaw), -Math.sin(yaw), per * 1.25 + 0.3, dep / 2 + 0.3, y - 0.05); }
     B.frame(ex0, y, ez0, yaw);
     for (const e of [-1, 1]) { const xc = e * (gap / 2 + per * 1.25);
       B.bbox('asphalt', xc, -0.08, dep / 2, per * 2.5, 0.12, dep, 0.01, { color: [1, 1, 1], skip: 'ny', uv: 4 });
@@ -606,6 +602,14 @@ export function buildDanchi(ctx) {
       RN.cuts.push({ id, side: best.side, s0: best.s + e * gap / 2 - (e > 0 ? 0 : per * 2.5), s1: best.s + e * gap / 2 + (e > 0 ? per * 2.5 : 0) }); }
   }
 
+  // the ground under a paved rectangle (centre cx, cz; half-widths hw along (ux, uz) and hd across it) cut down to top,
+  // easing back up to the lawn over M metres round it: on a slope the lawn otherwise stood over the asphalt
+  function cutGround(cx, cz, ux, uz, hw, hd, top, M = 2.5) {
+    const { HN, HALF, CELL, H } = hf, R = Math.hypot(hw, hd) + M + CELL;
+    for (let j = Math.floor((cz - R + HALF) / CELL); j <= Math.ceil((cz + R + HALF) / CELL); j++) for (let i = Math.floor((cx - R + HALF) / CELL); i <= Math.ceil((cx + R + HALF) / CELL); i++) {
+      const vx = -HALF + i * CELL, vz = -HALF + j * CELL, u = Math.abs((vx - cx) * ux + (vz - cz) * uz) - hw, v = Math.abs(-(vx - cx) * uz + (vz - cz) * ux) - hd, d = Math.max(u, v, 0), k = j * HN + i;
+      if (d > M || k < 0 || k >= H.length) continue; const lim = top + (H[k] - top) * (d / M) ** 2; if (H[k] > lim) H[k] = lim; }
+  }
   function bikeShelter(x, z, yaw, n) { return entity('bike_shelter', () => { const y = gy(x, z); B.frame(x, y, z, yaw); const L = n * 0.8 + 0.6;
     B.box('concrete', 0, -0.05, 0, L, 0.08, 2.4, { color: [0.72, 0.72, 0.7] });
     for (const e of [-1, 1]) for (const zz of [-0.95]) B.cyl('steel', e * (L / 2 - 0.2), 0, zz, 0.045, 0.045, 2.2, 8, { color: [0.62, 0.64, 0.66] });
@@ -858,12 +862,96 @@ export function buildDanchi(ctx) {
     pathLine([[545.2, 46.4], [GX + 0.8, 46.4]], 2.4, { lamps: true, link: true, mat: 'gravelPath', color: [0.9, 0.84, 0.74] });
     for (const x of [563, 571, 579, 587]) benchAt(x, 48.2, Math.PI);
     paint(0, GX - 5, GZ - 5, GX + 5, GZ + 5, (x, z) => Math.max(0, 0.7 - Math.hypot(x - GX, z - GZ) / 6)); }
-  // C8 the centre plaza between the avenue and the shops: pavers, trees in planters, a clock, benches, bike racks
+  // C8 the centre plaza between the avenue and the shops: pavers; the shops' arcade paved under their canopy out to the
+  // footway and the plaza; zelkovas in planters, two raised flower beds with benches along them, the clock, ornamental
+  // lamps, the residents' notice board, a stone sculpture, bicycles racked by the shops, vending machines on the gable,
+  // bins, and stainless bollards along the avenue's footway
   { plaza(442, 142, 457.5, 192, [0.84, 0.8, 0.74]);
-    for (const [x, z] of [[447, 150], [447, 166], [447, 182]]) { if ([[0, 0], [1.3, 0], [-1.3, 0], [0, 1.3], [0, -1.3]].some(([a, b]) => RN.roadAt(x + a, z + b) || RN.walkY(x + a, z + b) !== null)) continue; tree('zelkova', x, z, 0.6, true); const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 2.2, 0.5, 2.2, 0.03, { color: [0.76, 0.75, 0.72] }); B.box('plain', 0, 0.46, 0, 1.9, 0.04, 1.9, { color: [0.3, 0.24, 0.18] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.1, 0, y - 1, y + 0.55); navRect(x, z, 1.2, 1.2, 0, 2); }
+    const street = (x, z) => RN.roadAt(x, z) || RN.walkY(x, z) !== null;
+    const clearOf = (x, z, r) => !street(x, z) && [0, 1, 2, 3, 4, 5, 6, 7].every(k => !street(x + Math.cos(k * Math.PI / 4) * r, z + Math.sin(k * Math.PI / 4) * r));
+    const Y = (x, z) => gy(x, z) + LIFT;
+    // the arcade: under the canopy, from the shopfronts out to the footway's back (leg A, along F) and over to the plaza
+    // (leg B) — the strip under the canopy was bare ground
+    const Lb = blds.find(b => b.fam === 'L');
+    if (Lb) { const c = Math.cos(Lb.r), sn = Math.sin(Lb.r), Wd = (lx, lz) => [Lb.x + lx * c + lz * sn, Lb.z - lx * sn + lz * c], WB = Lb.wb || 46;
+      const strip = (a, b2, out, max) => {
+        const ow = [out[0] * c + out[1] * sn, -out[0] * sn + out[1] * c], n = Math.max(2, Math.ceil(Math.hypot(b2[0] - a[0], b2[1] - a[1]) / 0.5)), F = [], O = [];
+        for (let k = 0; k <= n; k++) { const p = Wd(a[0] + (b2[0] - a[0]) * k / n, a[1] + (b2[1] - a[1]) * k / n); let t = 0.05; while (t < max && !street(p[0] + ow[0] * t, p[1] + ow[1] * t)) t += 0.05;
+          t = Math.min(t + 0.03, max); F.push(p); O.push([p[0] + ow[0] * t, p[1] + ow[1] * t]); }
+        const mid = [(F[n >> 1][0] + O[n >> 1][0]) / 2, (F[n >> 1][1] + O[n >> 1][1]) / 2], poly = [...F, ...O.reverse()], xs = poly.map(q => q[0]), zs = poly.map(q => q[1]);
+        pave(Math.min(...xs) - 1, Math.min(...zs) - 1, Math.max(...xs) + 1, Math.max(...zs) + 1, (px, pz) => inPoly(poly, px, pz) ? 1 : 0);
+        const rid = regions.length; regions.push({ kind: 'plaza', pts: [mid], connected: false }); coverPoly(poly, rid);
+        net.addArea(poly, { rid, color: [0.84, 0.8, 0.74] }); };
+      strip([-3.2, 0.03], [Lb.wa + 0.15, 0.03], [0, 1], 6);
+      strip([-0.03, 0], [-0.03, -WB - 0.15], [-1, 0], 3.4);
+      strip([-3.4, -WB - 0.03], [3.2, -WB - 0.03], [0, -1], 1.7);                   // (a pad along the gable for the vending machines)
+      // two vending machines against the south gable, beside the arcade's end
+      for (let k = 0; k < 2; k++) { const p = Wd(1.3 + k * 1.1, -WB - 0.42); vendingMachine(p[0], Y(p[0], p[1]), p[1], Lb.r + Math.PI, 40 + k, B); }
+      B.frame(0, 0, 0, 0); }
+    // zelkovas in planters on the avenue side (a planter the avenue's footway would clip steps east until it stands clear)
+    const pitClear = (x, z) => ![[0, 0], [1.3, 0], [-1.3, 0], [0, 1.3], [0, -1.3]].some(([a, b]) => street(x + a, z + b));
+    const pits = [];
+    for (const [x0, z] of [[447, 150], [447, 166], [447, 182]]) { let x = x0; while (x < x0 + 3.5 && !pitClear(x, z)) x += 0.5; if (!pitClear(x, z)) continue; pits.push([x, z]);
+      tree('zelkova', x, z, 0.6, true); const y = gy(x, z) + 0.05; B.frame(x, y, z, 0); B.bbox('concrete', 0, 0, 0, 2.2, 0.5, 2.2, 0.03, { color: [0.76, 0.75, 0.72] }); B.box('plain', 0, 0.46, 0, 1.9, 0.04, 1.9, { color: [0.3, 0.24, 0.18] }); B.frame(0, 0, 0, 0); addBox(x, z, 1.1, 1.1, 0, y - 1, y + 0.55); navRect(x, z, 1.2, 1.2, 0, 2); }
     clockPole(B, 452, gy(452, 158) + 0.05, 158, Math.PI / 2);
-
-    for (const [x, z, r] of [[451, 172, Math.PI / 2], [451, 144, Math.PI / 2], [453, 187, Math.PI / 2]]) if (![[0, 0], [1, 0], [-1, 0]].some(([a, b]) => RN.roadAt(x + a, z + b) || RN.walkY(x + a, z + b) !== null)) benchAt(x, z, r); }
+    // raised flower beds (花壇): granite-coped walls round clipped shrubs and seasonal flowers, benches along them
+    const FLW = [new THREE.Color(0.95, 0.42, 0.55), new THREE.Color(0.98, 0.82, 0.3), new THREE.Color(0.62, 0.45, 0.9), new THREE.Color(0.98, 0.98, 0.94)];
+    const bed = (x, z, L, D) => { if (!clearOf(x, z, Math.hypot(L, D) / 2 + 0.3)) return false;
+      entity('flower_bed', () => { const y = Y(x, z); B.frame(x, y, z, 0);
+        B.bbox('stone', 0, -0.05, 0, D, 0.5, L, 0.02, { color: [0.6, 0.58, 0.55], uv: 1.5 });
+        B.bbox('stone', 0, 0.45, 0, D + 0.1, 0.06, L + 0.1, 0.015, { color: [0.74, 0.72, 0.68] });
+        B.box('plain', 0, 0.45, 0, D - 0.24, 0.035, L - 0.24, { color: [0.3, 0.24, 0.18] });
+        B.frame(0, 0, 0, 0); addBox(x, z, D / 2 + 0.05, L / 2 + 0.05, 0, Y(x, z) - 1, Y(x, z) + 0.5); navRect(x, z, D / 2 + 0.2, L / 2 + 0.2, 0, 2); });
+      const y = Y(x, z) + 0.47, cA = FLW[Math.floor(rng() * 4)], cB = FLW[Math.floor(rng() * 4)];
+      // (clipped box balls down the middle, a carpet of bedding flowers in two colours round them, small leaves between)
+      for (let k = 0; k < Math.floor(L / 1.5); k++) out.bushes.push({ x, y, z: z - L / 2 + 0.75 + k * 1.5 + (L % 1.5) / 2, s: 0.5, sx: 1, r: k, c: new THREE.Color(0.26, 0.44, 0.22), keep: true });
+      for (let zz = z - L / 2 + 0.25; zz < z + L / 2 - 0.15; zz += 0.24) for (const xo of [-0.42, -0.2, 0.2, 0.42]) { const px = x + xo * (D / 1.5), pz = zz + (rng() - 0.5) * 0.06;
+        if (Math.abs(xo) < 0.3 && Math.abs(((pz - (z - L / 2 + 0.75 + (L % 1.5) / 2)) % 1.5 + 1.5) % 1.5 - 0) < 0.35) continue;
+        const flower = rng() < 0.82, col = flower ? ((Math.sin(zz * 1.7 + xo * 3) > 0 ? cA : cB).clone().offsetHSL(0, 0, (rng() - 0.5) * 0.06)) : new THREE.Color(0.3, 0.5, 0.26);
+        out.bushes.push({ x: px, y, z: pz, s: flower ? 0.17 + rng() * 0.04 : 0.2, sx: 1.3, r: rng() * 6, c: col, keep: true }); }
+      return true; };
+    if (bed(451.6, 148.5, 5.0, 1.5)) { benchAt(453.15, 147.3, Math.PI / 2); benchAt(453.15, 149.8, Math.PI / 2); }
+    if (bed(454.0, 174.5, 4.6, 1.4)) benchAt(452.5, 174.5, -Math.PI / 2);
+    benchAt(453.6, 164.2, Math.PI / 2);
+    // ornamental lamps down the plaza's middle
+    for (const [x, z] of [[450.4, 155.2], [452.8, 168.4], [455.2, 184.2]]) if (clearOf(x, z, 0.4)) entity('park_lamp', () => { const y = Y(x, z), mc = { color: [0.18, 0.2, 0.2] }; B.frame(x, y, z, 0);
+      B.cyl('metal', 0, 0, 0, 0.16, 0.13, 0.5, 12, mc); B.cyl('metal', 0, 0.5, 0, 0.07, 0.055, 3.4, 12, mc);
+      B.cyl('metal', 0, 3.9, 0, 0.1, 0.18, 0.12, 12, { ...mc, cap: true }); B.cyl('lamp', 0, 4.02, 0, 0.2, 0.2, 0.42, 12, {}); B.cyl('metal', 0, 4.44, 0, 0.26, 0.04, 0.2, 12, { ...mc, cap: true });
+      lampPoints.push({ p: [x, y + 4.2, z], s: 0.7 }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.14); navRect(x, z, 0.4, 0.4, 0, 2); });
+    // the residents' notice board (掲示板): a glazed board on two posts under a little roof, posters behind the glass
+    { const x = 449.8, z = 160.4, r = Math.PI / 2; if (clearOf(x, z, 0.9)) entity('notice_board', () => { const y = Y(x, z); B.frame(x, y, z, r);
+      for (const e of [-1, 1]) B.box('steel', e * 0.75, 0, 0, 0.07, 2.05, 0.07, { color: [0.32, 0.34, 0.36] });
+      B.bbox('metal', 0, 0.85, 0, 1.6, 1.05, 0.08, 0.01, { color: [0.24, 0.32, 0.3] });
+      B.poly('roofMetal', [[-0.95, 2.1, -0.32], [0.95, 2.1, -0.32], [0.95, 2.02, 0.32], [-0.95, 2.02, 0.32]], [0, 1, 0.1], { color: [0.3, 0.36, 0.34] });
+      const posters = signMesh(1.46, 0.92, (g, W2, H2) => { g.fillStyle = '#d9d4c4'; g.fillRect(0, 0, W2, H2);
+        [['#f4e9c8', '町内会 夏祭り'], ['#cfe3f2', 'ごみ収集日'], ['#f6d2d2', '防災訓練'], ['#e2efd0', '花壇ボランティア']].forEach(([bg, t], i) => {
+          const px = 10 + (i % 2) * W2 / 2, py = 8 + Math.floor(i / 2) * H2 / 2, pw = W2 / 2 - 20, ph = H2 / 2 - 16; g.fillStyle = bg; g.fillRect(px, py, pw, ph);
+          g.fillStyle = '#3a3630'; g.font = `bold ${Math.round(H2 * 0.085)}px ${JP_FONT}`; g.textAlign = 'center'; g.fillText(t, px + pw / 2, py + H2 * 0.15);
+          for (let l = 0; l < 3; l++) g.fillRect(px + 14, py + H2 * (0.22 + l * 0.07), pw - 28 - l * 18, 3); }); }, 0.05, 256);
+      const pm = B.P([0, 1.375, 0.045]); posters.position.set(pm[0], pm[1], pm[2]); posters.rotation.y = r; scene.add(posters); posters.updateMatrixWorld();
+      B.frame(0, 0, 0, 0); addBox(x, z, 0.8, 0.12, r); navRect(x, z, 0.9, 0.3, r, 2); }); }
+    // a stone sculpture on a low round plinth (three smooth standing stones), the plaza's meeting point at its south end
+    { const x = 450.2, z = 144.6; if (clearOf(x, z, 1.1)) entity('sculpture', () => { const y = Y(x, z); B.frame(x, y, z, 0.4);
+      B.cyl('stone', 0, 0, 0, 1.0, 1.0, 0.3, 24, { color: [0.62, 0.6, 0.57], cap: true });
+      B.cyl('stone', -0.25, 0.3, 0.05, 0.36, 0.28, 1.25, 16, { color: [0.48, 0.5, 0.52], cap: true }); B.cyl('stone', 0.32, 0.3, -0.12, 0.3, 0.22, 0.9, 16, { color: [0.52, 0.53, 0.54], cap: true });
+      B.cyl('stone', 0.12, 0.3, 0.38, 0.22, 0.16, 0.55, 14, { color: [0.56, 0.56, 0.56], cap: true });
+      B.frame(0, 0, 0, 0); addCircle(x, z, 1.0); navRect(x, z, 1.1, 1.1, 0, 2); }); }
+    // bicycles racked by the shops at the plaza's north end, a steel rail in front of their wheels
+    { const x = 455.4, z0 = 177.8, n = 7; if (clearOf(x, z0 + n * 0.35, 0.6)) entity('bicycle_park', () => { const y = Y(x, z0), sc = { color: [0.62, 0.64, 0.66] }; B.frame(0, 0, 0, 0);
+      B.beam('steel', [x - 0.6, y + 0.35, z0 - 0.3], [x - 0.6, y + 0.35, z0 + (n - 1) * 0.7 + 0.3], 0.045, 0.045, sc);
+      for (let k = 0; k <= 2; k++) { const zz = z0 - 0.3 + k * ((n - 1) * 0.7 + 0.6) / 2; B.box('steel', x - 0.6, y, zz, 0.045, 0.37, 0.045, sc); }
+      for (let k = 0; k < n; k++) if (rng() < 0.85) out.bikes.push({ x: x + 0.15, y, z: z0 + k * 0.7, r: (rng() < 0.5 ? 0 : Math.PI) + (rng() - 0.5) * 0.12 });
+      const zc = z0 + (n - 1) * 0.35; addBox(x, zc, 0.95, (n - 1) * 0.35 + 0.35, 0); navRect(x, zc, 0.95, (n - 1) * 0.35 + 0.35, 0, 2); }); }
+    // litter bins by the benches
+    for (const [x, z] of [[454.5, 151.6], [454.5, 166.2]]) if (clearOf(x, z, 0.3)) entity('litter_bin', () => { const y = Y(x, z); B.frame(x, y, z, 0);
+      B.cyl('metal', 0, 0, 0, 0.26, 0.24, 0.85, 14, { color: [0.26, 0.42, 0.34] }); B.cyl('metal', 0, 0.85, 0, 0.28, 0.2, 0.1, 14, { color: [0.2, 0.32, 0.26], cap: true });
+      B.frame(0, 0, 0, 0); addCircle(x, z, 0.28); });
+    // stainless bollards (車止め) along the avenue's footway, 1.6 m apart, leaving gaps at the planters
+    for (let z = 143.4; z < 190; z += 1.6) { let x = 442; while (x < 457 && street(x, z)) x += 0.1; x += 0.45; if (x > 455 || !clearOf(x, z, 0.3)) continue;
+      if (pits.some(([px, pz]) => Math.abs(z - pz) < 1.9 && Math.abs(x - px) < 2.5)) continue;
+      entity('bollard', () => { const y = Y(x, z); B.frame(x, y, z, 0); B.cyl('alu', 0, 0, 0, 0.055, 0.055, 0.8, 12, { color: [0.86, 0.88, 0.9] }); B.cyl('alu', 0, 0.8, 0, 0.055, 0.02, 0.04, 12, { color: [0.86, 0.88, 0.9], cap: true });
+        B.box('paint', 0, 0.62, 0, 0.115, 0.05, 0.115, { color: [0.9, 0.75, 0.2] }); B.frame(0, 0, 0, 0); addCircle(x, z, 0.08); }); }
+  }
   // bus stops on F at the centre, both directions
   for (const [x, z, yaw] of BUS) ctx.busStop(B, x, gy(x, z), z, yaw); B.frame(0, 0, 0, 0);
   // garbage stations beside the parking courts
