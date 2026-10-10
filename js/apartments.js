@@ -682,6 +682,12 @@ function mansion_build(B, s, rng, ex) {
       lampPoints.push({ p: B.P([0, fy + fh - 0.4, 1.0]), s: 0.4 });
       for (let u = 0; u < nU; u++) meterBox(B, -w / 2 + (u + 0.5) * uw - 1.0, fy + 1.3, 'power');
     }
+    // the top floor's corridor under a roof of its own: the roof slab carried out over it as an eave with a fascia, flush
+    // with the stair tower's roof at the corridor's end (in this frame the stair gable is at +x), so the two read as one
+    // canopy over the way from the stair to the doors
+    if (floors > 1) { const xa = -w / 2 - 0.02, xb = s.stairTower !== false ? w / 2 - 0.16 : w / 2 + 0.02;
+      B.bbox('concrete', (xa + xb) / 2, H - 0.18, 0.86, xb - xa, 0.18, 1.72, 0.012, { color: [0.82, 0.82, 0.8] });
+      B.box('plain', (xa + xb) / 2, H - 0.2, 1.72, xb - xa, 0.24, 0.05, { color: pal.trim }); }
     // lift tower in the middle of the corridor side, glazed at each landing; lobby at its foot
     // (without a podium the shaft stands on the lobby: a glazed box out past the corridor line at its foot)
     const X = -liftX, lt = H + 3.2, LW = 7.2, LD = 4.2, LH = y0 + fh - 0.2, sb = podium ? 0 : LH + 0.6;
@@ -727,7 +733,7 @@ function mansion_build(B, s, rng, ex) {
   // z: 0 at the gable wall to 2.6 out)
   // (stairTower: false — a wing whose stair end abuts another block's mass, reaching a stair along its corridor)
   if (s.stairTower !== false) inFrame(B, [-w / 2, 0, -d / 2 + 0.65], -Math.PI / 2, () => {
-    const top = H + 1.2, SC = [0.8, 0.8, 0.78], pc = pal.parapet, g = { color: pc, trim: pal.trim }, LX = 0.875, RAIL = [0.6, 0.62, 0.64];
+    const top = H - 0.16, SC = [0.8, 0.8, 0.78], pc = pal.parapet, g = { color: pc, trim: pal.trim }, LX = 0.875, RAIL = [0.6, 0.62, 0.64];
     const gl = (lx, lz) => { if (!s.gy) return 0; const p = B.P([lx, 0, lz]); return s.gy(p[0], p[2]) - B.F.y; };
     for (const cx2 of [-2.1, 2.1]) B.bbox('tiles', cx2, Math.min(0, gl(cx2, 2.45)) - 0.3, 2.45, 0.3, top - Math.min(0, gl(cx2, 2.45)) + 0.3, 0.3, 0.02, { color: mul(wall, 0.95) });
     // flight in the tower frame from (xa, ya) to (xb, yb) along z = zc, 1.2 wide
@@ -792,7 +798,10 @@ function cornerBlock_build(B, s, rng, ex) {
   const pb = P(0, C + wb / 2 - 0.3), Bw = mansion(B, { x: pb[0], y, z: pb[2], r: r - Math.PI / 2, w: wb, floors, pal, no: no + 1, name: name + ' B棟', gy, lift: 2, stairTower: false }, rng, ex);
   // the wings' walks under their corridors that start at the tower meet in the court's inner corner (each wing's own
   // would run on past its end, into the tower)
-  { const tc = P(0, 0), dt = q => Math.hypot(q[0] - tc[0], q[1] - tc[2]), near = L => L.reduce((b, k) => !b || dt(k[0]) < dt(b[0]) ? k : b, null), wA = near(A.walkways || []), wB = near(Bw.walkways || []);
+  // (never the walk that serves a stair's foot: moved to the corner it would leave the stair cut off)
+  { const tc = P(0, 0), dt = q => Math.hypot(q[0] - tc[0], q[1] - tc[2]), near = L => L.reduce((b, k) => !b || dt(k[0]) < dt(b[0]) ? k : b, null);
+    const feet = [...A.entrances, ...Bw.entrances].filter(e => e.kind === 'stair foot').map(e => e.p), free = L => (L || []).filter(w => !feet.some(p => Math.hypot(w[0][0] - p[0], w[0][1] - p[2]) < 4));
+    const wA = near(free(A.walkways)), wB = near(free(Bw.walkways));
     if (wA && wB) { const [a, b] = wA, [c, e] = wB, r1 = [b[0] - a[0], b[1] - a[1]], r2 = [e[0] - c[0], e[1] - c[1]], den = r1[0] * r2[1] - r1[1] * r2[0];
       if (Math.abs(den) > 1e-6) { const t = ((c[0] - a[0]) * r2[1] - (c[1] - a[1]) * r2[0]) / den, X = [a[0] + r1[0] * t, a[1] + r1[1] * t];
         if (Math.hypot(X[0] - a[0], X[1] - a[1]) < 4 && Math.hypot(X[0] - c[0], X[1] - c[1]) < 4) { wA[0] = X; wB[0] = [X[0], X[1]]; } } } }

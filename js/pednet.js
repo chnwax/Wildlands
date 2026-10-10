@@ -123,7 +123,9 @@ export class PedNet {
         for (let k = 1; k <= n; k++) {
           const f = k / n, cur = st(...at(f));
           if (!sameTag(cur, prev)) { let lo = pf, hi = f; for (let q = 0; q < 16; q++) { const m = (lo + hi) / 2; if (sameTag(st(...at(m)), prev)) lo = m; else hi = m; } const p = at((lo + hi) / 2);
-            if (!prev) { run.pts.push(p); run.t1 = cur; runs.push(run); run = null; }
+            // (a vertex can read differently from the two segments meeting at it — the along-a-path test depends on the
+            // direction — so a stretch may leave open ground with no run open: it had none to close)
+            if (!prev && run) { run.pts.push(p); run.t1 = cur; runs.push(run); run = null; }
             if (!cur) run = { pts: [p], t0: prev }; }
           prev = cur; pf = f;
         }
@@ -578,7 +580,7 @@ export class PedNet {
         else { const ai = this.areaAt(D.x, D.z); if (ai >= 0) k0 = 'a' + ai;
           else for (const [ei, e] of edges.entries()) { if (e.dead) continue; const A = nodes[e.a], Bq = nodes[e.b]; if (segDist(D.x, D.z, A.x, A.z, Bq.x, Bq.z).d < chains[e.c].w / 2 + 0.05) { k0 = 'n' + e.a; break; } } }
         if (k0 === null) issues.push(`${D.name}: its door at ${at(D.x, D.z)} opens onto no paving`);
-        else if (!reach(k0)) issues.push(`${D.name}: no route from its door to a street`); } }
+        else if (!reach(k0)) { if (ctx.unreached) ctx.unreached.push(D); const A = D.area !== undefined ? this.areas[D.area].bb : null; issues.push(`${D.name}: no route from its door at ${A ? at((A[0] + A[2]) / 2, (A[1] + A[3]) / 2) : at(D.x, D.z)} to a street`); } } }
     return issues;
   }
 }

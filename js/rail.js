@@ -754,193 +754,138 @@ export function pedCrossing(B, { cx, sd, y0, hw = 1.5, name = '桜川河畔踏�
 }
 
 // ---------------------------------------------------------------- trains
-// The local train (普通): an electric unit of the old national-railway kind, drawn the way the films draw them — a
-// two-tone body (cream over deep maroon, a cream pin-line in the maroon) on a rounded roof with rain gutters and a row
-// of mushroom vents; three doors a side, paired sash windows in chrome frames between them; behind the glass a lit
-// saloon of long green bench seats, poles, luggage racks and strap rails; a flat cab front with three windows, a roll
-// sign, twin headlamps and tail lamps, a lamp on the roof, wipers, a snow plough and a coupler; rubber bellows between
-// the cars; under the floor the equipment boxes and air tanks; bogies with coil springs, axle boxes and brake gear on
-// wheels that turn; a diamond pantograph on the motor car. Car frame: x along the car, y up from the rail top, z across.
-const lin = c => new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace).toArray();           // (vertex colours are linear)
-const CREAM = lin([0.93, 0.89, 0.78]), MAROON = lin([0.5, 0.12, 0.11]), INNER = lin([0.86, 0.83, 0.74]), SEAT = lin([0.24, 0.47, 0.38]), FLOOR = lin([0.45, 0.37, 0.29]);
-const CL = 19.5, CW = 2.9, YB = 1.05, YS = 1.95, YT = 3.3, YF = 1.12, PT = 0.05, DOORS = [-6.5, 0, 6.5], DW = 1.3, YD = 3.02;
+// The local train (普通), drawn soft the way the films draw one: every edge rounded — a pillowy body with a loaf of a
+// roof, round lamps, rounded windows — in warm cream over a soft brick red with a cream pin-line; windows painted like
+// a cel (a warm interior with seat backs and straps behind glass that catches two pale streaks of sky), glowing amber at
+// night; three doors a side, a cab front with three windows, a roll sign, twin headlamps and tail lamps and a lamp on
+// the roof; mushroom vents, a diamond pantograph, rounded bogies on turning wheels, bellows between the cars.
+// Car frame: x along the car, y up from the rail top, z across.
+const lin = c => new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace);
+const CL = 19.5, CW = 2.9, YB = 1.0, YS = 1.95, YT = 3.35, YD = 3.0, YF = 1.12, DOORS = [-6.5, 0, 6.5], DW = 1.3, R_BODY = 0.3;
 function trainMaterials() {
-  const body = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.06 });
-  const roof = new THREE.MeshStandardMaterial({ color: 0x8c8f8d, roughness: 0.78, metalness: 0.12 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x9cb6bf, roughness: 0.04, metalness: 0.35, transparent: true, opacity: 0.3, depthWrite: false, emissive: 0xffe2b0, emissiveIntensity: 0 });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xc8cbcd, roughness: 0.22, metalness: 0.9 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x1b1c1d, roughness: 0.6, metalness: 0.2 });
-  const under = new THREE.MeshStandardMaterial({ color: 0x2d2f30, roughness: 0.82, metalness: 0.15 });
-  const ceil = new THREE.MeshStandardMaterial({ color: 0xf1eee4, roughness: 0.9, emissive: 0xfff1d6, emissiveIntensity: 0 });
-  const lit = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, emissive: 0xfff4e2, emissiveIntensity: 0.3 });
-  const head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff8ee, emissiveIntensity: 12 });
-  const tail = new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff1508, emissiveIntensity: 6 });
-  const off = new THREE.MeshStandardMaterial({ color: 0xd8d6cc, roughness: 0.15, metalness: 0.5 });
-  const led = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffffff, emissiveIntensity: 1.2 });
-  const destTex = canvasTex(512, 96, (g, W, H) => { g.fillStyle = '#f4f1e6'; g.fillRect(0, 0, W, H); g.fillStyle = '#1d1d1d'; g.font = `bold 56px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('普通　もりやま', W / 2, H * 0.44); g.font = `24px Arial`; g.fillText('Local  for Moriyama', W / 2, H * 0.84); });
+  // the body: one rounded shell, its two colours and the pin-line painted by height (a crisp line on any curve)
+  const body = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0 });
+  const cream = lin([0.96, 0.9, 0.76]), red = lin([0.66, 0.22, 0.19]);
+  body.onBeforeCompile = sh => {
+    sh.uniforms.uCream = { value: cream }; sh.uniforms.uRed = { value: red };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLoc = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc; uniform vec3 uCream, uRed;')
+      .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `vec4 diffuseColor = vec4( diffuse, opacity );
+        { float aa = fwidth(vLoc.y) * 0.75; float up = smoothstep(${YS.toFixed(3)} - aa, ${YS.toFixed(3)} + aa, vLoc.y);
+          float pin = 1.0 - smoothstep(0.018 - aa, 0.018 + aa, abs(vLoc.y - 1.72));
+          diffuseColor.rgb = mix(uRed, uCream, max(up, pin)); }`);
+  };
+  body.customProgramCacheKey = () => 'trainBody';
+  const roof = new THREE.MeshStandardMaterial({ color: lin([0.62, 0.64, 0.66]), roughness: 0.7, metalness: 0 });
+  const winTex = canvasTex(256, 192, (g, W, H) => {
+    // a warm saloon behind the glass: ceiling light fading down, the far windows, seat backs, straps; two streaks of sky
+    const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#f6ead0'); gr.addColorStop(0.45, '#d9c7a4'); gr.addColorStop(1, '#8c7a62'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(150,190,205,0.55)'; g.fillRect(W * 0.08, H * 0.3, W * 0.84, H * 0.32);                         // the far windows
+    g.fillStyle = '#4f7f68'; g.beginPath(); g.roundRect(W * 0.02, H * 0.72, W * 0.96, H * 0.3, 14); g.fill();           // seat backs
+    g.strokeStyle = '#7a6a58'; g.lineWidth = 3; for (let k = 0; k < 5; k++) { const x = W * (0.15 + k * 0.18); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H * 0.16); g.stroke(); g.beginPath(); g.arc(x, H * 0.19, 7, 0, 7); g.stroke(); }
+    g.fillStyle = 'rgba(255,255,255,0.42)'; for (const [a, w] of [[0.2, 0.12], [0.42, 0.05]]) { g.beginPath(); g.moveTo(W * a, H); g.lineTo(W * (a + w), H); g.lineTo(W * (a + w + 0.35), 0); g.lineTo(W * (a + 0.35), 0); g.closePath(); g.fill(); }
+  });
+  const glass = new THREE.MeshStandardMaterial({ map: winTex, roughness: 0.25, metalness: 0, emissive: 0xffd9a0, emissiveMap: winTex, emissiveIntensity: 0 });
+  const frame = new THREE.MeshStandardMaterial({ color: lin([0.9, 0.88, 0.84]), roughness: 0.45, metalness: 0.15 });
+  const line = new THREE.MeshStandardMaterial({ color: lin([0.35, 0.12, 0.1]), roughness: 0.7 });
+  const under = new THREE.MeshStandardMaterial({ color: lin([0.24, 0.24, 0.25]), roughness: 0.8, metalness: 0 });
+  const head = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff6e4, emissiveIntensity: 10 });
+  const tail = new THREE.MeshStandardMaterial({ color: 0x400806, emissive: 0xff2010, emissiveIntensity: 5 });
+  const off = new THREE.MeshStandardMaterial({ color: lin([0.95, 0.94, 0.88]), roughness: 0.2, metalness: 0.1 });
+  const led = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffffff, emissiveIntensity: 1.1 });
+  const destTex = canvasTex(512, 128, (g, W, H) => { g.fillStyle = '#f7f2e4'; g.fillRect(0, 0, W, H); g.fillStyle = '#2a2622'; g.font = `bold 62px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('普通　もりやま', W / 2, H * 0.42); g.font = `26px Arial`; g.fillText('Local  for Moriyama', W / 2, H * 0.82); });
   led.emissiveMap = destTex; led.map = destTex;
-  return { body, roof, glass, chrome, black, under, ceil, lit, head, tail, off, led };
+  return { body, roof, glass, frame, line, under, head, tail, off, led };
 }
 let TM = null;
-// geometry helpers (each piece made in place, merged per material at the end of a car)
-const tint = (g, col, innerCol = null) => { const n = g.attributes.position.count, N = g.attributes.normal, a = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) a.set(innerCol && N.getZ(i) < -0.5 ? innerCol : col, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
-const boxG = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-const cylX = (r, len, x, y, z, seg = 12) => new THREE.CylinderGeometry(r, r, len, seg).rotateZ(Math.PI / 2).translate(x, y, z);
+// a box w × h × d centred at (x, y, z) with every edge rounded to r (the corner spheres joined by cylinders, flat faces
+// between): a subdivided unit box whose vertices are pushed out from the inner box, as three's RoundedBoxGeometry does
+function roundBoxG(w, h, d, r, x = 0, y = 0, z = 0, segs = 3) {
+  const n = segs * 2 + 1, g = new THREE.BoxGeometry(1, 1, 1, n, n, n).toNonIndexed(), P = g.attributes.position.array, N = g.attributes.normal.array, half = 0.5 / n;
+  r = Math.min(r, w / 2, h / 2, d / 2); const bx = w / 2 - r, by = h / 2 - r, bz = d / 2 - r, v = new THREE.Vector3();
+  for (let i = 0; i < P.length; i += 3) {
+    v.set(P[i] - Math.sign(P[i]) * half, P[i + 1] - Math.sign(P[i + 1]) * half, P[i + 2] - Math.sign(P[i + 2]) * half).normalize();
+    const sx = Math.sign(P[i]), sy = Math.sign(P[i + 1]), sz = Math.sign(P[i + 2]);
+    P[i] = bx * sx + v.x * r + x; P[i + 1] = by * sy + v.y * r + y; P[i + 2] = bz * sz + v.z * r + z; N[i] = v.x; N[i + 1] = v.y; N[i + 2] = v.z; }
+  g.deleteAttribute('uv'); return g;
+}
+const cylX = (r, len, x, y, z, seg = 16) => new THREE.CylinderGeometry(r, r, len, seg).rotateZ(Math.PI / 2).translate(x, y, z);
 const cylZ = (r, len, x, y, z, seg = 16) => new THREE.CylinderGeometry(r, r, len, seg).rotateX(Math.PI / 2).translate(x, y, z);
-const cylY = (r0, r1, h, x, y, z, seg = 12) => new THREE.CylinderGeometry(r0, r1, h, seg).translate(x, y + h / 2, z);
-const rrect = (p, x, y, w, h, r) => { p.moveTo(x + r, y); p.lineTo(x + w - r, y); p.quadraticCurveTo(x + w, y, x + w, y + r); p.lineTo(x + w, y + h - r); p.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+const rrectPath = (p, x, y, w, h, r) => { p.moveTo(x + r, y); p.lineTo(x + w - r, y); p.quadraticCurveTo(x + w, y, x + w, y + r); p.lineTo(x + w, y + h - r); p.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
   p.lineTo(x + r, y + h); p.quadraticCurveTo(x, y + h, x, y + h - r); p.lineTo(x, y + r); p.quadraticCurveTo(x, y, x + r, y); };
-// a flat panel x0..x1 by y0..y1 with rounded window holes [hx0, hx1, hy0, hy1], extruded t toward +z from z = 0
-function panelG(x0, x1, y0, y1, holes = [], t = PT) {
-  const s = new THREE.Shape(); s.moveTo(x0, y0); s.lineTo(x1, y0); s.lineTo(x1, y1); s.lineTo(x0, y1); s.closePath();
-  for (const [a, b, c, d, r = 0.07] of holes) { const h = new THREE.Path(); rrect(h, a, c, b - a, d - c, r); s.holes.push(h); }
-  return new THREE.ExtrudeGeometry(s, { depth: t, bevelEnabled: false, curveSegments: 3 });
+// a flat rounded rectangle (a, b along the face, c, d up), optionally a ring of width t; uv 0..1 over it. On a side
+// face (s = ±1: z = s·(CW/2 + off), facing out) or on an end face (e = ±1: x = e·(CL/2 + off))
+function plateG(a, b, c, d, r, { t = 0, side = 0, end = 0, off = 0.004 }) {
+  if (side < 0) [a, b] = [-b, -a];                                                // (the far side is turned: x runs the other way)
+  const s = new THREE.Shape(); rrectPath(s, a, c, b - a, d - c, r);
+  if (t) { const h = new THREE.Path(); rrectPath(h, a + t, c + t, b - a - 2 * t, d - c - 2 * t, Math.max(0.01, r - t)); s.holes.push(h); }
+  const g = new THREE.ShapeGeometry(s, 6), P = g.attributes.position, U = g.attributes.uv;
+  for (let i = 0; i < P.count; i++) U.setXY(i, (P.getX(i) - a) / (b - a), (P.getY(i) - c) / (d - c));
+  if (side) { if (side < 0) g.rotateY(Math.PI); g.translate(0, 0, side * (CW / 2 + off)); }
+  else { g.rotateY(end * Math.PI / 2); g.translate(end * (CL / 2 + off), 0, 0); }
+  return g;
 }
-// the roof's cross-section: a circular arc from the side tops (y = YT at z = ±CW/2) to its crown 0.52 m above
-const ROOF_R = ((CW / 2) ** 2 + 0.52 ** 2) / (2 * 0.52), ROOF_C = YT + 0.52 - ROOF_R, ROOF_A = Math.asin((CW / 2) / ROOF_R);
-const roofPt = (a, grow = 0) => [Math.sin(a) * (ROOF_R + grow), ROOF_C + Math.cos(a) * (ROOF_R + grow)];   // [z, y]
-// a skin along x over the profile [[z, y]...], smooth normals (outward = away from the arc's centre)
-function ribbonG(prof, x0, x1, inward = false) {
-  const P = [], N = [], I = [];
-  for (const [z, y] of prof) { let nz = z, ny = y - ROOF_C; const l = Math.hypot(nz, ny) || 1; nz /= l; ny /= l; if (inward) { nz = -nz; ny = -ny; }
-    P.push(x0, y, z, x1, y, z); N.push(0, ny, nz, 0, ny, nz); }
-  for (let i = 0; i + 1 < prof.length; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; if (!inward) I.push(a, c, b, b, c, d); else I.push(a, b, c, b, d, c); }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setIndex(I); return g.toNonIndexed();
-}
-// the car's end wall: the body's cross-section with its holes (window / gangway door: [z0, z1, y0, y1]), at x = e·CL/2
-function endWallG(e, { holes = [], door = null }) {
-  const out = [], lower = [], put = (g, col) => { tint(g, col, INNER); g.rotateY(e * Math.PI / 2).translate(e * (CL / 2 - PT), 0, 0); out.push(g); };
-  if (door) { const [d0, d1] = door; lower.push([-CW / 2, d0, YB, YS], [d1, CW / 2, YB, YS], [d0, d1, YB, YF]); } else lower.push([-CW / 2, CW / 2, YB, YS]);
-  for (const [z0, z1, y0, y1] of lower) put(panelG(z0, z1, y0, y1), MAROON);
-  const s = new THREE.Shape(), n = 14; s.moveTo(-CW / 2, YS);
-  if (door) { const [d0, d1, dt] = door; s.lineTo(d0, YS); s.lineTo(d0, dt); s.lineTo(d1, dt); s.lineTo(d1, YS); }
-  s.lineTo(CW / 2, YS); s.lineTo(CW / 2, YT);
-  for (let k = 1; k <= n; k++) { const [z, y] = roofPt(ROOF_A - 2 * ROOF_A * k / n); s.lineTo(z, y); }
-  s.closePath();
-  for (const [a, b, c, d, r = 0.08] of holes) { const h = new THREE.Path(); rrect(h, a, c, b - a, d - c, r); s.holes.push(h); }
-  put(new THREE.ExtrudeGeometry(s, { depth: PT, bevelEnabled: false, curveSegments: 3 }), CREAM);
-  return out;
-}
-// one car. cab: -1 (cab at the -x end), +1, or 0; panto: carries the pantograph
 function makeCar(cab, panto) {
-  const T = TM, G = new Map(), add = (mat, g) => { if (!G.has(mat)) G.set(mat, []); G.get(mat).push(g.index ? g.toNonIndexed() : g); };
+  const T = TM, G = new Map(), add = (mat, g) => { g = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); if (!G.has(mat)) G.set(mat, []); G.get(mat).push(g); };
   const grp = new THREE.Group(), L = CL, hw = CW / 2;
-  // ---- sides: the maroon lower panel and the cream window band, broken at the doors; windows in pairs of sashes
+  // ---- the shell: a rounded body, a rounded roof on it, the skirt under it
+  add(T.body, roundBoxG(L, YT - YB, CW, R_BODY, 0, (YB + YT) / 2, 0, 4));
+  add(T.roof, roundBoxG(L - 0.16, 0.62, CW - 0.12, 0.3, 0, YT + 0.08, 0, 4));
+  add(T.under, roundBoxG(L - 2.2, 0.4, CW - 0.5, 0.14, 0, YB - 0.12, 0));
+  // ---- the sides: windows in rounded frames, doors outlined, the door windows
   for (const s of [-1, 1]) {
-    const place = g => { if (s < 0) g.rotateY(Math.PI).translate(0, 0, -(hw - PT)); else g.translate(0, 0, hw - PT); return g; };
-    const mx = x => s * x;                                               // (the far side is built mirrored, then turned)
-    const edges = [-L / 2, ...DOORS.flatMap(d => [d - DW / 2, d + DW / 2]), L / 2], segs = [];
-    for (let i = 0; i < edges.length; i += 2) segs.push([edges[i], edges[i + 1]]);
-    for (const [a, b] of segs) {
-      const endSeg = a === -L / 2 ? -1 : b === L / 2 ? 1 : 0, wins = [];
-      if (endSeg && cab === endSeg) { const xw = endSeg < 0 ? b - 0.95 : a + 0.95, xc = endSeg < 0 ? a + 0.55 : b - 0.55; wins.push([xw - 0.4, xw + 0.4, 2.08, 2.95]); wins.push([xc - 0.28, xc + 0.28, 2.2, 2.95]); }
-      else { const len = b - a, n = Math.max(1, Math.floor((len - 0.3) / 1.22)), w = 1.0, gap = (len - n * w) / (n + 1); for (let k = 0; k < n; k++) { const x0 = a + gap + k * (w + gap); wins.push([x0, x0 + w, 2.08, 2.95]); } }
-      const xa = Math.min(mx(a), mx(b)), xb = Math.max(mx(a), mx(b)), H = wins.map(([p, q, c, d]) => [Math.min(mx(p), mx(q)), Math.max(mx(p), mx(q)), c, d]);
-      add(T.body, place(tint(panelG(xa, xb, YB, YS), MAROON, INNER)));
-      add(T.body, place(tint(panelG(xa, xb, YS, YT, H), CREAM, INNER)));
-      for (const [p, q, c, d] of wins) { const xc = (p + q) / 2, w = q - p, z = s * (hw - 0.026);
-        add(T.glass, boxG(w, d - c, 0.004, xc, (c + d) / 2, z));
-        for (const [bw, bh, bx, by] of [[w + 0.05, 0.035, xc, d + 0.005], [w + 0.05, 0.035, xc, c - 0.005], [0.035, d - c, p - 0.005, (c + d) / 2], [0.035, d - c, q + 0.005, (c + d) / 2], [w, 0.03, xc, (c + d) / 2 + 0.06], [0.03, (d - c) / 2, xc, c + (d - c) * 0.75]])
-          add(T.chrome, boxG(bw, bh, 0.03, bx, by, s * (hw - 0.002))); }
-      // the inside: long bench seats under the windows, a luggage rack over them, a pole at each end
-      const sa = a + (endSeg && cab === endSeg ? (endSeg < 0 ? 1.4 : 0.25) : 0.25), sb = b - (endSeg && cab === endSeg ? (endSeg > 0 ? 1.4 : 0.25) : 0.25);
-      if (sb - sa > 0.6) { const zc = s * (hw - 0.36);
-        add(T.body, tint(boxG(sb - sa, 0.14, 0.5, (sa + sb) / 2, 1.5, zc), SEAT)); add(T.body, tint(boxG(sb - sa, 0.5, 0.1, (sa + sb) / 2, 1.83, s * (hw - 0.1)), SEAT));
-        add(T.body, tint(boxG(sb - sa, 0.33, 0.44, (sa + sb) / 2, 1.27, zc + s * 0.02), [0.3, 0.27, 0.24]));
-        add(T.chrome, boxG(sb - sa, 0.02, 0.3, (sa + sb) / 2, 3.0, s * (hw - 0.2)));
-        for (const x of [sa, sb]) add(T.chrome, cylY(0.018, 0.018, YT - YF - 0.08, x, YF, s * (hw - 0.62), 8)); }
-      // under the doors: the step plate; over them: the cream band's lintel
-    }
-    for (const d of DOORS) {
-      const x0 = mx(d - DW / 2), x1 = mx(d + DW / 2), a = Math.min(x0, x1), b = Math.max(x0, x1);
-      add(T.body, place(tint(panelG(a, b, YB, YF), MAROON, INNER))); add(T.body, place(tint(panelG(a, b, YD, YT), CREAM, INNER)));
-      // two door leaves set in by 3 cm, each with its window, the colours carried across
-      for (const [la, lb] of [[a, (a + b) / 2], [(a + b) / 2, b]]) { const wa = la + 0.12, wb = lb - 0.12;
-        const leaf = g => { if (s < 0) g.rotateY(Math.PI).translate(0, 0, -(hw - PT - 0.03)); else g.translate(0, 0, hw - PT - 0.03); return g; };
-        add(T.body, leaf(tint(panelG(la + 0.004, lb - 0.004, YF, YS, [], 0.03), MAROON, INNER)));
-        add(T.body, leaf(tint(panelG(la + 0.004, lb - 0.004, YS, YD, [[wa, wb, 2.1, 2.9, 0.05]], 0.03), CREAM, INNER)));
-        const xm = s < 0 ? -(wa + wb) / 2 : (wa + wb) / 2; add(T.glass, boxG(wb - wa, 0.8, 0.004, xm, 2.5, s * (hw - 0.07))); }
-      add(T.black, boxG(DW, 0.02, 0.02, d, YD - 0.01, s * (hw - 0.01)));
-      add(T.chrome, boxG(DW, 0.03, 0.12, d, YF + 0.005, s * (hw - 0.04)));                                   // the step's sill plate
-    }
-    // the pin-line and the rain gutter
-    add(T.body, tint(boxG(L, 0.04, 0.008, 0, 1.72, s * (hw + 0.002)), CREAM));
-    add(T.roof, boxG(L, 0.05, 0.07, 0, YT + 0.02, s * (hw + 0.025)));
+    const edges = [-L / 2 + 0.35, ...DOORS.flatMap(d => [d - DW / 2, d + DW / 2]), L / 2 - 0.35], wins = [];
+    for (let i = 0; i < edges.length; i += 2) { const a = edges[i], b = edges[i + 1], endSeg = i === 0 ? -1 : i === edges.length - 2 ? 1 : 0;
+      if (endSeg && cab === endSeg) { const xw = endSeg < 0 ? b - 0.85 : a + 0.85, xc = endSeg < 0 ? a + 0.45 : b - 0.45; wins.push([xw - 0.4, xw + 0.4, 2.1, 2.92]); wins.push([xc - 0.25, xc + 0.25, 2.2, 2.92]); }
+      else { const len = b - a, n = Math.max(1, Math.floor((len - 0.2) / 1.22)), w = 1.0, gap = (len - n * w) / (n + 1); for (let k = 0; k < n; k++) { const x0 = a + gap + k * (w + gap); wins.push([x0, x0 + w, 2.1, 2.92]); } } }
+    for (const [a, b, c, d] of wins) { add(T.glass, plateG(a, b, c, d, 0.1, { side: s, off: 0.004 })); add(T.frame, plateG(a - 0.05, b + 0.05, c - 0.05, d + 0.05, 0.14, { t: 0.06, side: s, off: 0.008 }));
+      add(T.frame, plateG(a, b, (c + d) / 2 + 0.04, (c + d) / 2 + 0.08, 0.02, { side: s, off: 0.009 })); }
+    for (const dx of DOORS) { const a = dx - DW / 2, b = dx + DW / 2;
+      add(T.line, plateG(a, b, 1.32, YD, 0.1, { t: 0.03, side: s, off: 0.005 })); add(T.line, plateG(dx - 0.012, dx + 0.012, 1.35, YD - 0.03, 0.006, { side: s, off: 0.005 }));
+      for (const [p, q] of [[a + 0.14, dx - 0.12], [dx + 0.12, b - 0.14]]) { add(T.glass, plateG(p, q, 2.12, 2.88, 0.08, { side: s, off: 0.004 })); add(T.frame, plateG(p - 0.04, q + 0.04, 2.08, 2.92, 0.11, { t: 0.04, side: s, off: 0.008 })); } }
+    add(T.roof, roundBoxG(L - 0.8, 0.06, 0.08, 0.03, 0, YT - 0.02, s * (hw + 0.01)));                                 // the rain gutter
   }
-  // ---- roof, ceiling, floor, ends
-  const arc = []; for (let k = 0; k <= 16; k++) arc.push(roofPt(-ROOF_A + 2 * ROOF_A * k / 16));
-  add(T.roof, ribbonG(arc, -L / 2, L / 2));
-  add(T.ceil, boxG(L - 0.12, 0.02, CW - 0.14, 0, YT - 0.06, 0));
-  for (const z of [-0.5, 0.5]) add(T.lit, boxG(L - 1.2, 0.03, 0.14, 0, YT - 0.08, z));
-  for (const z of [-0.55, 0.55]) { add(T.chrome, cylX(0.015, L - 0.6, 0, 3.05, z, 6)); for (let x = -L / 2 + 0.8; x < L / 2 - 0.6; x += 0.55) add(T.black, boxG(0.02, 0.22, 0.03, x, 2.92, z)); }
-  add(T.body, tint(boxG(L - 0.1, 0.04, CW - 0.1, 0, YF - 0.02, 0), FLOOR));
-  for (let x = -L / 2 + 1.5; x < L / 2 - 1; x += 2.5) { add(T.roof, cylY(0.2, 0.16, 0.12, x, ROOF_C + ROOF_R - 0.02, 0, 14)); add(T.roof, cylY(0.24, 0.05, 0.08, x, ROOF_C + ROOF_R + 0.1, 0, 14)); } // mushroom vents
+  // ---- mushroom vents along the roof, round and soft
+  for (let x = -L / 2 + 1.6; x < L / 2 - 1; x += 2.6) { if (panto && Math.abs(x - 4.6) < 1.4) continue; add(T.roof, new THREE.SphereGeometry(0.24, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.55, 1).translate(x, YT + 0.38, 0)); add(T.roof, new THREE.CylinderGeometry(0.1, 0.12, 0.12, 10).translate(x, YT + 0.34, 0)); }
+  // ---- the ends
   for (const e of [-1, 1]) {
     if (cab === e) {
-      // the cab front: three windows (the middle one the gangway door's, taller), the roll sign over it
-      for (const g of endWallG(e, { holes: [[-1.32, -0.48, 2.12, 2.98], [-0.32, 0.32, 1.98, 3.02], [0.48, 1.32, 2.12, 2.98]] })) add(T.body, g);
-      add(T.body, tint(boxG(0.04, YT - YF, CW - 0.12, e * (L / 2 - 1.3), (YT + YF) / 2, 0), INNER));            // the cab's back wall
-      const xf = e * (L / 2 + 0.002);
-      for (const [z0, z1, y0, y1] of [[-1.32, -0.48, 2.12, 2.98], [-0.32, 0.32, 1.98, 3.02], [0.48, 1.32, 2.12, 2.98]]) {
-        add(T.glass, boxG(0.004, y1 - y0, z1 - z0, e * (L / 2 - 0.025), (y0 + y1) / 2, (z0 + z1) / 2));
-        for (const [w, h, y, z] of [[0.03, 0.035, y1 + 0.005, (z0 + z1) / 2], [0.03, 0.035, y0 - 0.005, (z0 + z1) / 2]]) add(T.chrome, boxG(w, h, z1 - z0 + 0.05, xf, y, z));
-        for (const z of [z0 - 0.005, z1 + 0.005]) add(T.chrome, boxG(0.03, y1 - y0, 0.035, xf, (y0 + y1) / 2, z)); }
-      for (const z of [-0.9, 0.9]) add(T.black, boxG(0.02, 0.5, 0.025, xf + e * 0.012, 2.42, z + 0.12)); // wipers
-      add(T.black, boxG(0.12, 0.26, 0.7, e * (L / 2 + 0.06), 3.2, 0));
-      const dest = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.17), T.led); dest.position.set(e * (L / 2 + 0.125), 3.2, 0); dest.rotation.y = e * Math.PI / 2; grp.add(dest);
-      add(T.body, tint(boxG(0.03, 0.06, CW - 0.2, xf, 1.72, 0), CREAM));                                     // the pin-line round the front
-      // lamps: the twin headlamps with the tail lamps outboard of them in the dash, one more lamp on the roof
+      const fw = [[-1.12, -0.42, 2.15, 2.95], [-0.3, 0.3, 2.05, 2.98], [0.42, 1.12, 2.15, 2.95]];
+      for (const [a, b, c, d] of fw) { const A = e > 0 ? -b : a, Bq = e > 0 ? -a : b;   // (an end face is turned: its own across runs the other way at +x)
+        add(T.glass, plateG(A, Bq, c, d, 0.12, { end: e })); add(T.frame, plateG(A - 0.05, Bq + 0.05, c - 0.05, d + 0.05, 0.16, { t: 0.06, end: e, off: 0.008 })); }
+      // the roll sign over the middle window, the lamps in the dash and on the roof
+      add(T.frame, roundBoxG(0.12, 0.3, 0.86, 0.06, e * (L / 2 + 0.02), 3.16, 0));
+      const dest = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.19), T.led); dest.position.set(e * (L / 2 + 0.082), 3.16, 0); dest.rotation.y = e * Math.PI / 2; grp.add(dest);
       const lights = { head: [], tail: [] };
-      for (const z of [-0.85, 0.85]) {
-        add(T.chrome, cylX(0.15, 0.08, e * (L / 2 + 0.04), 1.62, z, 18));
-        const hl = new THREE.Mesh(cylX(0.11, 0.03, 0, 0, 0, 18), T.off); hl.position.set(e * (L / 2 + 0.085), 1.62, z); grp.add(hl); lights.head.push(hl); swapsTo(hl, T.head, T.off, T.tail);
-        const tl = new THREE.Mesh(cylX(0.07, 0.03, 0, 0, 0, 14), T.off); tl.position.set(e * (L / 2 + 0.045), 1.62, z * 1.38); grp.add(tl); lights.tail.push(tl); }
-      add(T.body, tint(cylX(0.16, 0.22, e * (L / 2 - 0.05), YT + 0.5, 0, 18), CREAM)); add(T.chrome, cylX(0.13, 0.02, e * (L / 2 + 0.065), YT + 0.5, 0, 18));
-      { const rl = new THREE.Mesh(cylX(0.1, 0.02, 0, 0, 0, 16), T.off); rl.position.set(e * (L / 2 + 0.078), YT + 0.5, 0); grp.add(rl); lights.head.push(rl); }
-      // the plough (スカート), the coupler, the air hoses
-      { const P = (x, y, z) => [e * (L / 2 + x), y, z], q = [P(-0.1, 1.0, -1.25), P(-0.1, 1.0, 1.25), P(0.55, 0.32, 0.95), P(0.55, 0.32, -0.95)];
-        const g = new THREE.BufferGeometry(), v = [...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]]; g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.computeVertexNormals();
-        if (e < 0) { const p = g.attributes.position; for (let i = 0; i < p.count; i += 3) { const x = p.getX(i + 1), y = p.getY(i + 1), z = p.getZ(i + 1); p.setXYZ(i + 1, p.getX(i + 2), p.getY(i + 2), p.getZ(i + 2)); p.setXYZ(i + 2, x, y, z); } g.computeVertexNormals(); }
-        add(T.under, g); add(T.under, boxG(0.66, 0.08, 2.4, e * (L / 2 + 0.23), 0.3, 0)); }
-      add(T.black, boxG(0.5, 0.16, 0.22, e * (L / 2 + 0.25), 0.88, 0)); add(T.chrome, boxG(0.12, 0.22, 0.26, e * (L / 2 + 0.5), 0.88, 0));
-      for (const z of [-0.45, 0.45]) add(T.black, cylY(0.03, 0.03, 0.45, e * (L / 2 + 0.2), 0.45, z, 6));
+      for (const z of [-0.82, 0.82]) {
+        add(T.frame, cylX(0.17, 0.1, e * (L / 2 + 0.02), 1.6, z, 24));
+        const hl = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 10).scale(0.45, 1, 1), T.off); hl.position.set(e * (L / 2 + 0.07), 1.6, z); grp.add(hl); lights.head.push(hl); swapsTo(hl, T.head, T.off, T.tail);
+        const tl = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 8).scale(0.45, 1, 1), T.off); tl.position.set(e * (L / 2 + 0.03), 1.6, z * 1.36); grp.add(tl); lights.tail.push(tl); }
+      add(T.body, roundBoxG(0.5, 0.36, 0.42, 0.16, e * (L / 2 - 0.12), YT + 0.42, 0));
+      { const rl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 10).scale(0.45, 1, 1), T.off); rl.position.set(e * (L / 2 + 0.14), YT + 0.43, 0); grp.add(rl); lights.head.push(rl); }
+      // the plough and the coupler, soft-cornered
+      add(T.under, roundBoxG(0.5, 0.62, CW - 0.5, 0.12, e * (L / 2 + 0.05), 0.62, 0));
+      add(T.under, roundBoxG(0.45, 0.16, 0.24, 0.06, e * (L / 2 + 0.3), 0.88, 0));
       grp.userData.lights = lights;
-    } else {
-      // an inner end: the gangway door, rubber bellows reaching half the gap to the next car
-      for (const g of endWallG(e, { door: [-0.42, 0.42, 3.0] })) add(T.body, g);
-      add(T.black, boxG(0.25, 2.15, 1.1, e * (L / 2 + 0.125), 2.1, 0));
-      add(T.glass, boxG(0.004, 0.7, 0.5, e * (L / 2 - 0.03), 2.5, 0));
-    }
+    } else add(T.under, roundBoxG(0.3, 2.1, 1.15, 0.1, e * (L / 2 + 0.1), 2.15, 0));                          // the bellows
   }
-  // ---- under the floor: the body's sole, equipment boxes, air tanks; the bogies
-  add(T.under, boxG(L - 0.3, 0.12, CW - 0.3, 0, YB - 0.04, 0));
-  const boxes = panto ? [[-3.2, 2.2, 0.5], [0.2, 2.6, 0.55], [3.6, 1.6, 0.45]] : [[-2.6, 2.4, 0.42], [2.0, 2.0, 0.4]];
-  for (const [x, l, h] of boxes) add(T.under, boxG(l, h, 2.2, x, YB - 0.1 - h / 2, 0));
-  for (const z of [-1.0, 1.0]) add(T.under, cylX(0.17, 2.4, panto ? 4.6 : -0.4, YB - 0.32, z, 12));
-  for (const bx of [-6.9, 6.9]) {
-    add(T.under, boxG(0.5, 0.2, 2.3, bx, 0.84, 0));                                                         // bolster
-    for (const z of [-0.98, 0.98]) {
-      add(T.under, boxG(2.5, 0.2, 0.14, bx, 0.6, z)); add(T.under, boxG(1.4, 0.14, 0.12, bx, 0.44, z));   // side frame
-      for (const wx of [-1.05, 1.05]) { add(T.under, boxG(0.32, 0.3, 0.22, bx + wx, 0.43, z)); add(T.chrome, cylY(0.07, 0.07, 0.22, bx + wx, 0.6, z, 10)); }  // axle box, coil spring
-      add(T.under, cylY(0.09, 0.09, 0.2, bx - 0.45, 0.66, z * 0.82, 10)); add(T.under, cylY(0.09, 0.09, 0.2, bx + 0.45, 0.66, z * 0.82, 10)); }
-    for (const wx of [-1.05, 1.05]) for (const z of [-0.74, 0.74]) add(T.under, boxG(0.08, 0.3, 0.1, bx + wx + (wx < 0 ? 0.47 : -0.47), 0.45, z));  // brake shoes
-  }
-  // ---- the pantograph: insulators on a base frame, the diamond of lower and upper arms, the pan head across
+  // ---- under the floor and the bogies (rounded frames; the wheels turn: the train's own instanced mesh)
+  for (const [x, l] of panto ? [[-3.0, 2.4], [0.4, 2.6], [3.6, 1.8]] : [[-2.4, 2.6], [2.2, 2.2]]) add(T.under, roundBoxG(l, 0.5, 2.1, 0.1, x, 0.62, 0));
+  for (const bx of [-6.9, 6.9]) { add(T.under, roundBoxG(0.6, 0.24, 2.3, 0.08, bx, 0.86, 0));
+    for (const z of [-0.98, 0.98]) { add(T.under, roundBoxG(2.6, 0.26, 0.16, 0.08, bx, 0.6, z)); for (const wx of [-1.05, 1.05]) add(T.under, roundBoxG(0.34, 0.32, 0.24, 0.08, bx + wx, 0.45, z)); } }
+  // ---- the pantograph: a diamond of soft bars on insulators, its pan across
   if (panto) {
-    const px = 4.6, yb = ROOF_C + ROOF_R + 0.02;
-    for (const x of [-0.55, 0.55]) for (const z of [-0.55, 0.55]) add(T.chrome, cylY(0.07, 0.06, 0.22, px + x, yb, z, 10));
-    add(T.under, boxG(1.3, 0.06, 1.3, px, yb + 0.25, 0));
-    const yh = 5.3, ym = (yb + 0.28 + yh) / 2, bar = (a, b, r) => { const d = new THREE.Vector3().subVectors(b, a), l = d.length(), g = new THREE.CylinderGeometry(r, r, l, 6);
+    const px = 4.6, yb = YT + 0.4, yh = 5.3, ym = (yb + 0.28 + yh) / 2;
+    for (const x of [-0.55, 0.55]) for (const z of [-0.55, 0.55]) add(T.off, new THREE.CylinderGeometry(0.06, 0.08, 0.24, 12).translate(px + x, yb + 0.12, z));
+    add(T.under, roundBoxG(1.3, 0.08, 1.3, 0.04, px, yb + 0.28, 0));
+    const bar = (a, b) => { const d = new THREE.Vector3().subVectors(b, a), l = d.length(), g = new THREE.CylinderGeometry(0.035, 0.035, l, 8);
       g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())).translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); return g; };
-    for (const z of [-0.45, 0.45]) { const A = new THREE.Vector3(px - 0.6, yb + 0.28, z), B2 = new THREE.Vector3(px + 0.6, yb + 0.28, z), M1 = new THREE.Vector3(px - 0.85, ym, z), M2 = new THREE.Vector3(px + 0.85, ym, z), H = new THREE.Vector3(px, yh - 0.05, z);
-      for (const [a, b] of [[A, M2], [B2, M1], [M1, H], [M2, H]]) add(T.under, bar(a, b, 0.025)); }
-    add(T.under, boxG(0.12, 0.06, 1.7, px, yh, 0)); add(T.chrome, boxG(0.04, 0.03, 1.5, px, yh + 0.045, 0));
-    for (const z of [-0.85, 0.85]) add(T.under, boxG(0.1, 0.08, 0.2, px, yh - 0.02, z));
+    for (const z of [-0.45, 0.45]) { const A = new THREE.Vector3(px - 0.6, yb + 0.32, z), B2 = new THREE.Vector3(px + 0.6, yb + 0.32, z), M1 = new THREE.Vector3(px - 0.85, ym, z), M2 = new THREE.Vector3(px + 0.85, ym, z), H = new THREE.Vector3(px, yh - 0.05, z);
+      for (const [a, b] of [[A, M2], [B2, M1], [M1, H], [M2, H]]) add(T.under, bar(a, b)); }
+    add(T.under, roundBoxG(0.14, 0.08, 1.8, 0.04, px, yh, 0));
   }
-  // ---- merge per material (the lamps and the roll sign stay separate: they switch)
-  for (const [mat, geos] of G) { const m = new THREE.Mesh(mergeGeometries(geos.map(g => { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k); if (mat === T.body && !g.attributes.color) tint(g, CREAM); if (mat !== T.body) g.deleteAttribute('color'); return g; })), mat);
-    m.castShadow = mat !== T.glass; m.receiveShadow = true; grp.add(m); }
+  for (const [mat, geos] of G) { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.castShadow = mat !== T.glass && mat !== T.frame && mat !== T.line; m.receiveShadow = true; grp.add(m); }
   return { g: grp, lights: grp.userData.lights || null, cab };
 }
 // the wheelsets of a train, all in one instanced mesh: two disc wheels with flanges and hubs on their axle
@@ -948,8 +893,7 @@ function wheelsetGeo() {
   const parts = [], z0 = RAIL.gauge / 2 + 0.035;
   for (const s of [-1, 1]) { parts.push(cylZ(0.43, 0.125, 0, 0, s * z0, 24)); parts.push(cylZ(0.47, 0.025, 0, 0, s * (z0 - 0.07), 24)); parts.push(cylZ(0.17, 0.2, 0, 0, s * (z0 + 0.02), 14)); }
   parts.push(cylZ(0.075, 2 * z0 + 0.3, 0, 0, 0, 10));
-  // (a pale spoke mark on each disc, so the turning shows)
-  for (const s of [-1, 1]) parts.push(boxG(0.5, 0.06, 0.01, 0, 0, s * (z0 + 0.064)));
+  for (const s of [-1, 1]) parts.push(new THREE.BoxGeometry(0.5, 0.06, 0.01).translate(0, 0, s * (z0 + 0.064)));   // (a mark on each disc, so the turning shows)
   return mergeGeometries(parts.map(g => { g = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(g.attributes)) if (!['position', 'normal'].includes(k)) g.deleteAttribute(k); return g; }));
 }
 
@@ -1010,7 +954,7 @@ export class Train {
       c.lights.head.forEach(m => m.material = lead ? TM.head : TM.off);
       c.lights.tail.forEach(m => m.material = lead ? TM.off : TM.tail);
     }
-    TM.glass.emissiveIntensity = night.value * 0.55; TM.ceil.emissiveIntensity = night.value * 0.7; TM.lit.emissiveIntensity = 0.3 + night.value * 2.6;
+    TM.glass.emissiveIntensity = night.value * 0.9;
     this.spin -= this.v * dt / 0.43; if (this.v > 0.01) this.setWheels();
     this.sound.on = true;
     const near = clamp(player.x, this.x - this.len / 2, this.x + this.len / 2);

@@ -22,7 +22,7 @@
     { "field": "forest_floor", "prefab": "bush", "count": 1400, "areas": { "danchi": 1, "hills": 1394, "river": 3, "shrine": 2 }, "example": "bush_river_048" },
     { "field": "forest_floor", "prefab": "log", "count": 332, "areas": { "hills": 330, "oldtown": 1, "river": 1 }, "example": "log_hills_001" },
     { "field": "forest_floor", "prefab": "twigs", "count": 2600, "areas": { "hills": 2594, "river": 4, "shrine": 2 }, "example": "twigs_hills_001" },
-    { "field": "hedgerow", "prefab": "hedge", "count": 4661, "areas": { "danchi": 799, "farmland": 563, "hills": 342, "midtown": 671, "newtown": 640, "oldtown": 1213, "paddies": 53, "river": 64, "station": 316 }, "example": "hedge_midtown_001" },
+    { "field": "hedgerow", "prefab": "hedge", "count": 4519, "areas": { "danchi": 657, "farmland": 563, "hills": 342, "midtown": 671, "newtown": 640, "oldtown": 1213, "paddies": 53, "river": 64, "station": 316 }, "example": "hedge_midtown_001" },
     { "field": "hedgerow", "prefab": "ivy", "count": 154, "areas": { "farmland": 17, "midtown": 36, "newtown": 15, "oldtown": 74, "river": 3, "station": 9 }, "example": "ivy_midtown_001" },
     { "field": "weeds", "prefab": "weed_1", "count": 396, "areas": { "farmland": 25, "hills": 3, "midtown": 108, "newtown": 47, "oldtown": 180, "paddies": 1, "river": 6, "station": 26 }, "example": "weed_1_oldtown_001" },
     { "field": "weeds", "prefab": "weed_2", "count": 396, "areas": { "farmland": 28, "hills": 4, "midtown": 108, "newtown": 42, "oldtown": 182, "paddies": 1, "river": 6, "station": 25 }, "example": "weed_2_oldtown_001" },
