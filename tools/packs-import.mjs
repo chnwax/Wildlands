@@ -87,11 +87,13 @@ const rot = (r, order = 0) => { // FBX euler degrees, default order XYZ (applied
   const seq = [[Rx, Ry, Rz], [Rx, Rz, Ry], [Ry, Rz, Rx], [Ry, Rx, Rz], [Rz, Rx, Ry], [Rz, Ry, Rx]][order] || [Rx, Ry, Rz];
   return mmul(seq[2], mmul(seq[1], seq[0]));
 };
-function worldMatrix(id, models) {
+// a node's transform to the model root. preOnly: the 3ds Max exports (Idyllic Anime Japan: geometry Z-up, PreRotation
+// -90° X and a compensating +90° Lcl Rotation) stand up in Unity by the PreRotation alone
+function worldMatrix(id, models, preOnly = false) {
   let M = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   for (let k = id; k && models.has(k); k = models.get(k).parent) {
     const m = models.get(k), T = [1, 0, 0, +m.T[0], 0, 1, 0, +m.T[1], 0, 0, 1, +m.T[2], 0, 0, 0, 1], S = [+m.S[0], 0, 0, 0, 0, +m.S[1], 0, 0, 0, 0, +m.S[2], 0, 0, 0, 0, 1];
-    M = mmul(mmul(T, mmul(rot(m.preR || [0, 0, 0]), mmul(rot(m.R, +m.order), S))), M);
+    M = mmul(mmul(T, mmul(rot(m.preR || [0, 0, 0]), preOnly ? S : mmul(rot(m.R, +m.order), S))), M);
   }
   return M;
 }
@@ -147,7 +149,7 @@ function buildLibrary(lib, spec) {
       if (a.skip && new RegExp(a.skip, 'i').test(mname)) continue;
       let r = rends.find(q => q.name === mname) || (rends.length === 1 ? rends[0] : rends.find(q => q.name === '*'));
       if (rends.length && !r && rends.some(q => q.name !== '*')) continue; // (a mesh the prefab does not render)
-      const M = worldMatrix(g.model, sc.models), slots = model?.materials || [];
+      const M = worldMatrix(g.model, sc.models, spec.nodeRotation === 'pre'), slots = model?.materials || [];
       for (let t = 0; t < g.pos.length / 9; t++) {
         const si = g.mat[t] ?? 0, slot = slots[si], fname = slot?.name || 'default';
         const mg = (r && r.mats[Math.min(si, r.mats.length - 1)]) || nameMats.get(fname) || null;

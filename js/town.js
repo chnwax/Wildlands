@@ -4,7 +4,7 @@ import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, ero
   Scatter, addBox, addCircle, addPlatform, colliders, decimate, withScatterMeta } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt, pondWaterMaterial, flowWaterMaterial, foamMaterial } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
-import { plantForest, forestFloor, moistureField, makeTree } from './ecology.js';
+import { plantForest, forestFloor, moistureField, makeTree, crownR } from './ecology.js';
 import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks, landmarkMaterials } from './landmarks.js';
@@ -15,7 +15,7 @@ import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { buildCrops, updateCrops } from './crops.js';
 import { furnishYards } from './yards.js';
 import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
-import { loadPacks, flushPacks } from './packs.js';
+import { loadPacks, flushPacks, queuePack } from './packs.js';
 import { farmstead } from './farmstead.js';
 import { loadCrowd } from './crowd.js';
 import { setTownGlow } from './sky.js';
@@ -1091,10 +1091,18 @@ export async function build(progress, opts = {}) {
   // an open vegetable field, a row of tunnel greenhouses or (near the houses) a fenced kitchen garden, always with its
   // working end — shed, gate, open greenhouse doors — toward its lane
   await packsP;
+  let farmCtx = null; // (the farmsteads are laid out once everything else is planted: see below)
   {
     const frng = mulberry32(4711), gy = (x, z) => hf.groundAt(x, z), fields = [];
-    // the farmstead dressed from the model packs (farmstead.js): the plots of row 2 between road C's track and the bamboo
-    const FARM = { row: 2, x0: -232, x1: -150 }, farmPlots = [];
+    // farmsteads dressed from the model packs (farmstead.js), each behind its own run of north-row plots (row 2, toward
+    // the woods); every open field grows some of the packs' crops (field({ packs }))
+    const FARMS = [
+      { x0: -232, x1: -150, seed: 8821, stand: [[-145.3, 316.3], [-153.8, 316.3], [-145.3, 320]] },
+      { x0: -392, x1: -246, seed: 3307, trees: ['farm_mikan', 'farm_peach', 'farm_mikan', 'farm_plum'] },
+      { x0: -144, x1: -20, seed: 5113, trees: ['farm_pear', 'farm_pear', 'farm_cherry_fruit', 'farm_apple'] },
+      { x0: -20, x1: 100, seed: 7741, trees: ['farm_plum', 'farm_peach', 'farm_apple', 'farm_plum'] },
+    ].map(f => ({ ...f, plots: [] }));
+    const farmOf = (ri, xc) => ri === 2 ? FARMS.find(f => xc > f.x0 && xc < f.x1) : null;
     const laneZ = x => { const P = ROADS.find(R => R.id === 'FE').pts; for (let i = 0; i + 1 < P.length; i++) if (x >= P[i][0] && x <= P[i + 1][0]) return lerp(P[i][1], P[i + 1][1], (x - P[i][0]) / (P[i + 1][0] - P[i][0])); return 312; };
     const s3Z = x => 258;
     // rows: [front line (lane edge + verge), direction away from the lane, depth range, near houses?]
@@ -1135,9 +1143,9 @@ export async function build(progress, opts = {}) {
             for (const e of [-1, 1]) for (const sd of [-1, 1]) addBox(gx + sd * 1.65, gz + e * (dep - 1) / 2, 1.05, 0.08, 0);
             addBox(gx, gz + row.dir * (dep - 1) / 2, 0.6, 0.08, 0); } // (the closed end, away from the lane)
         } else if (row.town && frng() < 0.35) allotment(B, { x: xc, y, z: zc, r, w, d: dep }, prng, gy);
-        else field(B, { x: xc, y, z: zc, r, w, d: dep, shed: frng() < 0.45, ...(ri === FARM.row && xc > FARM.x0 && xc < FARM.x1 ? { packs: true } : {}) }, prng, gy);
+        else field(B, { x: xc, y, z: zc, r, w, d: dep, shed: frng() < 0.45, packs: true }, prng, gy);
         fields.push({ x: xc, z: zc, w, d: dep, kind: gh ? 'greenhouse' : 'field' });
-        if (ri === FARM.row && xc > FARM.x0 && xc < FARM.x1) farmPlots.push({ x: xc, z: zc, w, d: dep, gapX: x + w + 0.75 });
+        if (farmOf(ri, xc)) farmOf(ri, xc).plots.push({ x: xc, z: zc, w, d: dep, gapX: x + w + 0.75 });
         hf.paint2(2, xc - w / 2, zc - dep / 2, xc + w / 2, zc + dep / 2, (px, pz) => Math.abs(px - xc) < w / 2 - 0.4 && Math.abs(pz - zc) < dep / 2 - 0.4 ? 1 : 0);
         // the earth path up the side of the plot, from the lane to the back
         const gapX = x + w + 0.75;
@@ -1145,8 +1153,7 @@ export async function build(progress, opts = {}) {
         x += w + 1.5;
       }
     }
-    farmstead({ hf, occRect, gy, RN, footpath, blocked: (bx, bz) => BAMBOO_SITES.some(g => Math.hypot(bx - g.x, bz - g.z) < g.R * 1.35 + 2) },
-      { plots: farmPlots, dir: rows[FARM.row].dir, seed: 8821, stand: [[-145.3, 316.3], [-153.8, 316.3], [-145.3, 320]].map(([sx, sz]) => [sx, sz, Math.PI]) });
+    farmCtx = { FARMS, footpath, dir: rows[2].dir };
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
   RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470 }); // guide blocks in town, not out on the valley road
@@ -1296,6 +1303,28 @@ export async function build(progress, opts = {}) {
       if (poles.length > 1) wires(poles);
     }
   }
+  // the farm lane FE: a line of poles along its south verge feeding the fields' pumps and sheds (own rng: the town's
+  // poles and wires keep their draws), a lamp on every third; 止まれ signs (packs.js) where it meets roads B, C and D
+  {
+    const prng2 = mulberry32(9090), FE = ROADS.find(R => R.id === 'FE'), poles = []; let k = 0;
+    for (const [a, b] of roadSegs(FE)) {
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]), dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+      for (let t = (poles.length ? 0 : 14) + prng2() * 4; t < L - 2; t += 30 + prng2() * 6) {
+        const x = a[0] + dx * t + dz * 1.95, z = a[1] + dz * t - dx * 1.95;
+        if (nearInter(x, z, FE, 6) || RN.roadAt(x, z) || occRect(x, z, 0.25, 0.25, 0, 0, true) || [-400, -150, 110].some(cx => Math.abs(x - cx) < 9)) { if (poles.length > 1) wires(poles); poles.length = 0; continue; }
+        const pole = utilityPole(B, x, hf.groundAt(x, z), z, Math.atan2(dx, dz), prng2, { transformer: prng2() < 0.15, light: k++ % 3 === 0, side: -1 });
+        if (pole.lamp) lampPoints.push({ p: pole.lamp, s: 0.9 });
+        poles.push(pole);
+      }
+    }
+    if (poles.length > 1) wires(poles);
+    // stop signs on the lane's approaches, on the driver's left (left-hand traffic), facing the oncoming lane
+    for (const [x, side, dir] of [[104.6, -1, 1], [-394.6, 1, -1], [-154.6, -1, 1], [-145.4, 1, -1]]) { // (eastbound, the driver's left is -z)
+      const z = FE.pts.reduce((best, p) => Math.abs(p[0] - x) < Math.abs(best[0] - x) ? p : best)[1] + side * 1.95;
+      if (RN.roadAt(x, z) || occRect(x, z, 0.2, 0.2, 0, 0, true)) continue;
+      if (queuePack('jp_sign_traffic_008', x, hf.groundAt(x, z) - 0.05, z, dir > 0 ? -Math.PI / 2 : Math.PI / 2)) addCircle(x, z, 0.06);
+    }
+  }
   // service drops: every house takes its supply from the nearest pole, a sagging cable to a bracket under the eaves
   {
     const pts = [], cell = new Map(), key = (x2, z2) => Math.floor(x2 / 30) + ',' + Math.floor(z2 / 30);
@@ -1441,6 +1470,23 @@ export async function build(progress, opts = {}) {
   // under the hill woods: logs, dead branches, low shrubs
   const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: 9, water: Y0 - 3, blocked: wildBlocked, logs: 260, twigs: 2600, shrubs: 1400 });
   for (const b of floor.shrubs) bushes.push(b);
+  // the farmsteads behind the north-row plots (farmstead.js), laid out last so that nothing planted before them moves
+  // (every later draw of the town's generators, and so the World Builder ids, stay as they were): they keep off the
+  // woods, the bamboo, every tree and every forest-floor piece already standing there
+  if (farmCtx) {
+    const near = new Map();
+    for (const t of [...wild, ...saplings, ...trees, ...sakura, ...bushes, ...floor.logs || []]) { if (t.z < 280) continue; // (a tree keeps its whole crown clear)
+      const reach = t.kind ? Math.max(2, crownR(t) + 1) : 1.6, R = Math.ceil(reach / 4);
+      for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) { const k = (Math.floor(t.x / 4) + i) + ',' + (Math.floor(t.z / 4) + j); if (!near.has(k)) near.set(k, []); near.get(k).push({ x: t.x, z: t.z, reach }); } }
+    const blocked = (bx, bz) => {
+      if (BAMBOO_SITES.some(g => Math.hypot(bx - g.x, bz - g.z) < g.R * 1.35 + 2) || green.groves.some(g => Math.hypot(bx - g.x, bz - g.z) < g.R + 3)) return true;
+      if (FOREST[hf.idx(bx, bz)] > 0.2) return true;
+      for (const t of near.get(Math.floor(bx / 4) + ',' + Math.floor(bz / 4)) || []) if (Math.hypot(bx - t.x, bz - t.z) < t.reach) return true;
+      return false;
+    };
+    for (const f of farmCtx.FARMS) farmstead({ hf, occRect, gy: (x, z) => hf.groundAt(x, z), RN, footpath: farmCtx.footpath, blocked },
+      { plots: f.plots, dir: farmCtx.dir, seed: f.seed, trees: f.trees, stand: (f.stand || []).map(([sx, sz]) => [sx, sz, Math.PI]) });
+  }
   hf.paintCanopy([...trees, ...sakura]);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Building terrain', 0.76); await tick();

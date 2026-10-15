@@ -271,6 +271,264 @@
      "prefab": "Prefabs/Buildings/SM_Bld_ProduceStand_01.prefab"
     }
    ]
+  },
+  "japan": {
+   "pack": "Idyllic Anime Japan",
+   "licence": "Unity Asset Store EULA (Idyllic Anime Japan 1.1.1): models used inside the game; source assets are not redistributed",
+   "texMax": 1024,
+   "nodeRotation": "pre",
+   "assets": [
+    {
+     "id": "jp_sign_traffic_001",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_001.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_004",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_004.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_005",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_005.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_006",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_006.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_007",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_007.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_008",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_008.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_009",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_009.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_010",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_010.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_011",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_011.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_012",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_012.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_013",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_013.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_014",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_014.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_015",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_015.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_016",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_016.prefab"
+    },
+    {
+     "id": "jp_sign_traffic_017",
+     "kind": "prop",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_017.prefab"
+    },
+    {
+     "id": "jp_warning_panel_1",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_01.prefab"
+    },
+    {
+     "id": "jp_warning_panel_2",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_02.prefab"
+    },
+    {
+     "id": "jp_warning_panel_3",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_03.prefab"
+    },
+    {
+     "id": "jp_warning_panel_4",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_04.prefab"
+    },
+    {
+     "id": "jp_warning_panel_5",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_05.prefab"
+    },
+    {
+     "id": "jp_warning_panel_6",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_06.prefab"
+    },
+    {
+     "id": "jp_warning_panel_7",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_07.prefab"
+    },
+    {
+     "id": "jp_warning_panel_8",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_08.prefab"
+    },
+    {
+     "id": "jp_warning_panel_9",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_09.prefab"
+    },
+    {
+     "id": "jp_flowerpot_1",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_01.prefab"
+    },
+    {
+     "id": "jp_flowerpot_2",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_02.prefab"
+    },
+    {
+     "id": "jp_flowerpot_3",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_03.prefab"
+    },
+    {
+     "id": "jp_flowerpot_4",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_04.prefab"
+    },
+    {
+     "id": "jp_flowerpot_5",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_05.prefab"
+    },
+    {
+     "id": "jp_flowerpot_6",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_06.prefab"
+    },
+    {
+     "id": "jp_flowerpot_7",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_07.prefab"
+    },
+    {
+     "id": "jp_flowerpot_8",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_08.prefab"
+    },
+    {
+     "id": "jp_flowerpot_9",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_flowerpot_09.prefab"
+    },
+    {
+     "id": "jp_plants_box_1",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_plants_box_01.prefab"
+    },
+    {
+     "id": "jp_plants_box_2",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_plants_box_02.prefab"
+    },
+    {
+     "id": "jp_plants_box_3",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_plants_box_03.prefab"
+    },
+    {
+     "id": "jp_drain_street",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_drain_street.prefab"
+    },
+    {
+     "id": "jp_bucket",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_bucket.prefab"
+    },
+    {
+     "id": "jp_broom_stick",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_broom_stick.prefab"
+    },
+    {
+     "id": "jp_trowel_01",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_trowel_01.prefab"
+    },
+    {
+     "id": "jp_carton_01",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_carton_01.prefab"
+    },
+    {
+     "id": "jp_carton_02",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_carton_02.prefab"
+    },
+    {
+     "id": "jp_trash_recycling",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_trash_recycling.prefab"
+    },
+    {
+     "id": "jp_bikestand",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_bikestand.prefab"
+    },
+    {
+     "id": "jp_traffic_pylon",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_traffic_pylon.prefab"
+    },
+    {
+     "id": "jp_lantern_traditional_01",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_lantern_traditional_01.prefab"
+    },
+    {
+     "id": "jp_lantern_traditional_03",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_lantern_traditional_03.prefab"
+    },
+    {
+     "id": "jp_board_foldable_01",
+     "kind": "prop",
+     "prefab": "Prefabs/Signs and Boards/SM_board_foldable_01.prefab"
+    },
+    {
+     "id": "jp_bush_01",
+     "kind": "tree",
+     "prefab": "Prefabs/Nature/SM_bush_01.prefab"
+    },
+    {
+     "id": "jp_tree_garden",
+     "kind": "tree",
+     "prefab": "Prefabs/Nature/SM_tree_garden.prefab"
+    }
+   ]
   }
  }
 }

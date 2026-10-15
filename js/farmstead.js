@@ -15,7 +15,8 @@ import { queuePack, packsReady } from './packs.js';
 const TAU = Math.PI * 2;
 
 // ctx: { hf, occRect, gy, RN, footpath, blocked(x, z): ground kept for later planting (bamboo stands) }   o: { plots: [{ x, z, w, d, gapX }], dir (+1: the plots run toward +z),
-// front: lane line z at x, lane: { z(x) }, seed, stand: [[x, z], ...] candidate spots for the honesty stand }
+// seed, trees: orchard species (model ids, in blocks of three columns), stand: [[x, z, face], ...] candidate spots for
+// the honesty stand }
 export function farmstead(ctx, o) {
   const P = packsReady(); if (!P || !o.plots.length) return null;
   const { hf, occRect, gy, RN } = ctx, rng = mulberry32(o.seed || 7), rr = (a, b) => a + rng() * (b - a);
@@ -28,15 +29,40 @@ export function farmstead(ctx, o) {
   const zBack = Math.max(...o.plots.map(p => sg > 0 ? p.z + p.d / 2 : -(p.z - p.d / 2))) * sg;
   const zz = (a, b) => [Math.min(zBack + sg * a, zBack + sg * b), Math.max(zBack + sg * a, zBack + sg * b)]; // a band behind the plots
 
-  // ---------------------------------------------------------------- the working yard, at the end of a plot path
+  // ---------------------------------------------------------------- planning: the orchard takes the longest free stretch
+  // of the band behind the plots, as deep as the land allows (18 m, else 14 or 11 m before the woods or the bamboo), up
+  // to 40 m long — unless the yard then finds no room beside it: the orchard gives way (26, then 16 m), the yard first
+  const xs = o.plots.map(p => p.x - p.w / 2), xe = o.plots.map(p => p.x + p.w / 2), lim0 = Math.min(...xs), lim1 = Math.max(...xe);
+  const planOrchard = Lmax => {
+    for (const depth of [18, 14, 11]) {
+      const [a0, a1] = zz(2.2, 2.2 + depth), segs = []; let s0 = null;
+      for (let x = lim0; x <= lim1 + 1; x += 1) {
+        const ok = x <= lim1 && clear(x - 0.5, a0, x + 0.5, a1) && level(x - 0.5, a0, x + 0.5, a1, 0.8);
+        if (ok && s0 === null) s0 = x; if (!ok && s0 !== null) { segs.push([s0, x - 1]); s0 = null; }
+      }
+      segs.sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]));
+      const seg = segs[0]; if (!seg || seg[1] - seg[0] < (depth > 12 ? 16 : 20)) continue;
+      // at the end of the stretch toward the middle of the plots (the yard then fits on its other side)
+      const mid0 = (lim0 + lim1) / 2, L = Math.min(Lmax, seg[1] - seg[0]), x0 = Math.abs(seg[0] - mid0) < Math.abs(seg[1] - mid0) ? seg[0] : seg[1] - L;
+      return { x0, x1: x0 + L, L, OD: depth, oz0: a0, oz1: a1 };
+    }
+    return null;
+  };
   const YW = 11, YD = 8.5, [yz0, yz1] = zz(2.2, 2.2 + YD);
-  const mid = o.plots.reduce((s, p) => s + p.x, 0) / o.plots.length;
-  const gaps = o.plots.map(p => p.gapX).filter(Boolean).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
-  let yard = null;
-  for (const gx of gaps) for (const off of [0, -3, 3, -5, 5]) {
-    const cx = gx + off; if (clear(cx - YW / 2 - 0.5, yz0 - 0.5, cx + YW / 2 + 0.5, yz1 + 0.5) && level(cx - YW / 2, yz0, cx + YW / 2, yz1, 0.6)) { yard = { cx, gx }; break; }
-    if (yard) break;
-  }
+  const findYard = orch => {
+    const mid = orch ? (orch.x0 + orch.x1) / 2 : o.plots.reduce((s2, p) => s2 + p.x, 0) / o.plots.length;
+    const gaps = o.plots.map(p => p.gapX).filter(Boolean).sort((p, q) => Math.abs(p - mid) - Math.abs(q - mid));
+    const offOrch = cx => !orch || cx + YW / 2 < orch.x0 - 2.5 || cx - YW / 2 > orch.x1 + 2.5;
+    for (const gx of gaps) for (const off of [0, -3, 3, -5, 5]) {
+      const cx = gx + off; if (offOrch(cx) && clear(cx - YW / 2 - 0.5, yz0 - 0.5, cx + YW / 2 + 0.5, yz1 + 0.5) && level(cx - YW / 2, yz0, cx + YW / 2, yz1, 0.6)) return { cx, gx };
+    }
+    return null;
+  };
+  let orch = null, yard = null;
+  for (const Lmax of [40, 26, 16, 0]) { orch = Lmax ? planOrchard(Lmax) : null; yard = findYard(orch); if (yard) break; }
+  if (!yard) orch = planOrchard(40);
+
+  // ---------------------------------------------------------------- the working yard, at the end of a plot path
   if (yard) {
     const { cx } = yard, cz = (yz0 + yz1) / 2, back = sg > 0 ? yz1 : yz0, front = sg > 0 ? yz0 : yz1, face = sg > 0 ? Math.PI : 0; // shelter opens toward the plots
     occRect(cx, cz, YW / 2 + 0.3, YD / 2 + 0.3, 0, 1);
@@ -69,36 +95,30 @@ export function farmstead(ctx, o) {
     { const [bx, bz] = W(-4.6, 1.2); put('farm_barrel', bx, bz, rr(0, TAU), { s: 0.8 }); addCircle(bx, bz, 0.38);
       const [ux, uz] = W(-3.9, 1.0), [vx, vz] = W(-4.0, 1.75), [qx, qz] = W(-3.2, 1.3);
       put('farm_bucket', ux, uz, rr(0, TAU)); put('farm_watering_can', vx, vz, rr(0, TAU)); put('farm_plastic_bin', qx, qz, rr(-0.3, 0.3)); }
+    // a broom against the shelter's back wall, a planter of herbs by the entrance
+    { const [bx, bz] = W(-4.7, YD - 0.45); put('jp_broom_stick', bx, bz, face + 0.3, { tilt: sg * 0.2 }); }
+    { const [px, pz] = W(-2.0, 0.55); put(rng() < 0.5 ? 'jp_plants_box_1' : 'jp_plants_box_2', px, pz, rr(-0.1, 0.1) + face); }
     out.yard = { x: cx, z: cz };
   }
 
   // ---------------------------------------------------------------- the orchard beside the yard
-  {
-    const OD = 18, [oz0, oz1] = zz(2.2, 2.2 + OD), xs = o.plots.map(p => p.x - p.w / 2), xe = o.plots.map(p => p.x + p.w / 2);
-    const lim0 = Math.min(...xs), lim1 = Math.max(...xe);
-    // the longest free stretch along the band, east or west of the yard
-    const segs = []; let s0 = null;
-    for (let x = lim0; x <= lim1 + 1; x += 1) {
-      const ok = x <= lim1 && (!yard || Math.abs(x - yard.cx) > YW / 2 + 2.5) && clear(x - 0.5, oz0, x + 0.5, oz1) && level(x - 0.5, oz0, x + 0.5, oz1, 0.8);
-      if (ok && s0 === null) s0 = x; if (!ok && s0 !== null) { segs.push([s0, x - 1]); s0 = null; }
-    }
-    segs.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
-    const seg = segs[0];
-    if (seg && seg[1] - seg[0] >= 16) {
-      const L = Math.min(44, seg[1] - seg[0]), near = yard ? (Math.abs(seg[0] - yard.cx) < Math.abs(seg[1] - yard.cx) ? seg[0] : seg[1] - L) : seg[0];
-      const x0 = near, x1 = near + L, cx = (x0 + x1) / 2, cz = (oz0 + oz1) / 2;
+  if (orch) {
+    const { OD, oz0, oz1 } = orch;
+    {
+      const { x0, x1, L } = orch, cx = (x0 + x1) / 2, cz = (oz0 + oz1) / 2;
       occRect(cx, cz, L / 2 + 0.3, OD / 2 + 0.3, 0, 1);
       // fence: 5 m wire panels on wooden posts round the block; the gate gap faces the yard
       const gateX = yard ? (yard.cx < cx ? x0 : x1) : x0, gateZ = cz;
       const run = (ax, az, bx, bz) => { const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(len / 5)), r = Math.atan2(-(bz - az), bx - ax);
+        const gk = ax === gateX && bx === gateX ? Math.min(n - 1, Math.max(0, Math.floor((gateZ - az) / (bz - az) * n))) : -1; // (the gate: one panel left out)
         for (let k = 0; k < n; k++) { const t0 = k / n, t1 = (k + 1) / n, mx = ax + (bx - ax) * (t0 + t1) / 2, mz = az + (bz - az) * (t0 + t1) / 2;
-          if (Math.abs(mx - gateX) < 0.1 && Math.abs(mz - gateZ) < 2.6) continue; // (the gate)
+          if (k === gk) continue;
           put('farm_fence_wire', mx, mz, r, { sx: len / n / 5 }); addBox(mx, mz, len / n / 2, 0.06, r); }
         for (let k = 0; k <= n; k++) { const px = ax + (bx - ax) * k / n, pz = az + (bz - az) * k / n; put('farm_fence_wire_pole', px, pz, rr(0, TAU), { s: 0.75, dy: -0.1 }); } };
       run(x0, oz0, x1, oz0); run(x0, oz1, x1, oz1); run(x0, oz0, x0, oz1); run(x1, oz0, x1, oz1);
       // trees in rows along x, species in blocks of three columns, young trees here and there in the gaps
       const sp = 5.2, sz = 5.6, nx = Math.max(1, Math.floor((L - 4) / sp)), nz = Math.max(1, Math.floor((OD - 4) / sz));
-      const kinds = ['farm_peach', 'farm_pear', 'farm_plum', 'farm_peach', 'farm_apple'], k0 = Math.floor(rng() * kinds.length);
+      const kinds = o.trees || ['farm_peach', 'farm_pear', 'farm_plum', 'farm_peach', 'farm_apple'], k0 = Math.floor(rng() * kinds.length);
       for (let i = 0; i <= nx; i++) for (let j = 0; j <= nz; j++) {
         const x = x0 + (L - nx * sp) / 2 + i * sp + rr(-0.25, 0.25), z = oz0 + (OD - nz * sz) / 2 + j * sz + rr(-0.25, 0.25);
         if (Math.abs(x - gateX) < 3 && Math.abs(z - gateZ) < 3.5) continue;
@@ -130,6 +150,8 @@ export function farmstead(ctx, o) {
     ['farm_box_potato', 'farm_box_cucumber', 'farm_box_eggplant'].forEach((id, i) => { const lx = (i - 1) * 0.78, lz = 0.55;
       put(id, x + lx * c + lz * s, z - lx * s + lz * c, face + rr(-0.05, 0.05), { y: y + 0.74, s: 0.85 }); });
     hf.paint2(2, x - 3, z - 3, x + 3, z + 3, (px, pz) => Math.hypot(px - x, pz - z) < 1.9 ? 0.6 : 0);
+    // a pair of potted flowers by the stand and a cone keeping cars off its front
+    for (const [lx, lz, id] of [[-1.55, 0.9, 'jp_flowerpot_2'], [1.55, 0.95, 'jp_flowerpot_6'], [1.9, 1.9, 'jp_traffic_pylon']]) put(id, x + lx * c + lz * s, z - lx * s + lz * c, rr(0, TAU), { s: id === 'jp_traffic_pylon' ? 1 : 0.8 });
     out.stand = { x, z };
     break;
   }

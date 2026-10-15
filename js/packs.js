@@ -66,7 +66,8 @@ export function queuePack(id, x, y, z, r = 0, o = {}) {
 export function packScatter(P, id, items, { dist = null, shadow = true, category = null } = {}) {
   const m = P && P.models[id];
   if (!m || !items.length) return null;
-  const K = KIND[m.kind] || KIND.prop, D = () => dist ?? Q.props * K.dist + 10;
+  // (low crops — strawberries, seedlings — only near: past that the mulch rows carry the field's look)
+  const K = KIND[m.kind] || KIND.prop, f = m.kind === 'crop' && m.dims[1] < 0.5 ? 0.55 : 1, D = () => dist ?? Q.props * K.dist * f + 10;
   for (const it of items) it.s = it.s || 1;
   const parts = m.parts.map(p => ({ ...p, castShadow: shadow && p.castShadow }));
   return withScatterMeta({ prefab: id, category: category || (m.kind === 'tree' ? 'tree' : m.kind === 'building' ? 'building' : 'prop') },
