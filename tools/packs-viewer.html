@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <title>Modele z paczek</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- copied to ModeleZPaczek/przegladarka.html by tools/packs-extract.mjs; open it through the dev server (Editor.bat):
-     http://localhost:5180/ModeleZPaczek/przegladarka.html -->
+<!-- copied to ModeleZPaczek/przegladarka.html by tools/packs-extract.mjs; Przegladarka-Modeli.bat starts the local
+     server and opens it (http://127.0.0.1:5183/ModeleZPaczek/przegladarka.html): opened from disk it loads no models -->
 <style>
   :root { --bg: #f4f1ea; --panel: #fffdf8; --ink: #2b2a27; --mute: #7a766d; --line: #e2ddd2; --accent: #c2553d; }
   @media (prefers-color-scheme: dark) { :root { --bg: #1d1c1a; --panel: #262522; --ink: #ece8df; --mute: #9b968c; --line: #3a3833; --accent: #e07a5f; } }
@@ -40,6 +40,13 @@
   <div id="info"><b>wybierz model z listy</b><span>przeciągnij: obrót · kółko: przybliżenie</span></div>
   <div id="mode"><button id="all">pokaż całą kategorię</button></div>
 </main>
+<script>
+  // opened straight from the disk the browser refuses to load the models: say what to do instead
+  if (location.protocol === 'file:') addEventListener('DOMContentLoaded', () => {
+    document.getElementById('sum').innerHTML = '<b style="color:var(--accent)">Ta strona nie działa otwarta bezpośrednio z dysku.</b>';
+    document.getElementById('info').innerHTML = '<b>Uruchom plik Przegladarka-Modeli.bat</b><span>z folderu Wildlands (dwuklik). Otworzy tę przeglądarkę przez lokalny serwer i modele się pojawią.</span>';
+  });
+</script>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';

@@ -2,8 +2,8 @@
 // GLB file of its own, sorted into categories:
 //   ModeleZPaczek/<kategoria>/<paczka>/<model>.glb     (textures shared: ModeleZPaczek/_tekstury/<paczka>/*.png)
 //   ModeleZPaczek/katalog.json, KATALOG.md               (every model: category, pack, size in metres, triangles, source)
-//   ModeleZPaczek/przegladarka.html                      (a viewer: open it through the dev server, Editor.bat →
-//                                                         http://localhost:5180/ModeleZPaczek/przegladarka.html)
+//   ModeleZPaczek/przegladarka.html                      (a viewer: Przegladarka-Modeli.bat serves and opens it;
+//                                                         browsers load no models from a page opened from disk)
 // Every prefab is baked (tools/packs-lib.mjs: metres, Y up, foot on the origin, materials and textures from Unity's
 // .mat files), and every FBX no prefab uses. ModeleZPaczek/ is git-ignored: the licences cover use in the game, not
 // redistribution of the files in a public repository.
@@ -117,7 +117,7 @@ fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'katalog.json'), JSON.stringify(katalog, null, 1) + '\n');
 const byCat = {}; for (const [k, m] of Object.entries(katalog.modele)) (byCat[m.kategoria] ||= []).push([k, m]);
 let md = `# Modele z paczek (Wildlands)\n\nWszystkie modele z czterech paczek Unity, każdy w osobnym pliku GLB (metry, oś Y w górę, podstawa modelu w punkcie 0).\n` +
-  `Tekstury są wspólne, w \`_tekstury/\`. Podgląd: uruchom \`Editor.bat\` i otwórz http://localhost:5180/ModeleZPaczek/przegladarka.html\n\n` +
+  `Tekstury są wspólne, w \`_tekstury/\`. Podgląd: uruchom \`Przegladarka-Modeli.bat\` z folderu Wildlands (dwuklik) — sama strona otwarta z dysku nie pokaże modeli\n\n` +
   `Wygenerowano: ${katalog.wygenerowano} — narzędzie: \`node tools/packs-extract.mjs\`\n\n| kategoria | modeli | co zawiera |\n|---|---|---|\n`;
 for (const c of Object.keys(CATEGORIES)) md += `| ${c} | ${(byCat[c] || []).length} | ${CATEGORIES[c]} |\n`;
 for (const c of Object.keys(CATEGORIES)) { const L = (byCat[c] || []).sort((a, b) => a[0].localeCompare(b[0])); if (!L.length) continue;

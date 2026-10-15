@@ -50,7 +50,8 @@ the game, not redistribution of the files. Without them the game runs as before,
 Every model of the four packs, one GLB file each, sorted into categories (trees, vegetation, crops, houses, buildings,
 street furniture, fences and walls, signs, decorations, farm, vehicles, railway, rocks and terrain, characters, sky and
 effects): `node tools/packs-extract.mjs` writes them to `ModeleZPaczek/` (git-ignored) with a catalogue (`KATALOG.md`,
-`katalog.json`) and a viewer — run `Editor.bat` and open `http://localhost:5180/ModeleZPaczek/przegladarka.html`.
+`katalog.json`) and a viewer: double-click `Przegladarka-Modeli.bat` (it starts the local server and opens
+`ModeleZPaczek/przegladarka.html`; the page opened straight from disk shows no models).
 
 ## Credits
 
