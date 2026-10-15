@@ -12,6 +12,13 @@
       "origin": [95.529, 6.034, 164.422]
     },
     {
+      "id": "house_newtown_046",
+      "slots": {
+        "wood#0": { "offset": [0, -3.3896, -0.1111] }
+      },
+      "origin": [-122.492, 5.98, 176.484]
+    },
+    {
       "id": "house_newtown_100",
       "slots": {
         "wood": { "hidden": true }
@@ -36,6 +43,7 @@
       "id": "shop_newtown_001",
       "slots": {
         "alu#0": { "scale": [1, 1, 1.0526] },
+        "concrete#1": { "offset": [0, -0.0071, 0] },
         "plain#1": { "scale": [1, 1, 1.0382] },
         "plain#2": { "scale": [1, 1, 14.497] },
         "plain#4": { "scale": [1, 1, 1.0357] },
@@ -52,6 +60,7 @@
       "slots": {
         "alu#0": { "scale": [1, 1, 1.0619] },
         "alu#3": { "scale": [1, 1, 1.0507] },
+        "concrete#1": { "offset": [0, -0.0241, 0] },
         "plain#1": { "scale": [1, 1, 1.0478] },
         "plain#2": { "scale": [1, 1, 18.6772] },
         "plain#4": { "scale": [1, 1, 1.0452] },
@@ -62,6 +71,13 @@
         "siding#2": { "hidden": true }
       },
       "origin": [166.281, 6.029, -12.88]
+    },
+    {
+      "id": "shop_newtown_003",
+      "slots": {
+        "concrete#6": { "offset": [0, -0.0145, 0] }
+      },
+      "origin": [178.302, 6.007, -12.88]
     }
   ]
 }

@@ -5,6 +5,40 @@
   "area": "midtown",
   "objects": [
     {
+      "id": "bicycle_midtown_003",
+      "position": [-205.217, 6.174, -19.838],
+      "rotation": [0, 136.25, 4.61],
+      "origin": [-204.81, 6.026, -19.93]
+    },
+    {
+      "id": "box_new_003",
+      "name": "Box",
+      "prefab": "box",
+      "position": [-202.106, 5.938, -18.9],
+      "rotation": [0, 0, 0],
+      "scale": [10.9389, 0.2204, 1],
+      "material": "primitive"
+    },
+    {
+      "id": "box_new_004",
+      "name": "Box (copy)",
+      "prefab": "box",
+      "position": [-189.351, 6.171, -19.121],
+      "rotation": [0, 0, 0],
+      "scale": [12.3623, 0.0435, 1],
+      "material": "primitive"
+    },
+    {
+      "id": "bus_stop_midtown_001",
+      "position": [-205, 6.229, -20.831],
+      "origin": [-205, 6.229, -19.45]
+    },
+    {
+      "id": "crate_midtown_002",
+      "position": [-194.664, 6.233, -19.38],
+      "origin": [-194.664, 6, -19.38]
+    },
+    {
       "id": "detail_m785_t360",
       "deleted": true,
       "origin": [-67.28, 7.202, -85.9]
@@ -186,6 +220,13 @@
       "origin": [97.011, 6.069, 138.079]
     },
     {
+      "id": "house_midtown_171",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [-126.015, 6.069, 108.906]
+    },
+    {
       "id": "house_midtown_203",
       "slots": {
         "wood": { "offset": [-2.0165, -11.4296, 0.0158], "rotate": [0, 0, -90], "scale": [2.7231, 0.7467, 1] }
@@ -210,6 +251,28 @@
       "id": "mailbox_midtown_008",
       "position": [-132.77, 5.973, -57.801],
       "origin": [-133.442, 5.973, -57.801]
+    },
+    {
+      "id": "shop_midtown_001",
+      "slots": {
+        "concrete#1": { "offset": [0, -0.0265, 0] }
+      },
+      "origin": [-239.647, 5.967, -12.88]
+    },
+    {
+      "id": "shop_midtown_002",
+      "slots": {
+        "concrete#6": { "offset": [0, -0.0259, 0.0934] }
+      },
+      "origin": [-226.993, 5.994, -12.88]
+    },
+    {
+      "id": "shop_midtown_003",
+      "slots": {
+        "concrete#1": { "offset": [0, -0.0291, 0] },
+        "wood#0.0": { "offset": [0, -0.0093, 0.0018] }
+      },
+      "origin": [-214.336, 6.013, -12.88]
     },
     {
       "id": "tree_broadleaf_midtown_057",

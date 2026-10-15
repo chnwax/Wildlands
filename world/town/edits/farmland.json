@@ -5,6 +5,11 @@
   "area": "farmland",
   "objects": [
     {
+      "id": "bus_stop_farmland_001",
+      "position": [303.093, 6.229, -20.513],
+      "origin": [300, 6.229, -19.45]
+    },
+    {
       "id": "house_farmland_007",
       "slots": {
         "wood": { "hidden": true }
@@ -45,6 +50,11 @@
         "wood": { "hidden": true }
       },
       "origin": [-21.157, 6.025, 269.617]
+    },
+    {
+      "id": "tree_maple_farmland_009",
+      "position": [380.174, 6.403, -49.037],
+      "origin": [376.994, 5.893, -49.037]
     },
     {
       "id": "vegetable_field_farmland_009",
