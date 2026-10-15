@@ -9,13 +9,13 @@
 // redistribution of the files in a public repository.
 import fs from 'fs';
 import path from 'path';
-import { ROOT, UA, PackBaker, writeGLB } from './packs-lib.mjs';
+import { ROOT, UA, PackBaker, writeGLB, parsePrefab } from './packs-lib.mjs';
 
 const OUT = path.join(ROOT, 'ModeleZPaczek');
 const CFG = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'packs.json'), 'utf8'));
 const only = process.argv.slice(2);
 const PACKS = [
-  { id: 'anime_japan', pack: 'Idyllic Anime Japan', nodeRotation: 'pre' },
+  { id: 'anime_japan', pack: 'Idyllic Anime Japan' },
   { id: 'polygon_farm', pack: 'Polygon Farm' },
   { id: 'illustrated_nature', pack: 'The Illustrated Nature' },
   { id: 'idyllic_woodlands', pack: 'Idyllic Woodlands' },
@@ -92,6 +92,14 @@ for (const P of PACKS) {
     const t = fs.readFileSync(pf, 'utf8'); for (const m of t.matchAll(/m_Mesh: \{fileID: -?\d+, guid: ([0-9a-f]{32})/g)) { const f = baker.guids.get(m[1]); if (f) used.add(f); }
     const r = attempt(() => baker.bake({ prefab: rel }), rel); if (!r) continue;
     done.add(name); results.push({ name, rel, r, src: 'prefab' });
+    // a tree or shrub with LOD levels (The Illustrated Nature): each level and the far card as files of their own, on the
+    // LOD0's pivot, for the game's distance levels
+    if (!/_(card|onemesh|dead)/i.test(name)) {
+      const f = parsePrefab(pf).map(q => baker.guids.get(q.mesh || q.source)).find(u => u && /\.fbx$/i.test(u)); // (the beeches are the birch FBX)
+      const sc = f ? baker.scene(f).sc : null, names = sc ? sc.meshes.map(g => sc.models.get(g.model)?.name || g.name) : [];
+      for (const lv of [1, 2, 3]) if (names.some(n => new RegExp('_LOD' + lv + '$', 'i').test(n))) { const v = attempt(() => baker.bake({ prefab: rel, meshes: '_LOD' + lv + '$|^((?!_LOD[0-9]|_Card).)*$', offset: r.off }) /* (meshes without levels, the pines' needles, belong to every level) */, rel); if (v) results.push({ name: name + '__lod' + lv, rel, r: v, src: 'lod' }); }
+      if (names.some(n => /_Card$/i.test(n))) { const v = attempt(() => baker.bake({ prefab: rel, meshes: '_Card$', offset: r.off }), rel); if (v) results.push({ name: name + '__card', rel, r: v, src: 'card' }); }
+    }
   }
   for (const f of fbx) {
     const rel = path.relative(packDir, f), name = safe(path.basename(f));

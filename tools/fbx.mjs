@@ -113,7 +113,9 @@ export function fbxScene(fbx) {
     const [id, nm] = n.props;
     if (n.name === 'Geometry' && n.props[2] === 'Mesh') geos.set(id, n);
     if (n.name === 'Material') { const p = P70(n); mats.set(id, { name: String(nm).split('::')[0], color: (p.DiffuseColor || p.Diffuse || [0.8, 0.8, 0.8]).map(Number) }); }
-    if (n.name === 'Model') { const p = P70(n); models.set(id, { id, name: String(nm).split('::')[0], kind: n.props[2], T: p['Lcl Translation'] || [0, 0, 0], R: p['Lcl Rotation'] || [0, 0, 0], S: p['Lcl Scaling'] || [1, 1, 1], preR: p.PreRotation || [0, 0, 0], order: p.RotationOrder?.[0] || 0 }); }
+    if (n.name === 'Model') { const p = P70(n); models.set(id, { id, name: String(nm).split('::')[0], kind: n.props[2], T: p['Lcl Translation'] || [0, 0, 0], R: p['Lcl Rotation'] || [0, 0, 0], S: p['Lcl Scaling'] || [1, 1, 1], preR: p.PreRotation || [0, 0, 0], order: p.RotationOrder?.[0] || 0,
+      // the geometric transform (3ds Max object offset): applied to the mesh only, not passed on to children
+      GT: p.GeometricTranslation || null, GR: p.GeometricRotation || null, GS: p.GeometricScaling || null }); }
   }
   for (const c of conns.children) {
     if (c.props[0] !== 'OO') continue;

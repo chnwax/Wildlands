@@ -107,6 +107,9 @@ function worldMatrix(id, models, preOnly = false) {
   }
   return M;
 }
+// a mesh node's geometric transform (object offset): translation, rotation, scale applied to its vertices only
+const geoMatrix = m => !m || (!m.GT && !m.GR && !m.GS) ? I4() : mmul([1, 0, 0, +(m.GT?.[0] || 0), 0, 1, 0, +(m.GT?.[1] || 0), 0, 0, 1, +(m.GT?.[2] || 0), 0, 0, 0, 1],
+  mmul(rot(m.GR || [0, 0, 0]), [+(m.GS?.[0] ?? 1), 0, 0, 0, 0, +(m.GS?.[1] ?? 1), 0, 0, 0, 0, +(m.GS?.[2] ?? 1), 0, 0, 0, 0, 1]));
 const xf = (M, p, w = 1) => [M[0] * p[0] + M[1] * p[1] + M[2] * p[2] + M[3] * w, M[4] * p[0] + M[5] * p[1] + M[6] * p[2] + M[7] * w, M[8] * p[0] + M[9] * p[1] + M[10] * p[2] + M[11] * w];
 const det3 = M => M[0] * (M[5] * M[10] - M[6] * M[9]) - M[1] * (M[4] * M[10] - M[6] * M[8]) + M[2] * (M[4] * M[9] - M[5] * M[8]);
 const NOT_DRAWN = /(?:^|[_\-.\s])LOD\s*[1-9]|collision|collider|_COL\b|^UCX_|shadow ?proxy/i;
@@ -165,7 +168,9 @@ export class PackBaker {
     }
     return tris;
   }
-  // a prefab (path inside the pack) or an FBX on its own -> { prims, tris, dims, src } or null. a: { prefab | fbx, scale, skip, pivot }
+  // a prefab (path inside the pack) or an FBX on its own -> { prims, tris, dims, src, off } or null.
+  // a: { prefab | fbx, scale, skip, pivot ('keep'), meshes (a regexp: only these meshes of the FBX — LOD levels, cards — whatever
+  // the prefab draws), offset (the pivot shift of another bake, so LOD levels line up with their LOD0) }
   bake(a) {
     const packDir = this.packDir, guids = this.guids, prims = new Map(); let tris = 0, rends = [], fbx = null, src;
     if (a.prefab) {
@@ -181,8 +186,8 @@ export class PackBaker {
           if (!g) continue;
           const model = sc.models.get(g.model), unit = Number(sc.settings.UnitScaleFactor?.at(-1) ?? 1) / 100 * (a.scale || 1);
           // Unity mesh = FBX geometry mirrored in X; the GameObject transform is in Unity space; mirror back for glTF
-          const M = mmul(MX, mmul(r.T, MX));
-          tris += this._emit(prims, g, M, unit, 1, false, model?.materials || [], (si, fname) => this.material(r.mats[Math.min(si, r.mats.length - 1)] || meta.mats.get(fname) || null, fname));
+          const S = [unit, 0, 0, 0, 0, unit, 0, 0, 0, 0, unit, 0, 0, 0, 0, 1], M = mmul(mmul(MX, mmul(r.T, MX)), mmul(S, geoMatrix(model))); // (the geometric offset is in the mesh asset)
+          tris += this._emit(prims, g, M, 1, 1, false, model?.materials || [], (si, fname) => this.material(r.mats[Math.min(si, r.mats.length - 1)] || meta.mats.get(fname) || null, fname));
         }
         fbx = null;
       } else fbx = srcs[0];
@@ -192,20 +197,21 @@ export class PackBaker {
       const unit = Number(sc.settings.UnitScaleFactor?.at(-1) ?? 1) / 100 * (a.scale || 1), upZ = Number(sc.settings.UpAxis?.at(-1) ?? 1) === 2;
       for (const g of sc.meshes) {
         const model = sc.models.get(g.model), mname = model?.name || g.name;
-        if (NOT_DRAWN.test(mname + ' ' + g.name)) continue;
+        if (a.meshes) { if (!new RegExp(a.meshes, 'i').test(mname) || /collision|collider|^UCX_/i.test(mname)) continue; }
+        else if (NOT_DRAWN.test(mname + ' ' + g.name)) continue;
         if (a.skip && new RegExp(a.skip, 'i').test(mname)) continue;
-        const r = rends.find(q => q.name === mname) || (rends.length === 1 ? rends[0] : rends.find(q => q.name === '*'));
-        if (rends.length && !r && rends.some(q => q.name !== '*')) continue; // (a mesh the prefab does not render)
-        const M = worldMatrix(g.model, sc.models, this.opt.nodeRotation === 'pre');
+        const r = rends.find(q => q.name === mname) || (a.meshes && rends.find(q => q.name === mname.replace(/LOD\d/i, 'LOD0'))) || (rends.length === 1 ? rends[0] : rends.find(q => q.name === '*'));
+        if (rends.length && !r && !a.meshes && rends.some(q => q.name !== '*')) continue; // (a mesh the prefab does not render)
+        const M = mmul(worldMatrix(g.model, sc.models, this.opt.nodeRotation === 'pre'), geoMatrix(model));
         tris += this._emit(prims, g, M, 1, unit, upZ, model?.materials || [], (si, fname) => this.material((r && r.mats[Math.min(si, r.mats.length - 1)]) || meta.mats.get(fname) || null, fname));
       }
     }
     if (!tris) return null;
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
     for (const P of prims.values()) for (let i = 0; i < P.pos.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], P.pos[i + k]); hi[k] = Math.max(hi[k], P.pos[i + k]); }
-    const off = a.pivot === 'keep' ? [0, 0, 0] : [-(lo[0] + hi[0]) / 2, -lo[1], -(lo[2] + hi[2]) / 2];
+    const off = a.offset || (a.pivot === 'keep' ? [0, 0, 0] : [-(lo[0] + hi[0]) / 2, -lo[1], -(lo[2] + hi[2]) / 2]);
     for (const P of prims.values()) for (let i = 0; i < P.pos.length; i += 3) for (let k = 0; k < 3; k++) P.pos[i + k] += off[k];
-    return { prims, tris, dims: hi.map((h, k) => +(h - lo[k]).toFixed(3)), src: path.relative(ROOT, src).replaceAll('\\', '/') };
+    return { prims, tris, off, dims: hi.map((h, k) => +(h - lo[k]).toFixed(3)), src: path.relative(ROOT, src).replaceAll('\\', '/') };
   }
   // convert every texture used so far (python, skipping the ones already up to date)
   convertTextures(log = false) {
