@@ -17,6 +17,7 @@
 import { clamp, lerp, mulberry32, addBox, addCircle, addPlatform, lampPoints } from './core.js';
 import { entity } from './world/capture.js';
 import { cropSet } from './crops.js';
+import { queuePack, packsReady } from './packs.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
 const jit = (rng, c, k = 0.05) => c.map(v => clamp(v * (1 + (rng() - 0.5) * 2 * k), 0, 1));
@@ -216,7 +217,7 @@ export function furnishYards(ctx) {
     }
     // vegetable beds: raised timber frames with two rows each, a stake line of tomatoes in one
     const nBeds = { compact: rng() < 0.15 ? 1 : 0, family: rng() < 0.3 ? 1 : 0, garden: 2 + Math.floor(rng() * 2), large: rng() < 0.6 ? 2 : 0, farm: 2 + Math.floor(rng() * 2) }[arch];
-    let bedsMade = 0;
+    let bedsMade = 0; const beds = [];
     for (let b = 0; b < nBeds; b++) {
       const long = 1.05 + rng() * 0.3; let bw2 = long, bd2 = 0.55, q = scan(bw2, bd2, 'far'); if (!q) { bw2 = 0.55; bd2 = long; q = scan(bw2, bd2, 'side'); } if (!q) break;
       entity('vegetable_bed', () => { Bf(q[0], q[1], 0); const wc = [0.52, 0.4, 0.3];
@@ -226,7 +227,7 @@ export function furnishYards(ctx) {
         const alongX = bw2 > bd2, La = alongX ? bw2 : bd2, Lc = alongX ? bd2 : bw2;
         for (const c2 of [-Lc * 0.45, Lc * 0.45]) for (let a = -La + 0.25; a < La - 0.15; a += crop === 'tomato' ? 0.45 : 0.32) { const p = B.P(alongX ? [a, 0.2, c2] : [c2, 0.2, a]); cropSet.add(crop, p[0], p[1], p[2], rng() * 6.3, crop === 'tomato' ? 0.8 : 0.7 + rng() * 0.3, null, 90); }
       });
-      take(q[0] - bw2, q[0] + bw2, q[1] - bd2, q[1] + bd2); addBox(...W(q[0], q[1]), bw2, bd2, lot.r, y0 - 1, y0 + 0.24); bedsMade++; ok();
+      take(q[0] - bw2, q[0] + bw2, q[1] - bd2, q[1] + bd2); addBox(...W(q[0], q[1]), bw2, bd2, lot.r, y0 - 1, y0 + 0.24); bedsMade++; beds.push([q[0], q[1], bw2, bd2]); ok();
     }
     // a compost bin and a watering can near the beds; a shovel against the shed or a bed
     if (bedsMade && rng() < 0.7) { const q = scan(0.36, 0.36, 'far'); if (q) { entity('compost_bin', () => { Bf(q[0], q[1], rng() * 6.3); const cc = [0.18, 0.32, 0.2];
@@ -264,5 +265,79 @@ export function furnishYards(ctx) {
       take(q[0] - 0.75, q[0] + 0.75, q[1] - 0.35, q[1] + 0.35); addBox(...W(q[0], q[1]), 0.7, 0.2, lot.r, y0 - 1, y0 + 0.5); ok(); } }
     // pots on the back step / along the side
     if (rng() < 0.5) for (let k = 0; k < 2 + Math.floor(rng() * 3); k++) { const q = scan(0.15, 0.15, 'house'); if (!q) break; const [x, z] = W(q[0], q[1]); out.pots.push({ x, y: Y(q[0], q[1]), z, s: 0.3 + rng() * 0.25, r: rng() * 6.28 }); take(q[0] - 0.18, q[0] + 0.18, q[1] - 0.18, q[1] + 0.18); }
+    // =========================================================== details from the model packs (packs.js), with an rng of
+    // their own (every feature above keeps its draws, and so its place and its World Builder id), only where the plot's
+    // map is still free
+    if (packsReady()) dressPlot(lot, { I, LW, LD, front, hF, hB, h0, h1, W, Y, free, take, scan, tryAt, arch, farm, old, beds });
+  }
+  // the plot's own details from the model packs: potted flowers at the door, planters along the front, a scooter by the
+  // house, the gardener's bucket and can at the beds, a broom against the wall; on farm plots a working corner whose
+  // things follow what the household grows (vegetables, rice, fruit) or keeps (a tinkerer's yard)
+  function dressPlot(lot, P) {
+    const { I, LW, front, hF, hB, h0, h1, W, Y, free, take, scan, tryAt, arch, farm, old, beds } = P;
+    const r2 = mulberry32(((Math.floor(lot.x * 37.7) * 7919) ^ (Math.floor(lot.z * 59.3) * 104729) ^ 0x2f6e2b1) >>> 0 || 11);
+    const put = (id, lx, lz, yaw = 0, o = {}) => { const [x, z] = W(lx, lz); return queuePack(id, x, Y(lx, lz) + (o.dy || 0), z, lot.r + yaw, o); };
+    const POTS = ['jp_flowerpot_01', 'jp_flowerpot_02', 'jp_flowerpot_03', 'jp_flowerpot_04', 'jp_flowerpot_05', 'jp_flowerpot_06', 'jp_flowerpot_07', 'jp_flowerpot_08', 'jp_flowerpot_09', 'jp_flowerpot_010'];
+    const potA = POTS[Math.floor(r2() * POTS.length)], potB = POTS[Math.floor(r2() * POTS.length)];
+    // potted flowers either side of the entrance steps (the genkan), unless the house has its own planters there
+    if (!I.planters && r2() < ({ compact: 0.75, family: 0.55, garden: 0.85, large: 0.6, farm: 0.4 }[arch] ?? 0.5)) {
+      for (const sd of [-1, 1]) for (let k = 0; k < 1 + (r2() < 0.4 ? 1 : 0); k++) {
+        const x = I.doorX + sd * (1.3 + k * 0.5), z = hF + 0.62 + (k ? 0.1 : 0); if (!free(x, z, 0.22, 0.22, 0.03)) continue; // (clear of the steps and the drip line)
+        put(k ? potB : potA, x, z, r2() * 6.28, { s: 0.75 + r2() * 0.3 }); take(x - 0.25, x + 0.25, z - 0.25, z + 0.25);
+      }
+    }
+    // a planter or two along the front boundary, inside it (the gardeners and the old quarter)
+    if ((arch === 'garden' || old) && r2() < 0.45) for (let k = 0; k < 2; k++) {
+      const id = ['jp_plants_box_01', 'jp_plants_box_02', 'jp_plants_box_03'][Math.floor(r2() * 3)], hw = id === 'jp_plants_box_03' ? 0.62 : 0.4, z = front - 0.55;
+      const q = [-LW / 2 + 0.9 + r2() * (LW - 1.8), -LW / 2 + 0.9 + r2() * (LW - 1.8)].map(x => [x, z]).find(([x, z2]) => free(x, z2, hw, 0.36, 0.08));
+      if (q) { put(id, q[0], q[1], Math.PI + (r2() - 0.5) * 0.1); take(q[0] - hw, q[0] + hw, q[1] - 0.38, q[1] + 0.38); }
+    }
+    // a scooter (原付) parked along the side of the house, nose to the street
+    if ((arch === 'compact' || arch === 'family' || old) && r2() < 0.16) {
+      const q = tryAt(0.5, 1.1, [[h1 + 0.75, hF - 0.9], [h0 - 0.75, hF - 0.9], [h1 + 0.75, hF - 2.4], [h0 - 0.75, hF - 2.4]]);
+      if (q) { put('jp_mofa_vehicle', q[0], q[1], Math.PI / 2 + (r2() - 0.5) * 0.12); take(q[0] - 0.5, q[0] + 0.5, q[1] - 1.1, q[1] + 1.1);
+        const [x, z] = W(q[0], q[1]); addBox(x, z, 0.4, 1.0, lot.r, -1e9, Y(q[0], q[1]) + 1.1); }
+    }
+    // the gardener's bucket and watering can (now and then a trowel) at the end of a vegetable bed
+    for (const [bx, bz, bw, bd] of beds) {
+      if (r2() > 0.65) continue;
+      const q = [[bx + bw + 0.32, bz], [bx - bw - 0.32, bz], [bx, bz + bd + 0.32], [bx, bz - bd - 0.32]].find(([x, z]) => free(x, z, 0.2, 0.2, 0.03));
+      if (!q) continue;
+      put(r2() < 0.5 ? 'jp_bucket' : 'farm_bucket', q[0], q[1], r2() * 6.28);
+      take(q[0] - 0.22, q[0] + 0.22, q[1] - 0.22, q[1] + 0.22);
+      const q2 = [[q[0] + 0.45, q[1]], [q[0] - 0.45, q[1]], [q[0], q[1] + 0.45]].find(([x, z]) => free(x, z, 0.18, 0.3, 0.02));
+      if (q2) { put('farm_watering_can', q2[0], q2[1], r2() * 6.28); take(q2[0] - 0.2, q2[0] + 0.2, q2[1] - 0.3, q2[1] + 0.3); }
+      if (r2() < 0.3) put('jp_trowel_01', q[0] + 0.08, q[1] + 0.1, r2() * 6.28, { dy: 0.02 });
+    }
+    // a broom against the house's side wall, toward the back
+    if (r2() < 0.18) for (const sd of [-1, 1]) {
+      const x = sd < 0 ? h0 - 0.22 : h1 + 0.22, z = hB + 0.9; if (!free(x, z, 0.15, 0.2, 0.02)) continue;
+      const [wx, wz] = W(x, z), [ax, az] = W(x - sd, z), dx = ax - wx, dz = az - wz; // (toward the wall)
+      queuePack('jp_broom_stick', wx, Y(x, z), wz, Math.atan2(-dz, dx), { tilt2: -0.2 }); take(x - 0.2, x + 0.2, z - 0.2, z + 0.2); break;
+    }
+    // farm plots: a working corner of their own
+    if (farm) {
+      const role = ['veg', 'rice', 'fruit', 'tinker'][Math.floor(r2() * 4)];
+      // an open machinery shelter in the back garden (the cultivator, the tools, the harvest out of the rain), if it fits
+      const sh = scan(2.6, 2.0, 'far');
+      if (sh && r2() < 0.7) { put('farm_shelter', sh[0], sh[1], Math.PI); take(sh[0] - 2.6, sh[0] + 2.6, sh[1] - 2.0, sh[1] + 2.0);
+        { const [bx, bz] = W(sh[0], sh[1] - 1.7); addBox(bx, bz, 2.5, 0.18, lot.r); }
+        if (role === 'rice') for (const ox of [-1.2, 0.3]) put('farm_straw_bale', sh[0] + ox, sh[1] - 0.6, Math.PI / 2 + (r2() - 0.5) * 0.1, { s: 0.62 });
+        else if (role === 'veg') ['farm_box_potato', 'farm_box_onion', 'farm_box_carrot'].forEach((id, k) => put(id, sh[0] - 1.4 + k * 0.85, sh[1] - 0.8, (r2() - 0.5) * 0.2));
+        else put('farm_wood_stack', sh[0] + 0.6, sh[1] - 1.1, 0);
+        put(r2() < 0.5 ? 'farm_wheelbarrow_metal' : 'farm_wheelbarrow', sh[0] - 1.2, sh[1] + 0.3, Math.PI / 2 + (r2() - 0.5) * 0.4);
+      }
+      const spot = (hw, hd) => { const q = scan(hw, hd, 'side'); if (q) take(q[0] - hw, q[0] + hw, q[1] - hd, q[1] + hd); return q; };
+      if (role === 'rice') { const q = spot(0.9, 0.45); if (q) for (let k = 0; k < 3; k++) put('farm_grain_bag', q[0] + (k % 2) * 0.1 - 0.05, q[1], (r2() - 0.5) * 0.3, { dy: k * 0.3 });
+        const d = spot(0.4, 0.4); if (d) put('farm_rusted_drum', d[0], d[1], r2() * 6.28); }
+      if (role === 'veg') { const q = spot(0.85, 0.5); if (q) { const B2 = ['farm_box_cucumber', 'farm_box_eggplant', 'farm_box_potato']; for (let k = 0; k < 3; k++) put(B2[k], q[0] - 0.4 + (k % 2) * 0.8, q[1], (r2() - 0.5) * 0.2, { dy: k === 2 ? 0.42 : 0 }); }
+        const w = spot(0.25, 0.4); if (w) put('farm_watering_can', w[0], w[1], r2() * 6.28); }
+      if (role === 'fruit') { for (let k = 0; k < 2; k++) { const q = scan(1.5, 1.5, 'far'); if (!q) break; take(q[0] - 1.5, q[0] + 1.5, q[1] - 1.5, q[1] + 1.5);
+          const t = 0.92 + r2() * 0.12; put(['farm_mikan', 'farm_peach', 'farm_plum'][Math.floor(r2() * 3)], q[0], q[1], r2() * 6.28, { s: 0.7 + r2() * 0.2, c: { r: t, g: t, b: t * 0.95 } }); const [x, z] = W(q[0], q[1]); addCircle(x, z, 0.18); }
+        const q = spot(0.85, 0.5); if (q) for (let k = 0; k < 3; k++) put(['farm_box_apple', 'farm_box_peach', 'farm_box_plum'][k], q[0] - 0.4 + (k % 2) * 0.8, q[1], (r2() - 0.5) * 0.2, { dy: k === 2 ? 0.46 : 0 }); }
+      if (role === 'tinker') { const q = spot(0.85, 0.85); if (q) { put('farm_spoolwheel', q[0], q[1], r2() * 6.28); const [x, z] = W(q[0], q[1]); addCircle(x, z, 0.75); }
+        const b = spot(0.5, 0.5); if (b) { put('farm_barrel_02', b[0], b[1], r2() * 6.28, { s: 0.8 }); const [x, z] = W(b[0], b[1]); addCircle(x, z, 0.38); }
+        const t = spot(0.4, 0.25); if (t) put('farm_toolbox', t[0], t[1], r2() * 6.28); }
+    }
   }
 }

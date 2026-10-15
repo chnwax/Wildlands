@@ -8,525 +8,1254 @@
     {
      "id": "farm_corn_l",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Plant_Corn_01_L.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Corn_01_L.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_corn_m",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Plant_Corn_01_M.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Corn_01_M.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_pumpkin_l",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Pumpkin_01_L.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Pumpkin_01_L.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_pumpkin_m",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Pumpkin_01_M.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Pumpkin_01_M.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_watermelon",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Watermelon_01_L.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Watermelon_01_L.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_sunflower_1",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Sunflower_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Sunflower_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_sunflower_2",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Sunflower_02.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Sunflower_02.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_wheat_1",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_wheat_2",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_02.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_02.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_strawberry",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Plant_Strawberry_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Strawberry_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_tomato_bush",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Plant_Bush_02_Tomato.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Bush_02_Tomato.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_bean_bush",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Plant_Bush_01_Bean.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Bush_01_Bean.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_eggplant",
      "kind": "crop",
-     "prefab": "Prefabs/Plants/SM_Prop_Eggplant_01_L.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Eggplant_01_L.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_peach",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_Grown_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_Grown_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_pear",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_Grown_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_Grown_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_plum",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Plum_Grown_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Plum_Grown_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_apple",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Apple_Grown_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Apple_Grown_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_mikan",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Orange_Grown_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Orange_Grown_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_cherry_fruit",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Cherry_Grown_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Cherry_Grown_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_peach_young",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_pear_young",
      "kind": "tree",
-     "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_01.prefab"
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_01.prefab",
+     "category": "orchard"
     },
     {
      "id": "farm_wheelbarrow",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Wheelbarrow_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Wheelbarrow_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_wheelbarrow_metal",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Wheelbarrow_Metal_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Wheelbarrow_Metal_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_bucket",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Tool_Bucket_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Bucket_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_watering_can",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Watering_Can_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Watering_Can_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_hoe",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Tool_Hoe_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Hoe_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_rake",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Tool_Rake_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Rake_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_spade",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Tool_Spade_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Spade_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_box_potato",
      "kind": "prop",
-     "prefab": "Prefabs/Plants/SM_Prop_Box_Potato_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Potato_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_box_onion",
      "kind": "prop",
-     "prefab": "Prefabs/Plants/SM_Prop_Box_Onion_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Onion_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_box_carrot",
      "kind": "prop",
-     "prefab": "Prefabs/Plants/SM_Prop_Box_Carrot_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Carrot_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_box_eggplant",
      "kind": "prop",
-     "prefab": "Prefabs/Plants/SM_Prop_Box_Eggplant_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Eggplant_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_box_cucumber",
      "kind": "prop",
-     "prefab": "Prefabs/Plants/SM_Prop_Box_Cucumber_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Cucumber_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_box_apple",
      "kind": "prop",
-     "prefab": "Prefabs/Plants/SM_Prop_Box_Apple_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Apple_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_box_peach",
      "kind": "prop",
-     "prefab": "Prefabs/Plants/SM_Prop_Box_Peach_01.prefab"
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Peach_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_crate",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Crate_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Crate_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_pallet_crate",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_PalletCrate_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_PalletCrate_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_grain_bag",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_GrainBag_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_GrainBag_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_grain_bag_open",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_GrainBag_Open_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_GrainBag_Open_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_sprinkler",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Sprinkler_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Sprinkler_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_wood_stack",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Wood_Stack_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Wood_Stack_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_barrel",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Barrel_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Barrel_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_straw_bale",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Hay_Bale_Square_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Hay_Bale_Square_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_plastic_bin",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_PlasticBin_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_PlasticBin_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_fence_wire",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Fence_Wire_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Fence_Wire_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_fence_wire_pole",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Fence_Wire_Pole_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Fence_Wire_Pole_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_beehive",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Beehive_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Beehive_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_table",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Table_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Table_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_rack",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Rack_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Rack_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_tyre",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_Prop_Tyre_01.prefab"
+     "prefab": "Prefabs/Props/SM_Prop_Tyre_01.prefab",
+     "category": "farm"
     },
     {
      "id": "farm_greenhouse_glass",
      "kind": "building",
-     "prefab": "Prefabs/Buildings/SM_Bld_Greenhouse_01.prefab"
+     "prefab": "Prefabs/Buildings/SM_Bld_Greenhouse_01.prefab",
+     "category": "farm_building"
     },
     {
      "id": "farm_shelter",
      "kind": "building",
-     "prefab": "Prefabs/Buildings/SM_Bld_Shelter_01.prefab"
+     "prefab": "Prefabs/Buildings/SM_Bld_Shelter_01.prefab",
+     "category": "farm_building"
     },
     {
      "id": "farm_produce_stand",
      "kind": "building",
-     "prefab": "Prefabs/Buildings/SM_Bld_ProduceStand_01.prefab"
+     "prefab": "Prefabs/Buildings/SM_Bld_ProduceStand_01.prefab",
+     "category": "farm_building"
+    },
+    {
+     "id": "farm_barn",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Barn_01.prefab"
+    },
+    {
+     "id": "farm_barn_02",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Barn_02.prefab"
+    },
+    {
+     "id": "farm_barn_03",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Barn_03.prefab"
+    },
+    {
+     "id": "farm_farmhouse",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Farmhouse_01.prefab"
+    },
+    {
+     "id": "farm_farmhouse_02",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Farmhouse_02.prefab"
+    },
+    {
+     "id": "farm_garage",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Garage_01.prefab"
+    },
+    {
+     "id": "farm_greenhouse_large",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Greenhouse_Large_01.prefab"
+    },
+    {
+     "id": "farm_silo_small",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Silo_Small_01.prefab"
+    },
+    {
+     "id": "farm_outhouse",
+     "kind": "building",
+     "category": "farm_building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Outhouse_01.prefab"
+    },
+    {
+     "id": "farm_bench",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Bench_01.prefab"
+    },
+    {
+     "id": "farm_chicken_coop",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Chicken_Coop_01.prefab"
+    },
+    {
+     "id": "farm_clothesline",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_ClothesLine_01.prefab"
+    },
+    {
+     "id": "farm_well",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Well_01.prefab"
+    },
+    {
+     "id": "farm_trough",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Trough_01.prefab"
+    },
+    {
+     "id": "farm_wood_stack_02",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Wood_Stack_02.prefab"
+    },
+    {
+     "id": "farm_hay_bale_round",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Hay_Bale_Round_01.prefab"
+    },
+    {
+     "id": "farm_hay_pile",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Hay_Pile_01.prefab"
+    },
+    {
+     "id": "farm_box_apple_02",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Apple_02.prefab"
+    },
+    {
+     "id": "farm_box_plum",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Plum_01.prefab"
+    },
+    {
+     "id": "farm_barrel_02",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Barrel_02.prefab"
+    },
+    {
+     "id": "farm_barrel_half",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Barrel_Half_01.prefab"
+    },
+    {
+     "id": "farm_can",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Can_01.prefab"
+    },
+    {
+     "id": "farm_gascan",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_GasCan_01.prefab"
+    },
+    {
+     "id": "farm_gastank",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Gastank_01.prefab"
+    },
+    {
+     "id": "farm_pot",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Pot_01.prefab"
+    },
+    {
+     "id": "farm_pot_02",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Pot_02.prefab"
+    },
+    {
+     "id": "farm_plantbox_large",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_PlantBox_Large_01.prefab"
+    },
+    {
+     "id": "farm_sign_veges",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Sign_Veges_01.prefab"
+    },
+    {
+     "id": "farm_signpost",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_SignPost_01.prefab"
+    },
+    {
+     "id": "farm_toolbox",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_ToolBox_01.prefab"
+    },
+    {
+     "id": "farm_tool_axe",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Axe_01.prefab"
+    },
+    {
+     "id": "farm_tool_pitchfork",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Pitchfork_01.prefab"
+    },
+    {
+     "id": "farm_tool_scythe",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Scythe_01.prefab"
+    },
+    {
+     "id": "farm_sprinkler_hose",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Sprinkler_Hose_01.prefab"
+    },
+    {
+     "id": "farm_spoolwheel",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_SpoolWheel_01.prefab"
+    },
+    {
+     "id": "farm_rusted_drum",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Rusted_Drum_01.prefab"
+    },
+    {
+     "id": "farm_seedpacket",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_SeedPacket_01.prefab"
+    },
+    {
+     "id": "farm_fence_wood",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Fence_Wood_01.prefab"
+    },
+    {
+     "id": "farm_fence_wood_pole",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Fence_Wood_Pole_01.prefab"
+    },
+    {
+     "id": "farm_fence_wire_gate",
+     "kind": "prop",
+     "category": "farm",
+     "prefab": "Prefabs/Props/SM_Prop_Fence_Wire_Gate_01.prefab"
+    },
+    {
+     "id": "farm_plant_ground_01_l",
+     "kind": "crop",
+     "category": "orchard",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Ground_01_L.prefab"
+    },
+    {
+     "id": "farm_plant_ground_02_l",
+     "kind": "crop",
+     "category": "orchard",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Ground_02_L.prefab"
+    },
+    {
+     "id": "farm_plant_ground_03_l",
+     "kind": "crop",
+     "category": "orchard",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Ground_03_L.prefab"
+    },
+    {
+     "id": "farm_bush_round_row",
+     "kind": "crop",
+     "category": "orchard",
+     "prefab": "Prefabs/Plants/SM_Prop_Bush_Round_Row_01.prefab"
+    },
+    {
+     "id": "farm_cabbage_01_l",
+     "kind": "crop",
+     "category": "orchard",
+     "prefab": "Prefabs/Plants/SM_Prop_Cabbage_01_L.prefab"
+    },
+    {
+     "id": "farm_lettuce_01_l",
+     "kind": "crop",
+     "category": "orchard",
+     "prefab": "Prefabs/Plants/SM_Prop_Lettuce_01_L.prefab"
+    },
+    {
+     "id": "farm_plant_potato_01_l",
+     "kind": "crop",
+     "category": "orchard",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Potato_01_L.prefab"
     }
    ]
   },
   "japan": {
    "pack": "Idyllic Anime Japan",
    "licence": "Unity Asset Store EULA (Idyllic Anime Japan 1.1.1): models used inside the game; source assets are not redistributed",
-   "texMax": 1024,
+   "texMax": 512,
+   "texMaxBig": 1024,
+   "texBig": "traffic|streetname|signboards|warning|vendingmachine",
    "nodeRotation": "pre",
    "assets": [
     {
      "id": "jp_sign_traffic_001",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_001.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_001.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_004",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_004.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_004.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_005",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_005.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_005.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_006",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_006.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_006.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_007",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_007.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_007.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_008",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_008.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_008.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_009",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_009.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_009.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_010",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_010.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_010.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_011",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_011.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_011.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_012",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_012.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_012.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_013",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_013.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_013.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_014",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_014.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_014.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_015",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_015.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_015.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_016",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_016.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_016.prefab",
+     "category": "street"
     },
     {
      "id": "jp_sign_traffic_017",
      "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_017.prefab"
+     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_017.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_1",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_01.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_01.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_2",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_02.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_02.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_3",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_03.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_03.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_4",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_04.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_04.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_5",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_05.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_05.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_6",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_06.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_06.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_7",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_07.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_07.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_8",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_08.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_08.prefab",
+     "category": "street"
     },
     {
      "id": "jp_warning_panel_9",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_09.prefab"
-    },
-    {
-     "id": "jp_flowerpot_1",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_01.prefab"
-    },
-    {
-     "id": "jp_flowerpot_2",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_02.prefab"
-    },
-    {
-     "id": "jp_flowerpot_3",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_03.prefab"
-    },
-    {
-     "id": "jp_flowerpot_4",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_04.prefab"
-    },
-    {
-     "id": "jp_flowerpot_5",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_05.prefab"
-    },
-    {
-     "id": "jp_flowerpot_6",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_06.prefab"
-    },
-    {
-     "id": "jp_flowerpot_7",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_07.prefab"
-    },
-    {
-     "id": "jp_flowerpot_8",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_08.prefab"
-    },
-    {
-     "id": "jp_flowerpot_9",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_flowerpot_09.prefab"
-    },
-    {
-     "id": "jp_plants_box_1",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_plants_box_01.prefab"
-    },
-    {
-     "id": "jp_plants_box_2",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_plants_box_02.prefab"
-    },
-    {
-     "id": "jp_plants_box_3",
-     "kind": "prop",
-     "prefab": "Prefabs/Props/SM_plants_box_03.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_warning_panel_09.prefab",
+     "category": "street"
     },
     {
      "id": "jp_drain_street",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_drain_street.prefab"
+     "prefab": "Prefabs/Props/SM_drain_street.prefab",
+     "category": "street"
     },
     {
      "id": "jp_bucket",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_bucket.prefab"
+     "prefab": "Prefabs/Props/SM_bucket.prefab",
+     "category": "plot"
     },
     {
      "id": "jp_broom_stick",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_broom_stick.prefab"
+     "prefab": "Prefabs/Props/SM_broom_stick.prefab",
+     "category": "plot"
     },
     {
      "id": "jp_trowel_01",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_trowel_01.prefab"
+     "prefab": "Prefabs/Props/SM_trowel_01.prefab",
+     "category": "plot"
     },
     {
      "id": "jp_carton_01",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_carton_01.prefab"
+     "prefab": "Prefabs/Props/SM_carton_01.prefab",
+     "category": "shop"
     },
     {
      "id": "jp_carton_02",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_carton_02.prefab"
+     "prefab": "Prefabs/Props/SM_carton_02.prefab",
+     "category": "shop"
     },
     {
      "id": "jp_trash_recycling",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_trash_recycling.prefab"
+     "prefab": "Prefabs/Props/SM_trash_recycling.prefab",
+     "category": "shop"
     },
     {
      "id": "jp_bikestand",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_bikestand.prefab"
+     "prefab": "Prefabs/Props/SM_bikestand.prefab",
+     "category": "estate"
     },
     {
      "id": "jp_traffic_pylon",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_traffic_pylon.prefab"
+     "prefab": "Prefabs/Props/SM_traffic_pylon.prefab",
+     "category": "estate"
     },
     {
      "id": "jp_lantern_traditional_01",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_lantern_traditional_01.prefab"
+     "prefab": "Prefabs/Props/SM_lantern_traditional_01.prefab",
+     "category": "shop"
     },
     {
      "id": "jp_lantern_traditional_03",
      "kind": "prop",
-     "prefab": "Prefabs/Props/SM_lantern_traditional_03.prefab"
+     "prefab": "Prefabs/Props/SM_lantern_traditional_03.prefab",
+     "category": "shop"
     },
     {
      "id": "jp_board_foldable_01",
      "kind": "prop",
-     "prefab": "Prefabs/Signs and Boards/SM_board_foldable_01.prefab"
+     "prefab": "Prefabs/Signs and Boards/SM_board_foldable_01.prefab",
+     "category": "shop"
     },
     {
      "id": "jp_bush_01",
      "kind": "tree",
-     "prefab": "Prefabs/Nature/SM_bush_01.prefab"
+     "prefab": "Prefabs/Nature/SM_bush_01.prefab",
+     "category": "park"
     },
     {
      "id": "jp_tree_garden",
      "kind": "tree",
-     "prefab": "Prefabs/Nature/SM_tree_garden.prefab"
+     "prefab": "Prefabs/Nature/SM_tree_garden.prefab",
+     "category": "park"
+    },
+    {
+     "id": "jp_airconditioner_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_airconditioner_01.prefab"
+    },
+    {
+     "id": "jp_airconditioner_02",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_airconditioner_02.prefab"
+    },
+    {
+     "id": "jp_antenna_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_antenna_01.prefab"
+    },
+    {
+     "id": "jp_bicycle",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_bicycle.prefab"
+    },
+    {
+     "id": "jp_mofa_vehicle",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_mofa_vehicle.prefab"
+    },
+    {
+     "id": "jp_mailbox_resident_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_mailbox_resident_01.prefab"
+    },
+    {
+     "id": "jp_mailbox_resident_02",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_mailbox_resident_02.prefab"
+    },
+    {
+     "id": "jp_fusebox_wall_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_fusebox_wall_01.prefab"
+    },
+    {
+     "id": "jp_fusebox_large",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_fusebox_large.prefab"
+    },
+    {
+     "id": "jp_ventilation_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_ventilation_01.prefab"
+    },
+    {
+     "id": "jp_flowerpot_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_01.prefab"
+    },
+    {
+     "id": "jp_flowerpot_02",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_02.prefab"
+    },
+    {
+     "id": "jp_flowerpot_03",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_03.prefab"
+    },
+    {
+     "id": "jp_flowerpot_04",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_04.prefab"
+    },
+    {
+     "id": "jp_flowerpot_05",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_05.prefab"
+    },
+    {
+     "id": "jp_flowerpot_06",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_06.prefab"
+    },
+    {
+     "id": "jp_flowerpot_07",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_07.prefab"
+    },
+    {
+     "id": "jp_flowerpot_08",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_08.prefab"
+    },
+    {
+     "id": "jp_flowerpot_09",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_09.prefab"
+    },
+    {
+     "id": "jp_flowerpot_010",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_flowerpot_010.prefab"
+    },
+    {
+     "id": "jp_plants_box_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_plants_box_01.prefab"
+    },
+    {
+     "id": "jp_plants_box_02",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_plants_box_02.prefab"
+    },
+    {
+     "id": "jp_plants_box_03",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Props/SM_plants_box_03.prefab"
+    },
+    {
+     "id": "jp_carton_03",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_carton_03.prefab"
+    },
+    {
+     "id": "jp_bottle_drink_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_bottle_drink_01.prefab"
+    },
+    {
+     "id": "jp_bottle_drink_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_bottle_drink_02.prefab"
+    },
+    {
+     "id": "jp_chair",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_chair.prefab"
+    },
+    {
+     "id": "jp_chair_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_chair_02.prefab"
+    },
+    {
+     "id": "jp_stool_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_stool_01.prefab"
+    },
+    {
+     "id": "jp_stool_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_stool_02.prefab"
+    },
+    {
+     "id": "jp_table_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_table_01.prefab"
+    },
+    {
+     "id": "jp_table_shop",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_table_shop.prefab"
+    },
+    {
+     "id": "jp_trash_can_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_trash_can_01.prefab"
+    },
+    {
+     "id": "jp_vendingmachine_bottles_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_vendingmachine_bottles_01.prefab"
+    },
+    {
+     "id": "jp_vendingmachine_bottles_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_vendingmachine_bottles_02.prefab"
+    },
+    {
+     "id": "jp_vendingmachine_bottles_04",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_vendingmachine_bottles_04.prefab"
+    },
+    {
+     "id": "jp_board_foldable_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Signs and Boards/SM_board_foldable_02.prefab"
+    },
+    {
+     "id": "jp_board_foldable_03",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Signs and Boards/SM_board_foldable_03.prefab"
+    },
+    {
+     "id": "jp_cloth_storefront_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Signs and Boards/SM_cloth_storefront_01.prefab"
+    },
+    {
+     "id": "jp_cloth_storefront_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Signs and Boards/SM_cloth_storefront_02.prefab"
+    },
+    {
+     "id": "jp_cloth_storefront_03",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Signs and Boards/SM_cloth_storefront_03.prefab"
+    },
+    {
+     "id": "jp_sunscreen_shop_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Modular Pieces/SM_sunscreen_shop_01.prefab"
+    },
+    {
+     "id": "jp_sunscreen_shop_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Modular Pieces/SM_sunscreen_shop_02.prefab"
+    },
+    {
+     "id": "jp_sunscreen_shop_03",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Modular Pieces/SM_sunscreen_shop_03.prefab"
+    },
+    {
+     "id": "jp_sunscreen_shop_04",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Modular Pieces/SM_sunscreen_shop_04.prefab"
+    },
+    {
+     "id": "jp_lantern_traditional_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_lantern_traditional_02.prefab"
+    },
+    {
+     "id": "jp_lantern_traditional_04",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Props/SM_lantern_traditional_04.prefab"
+    },
+    {
+     "id": "jp_signboard_small_01",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Signs and Boards/SM_signboard_small_01.prefab"
+    },
+    {
+     "id": "jp_signboard_small_02",
+     "kind": "prop",
+     "category": "shop",
+     "prefab": "Prefabs/Signs and Boards/SM_signboard_small_02.prefab"
+    },
+    {
+     "id": "jp_trash_container_01",
+     "kind": "prop",
+     "category": "estate",
+     "prefab": "Prefabs/Props/SM_trash_container_01.prefab"
+    },
+    {
+     "id": "jp_pole_street",
+     "kind": "prop",
+     "category": "estate",
+     "prefab": "Prefabs/Props/SM_pole_street.prefab"
+    },
+    {
+     "id": "jp_firehydrant",
+     "kind": "prop",
+     "category": "estate",
+     "prefab": "Prefabs/Props/SM_firehydrant.prefab"
+    },
+    {
+     "id": "jp_mailbox_post",
+     "kind": "prop",
+     "category": "estate",
+     "prefab": "Prefabs/Props/SM_mailbox_post.prefab"
+    },
+    {
+     "id": "jp_lamp_01",
+     "kind": "prop",
+     "category": "street",
+     "prefab": "Prefabs/Props/SM_lamp_01.prefab"
+    },
+    {
+     "id": "jp_lamp_02",
+     "kind": "prop",
+     "category": "street",
+     "prefab": "Prefabs/Props/SM_lamp_02.prefab"
+    },
+    {
+     "id": "jp_lamp_03",
+     "kind": "prop",
+     "category": "street",
+     "prefab": "Prefabs/Props/SM_lamp_03.prefab"
+    },
+    {
+     "id": "jp_lamp_04",
+     "kind": "prop",
+     "category": "street",
+     "prefab": "Prefabs/Props/SM_lamp_04.prefab"
+    },
+    {
+     "id": "jp_sign_streetname_01",
+     "kind": "prop",
+     "category": "street",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_streetname_01.prefab"
+    },
+    {
+     "id": "jp_sign_streetname_02",
+     "kind": "prop",
+     "category": "street",
+     "prefab": "Prefabs/Traffic Signs/SM_sign_streetname_02.prefab"
+    },
+    {
+     "id": "jp_mirror_round_01",
+     "kind": "prop",
+     "category": "street",
+     "prefab": "Prefabs/Traffic Signs/SM_mirror_round_01.prefab"
+    },
+    {
+     "id": "jp_entrance_fence",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Modular Pieces/SM_entrance_fence.prefab"
+    },
+    {
+     "id": "jp_fence_01",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Modular Pieces/SM_fence_01.prefab"
+    },
+    {
+     "id": "jp_fence_02",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Modular Pieces/SM_fence_02.prefab"
+    },
+    {
+     "id": "jp_fence_03",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Modular Pieces/SM_fence_03.prefab"
+    },
+    {
+     "id": "jp_fence_04",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Modular Pieces/SM_fence_04.prefab"
+    },
+    {
+     "id": "jp_fence_05",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Modular Pieces/SM_fence_05.prefab"
+    },
+    {
+     "id": "jp_wall_flowerbed",
+     "kind": "prop",
+     "category": "plot",
+     "prefab": "Prefabs/Modular Pieces/SM_wall_flowerbed.prefab"
+    },
+    {
+     "id": "jp_tree_tall_01",
+     "kind": "tree",
+     "category": "park",
+     "prefab": "Prefabs/Nature/SM_tree_tall_01.prefab"
+    },
+    {
+     "id": "jp_tree_tall_02",
+     "kind": "tree",
+     "category": "park",
+     "prefab": "Prefabs/Nature/SM_tree_tall_02.prefab"
     }
    ]
   },
@@ -538,22 +1267,26 @@
     {
      "id": "wl_tree01",
      "kind": "tree",
-     "prefab": "Prefabs/Environment/Tree01.prefab"
+     "prefab": "Prefabs/Environment/Tree01.prefab",
+     "category": "park"
     },
     {
      "id": "wl_tree02",
      "kind": "tree",
-     "prefab": "Prefabs/Environment/Tree02.prefab"
+     "prefab": "Prefabs/Environment/Tree02.prefab",
+     "category": "park"
     },
     {
      "id": "wl_tree03",
      "kind": "tree",
-     "prefab": "Prefabs/Environment/Tree03.prefab"
+     "prefab": "Prefabs/Environment/Tree03.prefab",
+     "category": "park"
     },
     {
      "id": "wl_bush01",
      "kind": "tree",
-     "prefab": "Prefabs/Environment/Bush01.prefab"
+     "prefab": "Prefabs/Environment/Bush01.prefab",
+     "category": "park"
     }
    ],
    "runtime": false,
@@ -567,47 +1300,56 @@
     {
      "id": "il_shrub_round_01",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_01.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_01.prefab",
+     "category": "park"
     },
     {
      "id": "il_shrub_round_02",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_02.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_02.prefab",
+     "category": "park"
     },
     {
      "id": "il_shrub_round_03",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_03.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_03.prefab",
+     "category": "park"
     },
     {
      "id": "il_tree_birch_01",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Tree_Birch_01.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Birch_01.prefab",
+     "category": "park"
     },
     {
      "id": "il_tree_birch_02",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Tree_Birch_02.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Birch_02.prefab",
+     "category": "park"
     },
     {
      "id": "il_tree_pine_01",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Tree_Pine_01.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Pine_01.prefab",
+     "category": "park"
     },
     {
      "id": "il_tree_pine_02",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Tree_Pine_02.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Pine_02.prefab",
+     "category": "park"
     },
     {
      "id": "il_tree_beech_01",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Tree_Beech_01.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Beech_01.prefab",
+     "category": "park"
     },
     {
      "id": "il_tree_beech_02",
      "kind": "tree",
-     "prefab": "Graphics/Prefabs/IL3DN_Tree_Beech_02.prefab"
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Beech_02.prefab",
+     "category": "park"
     }
    ],
    "runtime": false,

@@ -17,6 +17,7 @@ import { furnishYards } from './yards.js';
 import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
 import { loadPacks, flushPacks, queuePack } from './packs.js';
 import { farmstead } from './farmstead.js';
+import { dressTown } from './dress.js';
 import { loadCrowd } from './crowd.js';
 import { setTownGlow } from './sky.js';
 import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
@@ -1093,7 +1094,7 @@ export async function build(progress, opts = {}) {
   await packsP;
   let farmCtx = null; // (the farmsteads are laid out once everything else is planted: see below)
   {
-    const frng = mulberry32(4711), gy = (x, z) => hf.groundAt(x, z), fields = [];
+    const frng = mulberry32(4711), gy = (x, z) => hf.groundAt(x, z), fields = [], greens = [];
     // farmsteads dressed from the model packs (farmstead.js), each behind its own run of north-row plots (row 2, toward
     // the woods); every open field grows some of the packs' crops (field({ packs }))
     const FARMS = [
@@ -1137,7 +1138,7 @@ export async function build(progress, opts = {}) {
         if (gh) {
           const film = frng() < 0.15 ? 'bare' : frng() < 0.4 ? 'old' : 'new', hgt = 2.9 + frng() * 0.5, c = Math.cos(r), s2 = Math.sin(r);
           for (let k = 0; k < n; k++) { const lx = -w / 2 + 3.6 + k * 6.6, gx = xc + lx * c, gz = zc - lx * s2;
-            greenhouse(B, { x: gx, y: gy(gx, gz), z: gz, r, w: 5.4, d: dep - 1, film, h: hgt }, prng, gy);
+            greenhouse(B, { x: gx, y: gy(gx, gz), z: gz, r, w: 5.4, d: dep - 1, film, h: hgt }, prng, gy); greens.push({ x: gx, z: gz, r, w: 5.4, d: dep - 1 });
             if (film === 'bare') continue;
             for (const sd of [-1, 1]) addBox(gx + sd * 2.7, gz, 0.08, (dep - 1) / 2, 0);
             for (const e of [-1, 1]) for (const sd of [-1, 1]) addBox(gx + sd * 1.65, gz + e * (dep - 1) / 2, 1.05, 0.08, 0);
@@ -1153,7 +1154,7 @@ export async function build(progress, opts = {}) {
         x += w + 1.5;
       }
     }
-    farmCtx = { FARMS, footpath, dir: rows[2].dir };
+    farmCtx = { FARMS, footpath, dir: rows[2].dir, greenhouses: greens };
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
   RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470 }); // guide blocks in town, not out on the valley road
@@ -1635,12 +1636,20 @@ export async function build(progress, opts = {}) {
   scatterModel(weed, [...weeds, ...green.weeds], true, () => Q.props * 0.3, false, true, { prefab: 'weed', category: 'vegetation', field: 'weeds' });
   scatterModel(crate, crates, true, () => Q.props * 0.4, true, false, { prefab: 'crate', category: 'prop' });
   scatterModel(ubox, boxes, true, () => Q.props * 0.6, true, false, { prefab: 'utility_box', category: 'prop' });
-  flushPacks(await packsP); // the pack models every builder queued (packs.js)
   { // the props of daily life from the clutter pack (yards, streets): one instanced world object kind per prop
     const CP = await clutterP;
     if (CP) { const all = new Map(clutterQueue); for (const [name, items] of yardProps) all.set(name, [...(all.get(name) || []), ...items]);
       for (const [name, items] of all) clutterScatter(CP, name, items, { dist: 70 * Q.props + 10 }); }
     clutterQueue.clear();
+  }
+  { // the town dressed from the model packs where each kind of place is missing something (dress.js), then every pack model
+    // the builders queued, laid out (packs.js)
+    const ds = dressTown({ RN, gy: (x, z) => forecourt.heightAt(x, z) ?? hf.groundAt(x, z), lots, lotW, carSpots, danchi, PK, riverX, onRail, inPaddyZone, PADDIES,
+      kb: { x: kb.x, z: 7, r: Math.PI, w: 22, d: 13 }, greenhouses: farmCtx ? farmCtx.greenhouses : [],
+      station: { x0: -33.4, x1: 4.2, z0: -62.8, z1: -31.6, avoid: (x, z) => Math.abs(x + 2.5) < 3.2 || (Math.abs(z + 48.5) < 2.6 && x > -7) },
+      roadA: { z: -25, w: 7, walk: 2.5, ends: [[-470, -1, 'jp_sign_traffic_005'], [-484, 1, 'jp_sign_traffic_013'], [646, 1, 'jp_sign_traffic_005'], [660, -1, 'jp_sign_traffic_013']], stands: [[300, 1], [362, -1], [-418, -1]] } });
+    if (ds) console.info('town dressing:', Object.entries(ds).map(([k, v]) => k + ' ' + v).join(', '));
+    flushPacks(await packsP);
   }
   // sewer manholes: flush cast-iron covers on the sewer line, which runs a little off the crown in one lane
   for (const R of ROADS) if (R.kind !== 'path') for (const [a, b] of roadSegs(R)) {

@@ -97,7 +97,7 @@ export function farmstead(ctx, o) {
       put('farm_bucket', ux, uz, rr(0, TAU)); put('farm_watering_can', vx, vz, rr(0, TAU)); put('farm_plastic_bin', qx, qz, rr(-0.3, 0.3)); }
     // a broom against the shelter's back wall, a planter of herbs by the entrance
     { const [bx, bz] = W(-4.7, YD - 0.45); put('jp_broom_stick', bx, bz, face + 0.3, { tilt: sg * 0.2 }); }
-    { const [px, pz] = W(-2.0, 0.55); put(rng() < 0.5 ? 'jp_plants_box_1' : 'jp_plants_box_2', px, pz, rr(-0.1, 0.1) + face); }
+    { const [px, pz] = W(-2.0, 0.55); put(rng() < 0.5 ? 'jp_plants_box_01' : 'jp_plants_box_02', px, pz, rr(-0.1, 0.1) + face); }
     out.yard = { x: cx, z: cz };
   }
 
@@ -151,7 +151,7 @@ export function farmstead(ctx, o) {
       put(id, x + lx * c + lz * s, z - lx * s + lz * c, face + rr(-0.05, 0.05), { y: y + 0.74, s: 0.85 }); });
     hf.paint2(2, x - 3, z - 3, x + 3, z + 3, (px, pz) => Math.hypot(px - x, pz - z) < 1.9 ? 0.6 : 0);
     // a pair of potted flowers by the stand and a cone keeping cars off its front
-    for (const [lx, lz, id] of [[-1.55, 0.9, 'jp_flowerpot_2'], [1.55, 0.95, 'jp_flowerpot_6'], [1.9, 1.9, 'jp_traffic_pylon']]) put(id, x + lx * c + lz * s, z - lx * s + lz * c, rr(0, TAU), { s: id === 'jp_traffic_pylon' ? 1 : 0.8 });
+    for (const [lx, lz, id] of [[-1.55, 0.9, 'jp_flowerpot_02'], [1.55, 0.95, 'jp_flowerpot_06'], [1.9, 1.9, 'jp_traffic_pylon']]) put(id, x + lx * c + lz * s, z - lx * s + lz * c, rr(0, TAU), { s: id === 'jp_traffic_pylon' ? 1 : 0.8 });
     out.stand = { x, z };
     break;
   }

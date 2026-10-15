@@ -105,7 +105,9 @@ function buildLibrary(lib, spec) {
   const texJobs = new Map(), matIndex = new Map(), materials = [], assets = [];
   const texOf = guid => {
     const src = guids.get(guid); if (!src || !fs.existsSync(src)) return null;
-    if (!texJobs.has(src)) texJobs.set(src, { src, dst: path.join(CACHE, lib, path.basename(src).replace(/\.[^.]+$/, '') + '.png'), max: spec.texMax || 1024, index: texJobs.size });
+    // (texMax for most, texMaxBig for the textures matching texBig: signs whose lettering has to stay legible)
+    const big = spec.texBig && new RegExp(spec.texBig, 'i').test(path.basename(src));
+    if (!texJobs.has(src)) texJobs.set(src, { src, dst: path.join(CACHE, lib, path.basename(src).replace(/\.[^.]+$/, '') + '.png'), max: big ? spec.texMaxBig || 1024 : spec.texMax || 1024, index: texJobs.size });
     return texJobs.get(src);
   };
   const material = (guid, fallbackName, hint) => {
@@ -170,7 +172,7 @@ function buildLibrary(lib, spec) {
     for (const P of prims.values()) for (let i = 0; i < P.pos.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], P.pos[i + k]); hi[k] = Math.max(hi[k], P.pos[i + k]); }
     const off = a.pivot === 'keep' ? [0, 0, 0] : [-(lo[0] + hi[0]) / 2, -lo[1], -(lo[2] + hi[2]) / 2];
     for (const P of prims.values()) for (let i = 0; i < P.pos.length; i += 3) for (let k = 0; k < 3; k++) P.pos[i + k] += off[k];
-    assets.push({ id, prims, tris, kind: a.kind || spec.kind || 'prop', dims: hi.map((h, k) => +(h - lo[k]).toFixed(3)), src: path.relative(ROOT, a.prefab ? path.join(packDir, a.prefab) : fbx).replaceAll('\\', '/') });
+    assets.push({ id, prims, tris, kind: a.kind || spec.kind || 'prop', category: a.category || null, dims: hi.map((h, k) => +(h - lo[k]).toFixed(3)), src: path.relative(ROOT, a.prefab ? path.join(packDir, a.prefab) : fbx).replaceAll('\\', '/') });
   }
   // textures (python, once per library)
   const jobs = [...texJobs.values()];
@@ -211,9 +213,9 @@ function writeGLB(lib, assets, materials, texJobs) {
       mesh.primitives.push({ attributes: { POSITION: acc(p, 'VEC3', 34962, { min: mn, max: mx }), NORMAL: acc(Float32Array.from(nor), 'VEC3', 34962), TEXCOORD_0: acc(Float32Array.from(uv), 'VEC2', 34962) },
         indices: acc(pos.length / 3 > 65535 ? Uint32Array.from(idx) : Uint16Array.from(idx), 'SCALAR', 34963), material: mi, mode: 4 });
     }
-    const mi = gltf.meshes.push(mesh) - 1, ni = gltf.nodes.push({ name: a.id, mesh: mi, extras: { kind: a.kind, dims: a.dims } }) - 1;
+    const mi = gltf.meshes.push(mesh) - 1, ni = gltf.nodes.push({ name: a.id, mesh: mi, extras: { kind: a.kind, category: a.category, dims: a.dims } }) - 1;
     gltf.scenes[0].nodes.push(ni);
-    manifest[a.id] = { kind: a.kind, dims: a.dims, tris: a.tris, src: a.src };
+    manifest[a.id] = { kind: a.kind, category: a.category, dims: a.dims, tris: a.tris, src: a.src };
   }
   gltf.buffers[0].byteLength = byteLength;
   const bin = Buffer.concat(chunks), json = Buffer.from(JSON.stringify(gltf)), jp = Buffer.alloc(pad4(json.length), 0x20); json.copy(jp);
