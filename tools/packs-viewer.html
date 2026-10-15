@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Modele z paczek</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- copied to ModeleZPaczek/przegladarka.html by tools/packs-extract.mjs; open it through the dev server (Editor.bat):
+     http://localhost:5180/ModeleZPaczek/przegladarka.html -->
+<style>
+  :root { --bg: #f4f1ea; --panel: #fffdf8; --ink: #2b2a27; --mute: #7a766d; --line: #e2ddd2; --accent: #c2553d; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1d1c1a; --panel: #262522; --ink: #ece8df; --mute: #9b968c; --line: #3a3833; --accent: #e07a5f; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--ink); display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  header { padding: 14px 16px 8px; } header h1 { font-size: 16px; margin: 0 0 4px; } header p { margin: 0; color: var(--mute); font-size: 12px; }
+  #q { margin: 8px 16px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  #cats { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 16px 8px; }
+  #cats button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 12px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
+  #cats button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #list { overflow: auto; flex: 1; border-top: 1px solid var(--line); }
+  #list div { padding: 5px 16px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  #list div:hover, #list div.on { background: var(--bg); } #list small { color: var(--mute); white-space: nowrap; }
+  main { position: relative; min-width: 0; } canvas { display: block; width: 100%; height: 100%; }
+  #info { position: absolute; left: 16px; top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; max-width: 60%; }
+  #info b { display: block; } #info span { color: var(--mute); font-size: 12px; }
+  #mode { position: absolute; right: 16px; top: 12px; }
+  #mode button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+</style>
+<script type="importmap">{ "imports": { "three": "../lib/three/build/three.module.js", "three/addons/": "../lib/three/examples/jsm/" } }</script>
+</head>
+<body>
+<aside>
+  <header><h1>Modele z paczek</h1><p id="sum">wczytywanie katalogu…</p></header>
+  <input id="q" placeholder="szukaj modelu…">
+  <div id="cats"></div>
+  <div id="list"></div>
+</aside>
+<main>
+  <canvas id="c"></canvas>
+  <div id="info"><b>wybierz model z listy</b><span>przeciągnij: obrót · kółko: przybliżenie</span></div>
+  <div id="mode"><button id="all">pokaż całą kategorię</button></div>
+</main>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const $ = id => document.getElementById(id);
+const K = await fetch('katalog.json').then(r => r.json());
+const items = Object.entries(K.modele).map(([k, m]) => ({ key: k, ...m, name: k.split('/')[1] }));
+$('sum').textContent = `${items.length} modeli · ${Object.keys(K.kategorie).length} kategorii`;
+let cat = Object.keys(K.kategorie).find(c => items.some(i => i.kategoria === c)), sel = null;
+const R = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true }); R.setPixelRatio(devicePixelRatio);
+const S = new THREE.Scene(), cam = new THREE.PerspectiveCamera(40, 1, 0.05, 2000);
+S.add(new THREE.HemisphereLight(0xeaf2ff, 0x6b6248, 1.7)); const sun = new THREE.DirectionalLight(0xfff1dc, 2.2); sun.position.set(4, 8, 5); S.add(sun);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(1, 64).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x9cab84 })); S.add(ground);
+const holder = new THREE.Group(); S.add(holder);
+const dark = matchMedia('(prefers-color-scheme: dark)').matches; S.background = new THREE.Color(dark ? 0x2a2c30 : 0xcfe0ea);
+const loader = new GLTFLoader(), cache = new Map();
+const load = it => cache.get(it.plik) || cache.set(it.plik, loader.loadAsync(it.plik).then(g => g.scene)).get(it.plik);
+let orbit = { yaw: 0.7, pitch: 0.35, dist: 5, target: new THREE.Vector3() };
+const frame = (size, center) => { orbit.dist = Math.max(size * 2.2, 1.5); orbit.target.copy(center); ground.scale.setScalar(Math.max(size, 2) * 1.6); place(); };
+function place() { const { yaw, pitch, dist, target } = orbit; cam.position.set(target.x + Math.sin(yaw) * Math.cos(pitch) * dist, target.y + Math.sin(pitch) * dist, target.z + Math.cos(yaw) * Math.cos(pitch) * dist); cam.lookAt(target); }
+function clear() { holder.clear(); }
+async function show(it) {
+  sel = it; clear(); renderList();
+  $('info').innerHTML = `<b>${it.name}</b><span>${it.kategoria} · ${it.paczka} · ${it.wymiary_m.map(v => v.toFixed(2)).join(' × ')} m · ${it.trojkaty} trójkątów</span>`;
+  const s = (await load(it)).clone(); holder.add(s);
+  const b = new THREE.Box3().setFromObject(s), sz = b.getSize(new THREE.Vector3());
+  frame(Math.max(sz.x, sz.y, sz.z), new THREE.Vector3(0, sz.y * 0.45, 0));
+}
+async function showAll() {
+  sel = null; clear(); renderList();
+  const L = visible(); $('info').innerHTML = `<b>${cat}</b><span>${L.length} modeli · ${K.kategorie[cat]}</span>`;
+  const fp = L.map(i => Math.max(i.wymiary_m[0], i.wymiary_m[2])).sort((a, b) => a - b), cols = Math.ceil(Math.sqrt(L.length)), cell = Math.max(1.2, fp[Math.floor(fp.length * 0.8)] || 1) * 1.25; // (the 80th percentile: a few giants may overlap their neighbours)
+  await Promise.all(L.map(async (it, i) => { const s = (await load(it)).clone(); s.position.set((i % cols - (cols - 1) / 2) * cell, 0, (Math.floor(i / cols) - (cols - 1) / 2) * cell); holder.add(s); }));
+  frame(cols * cell, new THREE.Vector3(0, 0, 0)); orbit.pitch = 0.75; place();
+}
+const visible = () => { const q = $('q').value.trim().toLowerCase(); return items.filter(i => (q ? i.name.includes(q) : i.kategoria === cat)).sort((a, b) => a.name.localeCompare(b.name)); };
+function renderCats() { $('cats').innerHTML = ''; for (const c of Object.keys(K.kategorie)) { const n = items.filter(i => i.kategoria === c).length; if (!n) continue;
+  const b = document.createElement('button'); b.textContent = `${c} ${n}`; b.title = K.kategorie[c]; b.className = c === cat && !$('q').value ? 'on' : ''; b.onclick = () => { cat = c; $('q').value = ''; renderCats(); renderList(); }; $('cats').appendChild(b); } }
+function renderList() { $('list').innerHTML = ''; for (const it of visible()) { const d = document.createElement('div'); d.className = it === sel ? 'on' : '';
+  d.innerHTML = `<span>${it.name}</span><small>${it.paczka.split('_')[0]} · ${it.wymiary_m[1].toFixed(1)} m</small>`; d.onclick = () => show(it); $('list').appendChild(d); } }
+$('q').oninput = () => { renderCats(); renderList(); };
+$('all').onclick = showAll;
+let drag = null;
+$('c').onpointerdown = e => { drag = [e.clientX, e.clientY]; $('c').setPointerCapture(e.pointerId); };
+$('c').onpointermove = e => { if (!drag) return; orbit.yaw -= (e.clientX - drag[0]) * 0.008; orbit.pitch = Math.min(1.45, Math.max(-0.2, orbit.pitch + (e.clientY - drag[1]) * 0.006)); drag = [e.clientX, e.clientY]; place(); };
+$('c').onpointerup = () => drag = null;
+$('c').onwheel = e => { e.preventDefault(); orbit.dist *= Math.exp(e.deltaY * 0.0012); place(); };
+function resize() { const r = $('c').parentElement.getBoundingClientRect(); R.setSize(r.width, r.height, false); cam.aspect = r.width / r.height; cam.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize(); renderCats(); renderList(); place();
+R.setAnimationLoop(() => R.render(S, cam));
+const first = visible()[0]; if (first) show(first);
+</script>
+</body>
+</html>

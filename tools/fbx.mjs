@@ -6,7 +6,7 @@ import zlib from 'zlib';
 
 export function readFBX(file) {
   const buf = fs.readFileSync(file);
-  if (buf.toString('latin1', 0, 18) !== 'Kaydara FBX Binary') throw new Error(file + ': not a binary FBX');
+  if (buf.toString('latin1', 0, 18) !== 'Kaydara FBX Binary') return readAsciiFBX(buf.toString('latin1'), file);
   const version = buf.readUInt32LE(23), wide = version >= 7500;
   let o = 27;
   const u32 = () => { const v = buf.readUInt32LE(o); o += 4; return v; };
@@ -49,6 +49,42 @@ export function readFBX(file) {
   const roots = [];
   while (o < buf.length - 160) { const n = node(); if (!n) break; roots.push(n); }
   return { version, roots };
+}
+
+// ASCII FBX (a few files in the packs are written as text): the same node tree as the binary reader gives — object
+// names turned round to the binary's 'Name::Class', array nodes (Vertices: *n { a: ... }) reduced to their numbers
+function readAsciiFBX(text, file) {
+  let o = 0; const N = text.length;
+  const ws = () => { for (;;) { while (o < N && /[\s,]/.test(text[o])) o++; if (text[o] === ';') { while (o < N && text[o] !== '\n') o++; continue; } return; } };
+  const inline = () => { while (o < N && (text[o] === ' ' || text[o] === '\t' || text[o] === '\r')) o++; };
+  const value = () => {
+    if (text[o] === '"') { const e = text.indexOf('"', o + 1), v = text.slice(o + 1, e); o = e + 1; return v; }
+    let e = o; while (e < N && !/[,\s{}]/.test(text[e])) e++;
+    const t = text.slice(o, e); o = e;
+    if (t[0] === '*') return { count: +t.slice(1) };
+    const v = +t; return Number.isNaN(v) ? t : v;
+  };
+  const nodes = inBraces => {
+    const out = [];
+    for (;;) {
+      ws(); if (o >= N) break;
+      if (text[o] === '}') { o++; if (inBraces) break; continue; }
+      const m = /^([A-Za-z0-9_|]+):/.exec(text.slice(o, o + 64)); if (!m) { while (o < N && text[o] !== '\n') o++; continue; }
+      const name = m[1]; o += m[0].length;
+      if (name === 'a') { const e = text.indexOf('}', o); out.push({ name, props: [text.slice(o, e).split(/[\s,]+/).filter(Boolean).map(Number)], children: [] }); o = e; continue; }
+      const props = [];
+      for (;;) { inline(); if (o >= N || text[o] === '\n' || text[o] === '{' || text[o] === '}') break; if (text[o] === ',') { o++; continue; } props.push(value()); }
+      let children = [];
+      inline(); if (text[o] === '{') { o++; children = nodes(true); }
+      if (props.length === 1 && props[0] && props[0].count !== undefined) { const a = children.find(c => c.name === 'a'); props[0] = a ? a.props[0] : []; children = []; }
+      if (props.length > 1 && typeof props[1] === 'string' && props[1].includes('::')) { const [cls, ...rest] = props[1].split('::'); props[1] = rest.join('::') + '::' + cls; }
+      out.push({ name, props, children });
+    }
+    return out;
+  };
+  const roots = nodes(false), head = roots.find(r => r.name === 'FBXHeaderExtension'), fv = head && head.children.find(c => c.name === 'FBXVersion');
+  if (!roots.find(r => r.name === 'Objects')) throw new Error(file + ': not an FBX file');
+  return { version: fv ? fv.props[0] : 7400, roots };
 }
 
 const child = (n, name) => n.children.find(c => c.name === name);

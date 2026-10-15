@@ -47,6 +47,11 @@ unpacked packs in `UnityAssets/` and run `node tools/packs-import.mjs` (Node.js 
 the models listed in `tools/packs.json` into `assets/packs/*.glb`. Both folders are git-ignored — the licences cover
 the game, not redistribution of the files. Without them the game runs as before, with its procedural crops only.
 
+Every model of the four packs, one GLB file each, sorted into categories (trees, vegetation, crops, houses, buildings,
+street furniture, fences and walls, signs, decorations, farm, vehicles, railway, rocks and terrain, characters, sky and
+effects): `node tools/packs-extract.mjs` writes them to `ModeleZPaczek/` (git-ignored) with a catalogue (`KATALOG.md`,
+`katalog.json`) and a viewer — run `Editor.bat` and open `http://localhost:5180/ModeleZPaczek/przegladarka.html`.
+
 ## Credits
 
 - Cars: *Low Poly Soviet Car Pack* (poly.pizza), imported with `node tools/cars-import.mjs` from `AssetsToUse/` into `assets/models/cars/`.
