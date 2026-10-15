@@ -15,6 +15,8 @@ import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { buildCrops, updateCrops } from './crops.js';
 import { furnishYards } from './yards.js';
 import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
+import { loadPacks, flushPacks } from './packs.js';
+import { farmstead } from './farmstead.js';
 import { loadCrowd } from './crowd.js';
 import { setTownGlow } from './sky.js';
 import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
@@ -426,6 +428,7 @@ export async function build(progress, opts = {}) {
     urban: { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.1, 1.03, 0.9], norm: 0.44 },
   };
   const clutterP = loadClutter().catch(e => { console.warn('clutter props:', e); return null; });
+  const packsP = loadPacks(); // models from the owned Unity packs (packs.js; null when they are not built)
   const modelsP = Promise.all(['shrub_02', 'potted_plant_04', 'planter_box_01', 'plastic_crate_01', 'utility_box_02', 'weed_plant_02', 'water_manhole_cover'].map(loadModel));
   const rockModelsP = Promise.all(['rock_moss_set_01', 'boulder_01'].map(loadModel));
   await hf.generate(p => progress('Shaping the valley', p * 0.3));
@@ -1087,8 +1090,11 @@ export async function build(progress, opts = {}) {
   // that run from the lane to the back of the plots, with a grass headland between the back-to-back rows. A plot is
   // an open vegetable field, a row of tunnel greenhouses or (near the houses) a fenced kitchen garden, always with its
   // working end — shed, gate, open greenhouse doors — toward its lane
+  await packsP;
   {
     const frng = mulberry32(4711), gy = (x, z) => hf.groundAt(x, z), fields = [];
+    // the farmstead dressed from the model packs (farmstead.js): the plots of row 2 between road C's track and the bamboo
+    const FARM = { row: 2, x0: -232, x1: -150 }, farmPlots = [];
     const laneZ = x => { const P = ROADS.find(R => R.id === 'FE').pts; for (let i = 0; i + 1 < P.length; i++) if (x >= P[i][0] && x <= P[i + 1][0]) return lerp(P[i][1], P[i + 1][1], (x - P[i][0]) / (P[i + 1][0] - P[i][0])); return 312; };
     const s3Z = x => 258;
     // rows: [front line (lane edge + verge), direction away from the lane, depth range, near houses?]
@@ -1108,7 +1114,7 @@ export async function build(progress, opts = {}) {
       hf.paintPave(Math.min(x0, x1) - 2, Math.min(z0, z1) - 2, Math.max(x0, x1) + 2, Math.max(z0, z1) + 2, (px, pz) => { const vx = px - x0, vz = pz - z0, t = vx * ux + vz * uz; return t > -0.2 && t < L + 0.2 && Math.abs(vx * uz - vz * ux) < 0.62 ? 1 : 0; });
     };
     const blocked = [[-156, -144], [104, 120], [-406, -393]]; // the track C carries on as, road B, road D
-    for (const row of rows) {
+    for (const [ri, row] of rows.entries()) {
       let x = -392 + frng() * 3;
       while (x < 100) {
         const gh = frng() < (row.town ? 0.15 : 0.28), n = 1 + Math.floor(frng() * 3.2);
@@ -1129,8 +1135,9 @@ export async function build(progress, opts = {}) {
             for (const e of [-1, 1]) for (const sd of [-1, 1]) addBox(gx + sd * 1.65, gz + e * (dep - 1) / 2, 1.05, 0.08, 0);
             addBox(gx, gz + row.dir * (dep - 1) / 2, 0.6, 0.08, 0); } // (the closed end, away from the lane)
         } else if (row.town && frng() < 0.35) allotment(B, { x: xc, y, z: zc, r, w, d: dep }, prng, gy);
-        else field(B, { x: xc, y, z: zc, r, w, d: dep, shed: frng() < 0.45 }, prng, gy);
+        else field(B, { x: xc, y, z: zc, r, w, d: dep, shed: frng() < 0.45, ...(ri === FARM.row && xc > FARM.x0 && xc < FARM.x1 ? { packs: true } : {}) }, prng, gy);
         fields.push({ x: xc, z: zc, w, d: dep, kind: gh ? 'greenhouse' : 'field' });
+        if (ri === FARM.row && xc > FARM.x0 && xc < FARM.x1) farmPlots.push({ x: xc, z: zc, w, d: dep, gapX: x + w + 0.75 });
         hf.paint2(2, xc - w / 2, zc - dep / 2, xc + w / 2, zc + dep / 2, (px, pz) => Math.abs(px - xc) < w / 2 - 0.4 && Math.abs(pz - zc) < dep / 2 - 0.4 ? 1 : 0);
         // the earth path up the side of the plot, from the lane to the back
         const gapX = x + w + 0.75;
@@ -1138,6 +1145,8 @@ export async function build(progress, opts = {}) {
         x += w + 1.5;
       }
     }
+    farmstead({ hf, occRect, gy, RN, footpath, blocked: (bx, bz) => BAMBOO_SITES.some(g => Math.hypot(bx - g.x, bz - g.z) < g.R * 1.35 + 2) },
+      { plots: farmPlots, dir: rows[FARM.row].dir, seed: 8821, stand: [[-145.3, 316.3], [-153.8, 316.3], [-145.3, 320]].map(([sx, sz]) => [sx, sz, Math.PI]) });
   }
   // kerbs, sidewalks, gutters and curb returns, now that every driveway is known
   RN.buildEdges(B, { tactile: (n, p) => n.R.id === 'A' && Math.abs(p[0]) < 470 }); // guide blocks in town, not out on the valley road
@@ -1580,6 +1589,7 @@ export async function build(progress, opts = {}) {
   scatterModel(weed, [...weeds, ...green.weeds], true, () => Q.props * 0.3, false, true, { prefab: 'weed', category: 'vegetation', field: 'weeds' });
   scatterModel(crate, crates, true, () => Q.props * 0.4, true, false, { prefab: 'crate', category: 'prop' });
   scatterModel(ubox, boxes, true, () => Q.props * 0.6, true, false, { prefab: 'utility_box', category: 'prop' });
+  flushPacks(await packsP); // the pack models every builder queued (packs.js)
   { // the props of daily life from the clutter pack (yards, streets): one instanced world object kind per prop
     const CP = await clutterP;
     if (CP) { const all = new Map(clutterQueue); for (const [name, items] of yardProps) all.set(name, [...(all.get(name) || []), ...items]);

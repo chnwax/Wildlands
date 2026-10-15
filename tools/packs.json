@@ -1,0 +1,276 @@
+{
+ "libraries": {
+  "farm": {
+   "pack": "Polygon Farm",
+   "licence": "Synty Studios EULA (POLYGON Farm 1.6.4): models used inside the game; source assets are not redistributed",
+   "texMax": 1024,
+   "assets": [
+    {
+     "id": "farm_corn_l",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Corn_01_L.prefab"
+    },
+    {
+     "id": "farm_corn_m",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Corn_01_M.prefab"
+    },
+    {
+     "id": "farm_pumpkin_l",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Pumpkin_01_L.prefab"
+    },
+    {
+     "id": "farm_pumpkin_m",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Pumpkin_01_M.prefab"
+    },
+    {
+     "id": "farm_watermelon",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Watermelon_01_L.prefab"
+    },
+    {
+     "id": "farm_sunflower_1",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Sunflower_01.prefab"
+    },
+    {
+     "id": "farm_sunflower_2",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Sunflower_02.prefab"
+    },
+    {
+     "id": "farm_wheat_1",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_01.prefab"
+    },
+    {
+     "id": "farm_wheat_2",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_02.prefab"
+    },
+    {
+     "id": "farm_strawberry",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Strawberry_01.prefab"
+    },
+    {
+     "id": "farm_tomato_bush",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Bush_02_Tomato.prefab"
+    },
+    {
+     "id": "farm_bean_bush",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Plant_Bush_01_Bean.prefab"
+    },
+    {
+     "id": "farm_eggplant",
+     "kind": "crop",
+     "prefab": "Prefabs/Plants/SM_Prop_Eggplant_01_L.prefab"
+    },
+    {
+     "id": "farm_peach",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_Grown_01.prefab"
+    },
+    {
+     "id": "farm_pear",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_Grown_01.prefab"
+    },
+    {
+     "id": "farm_plum",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Plum_Grown_01.prefab"
+    },
+    {
+     "id": "farm_apple",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Apple_Grown_01.prefab"
+    },
+    {
+     "id": "farm_mikan",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Orange_Grown_01.prefab"
+    },
+    {
+     "id": "farm_cherry_fruit",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Cherry_Grown_01.prefab"
+    },
+    {
+     "id": "farm_peach_young",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_01.prefab"
+    },
+    {
+     "id": "farm_pear_young",
+     "kind": "tree",
+     "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_01.prefab"
+    },
+    {
+     "id": "farm_wheelbarrow",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Wheelbarrow_01.prefab"
+    },
+    {
+     "id": "farm_wheelbarrow_metal",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Wheelbarrow_Metal_01.prefab"
+    },
+    {
+     "id": "farm_bucket",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Bucket_01.prefab"
+    },
+    {
+     "id": "farm_watering_can",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Watering_Can_01.prefab"
+    },
+    {
+     "id": "farm_hoe",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Hoe_01.prefab"
+    },
+    {
+     "id": "farm_rake",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Rake_01.prefab"
+    },
+    {
+     "id": "farm_spade",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Tool_Spade_01.prefab"
+    },
+    {
+     "id": "farm_box_potato",
+     "kind": "prop",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Potato_01.prefab"
+    },
+    {
+     "id": "farm_box_onion",
+     "kind": "prop",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Onion_01.prefab"
+    },
+    {
+     "id": "farm_box_carrot",
+     "kind": "prop",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Carrot_01.prefab"
+    },
+    {
+     "id": "farm_box_eggplant",
+     "kind": "prop",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Eggplant_01.prefab"
+    },
+    {
+     "id": "farm_box_cucumber",
+     "kind": "prop",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Cucumber_01.prefab"
+    },
+    {
+     "id": "farm_box_apple",
+     "kind": "prop",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Apple_01.prefab"
+    },
+    {
+     "id": "farm_box_peach",
+     "kind": "prop",
+     "prefab": "Prefabs/Plants/SM_Prop_Box_Peach_01.prefab"
+    },
+    {
+     "id": "farm_crate",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Crate_01.prefab"
+    },
+    {
+     "id": "farm_pallet_crate",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_PalletCrate_01.prefab"
+    },
+    {
+     "id": "farm_grain_bag",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_GrainBag_01.prefab"
+    },
+    {
+     "id": "farm_grain_bag_open",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_GrainBag_Open_01.prefab"
+    },
+    {
+     "id": "farm_sprinkler",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Sprinkler_01.prefab"
+    },
+    {
+     "id": "farm_wood_stack",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Wood_Stack_01.prefab"
+    },
+    {
+     "id": "farm_barrel",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Barrel_01.prefab"
+    },
+    {
+     "id": "farm_straw_bale",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Hay_Bale_Square_01.prefab"
+    },
+    {
+     "id": "farm_plastic_bin",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_PlasticBin_01.prefab"
+    },
+    {
+     "id": "farm_fence_wire",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Fence_Wire_01.prefab"
+    },
+    {
+     "id": "farm_fence_wire_pole",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Fence_Wire_Pole_01.prefab"
+    },
+    {
+     "id": "farm_beehive",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Beehive_01.prefab"
+    },
+    {
+     "id": "farm_table",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Table_01.prefab"
+    },
+    {
+     "id": "farm_rack",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Rack_01.prefab"
+    },
+    {
+     "id": "farm_tyre",
+     "kind": "prop",
+     "prefab": "Prefabs/Props/SM_Prop_Tyre_01.prefab"
+    },
+    {
+     "id": "farm_greenhouse_glass",
+     "kind": "building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Greenhouse_01.prefab"
+    },
+    {
+     "id": "farm_shelter",
+     "kind": "building",
+     "prefab": "Prefabs/Buildings/SM_Bld_Shelter_01.prefab"
+    },
+    {
+     "id": "farm_produce_stand",
+     "kind": "building",
+     "prefab": "Prefabs/Buildings/SM_Bld_ProduceStand_01.prefab"
+    }
+   ]
+  }
+ }
+}

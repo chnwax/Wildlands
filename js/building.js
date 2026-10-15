@@ -7,6 +7,7 @@
 import { scene, clamp, lerp, mulberry32 } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS } from './townkit.js';
 import { cropSet } from './crops.js';
+import { packsReady, queuePack } from './packs.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
@@ -1115,6 +1116,33 @@ function soilPatch(B, at, x0, z0, x1, z1, col, US = 2.5) {
 }
 // ground height in the current frame, from a world height function (2 cm clear of the terrain)
 const frameGround = (B, y, gy) => (lx, lz) => { const p = B.P([lx, 0, lz]); return gy(p[0], p[2]) - y + 0.02; };
+// which crop blocks of a field grow the packs' plants (r2: the field's own rng for the swaps): sweet corn on the potato
+// ridges, strawberries on the black mulch, pumpkins or watermelons trailing over the silver mulch, sunflowers or wheat
+// sown on the fallow strips
+function fieldSwaps(r2) {
+  return { rng: r2, potato: r2() < 0.65 ? 'corn' : null, mulchB: r2() < 0.75 ? 'strawberry' : null, mulchS: r2() < 0.7 ? (r2() < 0.6 ? 'pumpkin' : 'watermelon') : null,
+    fallow: r2() < 0.5 ? 'sunflower' : 'wheat' };
+}
+// a ridge plant as a pack model, in place of crop type T (the same two draws of rng as plant(); T if the model is missing)
+function plantSwap(B, swap, T, lx, ly, lz, rng, r2) {
+  const p = B.P([lx, ly, lz]), yaw = B.F.r + rng() * Math.PI * 2, sc = 0.85 + rng() * 0.3;
+  if (swap === 'corn') { if (queuePack(r2() < 0.6 ? 'farm_corn_l' : 'farm_corn_m', p[0], p[1], p[2], yaw, { s: sc * 0.95 })) return; }
+  else if (swap === 'strawberry') { if (queuePack('farm_strawberry', p[0], p[1] + 0.005, p[2], yaw, { s: sc * 0.5 })) return; }
+  else { // trailing vines over the mulch, a fruit lying here and there
+    cropSet.add('potato', p[0], p[1], p[2], yaw, sc * 1.25, [0.92, 1.0, 0.86]);
+    if (r2() < 0.3) { const a = r2() * Math.PI * 2, q = 0.18 + r2() * 0.12;
+      queuePack(swap === 'pumpkin' ? 'farm_pumpkin_m' : 'farm_watermelon', p[0] + Math.cos(a) * q, p[1] - 0.03, p[2] + Math.sin(a) * q, r2() * Math.PI * 2, { s: 0.75 + r2() * 0.3 }); }
+    return;
+  }
+  cropSet.add(T, p[0], p[1], p[2], yaw, sc, null);
+}
+// a fallow strip sown with sunflowers (a row along the ridge) or wheat (four drills across it)
+function fallowSwap(B, swap, xc, pitch, zA, zB, topAt, r2) {
+  if (swap === 'sunflower') { for (let zz = zA + 0.3; zz < zB - 0.2; zz += 0.36 + r2() * 0.12) { const p = B.P([xc + (r2() - 0.5) * 0.12, topAt(zz) - 0.06, zz]);
+    queuePack(r2() < 0.6 ? 'farm_sunflower_1' : 'farm_sunflower_2', p[0], p[1], p[2], B.F.r + Math.PI + (r2() - 0.5) * 0.9, { s: 1.05 + r2() * 0.35 }); } return; }
+  for (const f of [-0.33, -0.11, 0.11, 0.33]) for (let zz = zA + 0.2; zz < zB - 0.1; zz += 0.2 + r2() * 0.06) { const p = B.P([xc + f * pitch + (r2() - 0.5) * 0.06, topAt(zz) - 0.04, zz]), t = 0.9 + r2() * 0.15;
+    queuePack(r2() < 0.75 ? 'farm_wheat_1' : 'farm_wheat_2', p[0], p[1], p[2], r2() * Math.PI * 2, { s: 0.95 + r2() * 0.3, c: { r: t, g: t * (0.96 + r2() * 0.06), b: t * 0.9 } }); }
+}
 // open vegetable field (露地畑) at the edge of town: tilled soil draped over the ground and ridged rows (畝) along local
 // z that follow it, in blocks of different crops — cabbage, napa cabbage, daikon, leeks earthed up high, potatoes,
 // taro with big leaves, white row-cover tunnels, black or silver mulch with seedlings, a fallow strip. A bare headland
@@ -1124,6 +1152,9 @@ function field_build(B, s, rng, gy) {
   const { x, y, z, r, w, d, shed = false } = s;
   B.frame(x, y, z, r);
   const at = frameGround(B, y, gy), US = 2.5;
+  // pack crops (packs.js; field({ packs: true })): some blocks grow the pack's models instead (fieldSwaps), drawn with
+  // an rng of their own, so the field's layout and the procedural plants' draws stay exactly as they were
+  const swaps = s.packs && packsReady() ? fieldSwaps(mulberry32((Math.floor(x * 7919 + z * 104729) ^ 0x5bd1e995) >>> 0)) : null;
   const SOIL = jitter(rng, [0.46, 0.35, 0.27], 0.05), DRY = mul(SOIL, 1.1);
   const planar = pts => pts.map(p => [p[0] / US, p[2] / US]);
   const q4 = (mat, a, b, c, e, col) => B.quad(mat, a, b, c, e, { color: col, uvs: planar([a, b, c, e]) });
@@ -1153,8 +1184,11 @@ function field_build(B, s, rng, gy) {
     // the plants themselves (crops.js): spacing and rows per crop, a plant every few tens of centimetres along the ridge
     const SP = { cabbage: [0.42, [0]], napa: [0.45, [0]], daikon: [0.28, [0]], leek: [0.16, [0]], potato: [0.38, [0]], taro: [0.7, [0]], mulchB: [0.3, [-0.5, 0.5]], mulchS: [0.3, [-0.5, 0.5]] }[kind];
     const T = { cabbage: 'cabbage', napa: 'napa', daikon: 'daikon', leek: 'leek', potato: 'potato', taro: 'taro', mulchB: 'seedling', mulchS: 'seedling' }[kind];
-    if (SP) for (let zz = zA + 0.3; zz < zB - 0.2; zz += SP[0]) for (const f of SP[1]) plant(B, T, xc + f * tw + (rng() - 0.5) * 0.05, topAt(zz) - 0.01, zz, rng);
+    const swap = swaps && swaps[kind];
+    if (SP) for (let zz = zA + 0.3; zz < zB - 0.2; zz += SP[0]) for (const f of SP[1]) { const px = xc + f * tw + (rng() - 0.5) * 0.05;
+      if (swap) plantSwap(B, swap, T, px, topAt(zz) - 0.01, zz, rng, swaps.rng); else plant(B, T, px, topAt(zz) - 0.01, zz, rng); }
     if (kind === 'fallow') for (let k = 0; k < (zB - zA) * 0.8; k++) { const zz = zA + rng() * (zB - zA); plant(B, 'greens', xc + (rng() - 0.5) * pitch, topAt(zz) - hh + 0.02, zz, rng, 0.6, [0.8, 0.85, 0.6]); }
+    if (kind === 'fallow' && swap) fallowSwap(B, swap, xc, pitch, zA, zB, topAt, swaps.rng);
   };
   const KINDS = ['cabbage', 'napa', 'daikon', 'leek', 'potato', 'taro', 'tunnel', 'mulchB', 'mulchS', 'fallow'];
   const rows = [];
