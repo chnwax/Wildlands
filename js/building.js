@@ -1104,6 +1104,14 @@ function allotment_build(B, s, rng, gy) {
     for (const sd of [-1, 1]) B.beam('steel', [w / 2 - 2.6 + sd * 0.25, 0.4, -d / 2 + 0.7], [w / 2 - 2.6 + sd * 0.25, 0.1, -d / 2 + 0.6], 0.02, 0.02, { color: [0.3, 0.3, 0.3] });
     for (let k = 0; k < 3; k++) B.bbox('plain', -w / 2 + 4.0 + k * 0.1, 0, -d / 2 + 1.0 + k * 0.05, 0.5, 0.18, 0.35, 0.08, { color: k % 2 ? [0.86, 0.82, 0.68] : [0.85, 0.72, 0.55] });
   });
+  // the plot-holder's things from the model packs (an rng of its own: the plot keeps its draws): a hoe against the
+  // tool locker, a bucket by the barrel, now and then the day's pickings in a box by the gate
+  if (packsReady()) {
+    const r2 = mulberry32((Math.floor(x * 911 + z * 577) ^ 0x6a11) >>> 0), at = (lx, lz) => { const p = B.P([lx, 0, lz]); return [p[0], gy ? gy(p[0], p[2]) : p[1], p[2]]; };
+    if (r2() < 0.7) { const [px, py, pz] = at(-w / 2 + 1.98, -d / 2 + 0.95); queuePack(r2() < 0.5 ? 'farm_hoe' : 'farm_rake', px, py, pz, B.F.r + Math.PI / 2, { tilt2: -0.22 }); }
+    if (r2() < 0.6) { const [px, py, pz] = at(-w / 2 + 2.6, -d / 2 + 1.75); queuePack(r2() < 0.5 ? 'jp_bucket' : 'farm_bucket', px, py, pz, r2() * 6.28); }
+    if (r2() < 0.45) { const [px, py, pz] = at(w / 2 - 1.6, d / 2 - 0.7); queuePack(['farm_box_cucumber', 'farm_box_eggplant', 'farm_box_potato'][Math.floor(r2() * 3)], px, py, pz, B.F.r + (r2() - 0.5) * 0.3); }
+  }
 }
 
 // tilled soil draped over the ground in 2 m cells (gy: world ground height), in the current frame; lift raises it

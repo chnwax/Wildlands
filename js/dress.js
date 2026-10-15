@@ -148,6 +148,14 @@ export function dressTown(ctx) {
     for (const [u, v] of [[0, d / 2 - 2.2], [2.2, d / 2 - 2.2], [-w / 2 + 2, 0], [w / 2 - 2, 0], [0, -d / 2 + 2]]) { const x = px + u, z = pz - v; if (!clear(x, z, 0.4)) continue; put('jp_trash_can_01', x, z, rng() * TAU); addCircle(x, z, 0.35); if (++n >= 2) break; }
   }
 
+  // ---------------------------------------------------------------- pocket parks: a litter bin by the bench, a planter
+  for (const pk of ctx.parks || []) {
+    const rng = seed(pk.x, pk.z, 0x9b);
+    const a = Math.atan2(pk.bench[1] - pk.z, pk.bench[0] - pk.x);
+    for (const da of [0.5, -0.5, 0.9, -0.9]) { const x = pk.x + Math.cos(a + da) * 3.4, z = pk.z + Math.sin(a + da) * 3.4; if (!clear(x, z, 0.4)) continue; put('jp_trash_can_01', x, z, rng() * TAU); addCircle(x, z, 0.35); break; }
+    if (rng() < 0.5) for (let k = 0; k < 8; k++) { const b = rng() * TAU, x = pk.x + Math.cos(b) * (pk.R - 2), z = pk.z + Math.sin(b) * (pk.R - 2); if (!clear(x, z, 0.7)) continue; put('jp_plants_box_03', x, z, b + Math.PI / 2); addBox(x, z, 0.6, 0.34, b + Math.PI / 2); break; }
+  }
+
   // ---------------------------------------------------------------- the valley road: speed signs at the town's ends, stands
   if (ctx.roadA) {
     const { z: az, w, walk, ends, stands } = ctx.roadA, off = w / 2 + (walk || 0) + 0.45;

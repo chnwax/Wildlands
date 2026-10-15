@@ -7,8 +7,9 @@ import { post, buildComposer, updateRays } from './post.js';
 import { flattenPhotoMaterials } from './toon.js';
 import { perf } from './perf.js';
 
-export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js') };
-export const mapFromURL = () => { const m = new URLSearchParams(location.search).get('map'); return MAPS[m] ? m : 'nature'; };
+export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js') };
+// ?map=<name>; Sakuragawa when missing or unknown (the Wildlands valley, 'nature', opens only when asked for by name)
+export const mapFromURL = () => { const m = new URLSearchParams(location.search).get('map'); return MAPS[m] ? m : 'town'; };
 
 // ---------------------------------------------------------------- graphics safety net
 // A shader this GPU cannot compile or link silently draws nothing (e.g. one that needs more textures than the GPU

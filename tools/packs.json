@@ -1290,7 +1290,17 @@
     }
    ],
    "runtime": false,
-   "note": "prepared for a later stage: the packs' custom foliage shaders still need their colours mapped (materials overrides) before use"
+   "note": "the autumn leaf variant (TreeLeaves02) recoloured green like TreeLeaves01; not drawn yet",
+   "materials": {
+    "TreeLeaves02": {
+     "color": [
+      0.84,
+      1,
+      0.78,
+      1
+     ]
+    }
+   }
   },
   "illustrated": {
    "pack": "The Illustrated Nature",
@@ -1352,8 +1362,42 @@
      "category": "park"
     }
    ],
-   "runtime": false,
-   "note": "prepared for a later stage: the packs' custom foliage shaders still need their colours mapped (materials overrides) before use"
+   "runtime": true,
+   "note": "hue-variation foliage shaders: leaf colours set by hand (materials) to the town's greens",
+   "materials": {
+    "IL3DN_Tree_Birch_Leaf": {
+     "color": [
+      0.62,
+      0.86,
+      0.36,
+      1
+     ]
+    },
+    "IL3DN_Tree_Beech_Leaf": {
+     "color": [
+      0.55,
+      0.8,
+      0.36,
+      1
+     ]
+    },
+    "IL3DN_Tree_Pine_Leaf": {
+     "color": [
+      0.3,
+      0.62,
+      0.42,
+      1
+     ]
+    },
+    "IL3DN_Shrub_Round_Leaf": {
+     "color": [
+      0.6,
+      0.78,
+      0.32,
+      1
+     ]
+    }
+   }
   }
  }
 }

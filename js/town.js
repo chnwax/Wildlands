@@ -1098,10 +1098,10 @@ export async function build(progress, opts = {}) {
     // farmsteads dressed from the model packs (farmstead.js), each behind its own run of north-row plots (row 2, toward
     // the woods); every open field grows some of the packs' crops (field({ packs }))
     const FARMS = [
-      { x0: -232, x1: -150, seed: 8821, stand: [[-145.3, 316.3], [-153.8, 316.3], [-145.3, 320]] },
-      { x0: -392, x1: -246, seed: 3307, trees: ['farm_mikan', 'farm_peach', 'farm_mikan', 'farm_plum'] },
-      { x0: -144, x1: -20, seed: 5113, trees: ['farm_pear', 'farm_pear', 'farm_cherry_fruit', 'farm_apple'] },
-      { x0: -20, x1: 100, seed: 7741, trees: ['farm_plum', 'farm_peach', 'farm_apple', 'farm_plum'] },
+      { x0: -232, x1: -150, seed: 8821, stand: [[-145.3, 316.3], [-153.8, 316.3], [-145.3, 320]], extras: ['tree'] },
+      { x0: -392, x1: -246, seed: 3307, trees: ['farm_mikan', 'farm_peach', 'farm_mikan', 'farm_plum'], extras: ['barn'] },
+      { x0: -144, x1: -20, seed: 5113, trees: ['farm_pear', 'farm_pear', 'farm_cherry_fruit', 'farm_apple'], extras: ['glasshouse', 'tree'] },
+      { x0: -20, x1: 100, seed: 7741, trees: ['farm_plum', 'farm_peach', 'farm_apple', 'farm_plum'], extras: ['barn', 'tree'] },
     ].map(f => ({ ...f, plots: [] }));
     const farmOf = (ri, xc) => ri === 2 ? FARMS.find(f => xc > f.x0 && xc < f.x1) : null;
     const laneZ = x => { const P = ROADS.find(R => R.id === 'FE').pts; for (let i = 0; i + 1 < P.length; i++) if (x >= P[i][0] && x <= P[i + 1][0]) return lerp(P[i][1], P[i + 1][1], (x - P[i][0]) / (P[i + 1][0] - P[i][0])); return 312; };
@@ -1486,7 +1486,7 @@ export async function build(progress, opts = {}) {
       return false;
     };
     for (const f of farmCtx.FARMS) farmstead({ hf, occRect, gy: (x, z) => hf.groundAt(x, z), RN, footpath: farmCtx.footpath, blocked },
-      { plots: f.plots, dir: farmCtx.dir, seed: f.seed, trees: f.trees, stand: (f.stand || []).map(([sx, sz]) => [sx, sz, Math.PI]) });
+      { plots: f.plots, dir: farmCtx.dir, seed: f.seed, trees: f.trees, extras: f.extras, stand: (f.stand || []).map(([sx, sz]) => [sx, sz, Math.PI]) });
   }
   hf.paintCanopy([...trees, ...sakura]);
   hf.uploadHeight(); hf.uploadMasks();
@@ -1645,7 +1645,7 @@ export async function build(progress, opts = {}) {
   { // the town dressed from the model packs where each kind of place is missing something (dress.js), then every pack model
     // the builders queued, laid out (packs.js)
     const ds = dressTown({ RN, gy: (x, z) => forecourt.heightAt(x, z) ?? hf.groundAt(x, z), lots, lotW, carSpots, danchi, PK, riverX, onRail, inPaddyZone, PADDIES,
-      kb: { x: kb.x, z: 7, r: Math.PI, w: 22, d: 13 }, greenhouses: farmCtx ? farmCtx.greenhouses : [],
+      kb: { x: kb.x, z: 7, r: Math.PI, w: 22, d: 13 }, parks: green.parks, greenhouses: farmCtx ? farmCtx.greenhouses : [],
       station: { x0: -33.4, x1: 4.2, z0: -62.8, z1: -31.6, avoid: (x, z) => Math.abs(x + 2.5) < 3.2 || (Math.abs(z + 48.5) < 2.6 && x > -7) },
       roadA: { z: -25, w: 7, walk: 2.5, ends: [[-470, -1, 'jp_sign_traffic_005'], [-484, 1, 'jp_sign_traffic_013'], [646, 1, 'jp_sign_traffic_005'], [660, -1, 'jp_sign_traffic_013']], stands: [[300, 1], [362, -1], [-418, -1]] } });
     if (ds) console.info('town dressing:', Object.entries(ds).map(([k, v]) => k + ' ' + v).join(', '));

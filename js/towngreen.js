@@ -15,7 +15,7 @@ const pickW = (w, r) => { let tot = 0; for (const k in w) tot += w[k]; let a = r
 export function plantTown(ctx) {
   const { hf, free, lots, lotW, riverX, inPaddyZone, SHRINE, Y0, PADDIES, isShop } = ctx;
   const rng = mulberry32(8123), hash = ctx.hash || new TreeHash(10);
-  const out = { trees: [], bushes: [], hydras: [], hedges: [], ivy: [], pots: [], weeds: [], groves: [] };
+  const out = { trees: [], bushes: [], hydras: [], hedges: [], ivy: [], pots: [], weeds: [], groves: [], parks: [] };
   const gy = (x, z) => hf.groundAt(x, z);
   const flat = (x, z) => { const g = gy(x, z); return g > Y0 - 0.6 && g < Y0 + 1.4; };
   // leafier and plainer neighbourhoods (km-scale noise), commercial frontage stays sparse
@@ -154,7 +154,7 @@ export function plantTown(ctx) {
       if (!free(x, z, 1) || !flat(x, z)) continue;
       (rng() < 0.3 ? out.hydras : out.bushes).push({ x, y: gy(x, z) - 0.1, z, s: 0.9 + rng() * 0.8, sx: 0.9 + rng() * 0.3, r: rng() * 6.28, c: rng() < 0.3 ? hydraColor(rng) : bushColor(rng) });
     }
-    if (type === 'park' && ctx.bench) { const a = rng() * 6.28, x = cx + Math.cos(a) * 3, z = cz + Math.sin(a) * 3; if (free(x, z, 1.2)) ctx.bench(ctx.LB, x, gy(x, z), z, a + Math.PI / 2); }
+    if (type === 'park' && ctx.bench) { const a = rng() * 6.28, x = cx + Math.cos(a) * 3, z = cz + Math.sin(a) * 3; if (free(x, z, 1.2)) { ctx.bench(ctx.LB, x, gy(x, z), z, a + Math.PI / 2); out.parks.push({ x: cx, z: cz, R, bench: [x, z] }); } }
   }
 
   // ---------------------------------------------------------------- station plaza, shrine, parking edges

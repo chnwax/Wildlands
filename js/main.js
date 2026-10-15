@@ -1,5 +1,5 @@
-// Game boot, UI, player, audio and the main loop. Map is chosen with ?map=nature|town. World loading and rendering are
-// shared with the world editor (engine.js).
+// Game boot, UI, player, audio and the main loop. The city is picked on the title screen (menu.js); ?map=town|nature
+// skips the title and loads that map at once. World loading and rendering are shared with the world editor (engine.js).
 import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, tick, wind } from './core.js';
 import { time, updateSky, env } from './sky.js';
 import { post } from './post.js';
@@ -10,13 +10,11 @@ import { buildLife } from './life.js';
 import { perf, toggleOverlay } from './perf.js';
 import { colliderView } from './coldebug.js';
 import { mapFromURL, loadWorld, prepareWorld, renderWorld, setQuality as engineQuality } from './engine.js';
+import { title, cityOfMap } from './menu.js';
 
-const mapName = mapFromURL();
+const direct = new URLSearchParams(location.search).has('map') ? mapFromURL() : null; // (index.html marks the same: boot-direct)
+let mapName = direct;
 document.body.prepend(renderer.domElement);
-document.querySelectorAll('[data-map]').forEach(b => {
-  b.classList.toggle('active', b.dataset.map === mapName);
-  b.addEventListener('click', () => { if (b.dataset.map !== mapName) location.search = '?map=' + b.dataset.map; });
-});
 
 let world = null, life = null, started = false, locked = false, hudOn = true;
 // ---------------------------------------------------------------- game -> World Builder, at this exact view (B)
@@ -57,6 +55,8 @@ const clock = new THREE.Clock();
 let fpsAcc = 0, fpsN = 0, ambTimer = 0, amb = {};
 
 function showProgress() {
+  const ld = $('loading');
+  if (!ld || ld.classList.contains('ready')) return; // (assets streaming in after the world is up)
   const p = loadState.gen * 0.6 + loadState.assets * 0.4;
   $('loadBar').style.width = (p * 100).toFixed(1) + '%';
   $('loadText').textContent = loadState.label + (loadState.assets < 1 ? ` · loading assets ${Math.round(loadState.assets * 100)}%` : '');
@@ -116,13 +116,21 @@ const dbgState = { pause: false, still: 0 };
 function frame() { requestAnimationFrame(frame); const dt = Math.min(clock.getDelta(), 0.05); if (!dbgState.pause) step(dt, clock.elapsedTime); }
 
 // ---------------------------------------------------------------- input
-$('play').addEventListener('click', () => { audio.init(); renderer.domElement.requestPointerLock(); });
-renderer.domElement.addEventListener('click', () => { if (started && !locked) { audio.init(); renderer.domElement.requestPointerLock(); } });
+const enterGame = () => {
+  audio.init();
+  const p = renderer.domElement.requestPointerLock(); // (refusals also raise pointerlockerror, handled below)
+  if (p && p.catch) p.catch(() => {});
+};
+$('play').addEventListener('click', enterGame);
+$('toTitle').addEventListener('click', () => location.assign(location.pathname)); // (a fresh page: the title, no map loaded)
+renderer.domElement.addEventListener('click', () => { if (started && !locked) enterGame(); });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
   $('menu').classList.toggle('hidden', locked);
-  if (locked) { started = true; for (const k in keys) keys[k] = false; }
+  if (locked) { started = true; $('play').textContent = 'Resume'; for (const k in keys) keys[k] = false; }
 });
+// pointer lock refused (the browser wants another click): the pause menu offers the button again
+document.addEventListener('pointerlockerror', () => { if (world && !locked) $('menu').classList.remove('hidden'); });
 document.addEventListener('mousemove', e => {
   if (!locked) return;
   player.yaw -= e.movementX * 0.0022 * player.sens;
@@ -131,7 +139,7 @@ document.addEventListener('mousemove', e => {
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'F3') { e.preventDefault(); toggleOverlay(); }
-  if (e.code === 'F4') { e.preventDefault(); toastMsg(colliderView.toggle(player.pos, (x, z) => world.groundAt(x, z)) ? 'Colliders shown' : 'Colliders hidden'); }
+  if (e.code === 'F4' && world) { e.preventDefault(); toastMsg(colliderView.toggle(player.pos, (x, z) => world.groundAt(x, z)) ? 'Colliders shown' : 'Colliders hidden'); }
   if (!locked) return;
   if (e.code === 'KeyF') { player.fly = !player.fly; if (player.fly) player.pos.copy(camera.position); else player.vy = 0; toastMsg(player.fly ? 'Fly mode' : 'Walking'); }
   if (e.code === 'KeyT') { time.running = !time.running; toastMsg(time.running ? 'Time running' : 'Time paused'); }
@@ -146,32 +154,51 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { keys[e.code] = false; });
 $('tSlider').addEventListener('input', e => { time.hour = +e.target.value; updateSky(true); });
 document.querySelectorAll('[data-hour]').forEach(b => b.addEventListener('click', () => { time.hour = +b.dataset.hour; updateSky(true); $('tSlider').value = time.hour; toastMsg(b.textContent); }));
-$('sSlider').addEventListener('input', e => player.sens = +e.target.value);
-$('fSlider').addEventListener('input', e => { camera.fov = +e.target.value; camera.updateProjectionMatrix(); });
-$('vSlider').addEventListener('input', e => audio.setVolume(+e.target.value));
+// sliders remember their value on this computer (quality is kept by engine.js)
+function setting(id, key, def, apply, fmt) {
+  const el = $(id), out = $(id + 'V');
+  let v = def;
+  try { const s = localStorage.getItem(key); if (s !== null && Number.isFinite(+s)) v = clamp(+s, +el.min, +el.max); } catch (e) {}
+  const set = val => { apply(val); if (out) out.textContent = fmt(val); };
+  el.value = v; set(v);
+  el.addEventListener('input', () => { set(+el.value); try { localStorage.setItem(key, el.value); } catch (e) {} });
+}
+setting('sSlider', 'wl_sens', 1, v => player.sens = v, v => v.toFixed(2));
+setting('fSlider', 'wl_fov', 72, v => { camera.fov = v; camera.updateProjectionMatrix(); }, v => v + '°');
+setting('vSlider', 'wl_volume', 0.8, v => audio.setVolume(v), v => Math.round(v * 100) + '%');
 $('qSel').addEventListener('change', e => setQuality(e.target.value));
 $('qSel').value = Q.name;
 $('openBuilder').addEventListener('click', e => { e.stopPropagation(); openBuilderHere(); });
 
 // ---------------------------------------------------------------- boot
-async function main() {
+// hour: the arrival time picked on the title screen, null for the map's own start hour
+async function main(hour = null) {
   world = await loadWorld(mapName, { progress });
-  $('mapTitle').textContent = 'free roam · ' + world.meta.name;
+  $('openBuilder').hidden = world.meta.builder === false;
+  const city = cityOfMap(mapName);
+  $('menuCity').textContent = city.name.toUpperCase();
+  $('mapTitle').innerHTML = (city.kanji ? `<span class="k">${city.kanji}</span> · ` : '') + 'free roam';
   life = buildLife(world, world.meta.life || {});
   player.pos.set(world.spawn.x, world.groundAt(world.spawn.x, world.spawn.z), world.spawn.z);
   player.yaw = world.spawn.yaw; player.pitch = world.spawn.pitch ?? -0.03;
+  if (hour !== null) time.hour = hour;
   updateSky(true); post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
+  $('tSlider').value = time.hour;
   updateCamera(world); camera.updateMatrixWorld();
   await prepareWorld(world, progress);
   frame();
-  const ld = $('loading'); ld.classList.add('hidden'); setTimeout(() => ld.remove(), 900);
-  $('menu').classList.remove('hidden');
+  document.documentElement.classList.add('ingame');
+  if (direct) {
+    const ld = $('loading'); ld.classList.add('hidden'); setTimeout(() => ld.remove(), 900);
+    $('menu').classList.remove('hidden');
+  } else title.ready(enterGame);
   if (world.layer) world.layer.showProblems();
   let manualT = 0;
   window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
     step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys, builderQuery,
     // automated play-testing: act as if the pointer were locked, so keys (keys.KeyW = true ...) drive the walker
-    autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); } }; // console debugging hook
+    autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); if (on && $('loading')) $('loading').remove(); } }; // console debugging hook
+  if (new URLSearchParams(location.search).has('autoplay')) window.__wl.autoplay();
 }
 // A/B switches for render diagnosis (flicker isolation): __wl.dbg.set({ taa: false, ao: false, shadows: false, ... })
 function debugToggles() {
@@ -199,4 +226,11 @@ function debugToggles() {
   };
   return { set(o) { Object.assign(cur, o); if ('pause' in o) dbgState.pause = o.pause; apply(); return { ...cur, pause: dbgState.pause }; }, state: () => ({ ...cur, pause: dbgState.pause }) };
 }
-main().catch(e => { console.error(e); document.body.insertAdjacentHTML('beforeend', `<div id="err">${e.stack || e}</div>`); });
+function boot(map, hour) {
+  mapName = map;
+  title.loading(cityOfMap(map));
+  main(hour).catch(e => { console.error(e); document.body.insertAdjacentHTML('beforeend', `<div id="err">${e.stack || e}</div>`); });
+}
+title.onBuilder(async () => location.assign(await builderBase() + 'editor.html?map=town'));
+if (direct) boot(direct, null);
+else title.onPlay((city, hour) => boot(city.map, hour));

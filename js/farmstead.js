@@ -15,7 +15,7 @@ import { queuePack, packsReady } from './packs.js';
 const TAU = Math.PI * 2;
 
 // ctx: { hf, occRect, gy, RN, footpath, blocked(x, z): ground kept for later planting (bamboo stands) }   o: { plots: [{ x, z, w, d, gapX }], dir (+1: the plots run toward +z),
-// seed, trees: orchard species (model ids, in blocks of three columns), stand: [[x, z, face], ...] candidate spots for
+// seed, trees: orchard species (model ids, in blocks of three columns), extras: ['barn', 'glasshouse', 'tree'], stand: [[x, z, face], ...] candidate spots for
 // the honesty stand }
 export function farmstead(ctx, o) {
   const P = packsReady(); if (!P || !o.plots.length) return null;
@@ -98,6 +98,18 @@ export function farmstead(ctx, o) {
     // a broom against the shelter's back wall, a planter of herbs by the entrance
     { const [bx, bz] = W(-4.7, YD - 0.45); put('jp_broom_stick', bx, bz, face + 0.3, { tilt: sg * 0.2 }); }
     { const [px, pz] = W(-2.0, 0.55); put(rng() < 0.5 ? 'jp_plants_box_01' : 'jp_plants_box_02', px, pz, rr(-0.1, 0.1) + face); }
+    // the farm's own extras (o.extras): a corrugated machinery barn behind the yard, a small glasshouse beside it, a shade
+    // tree at a back corner — each only where the ground behind / beside the yard is free
+    const ex = o.extras || [], rect = (u0, v0, u1, v1) => { const [ax, az] = W(u0, v0), [bx, bz] = W(u1, v1);
+      if (orch && Math.max(ax, bx) > orch.x0 - 2 && Math.min(ax, bx) < orch.x1 + 2 && Math.max(az, bz) > orch.oz0 - 2 && Math.min(az, bz) < orch.oz1 + 2) return false; // (the orchard's ground, claimed below)
+      return clear(Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz)) && level(Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz), 0.5); };
+    if (ex.includes('barn')) for (const [u, v] of [[0, YD + 3.6], [YW / 2 + 6.8, 3.4], [-YW / 2 - 6.8, 3.4]]) { // behind the yard, else beside it
+      if (!rect(u - 6.2, v - 3.1, u + 6.2, v + 3.1)) continue; // (the barn at 0.85: 11.8 x 5.9 m)
+      const [gx, gz] = W(u, v); put('farm_garage', gx, gz, face, { s: 0.85 }); occRect(gx, gz, 6.1, 3.0, 0, 1); addBox(gx, gz, 5.9, 2.9, 0, gy(gx, gz) - 1, gy(gx, gz) + 4.2); break; }
+    if (ex.includes('glasshouse')) for (const sd of [-1, 1]) { const u = sd * (YW / 2 + 3.6); if (!rect(u - 3.0, 0.4, u + 3.0, 8.4)) continue;
+      const [gx, gz] = W(u, 4.4); put('farm_greenhouse_glass', gx, gz, face + Math.PI / 2); occRect(gx, gz, 3.0, 4.0, 0, 1); addBox(gx, gz, 3.9, 2.8, face + Math.PI / 2, gy(gx, gz) - 1, gy(gx, gz) + 5); break; }
+    if (ex.includes('tree')) for (const sd of [1, -1]) { const u = sd * (YW / 2 + 2.2); if (!rect(u - 1.6, YD - 2.6, u + 1.6, YD + 0.6)) continue;
+      const [tx, tz] = W(u, YD - 1.0); put(rng() < 0.5 ? 'il_tree_beech_01' : 'jp_tree_garden', tx, tz, rr(0, TAU), { s: rr(0.75, 0.95) }); occRect(tx, tz, 1.5, 1.5, 0, 1); addCircle(tx, tz, 0.25); break; }
     out.yard = { x: cx, z: cz };
   }
 
@@ -128,6 +140,12 @@ export function farmstead(ctx, o) {
         put(id, x, z, rr(0, TAU), { s: young ? rr(0.55, 0.7) : rr(0.85, 1.1), c: { r: t * rr(0.94, 1.04), g: t, b: t * rr(0.9, 1.0) } });
         addCircle(x, z, young ? 0.12 : 0.22);
       }
+      // the picking in progress just inside the gate: fruit boxes, two stacked, a wheelbarrow
+      { const gi = gateX === x0 ? 1 : -1, F2 = (a, b) => [gateX + gi * a, gateZ + b];
+        const fruit = kinds[0] === 'farm_mikan' ? 'farm_box_apple_02' : kinds[0] === 'farm_plum' ? 'farm_box_plum' : kinds[0] === 'farm_pear' ? 'farm_box_apple' : 'farm_box_peach';
+        for (let k = 0; k < 3; k++) { const [bx, bz] = F2(1.4 + (k % 2) * 0.82, -3.2); put(k === 2 ? 'farm_box_apple' : fruit, bx, bz, rr(-0.1, 0.1), { dy: k === 2 ? 0.46 : 0 }); }
+        { const [bx, bz] = F2(1.8, -4.4); addBox(bx, bz, 0.9, 0.3, 0); }
+        if (rng() < 0.6) { const [wx, wz] = F2(2.0, 3.4); put('farm_wheelbarrow', wx, wz, rr(0, TAU)); addCircle(wx, wz, 0.6); } }
       // beehives in the far corner (pollination), a row of sunflowers along the path side of the fence
       const hxs = gateX === x0 ? x1 - 1.6 : x0 + 1.6;
       for (let k = 0; k < 2; k++) { const hx = hxs + (gateX === x0 ? -1 : 1) * k * 1.3, hz = (sg > 0 ? oz1 : oz0) - sg * 1.3; put('farm_beehive', hx, hz, (sg > 0 ? Math.PI : 0) + rr(-0.15, 0.15)); addBox(hx, hz, 0.4, 0.4, 0); }
