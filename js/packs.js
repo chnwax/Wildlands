@@ -21,6 +21,7 @@ export function loadPacks() {
     if (!mf || !mf.libraries) return null;
     const models = {}, mats = new Map();
     for (const [lib, L] of Object.entries(mf.libraries)) {
+      if (L.runtime === false) continue; // (built for a later stage, not drawn yet)
       let g = null;
       try { g = await gltfLoader.loadAsync(new URL(L.file + '?v=' + L.hash, DIR).href); } catch (e) { console.warn('packs: ' + lib + ' not loaded', e); continue; }
       for (const node of g.scene.children) {

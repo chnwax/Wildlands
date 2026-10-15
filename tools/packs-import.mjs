@@ -233,7 +233,7 @@ for (const [lib, spec] of Object.entries(CFG.libraries)) {
   if (!fs.existsSync(path.join(UA, spec.pack))) { console.warn(`${lib}: pack folder UnityAssets/${spec.pack} missing, skipped`); continue; }
   const t0 = Date.now(); console.log(`${lib} (${spec.pack}): ${spec.assets.length} models`);
   const r = buildLibrary(lib, spec);
-  manifest.libraries[lib] = { pack: spec.pack, licence: spec.licence, ...r };
+  manifest.libraries[lib] = { pack: spec.pack, licence: spec.licence, runtime: spec.runtime !== false, ...r };
   console.log(`  -> assets/packs/${r.file} ${(r.bytes / 1048576).toFixed(1)} MB, ${Object.keys(r.assets).length} models, ${Object.values(r.assets).reduce((s, a) => s + a.tris, 0)} triangles, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 manifest.generated = new Date().toISOString();

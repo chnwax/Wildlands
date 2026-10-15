@@ -39,6 +39,14 @@ editor at `http://localhost:5180/editor.html?map=town` (`?map=nature` for the la
 `world/<map>/edits/` and the game loads them (the game also runs on that server: `http://localhost:5180/?map=town`).
 Press `?` in the editor for every shortcut. The world files are described in [WORLD_FORMAT.md](WORLD_FORMAT.md).
 
+## Models from the Unity packs (optional)
+
+The farmsteads, orchards, pack crops and some street details are drawn from owned Unity Asset Store packs
+(POLYGON Farm, Idyllic Anime Japan; Idyllic Woodlands and The Illustrated Nature are prepared for later). Put the
+unpacked packs in `UnityAssets/` and run `node tools/packs-import.mjs` (Node.js 18+, Python 3 with Pillow): it bakes
+the models listed in `tools/packs.json` into `assets/packs/*.glb`. Both folders are git-ignored — the licences cover
+the game, not redistribution of the files. Without them the game runs as before, with its procedural crops only.
+
 ## Credits
 
 - Cars: *Low Poly Soviet Car Pack* (poly.pizza), imported with `node tools/cars-import.mjs` from `AssetsToUse/` into `assets/models/cars/`.

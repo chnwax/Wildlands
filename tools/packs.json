@@ -529,6 +529,89 @@
      "prefab": "Prefabs/Nature/SM_tree_garden.prefab"
     }
    ]
+  },
+  "woodlands": {
+   "pack": "Idyllic Woodlands",
+   "licence": "Unity Asset Store EULA (Idyllic Woodlands 1.2): models used inside the game; source assets are not redistributed",
+   "texMax": 1024,
+   "assets": [
+    {
+     "id": "wl_tree01",
+     "kind": "tree",
+     "prefab": "Prefabs/Environment/Tree01.prefab"
+    },
+    {
+     "id": "wl_tree02",
+     "kind": "tree",
+     "prefab": "Prefabs/Environment/Tree02.prefab"
+    },
+    {
+     "id": "wl_tree03",
+     "kind": "tree",
+     "prefab": "Prefabs/Environment/Tree03.prefab"
+    },
+    {
+     "id": "wl_bush01",
+     "kind": "tree",
+     "prefab": "Prefabs/Environment/Bush01.prefab"
+    }
+   ],
+   "runtime": false,
+   "note": "prepared for a later stage: the packs' custom foliage shaders still need their colours mapped (materials overrides) before use"
+  },
+  "illustrated": {
+   "pack": "The Illustrated Nature",
+   "licence": "Unity Asset Store EULA (The Illustrated Nature 1.9): models used inside the game; source assets are not redistributed",
+   "texMax": 1024,
+   "assets": [
+    {
+     "id": "il_shrub_round_01",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_01.prefab"
+    },
+    {
+     "id": "il_shrub_round_02",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_02.prefab"
+    },
+    {
+     "id": "il_shrub_round_03",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Shrub_Round_03.prefab"
+    },
+    {
+     "id": "il_tree_birch_01",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Birch_01.prefab"
+    },
+    {
+     "id": "il_tree_birch_02",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Birch_02.prefab"
+    },
+    {
+     "id": "il_tree_pine_01",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Pine_01.prefab"
+    },
+    {
+     "id": "il_tree_pine_02",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Pine_02.prefab"
+    },
+    {
+     "id": "il_tree_beech_01",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Beech_01.prefab"
+    },
+    {
+     "id": "il_tree_beech_02",
+     "kind": "tree",
+     "prefab": "Graphics/Prefabs/IL3DN_Tree_Beech_02.prefab"
+    }
+   ],
+   "runtime": false,
+   "note": "prepared for a later stage: the packs' custom foliage shaders still need their colours mapped (materials overrides) before use"
   }
  }
 }
