@@ -1374,6 +1374,17 @@ export async function build(progress, opts = {}) {
   }
   // speed-limit signs on B
   for (const z of [-200, 60, 250]) roadSign(B, 110 + 4.55, topY(114.55, z), z, Math.PI / 2 * 0, 'speed30');
+  if (packsReady()) { // (Idyllic Anime Japan's plates: street-name signs before the junctions of the footway roads, school-zone panels
+    // on the roads past the school — placed after every other sign, no draws of rng)
+    const plate = (n, s, dir, kind) => { const q = RN.sampleAt(n, s), d = [q.d[0] * dir, q.d[1] * dir], off = n.hw + (n.walk ? n.walk - 0.45 : 0.75);
+      const x = q.x + d[1] * off, z = q.z - d[0] * off; if (onBridge(x, z) || onRail(z) || Math.abs(x) > 700 || Math.abs(z) > 360) return; roadSign(B, x, topY(x, z), z, Math.atan2(-d[0], -d[1]), kind); };
+    for (const I of inters) { const arm = I.arms.find(a => a.n.walk > 0 && a.n.R.kind !== 'path'); if (!arm) continue;
+      const other = I.nets.find(o => o !== arm.n) || arm.n, s = arm.s + arm.dir * (other.hw + (other.walk || 0) + 7);
+      if (s > 4 && s < arm.n.PL.len - 4) plate(arm.n, s, -arm.dir, 'street'); }
+    for (const n of RN.net) { if (n.R.kind === 'path') continue; let best = null;
+      for (let s = 0; s < n.PL.len; s += 4) { const q = RN.sampleAt(n, s), dd = Math.hypot(Math.max(Math.abs(q.x - SCH.x) - SCH.w / 2, 0), Math.max(Math.abs(q.z - SCH.z) - SCH.d / 2, 0)); if (!best || dd < best.d) best = { s, d: dd }; }
+      if (best && best.d < 22) for (const dir of [1, -1]) { const s = best.s - dir * 32; if (s > 6 && s < n.PL.len - 6) plate(n, s, dir, 'school'); } }
+  }
 
   // ---------------------------------------------------------------- rice paddy water surfaces
   for (const [x0, z0, x1, z1] of PADDIES) {
