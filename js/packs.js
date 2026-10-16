@@ -15,6 +15,7 @@ import { windPatch } from './terrain.js';
 
 const LIB = new URL('../ModeleZPaczek/', import.meta.url), CFG = new URL('../tools/packs.json', import.meta.url);
 let pending = null, packs = null;
+export const packGlow = []; // (materials that light up at night: townkit.js updateGlow)
 // how far each kind is drawn (a share of the quality's prop distance, Q.props: 260 m on High) and how much it sways
 const KIND = { crop: { dist: 0.45, sway: 3.0, tint: true }, tree: { dist: 1.25, sway: 1.1, tint: true }, prop: { dist: 0.3 }, building: { dist: 1.0 }, lod: { dist: 1, sway: 0 } }; // (lod: parts handed to other systems — trees.js puts its own wind and shading on them)
 
@@ -60,6 +61,11 @@ function material(src, pack, kind, sway, cache, texs) {
   if (m.alphaTest > 0) { m.transparent = false; m.alphaToCoverage = false; m.side = THREE.DoubleSide; m.shadowSide = THREE.DoubleSide; }
   if (wl.kind === 'glass') { m.transparent = true; m.depthWrite = false; }
   if (/mirror/i.test(src.name)) { m.metalness = 0.85; m.roughness = 0.1; m.envMapIntensity = 1.2; } // (curve mirrors: a real reflection)
+  // light sources glow at night (townkit.js updateGlow drives packGlow with the town's other lamps): the packs' emissive
+  // lamp glass, paper lanterns, the lit fronts of vending machines
+  if (/emissive/i.test(src.name)) { m.emissive = new THREE.Color(0xfff0d6); m.userData.glow = 2.2; packGlow.push(m); }
+  else if (/lantern/i.test(src.name) && m.map) { m.emissive = new THREE.Color(0xffd9a0); m.emissiveMap = m.map; m.userData.glow = 0.7; packGlow.push(m); }
+  else if (/vending|drinks|bottles/i.test(src.name)) { m.emissive = new THREE.Color(0xffffff); if (m.map) m.emissiveMap = m.map; m.userData.glow = 0.25; packGlow.push(m); }
   if (sw) windPatch(m, 'packWind' + sw.toFixed(2) + (m.alphaTest > 0 ? 'a' : '') + (m.transparent ? 't' : ''), sw);
   cache.set(key, m);
   return m;

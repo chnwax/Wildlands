@@ -1324,7 +1324,7 @@ export async function build(progress, opts = {}) {
       for (let t = (poles.length ? 0 : 14) + prng2() * 4; t < L - 2; t += 30 + prng2() * 6) {
         const x = a[0] + dx * t + dz * 1.95, z = a[1] + dz * t - dx * 1.95;
         if (nearInter(x, z, FE, 6) || RN.roadAt(x, z) || occRect(x, z, 0.25, 0.25, 0, 0, true) || [-400, -150, 110].some(cx => Math.abs(x - cx) < 9)) { if (poles.length > 1) wires(poles); poles.length = 0; continue; }
-        const pole = utilityPole(B, x, hf.groundAt(x, z), z, Math.atan2(dx, dz), prng2, { transformer: prng2() < 0.15, light: k++ % 3 === 0, side: -1 });
+        const pole = utilityPole(B, x, hf.groundAt(x, z), z, Math.atan2(dx, dz), prng2, { transformer: prng2() < 0.15, light: k++ % 3 === 0, side: -1, rural: true });
         if (pole.lamp) lampPoints.push({ p: pole.lamp, s: 0.9 });
         poles.push(pole);
       }

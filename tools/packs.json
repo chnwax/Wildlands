@@ -1494,6 +1494,36 @@
      "kind": "prop",
      "category": "street",
      "src": "anime_japan/sign_traffic_003"
+    },
+    {
+     "id": "jp_utility_pole_02",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/utility_pole_02"
+    },
+    {
+     "id": "jp_utility_pole_03",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/utility_pole_03"
+    },
+    {
+     "id": "jp_utility_pole_04",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/utility_pole_04"
+    },
+    {
+     "id": "jp_utility_pole_05",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/utility_pole_05"
+    },
+    {
+     "id": "jp_utility_pole_01",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/utility_pole_01"
     }
    ]
   },

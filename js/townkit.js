@@ -4,7 +4,7 @@ import { env } from './sky.js';
 import { relief, weather, asphaltAge, wornPaint, windowMaterial, paving } from './surface.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 import { addCatalog } from './world/catalog.js';
-import { packProp, packsReady } from './packs.js';
+import { packProp, packsReady, packGlow } from './packs.js';
 
 // ---------------------------------------------------------------- batched builder
 // Geometry is accumulated per (material, 96 m chunk) and flushed into a few hundred meshes.
@@ -395,7 +395,7 @@ export function signMesh(w, h, draw, glow = 0.8, px = 256, opts = {}) {
   return mesh;
 }
 export const glowMats = [];
-export function updateGlow() { for (const m of glowMats) m.emissiveIntensity = m.userData.glow * (0.15 + night.value * 1.6); }
+export function updateGlow() { for (const m of glowMats) m.emissiveIntensity = m.userData.glow * (0.15 + night.value * 1.6); for (const m of packGlow) m.emissiveIntensity = m.userData.glow * (0.05 + night.value * 1.6); }
 
 export const SHOP_NAMES = [
   ['ラーメン', '桜屋', '#b3261e', '#fff'], ['薬局', 'くすりのヤマダ', '#1f6fb5', '#fff'], ['美容室', 'hair salon Lumi', '#f4efe6', '#333'],
@@ -496,7 +496,43 @@ function vendingMachine_build(x, y, z, r, i, B = null) {
 const poleAds = {}; // one painted advert (texture, material, plate) per text, shared by every pole that carries it
 const POLE_ADS = ['桜川歯科 →', 'やまだ内科', '学習塾 明星', '中村鉄工所', 'さくら整骨院', '桜川不動産'];
 const poleAdTex = {};
-function utilityPole_build(B, x, y, z, r, rng, { transformer = false, light = false, side = 1 } = {}) {
+// Idyllic Anime Japan's utility poles (packs.js), when the model library is there: the five pole types, each with its
+// wire attachment points measured on the model (pole frame: x across the road, y up; poles 02 and 05 carry their
+// crossarm along their own z, so they stand turned a quarter), in the order the wires join them pole to pole — three
+// on the top crossarm, two on the equipment below, the telecom cable, the low-voltage drop — and the height of a street
+// light's bracket. All at 1.3 x the pack's size (its poles are drawn for its own smaller houses).
+const PACK_POLE_S = 1.3;
+const PACK_POLES = {
+  jp_utility_pole_01: { turn: 0, lamp: 3.2, pts: [[-0.57, 4.82], [0, 4.86], [0.57, 4.82], [-0.35, 3.95], [0.35, 3.95], [0.2, 3.15], [0, 2.6]] },   // wooden, transformer cans
+  jp_utility_pole_03: { turn: 0, lamp: 4.0, pts: [[-0.7, 6.45], [0, 6.75], [0.7, 6.45], [-0.45, 5.45], [0.55, 5.45], [0.15, 4.5], [0, 3.5]] },
+  jp_utility_pole_04: { turn: 0, lamp: 4.1, pts: [[-0.56, 6.72], [0, 6.8], [0.56, 6.72], [-0.4, 5.65], [0.6, 5.65], [0.15, 4.6], [0, 3.6]] },     // transformer
+  jp_utility_pole_02: { turn: Math.PI / 2, lamp: 3.6, pts: [[-0.75, 5.32], [0, 5.32], [0.75, 5.32], [-0.4, 4.5], [0.4, 4.5], [0.2, 3.9], [0, 3.4]] },
+  jp_utility_pole_05: { turn: Math.PI / 2, lamp: 4.2, pts: [[-0.75, 6.9], [0, 6.95], [0.75, 6.9], [-0.3, 5.2], [0.3, 5.2], [0.2, 4.3], [0, 3.6]] },
+};
+function packPole(B, x, y, z, r, { transformer, light, side, rural }) {
+  const h = Math.abs(Math.floor(x * 7.31) * 31 + Math.floor(z * 3.77) * 17) % 97;
+  const id = rural ? 'jp_utility_pole_01' : transformer ? (h % 3 ? 'jp_utility_pole_04' : 'jp_utility_pole_01') : ['jp_utility_pole_03', 'jp_utility_pole_04', 'jp_utility_pole_02', 'jp_utility_pole_05', 'jp_utility_pole_03'][h % 5];
+  const P = PACK_POLES[id], S = PACK_POLE_S;
+  if (packProp(id, x, y - 0.05, z, r + P.turn, S) === null) return null;
+  B.frame(x, y, z, r);
+  const pts = P.pts.map(([px, py]) => B.P([px * S, py * S, 0]));
+  let lamp = null;
+  if (light && packProp('jp_lamp_02', ...(() => { const c = B.P([side * 0.95 * S, P.lamp * S, 0]); return c; })(), r + (side > 0 ? Math.PI : 0), S) !== null) lamp = B.P([side * 1.72 * S, (P.lamp + 0.86) * S, 0]);
+  return { pts, lamp };
+}
+// on some poles, a wrap-around advert sleeve (the same draws of rng for every pole: the town's later draws stay put)
+function poleAd(B, r, rng, rad) {
+  if (rng() < 0.35) {
+    const txt = POLE_ADS[Math.floor(rng() * POLE_ADS.length)];
+    const ad = poleAds[txt] || (poleAds[txt] = signMesh(0.36, 1.25, (g, W, H) => { g.fillStyle = txt.includes('歯科') || txt.includes('内科') ? '#1f6e4a' : txt.includes('塾') ? '#b8322a' : '#23448c'; g.fillRect(0, 0, W, H); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const chars = [...txt.replace(' →', '')]; g.font = `bold ${Math.min(W * 0.72, H / (chars.length + 1))}px ${JP_FONT}`; chars.forEach((c, i) => g.fillText(c, W / 2, H * (i + 0.8) / (chars.length + 0.6))); }, 0.1, 128));
+    const p = B.P([0, 2.95, rad]);
+    addProp('poleAd', [{ geometry: ad.geometry, material: ad.material, matrix: propMatrix(p[0], p[1], p[2], r) }]);
+  }
+}
+function utilityPole_build(B, x, y, z, r, rng, { transformer = false, light = false, side = 1, rural = false } = {}) {
+  const pk = packsReady() && packPole(B, x, y, z, r, { transformer, light, side, rural });
+  if (pk) { poleAd(B, r, rng, 0.2 * PACK_POLE_S * 0.8); addCircle(x, z, 0.25); return pk; }
   B.frame(x, y, z, r);
   B.cyl('concrete', 0, -0.2, 0, 0.19, 0.13, 12.7, 16, { color: [0.78, 0.78, 0.76], uv: 3 });
   B.cyl('concrete', 0, 12.5, 0, 0.13, 0.08, 0.06, 16, { color: [0.72, 0.72, 0.7], cap: true });
@@ -535,13 +571,7 @@ function utilityPole_build(B, x, y, z, r, rng, { transformer = false, light = fa
   }
   // number plate and, on some poles, a wrap-around advert sleeve
   B.detail(2, () => B.bbox('plain', 0, 2.2, 0.2, 0.17, 0.48, 0.02, 0.004, { color: [0.95, 0.95, 0.92] }));
-  if (rng() < 0.35) {
-    const txt = POLE_ADS[Math.floor(rng() * POLE_ADS.length)];
-    const ad = poleAds[txt] || (poleAds[txt] = signMesh(0.36, 1.25, (g, W, H) => { g.fillStyle = txt.includes('歯科') || txt.includes('内科') ? '#1f6e4a' : txt.includes('塾') ? '#b8322a' : '#23448c'; g.fillRect(0, 0, W, H); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      const chars = [...txt.replace(' →', '')]; g.font = `bold ${Math.min(W * 0.72, H / (chars.length + 1))}px ${JP_FONT}`; chars.forEach((c, i) => g.fillText(c, W / 2, H * (i + 0.8) / (chars.length + 0.6))); }, 0.1, 128));
-    const p = B.P([0, 2.95, 0.2]);
-    addProp('poleAd', [{ geometry: ad.geometry, material: ad.material, matrix: propMatrix(p[0], p[1], p[2], r) }]);
-  }
+  poleAd(B, r, rng, 0.2);
   addCircle(x, z, 0.25);
   return { pts, lamp: light ? B.P([1.6 * side, 7.3, 0]) : null };
 }
