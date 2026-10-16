@@ -21,7 +21,7 @@ import { dressTown } from './dress.js';
 import { loadCrowd } from './crowd.js';
 import { setTownGlow } from './sky.js';
 import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
-  vendingMachine, stopMat, lampPoints, signalMast, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin, canvasTex } from './townkit.js';
+  vendingMachine, stopMat, lampPoints, signalMast, pedSignal, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin, canvasTex } from './townkit.js';
 import { RAIL, buildRailway, railFences, trackside, buildCrossing, pedCrossing, updateCrossings, crossings, crossingActive, Train, tunnelPortal } from './rail.js';
 import { Fleet, Traffic, Route, randomCar, carDims } from './traffic.js';
 import { planRoads, filletPolyline } from './roads.js';
@@ -514,7 +514,7 @@ export async function build(progress, opts = {}) {
       if (hasX && !onBridge(cq.x, cq.z)) zebras.push({ id: R.id, s: arm.s + arm.dir * d, band, I }); else if (hasX) continue;
       if (isSignal(I)) { // every approach stops at its line on red
         const ss = arm.s + arm.dir * (d + band / 2 + 1.2); if (ss < 1 || ss > arm.n.PL.len - 1) continue;
-        stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, sign: false, legend: false, signal: sigKey(I, R) });
+        stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, I, sign: false, legend: false, signal: sigKey(I, R) });
       } else if (R === minor || R.kind === major.kind && R === r2 && R.kind === 'lane') {
         const ds = hasX ? d + band / 2 + 1.2 : arm.L + 0.3;
         const ss = arm.s + arm.dir * ds; if (ss < 1 || ss > arm.n.PL.len - 1) continue;
@@ -590,7 +590,7 @@ export async function build(progress, opts = {}) {
   if (packsReady()) {
     const signAt = (n, s, dir, kind, back = 0) => { const q = RN.sampleAt(n, s - dir * back), d = [q.d[0] * dir, q.d[1] * dir], off = n.hw + (n.walk ? n.walk - 0.45 : 0.75);
       const x = q.x + d[1] * off, z = q.z - d[0] * off; if (onBridge(x, z) || onRail(z)) return; roadSign(B, x, topY(x, z), z, Math.atan2(-d[0], -d[1]), kind); };
-    for (const zb of zebras) { if (zb.bank) continue; const n = RN.byId.get(zb.id); if (!n || !n.walk) continue; for (const dir of [1, -1]) signAt(n, zb.s, dir, 'xwalk', zb.band / 2 + 0.6); }
+    for (const zb of zebras) { if (zb.bank || isSignal(zb.I)) continue; /* (no crossing signs where the signals stand) */ const n = RN.byId.get(zb.id); if (!n || !n.walk) continue; for (const dir of [1, -1]) signAt(n, zb.s, dir, 'xwalk', zb.band / 2 + 0.6); }
     for (const SI of inters.filter(isSignal)) for (const arm of SI.arms) { const n = arm.n, sIn = arm.s - arm.dir * 0, L = n.PL.len, s = sIn + arm.dir * 55; if (s < 5 || s > L - 5) continue; signAt(n, s, -arm.dir, 'signal'); }
   }
   // traffic signals at A x B: a mast on the far-left corner of every approach (arm over the approach lane), pedestrian
@@ -602,14 +602,21 @@ export async function build(progress, opts = {}) {
     inters.filter(isSignal).forEach((I, j) => { const [r1, r2] = I.roads, first = RN.RANK[r2.kind] > RN.RANK[r1.kind] ? r2 : r1;
       for (const R of I.roads) signals.groups.set(sigKey(I, R), { ph: R === first ? 0 : 1, off: j * 9 }); });
     const disc = new THREE.CircleGeometry(packsReady() ? 0.155 : 0.13, 20), sq = new THREE.PlaneGeometry(0.28, 0.28); // (the lamps fill the lenses of the pack heads, townkit.js)
-    for (const I of inters.filter(isSignal)) for (const arm of I.arms) {
-      const n = arm.n, other = I.nets.find(o => o !== n), h = [-arm.d[0], -arm.d[1]], L = [h[1], -h[0]];
-      const rF = I.rF, oh = other.hw + rF, ol = n.hw + rF, k = (rF - 0.6) / Math.SQRT2;
-      const ph = oh - k, pl = ol - k, x = I.p[0] + h[0] * ph + L[0] * pl, z = I.p[1] + h[1] * ph + L[1] * pl;
-      const g = sigKey(I, n.R), og = sigKey(I, other.R);
-      const out = signalMast(B, x, topY(x, z), z, Math.atan2(-h[0], -h[1]), { arm: pl - n.hw / 2 + 0.95, peds: [{ a: Math.PI / 2, group: og }, { a: 0, group: g }] });
-      for (const v of out.veh) { const m = new THREE.Mesh(disc, mat(g, v.k)); m.position.set(...v.p); m.rotation.y = v.r; scene.add(m); }
-      for (const v of out.ped) { const m = new THREE.Mesh(sq, mat('p' + v.group, v.k)); m.position.set(...v.p); m.rotation.y = v.r; scene.add(m); }
+    // a mast on every approach, on the driver's left at the back of the footway between the crossing and the stop line,
+    // set square to the road there, its head over the approach lane facing the oncoming cars; a pedestrian head on the
+    // mast and a pedestrian signal post at the far end of the crossing, facing each other across it (left-hand traffic:
+    // the driver's left of heading -d is [-d.z, d.x] for d the arm's outward direction)
+    const lamp = (geo, m, v) => { const o = new THREE.Mesh(geo, m); o.position.set(...v.p); o.rotation.y = v.r; if (v.s) o.scale.setScalar(v.s); scene.add(o); };
+    for (const st of stops) if (st.signal && st.arm && st.I) {
+      const arm = st.arm, n = arm.n, I = st.I, other = I.nets.find(o => o !== n) || n, g = st.signal, og = sigKey(I, other.R);
+      const off = n.hw + (n.walk ? n.walk - 0.45 : 0.6), at = s0 => { const q = RN.sampleAt(n, clamp(s0, 0, n.PL.len)), d = [q.d[0] * arm.dir, q.d[1] * arm.dir]; return { q, d }; };
+      { const { q, d } = at(st.s - arm.dir * 0.7), x = q.x - d[1] * off, z = q.z + d[0] * off;
+        const out = signalMast(B, x, topY(x, z), z, Math.atan2(d[0], d[1]), { arm: off - n.hw / 2 + 0.95, peds: [{ a: Math.PI / 2, group: og }] });
+        for (const v of out.veh) lamp(disc, mat(g, v.k), v);
+        for (const v of out.ped) lamp(sq, mat('p' + v.group, v.k), v); }
+      { const { q, d } = at(st.s - arm.dir * 0.7), x = q.x + d[1] * off, z = q.z - d[0] * off; // (the crossing's far end)
+        const out = pedSignal(B, x, topY(x, z), z, Math.atan2(-d[1], d[0]), og);
+        for (const v of out) lamp(sq, mat('p' + v.group, v.k), v); }
     }
     const grp = g => signals.groups.get(g) || { ph: g === 'A' ? 0 : 1, off: 0 }, cyc = G => (signals.t + G.off) % 36;
     signals.state = g => { const G = grp(g), c = cyc(G); return G.ph === 0 ? (c < 16 ? 'g' : c < 19 ? 'y' : 'r') : (c >= 20 && c < 32 ? 'g' : c >= 32 && c < 35 ? 'y' : 'r'); };
@@ -1386,7 +1393,7 @@ export async function build(progress, opts = {}) {
       const x = q.x + d[1] * off, z = q.z - d[0] * off; if (onBridge(x, z) || onRail(z) || Math.abs(x) > 700 || Math.abs(z) > 360) return; roadSign(B, x, topY(x, z), z, Math.atan2(-d[0], -d[1]), kind); };
     let ns = 0;
     for (const I of inters) { const arm = I.arms.find(a => a.n.walk > 0 && a.n.R.kind !== 'path'); if (!arm) continue;
-      const other = I.nets.find(o => o !== arm.n) || arm.n, s = arm.s + arm.dir * (other.hw + (other.walk || 0) + 7);
+      const other = I.nets.find(o => o !== arm.n) || arm.n, s = arm.s + arm.dir * (other.hw + (other.walk || 0) + (isSignal(I) ? 14 : 7));
       if (s > 4 && s < arm.n.PL.len - 4) plate(arm.n, s, -arm.dir, 'street' + (1 + ns++ % 3)); }
     for (const n of RN.net) { if (n.R.kind === 'path') continue; let best = null;
       for (let s = 0; s < n.PL.len; s += 4) { const q = RN.sampleAt(n, s), dd = Math.hypot(Math.max(Math.abs(q.x - SCH.x) - SCH.w / 2, 0), Math.max(Math.abs(q.z - SCH.z) - SCH.d / 2, 0)); if (!best || dd < best.d) best = { s, d: dd }; }

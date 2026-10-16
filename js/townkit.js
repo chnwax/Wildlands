@@ -1040,6 +1040,22 @@ export const utilityPole = placeable('utility_pole', utilityPole_build, atXYZR);
 export const curveMirror = placeable('curve_mirror', curveMirror_build, atXYZR);
 export const roadSign = placeable((B, x, y, z, r, kind) => 'road_sign_' + kind, roadSign_build, atXYZR);
 export const signalMast = placeable('traffic_signal', signalMast_build, atXYZR);
+// a pedestrian signal on its own post (the far end of a signalised crossing), its head facing +z: Idyllic Anime Japan's
+// post-mounted head when the model library is there (its head is the mast head's, raised 2.571 m), else a drawn post
+// with the masts' drawn head. Returns the lamp placements (town.js lights them with the crossing's phase).
+const PED2_S = 1.1, PED2_Y = 2.571;
+function pedSignal_build(B, x, y, z, r, group) {
+  B.frame(x, y, z, r); addCircle(x, z, 0.12);
+  const parts = packsReady() && packParts('jp_trafficlight_pedestrian_02');
+  if (parts) { signalPart('pack:jp_trafficlight_pedestrian_02', parts, B.P([0, 0, 0]), r, PED2_S);
+    return ['stop', 'walk'].map(k => ({ p: B.P([0, (PED2_Y + PED_LENS_Y[k]) * PED2_S, PED_LENS_Z * PED2_S + 0.008]), r, k, group, s: PED2_S / PED_S })); }
+  const G = [0.74, 0.76, 0.78];
+  B.cyl('steel', 0, 0, -0.13, 0.05, 0.045, 3.3, 10, { color: G, cap: true });
+  B.box('steel', 0, 2.5, -0.13, 0.08, 0.06, 0.1, { color: G }); B.box('steel', 0, 3.15, -0.13, 0.08, 0.06, 0.1, { color: G });
+  B.bbox('plastic', 0, 2.36, 0, 0.36, 0.9, 0.18, 0.03, { color: [0.8, 0.81, 0.8] });
+  return [{ p: B.P([0, 3.0, 0.092]), r, k: 'stop', group }, { p: B.P([0, 2.57, 0.092]), r, k: 'walk', group }];
+}
+export const pedSignal = placeable('ped_signal', pedSignal_build, atXYZR);
 export const clockPole = placeable('clock_pole', clockPole_build, (B, x, y, z, r = 0) => [x, y, z, r]);
 
 // ---------------------------------------------------------------- paving pieces for the world builder

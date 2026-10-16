@@ -1787,6 +1787,12 @@
      "kind": "prop",
      "category": "street",
      "src": "anime_japan/vendingmachine_bottles_03_1"
+    },
+    {
+     "id": "jp_trafficlight_pedestrian_02",
+     "kind": "lod",
+     "category": "street",
+     "src": "anime_japan/trafficlight_pedestrian_02"
     }
    ]
   },
