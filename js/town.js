@@ -595,7 +595,7 @@ export async function build(progress, opts = {}) {
   const signals = { t: 0, lamps: [], mats: {} };
   {
     const I = inters.find(isSignal), mat = (g, k) => signals.mats[g + k] || (signals.mats[g + k] = signalLampMaterial(k));
-    const disc = new THREE.CircleGeometry(0.13, 20), sq = new THREE.PlaneGeometry(0.28, 0.28);
+    const disc = new THREE.CircleGeometry(packsReady() ? 0.155 : 0.13, 20), sq = new THREE.PlaneGeometry(0.28, 0.28); // (the lamps fill the lenses of the pack heads, townkit.js)
     if (I) for (const arm of I.arms) {
       const n = arm.n, other = I.nets.find(o => o !== n), h = [-arm.d[0], -arm.d[1]], L = [h[1], -h[0]];
       const rF = I.rF, oh = other.hw + rF, ol = n.hw + rF, k = (rF - 0.6) / Math.SQRT2;

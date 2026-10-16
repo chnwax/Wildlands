@@ -737,30 +737,51 @@ export function signalLampMaterial(kind) { // kind: 'g' | 'y' | 'r' | 'walk' | '
   m.userData.on = ped ? 2.2 : 3.2;
   return m;
 }
+// Idyllic Anime Japan's signal heads, when the model library is there: the black three-lamp head on its short side arm
+// (lenses on both faces; turned half round here, its arm then reaches back to the mast along the town's) and the
+// pedestrian head. Lens centres and planes as measured on the models (model units); the lamps (town.js) light in them.
+const SIG_S = 1.29, SIG_LENS = [0.617, 0.93, 1.245], SIG_LENS_Y = 0.69, SIG_LENS_Z = 0.29, SIG_ARM_Y = 0.7; // (lenses on both faces, domed to 0.29)
+const PED_S = 1.3, PED_LENS_Y = { stop: 0.46, walk: 0.2 }, PED_LENS_Z = 0.073;
+const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sv = new THREE.Vector3(), _ss = new THREE.Vector3(), _sy = new THREE.Vector3(0, 1, 0);
+const signalPart = (key, parts, p, r, s) => { _sm.compose(_sv.set(p[0], p[1], p[2]), _sq.setFromAxisAngle(_sy, r), _ss.setScalar(s));
+  return addProp(key, parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _sm, castShadow: true }))); };
 function signalMast_build(B, x, y, z, r, { arm = 4, peds = [] } = {}) {
   B.frame(x, y, z, r);
   const G = [0.74, 0.76, 0.78], HOUSE = [0.8, 0.81, 0.8];
   B.cyl('concrete', 0, -0.08, 0, 0.24, 0.22, 0.16, 16, { color: [0.7, 0.7, 0.68] });            // footing collar
   B.cyl('steel', 0, 0, 0, 0.115, 0.09, 6.3, 16, { color: G });                                  // tapered mast
   B.cyl('steel', 0, 6.3, 0, 0.1, 0.02, 0.12, 12, { color: G, cap: true });                    // cap
-  B.beam('steel', [0, 5.82, 0], [arm, 5.82, 0], 0.095, 0.095, { color: G });                   // cantilever arm
+  const head = packsReady() && packParts('jp_trafficlight_cars_0'), pedHead = packsReady() && packParts('jp_trafficlight_pedestrian_01');
+  const hx = arm - 0.75, hy = 5.24, out = { veh: [], ped: [] };
+  B.beam('steel', [0, 5.82, 0], [head ? hx - 1.0 : arm, 5.82, 0], 0.095, 0.095, { color: G }); // cantilever arm (on to the head's own arm)
   B.beam('steel', [0.05, 5.05, 0], [1.5, 5.78, 0], 0.05, 0.05, { color: G });                  // brace
   B.detail(1, () => { B.box('steel', 0, 5.72, 0, 0.3, 0.2, 0.3, { color: G }); B.box('plastic', 0, 2.9, 0.12, 0.22, 0.45, 0.16, { color: [0.88, 0.88, 0.84] }); }); // arm clamp, control box
-  const hx = arm - 0.75, hy = 5.24, out = { veh: [], ped: [] };
-  B.box('steel', hx, 5.66, 0, 0.05, 0.16, 0.05, { color: G }); B.box('steel', hx - 0.45, 5.66, 0, 0.05, 0.16, 0.05, { color: G });
-  B.bbox('plastic', hx - 0.2, hy, 0, 1.28, 0.42, 0.2, 0.04, { color: HOUSE });                 // flat LED head
-  ['g', 'y', 'r'].forEach((k, i) => {
-    const lx = hx - 0.2 - 0.4 + i * 0.4;
-    B.detail(1, () => { B.box('plastic', lx, hy + 0.37, 0.17, 0.34, 0.02, 0.16, { color: [0.2, 0.21, 0.22] }); }); // visor
-    const p = B.P([lx, hy + 0.21, 0.102]); out.veh.push({ p, r, k });
-  });
+  if (head) { // the head's own arm runs on along the town's; its middle lens over the approach where the procedural head's was
+    const ox = hx - 0.2 - SIG_LENS[1] * SIG_S, oy = 5.82 - SIG_ARM_Y * SIG_S;
+    signalPart('pack:jp_trafficlight_cars_0', head, B.P([ox, oy, 0]), r + Math.PI, SIG_S);
+    ['g', 'y', 'r'].forEach((k, i) => out.veh.push({ p: B.P([ox + SIG_LENS[i] * SIG_S, oy + SIG_LENS_Y * SIG_S, SIG_LENS_Z * SIG_S + 0.006]), r, k }));
+  } else {
+    B.box('steel', hx, 5.66, 0, 0.05, 0.16, 0.05, { color: G }); B.box('steel', hx - 0.45, 5.66, 0, 0.05, 0.16, 0.05, { color: G });
+    B.bbox('plastic', hx - 0.2, hy, 0, 1.28, 0.42, 0.2, 0.04, { color: HOUSE });                 // flat LED head
+    ['g', 'y', 'r'].forEach((k, i) => {
+      const lx = hx - 0.2 - 0.4 + i * 0.4;
+      B.detail(1, () => { B.box('plastic', lx, hy + 0.37, 0.17, 0.34, 0.02, 0.16, { color: [0.2, 0.21, 0.22] }); }); // visor
+      const p = B.P([lx, hy + 0.21, 0.102]); out.veh.push({ p, r, k });
+    });
+  }
   for (const { a, group } of peds) {
     const c = Math.cos(a), s = Math.sin(a), off = [0.2 * s, 0, 0.2 * c], base = B.P(off), F = B.F;
     B.frame(base[0], base[1], base[2], F.r + a);
     B.box('steel', 0, 2.5, -0.13, 0.08, 0.06, 0.1, { color: G }); B.box('steel', 0, 3.15, -0.13, 0.08, 0.06, 0.1, { color: G });
-    B.bbox('plastic', 0, 2.36, 0, 0.36, 0.9, 0.18, 0.03, { color: HOUSE });
-    B.detail(1, () => { for (const yy of [2.83, 2.38]) B.box('plastic', 0, yy + 0.38, 0.14, 0.34, 0.02, 0.11, { color: [0.2, 0.21, 0.22] }); });
-    out.ped.push({ p: B.P([0, 3.0, 0.092]), r: F.r + a, k: 'stop', group }, { p: B.P([0, 2.57, 0.092]), r: F.r + a, k: 'walk', group });
+    if (pedHead) {
+      const oy = 2.38;
+      signalPart('pack:jp_trafficlight_pedestrian_01', pedHead, B.P([0, oy, 0]), F.r + a, PED_S);
+      for (const k of ['stop', 'walk']) out.ped.push({ p: B.P([0, oy + PED_LENS_Y[k] * PED_S, PED_LENS_Z * PED_S + 0.008]), r: F.r + a, k, group });
+    } else {
+      B.bbox('plastic', 0, 2.36, 0, 0.36, 0.9, 0.18, 0.03, { color: HOUSE });
+      B.detail(1, () => { for (const yy of [2.83, 2.38]) B.box('plastic', 0, yy + 0.38, 0.14, 0.34, 0.02, 0.11, { color: [0.2, 0.21, 0.22] }); });
+      out.ped.push({ p: B.P([0, 3.0, 0.092]), r: F.r + a, k: 'stop', group }, { p: B.P([0, 2.57, 0.092]), r: F.r + a, k: 'walk', group });
+    }
     B.frame(x, y, z, r);
   }
   addCircle(x, z, 0.2);

@@ -1566,6 +1566,18 @@
      "kind": "prop",
      "category": "plot",
      "src": "anime_japan/mofa_vehicle_2"
+    },
+    {
+     "id": "jp_trafficlight_cars_0",
+     "kind": "lod",
+     "category": "street",
+     "src": "anime_japan/trafficlight_cars_0"
+    },
+    {
+     "id": "jp_trafficlight_pedestrian_01",
+     "kind": "lod",
+     "category": "street",
+     "src": "anime_japan/trafficlight_pedestrian_01"
     }
    ]
   },
