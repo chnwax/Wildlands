@@ -1,0 +1,15 @@
+{
+  "name": "wildlands",
+  "private": true,
+  "description": "Wildlands — painted free-roam game in the browser (three.js), with a world editor",
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/devserver.mjs",
+    "editor": "node tools/devserver.mjs --open=editor.html?map=town",
+    "validate-world": "node tools/validate-world.mjs",
+    "regenerate-world": "node tools/regenerate-world.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

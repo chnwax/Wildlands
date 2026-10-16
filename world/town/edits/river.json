@@ -1,0 +1,53 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "river",
+  "objects": [
+    {
+      "id": "bench_river_003",
+      "rotation": [0, -95.87, 0],
+      "origin": [219.166, 6.12, -264.675]
+    },
+    {
+      "id": "bench_river_004",
+      "rotation": [0, -99.85, 0],
+      "origin": [212.488, 6.12, -215.922]
+    },
+    {
+      "id": "bench_river_005",
+      "rotation": [0, -96.86, 0],
+      "origin": [206.174, 6.12, -171.534]
+    },
+    {
+      "id": "bench_river_006",
+      "rotation": [0, -84.36, 0],
+      "origin": [205.781, 6.12, -123.869]
+    },
+    {
+      "id": "bench_river_007",
+      "rotation": [0, -79.03, 0],
+      "origin": [242.2, 6.12, 17.932]
+    },
+    {
+      "id": "bench_river_008",
+      "rotation": [0, -88.03, 0],
+      "origin": [247.168, 6.12, 60.603]
+    },
+    {
+      "id": "bench_river_009",
+      "rotation": [0, -93.79, 0],
+      "origin": [246.322, 6.12, 108.07]
+    },
+    {
+      "id": "bench_river_011",
+      "rotation": [0, -82.94, 0],
+      "origin": [251.651, 6.12, 246.067]
+    },
+    {
+      "id": "bench_river_013",
+      "rotation": [0, -100.75, 0],
+      "origin": [251.287, 6.12, 340.309]
+    }
+  ]
+}
