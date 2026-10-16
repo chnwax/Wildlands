@@ -12,6 +12,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { windPatch } from './terrain.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
 import { addCatalog } from './world/catalog.js';
+import { packParts, packsReady } from './packs.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const TAU = Math.PI * 2;
@@ -1045,6 +1046,86 @@ export function treeParts(kind, lod = 0, v = 0) { const sp = SPECIES[kind]; retu
 // prefab names of the species in world files (world/<map>/prefabs.json)
 const TREE_PREFAB = { young: 'tree_young_fir', spruce: 'tree_spruce', tall: 'tree_cedar', old: 'tree_old_fir', pine: 'tree_pine', jpine: 'tree_japanese_pine', sapling: 'sapling', snag: 'dead_tree', broken: 'broken_tree',
   twigs: 'twigs', leaf: 'tree_broadleaf', oak: 'tree_oak', birch: 'tree_birch', zelkova: 'tree_zelkova', maple: 'tree_maple', willow: 'tree_willow', sakura: 'tree_sakura', bamboo: 'bamboo' };
+// ---------------------------------------------------------------- the trees from the model packs (packs.js, ModeleZPaczek)
+// When the library is there every species but the bamboo, the twigs and the saplings is drawn with The Illustrated
+// Nature / Idyllic Woodlands models (Idyllic Anime Japan's cherries, garden pine and tall zelkova-like trees for the
+// Japanese town species) — same items, places, sizes, colliders and world ids; only the look changes. Per variant:
+// [near model, lower-detail model (optional)]; the geometry is scaled to unit height so an item's s stays its height.
+// Levels: the full model near, the lighter one to the middle distance, then the painted procedural mid and far levels
+// (masses that hold the forest's colour to the horizon at a fraction of the cost).
+const PACK_TREES = { // [near model, lower-detail model, far card (The Illustrated Nature's crossed cards, 4 triangles)]
+  young: [['tr_wl_tree03', null, 'tr_il_pine_01_card'], ['tr_il_pine_01', 'tr_il_pine_01_l1', 'tr_il_pine_01_card']],
+  spruce: [['tr_wl_tree03', null, 'tr_il_pine_02_card'], ['tr_il_pine_02', 'tr_il_pine_02_l1', 'tr_il_pine_02_card']], // (Woodlands' Tree01 wears its autumn leaves: not used)
+  tall: [['tr_wl_tree02', null, 'tr_il_pine_03_card']],
+  old: [['tr_il_pine_02', 'tr_il_pine_02_l1', 'tr_il_pine_02_card'], ['tr_wl_tree02', null, 'tr_il_pine_03_card']],
+  pine: [['tr_il_pine_03', 'tr_il_pine_03_l1', 'tr_il_pine_03_card']],
+  jpine: [['tr_jp_garden'], ['tr_jp_garden'], ['tr_jp_garden']],
+  snag: [['tr_il_pine_01_dead']],
+  broken: [['tr_il_birch_02_dead']],
+  leaf: [['tr_il_beech_01', 'tr_il_beech_01_l2', 'tr_il_beech_01_card'], ['tr_il_beech_03', 'tr_il_beech_03_l2', 'tr_il_beech_03_card']],
+  oak: [['tr_il_beech_02', 'tr_il_beech_02_l2', 'tr_il_beech_02_card']],
+  birch: [['tr_il_birch_01', 'tr_il_birch_01_l2', 'tr_il_birch_01_card']],
+  zelkova: [['tr_jp_tall_01', null, 'tr_il_beech_02_card'], ['tr_jp_tall_02', null, 'tr_il_beech_02_card'], ['tr_il_beech_02', 'tr_il_beech_02_l2', 'tr_il_beech_02_card']],
+  maple: [['tr_il_beech_01', 'tr_il_beech_01_l2', 'tr_il_beech_01_card'], ['tr_jp_tall_02', null, 'tr_il_beech_02_card']],
+  willow: [['tr_il_birch_02', 'tr_il_birch_02_l2', 'tr_il_birch_02_card']],
+  sakura: [['tr_jp_cherry'], ['tr_jp_cherry_02']],
+};
+const packTreeCache = new Map();
+// a pack model's parts at unit height (h: the height of the variant's near model, so its levels line up), with the
+// tree look: the foliage shading of the procedural trees (cloud shade, sunlight through the leaves, rim), the wind of
+// the species, wind-swayed alpha-tested shadows
+function packTreeParts(id, h, sp, near) {
+  const key = id + '|' + h + '|' + sp.mat + '|' + near;
+  if (packTreeCache.has(key)) return packTreeCache.get(key);
+  const src = packParts(id); if (!src) return null;
+  const sway = (MATS[sp.mat] || MATS.leaf).sway;
+  const parts = src.map(p => {
+    const g = p.geometry.clone().scale(1 / h, 1 / h, 1 / h); g.computeBoundingSphere(); g.computeBoundingBox();
+    const mk = 'packTree|' + p.material.name + '|' + sp.mat;
+    let m = packTreeCache.get(mk), d = packTreeCache.get(mk + '|d');
+    if (!m) {
+      m = p.material.clone(); const cut = m.alphaTest > 0;
+      m.roughness = 1; m.metalness = 0; m.envMapIntensity = 0.4;
+      // (the cards' Unity tint belongs to the pack's two-tone shader; their texture is a bright mask: painted to the forest's
+      // conifer or broadleaf green so the far hillsides keep the near trees' tone)
+      if (/card/i.test(p.material.name)) { if (sp.mat === 'fir' || sp.mat === 'dead') m.color.setRGB(0.2, 0.33, 0.23); else m.color.setRGB(0.33, 0.45, 0.24); }
+      if (cut) { m.alphaToCoverage = Q.msaa > 0; m.side = THREE.DoubleSide; }
+      foliagePatch(m, 'packTree' + sp.mat + (cut ? 'c' : 's') + p.material.name, sway, cut);
+      d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: cut ? m.map : null, alphaTest: cut ? m.alphaTest : 0 });
+      windPatch(d, 'packTreeDepth' + sp.mat + (cut ? 'c' : 's'), sway);
+      packTreeCache.set(mk, m); packTreeCache.set(mk + '|d', d);
+    }
+    return { geometry: g, material: m, tint: 'pc', castShadow: true, depth: d, sway: true };
+  });
+  packTreeCache.set(key, parts);
+  return parts;
+}
+// LOD levels for a species variant from the packs, or null (no library, or a species the packs do not replace)
+function packTreeLods(kind, v, sp, hiD, loD) {
+  if (!packsReady()) return null;
+  const vars = PACK_TREES[kind]; if (!vars) return null;
+  const [nearId, lowId, cardId] = vars[v % vars.length], P = packsReady(), dims = P.dims(nearId); if (!dims) return null;
+  const h = dims[1], near = packTreeParts(nearId, h, sp, true), low = lowId ? packTreeParts(lowId, h, sp, false) : near;
+  const card = cardId && P.dims(cardId) ? packTreeParts(cardId, P.dims(cardId)[1], sp, false) : null;
+  if (!near || !low) return null;
+  const d0 = () => Math.min(hiD(), 70), d1 = () => Math.max(d0() + 1, Math.min(hiD(), 190));
+  const lods = [{ dist: d0, parts: near }, { dist: d1, parts: low }];
+  // past the middle distance: the pack's own painted card to the horizon, or (species without one: the cherries, the
+  // garden pines) the procedural masses
+  if (card) lods.push({ dist: () => Infinity, parts: card.map(p => ({ ...p, castShadow: false, sway: false })) });
+  else { lods.push({ dist: () => Math.max(d1() + 1, loD()), parts: speciesParts(sp, materials(sp.mat), sp.geo(1, v), 1) });
+    if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, materials(sp.mat), sp.geo(2, v), 2) }); }
+  return lods;
+}
+// the per-item tint of a pack tree: the procedural foliage colour turned into a gentle brightness / warmth variation
+// around white (the pack's own textures carry the colour)
+function packTint(list) {
+  let sum = 0, n = 0; const lum = c => c ? 0.3 * c.r + 0.59 * c.g + 0.11 * c.b : 0;
+  for (const t of list) if (t.c) { sum += lum(t.c); n++; }
+  const mean = n ? sum / n : 1;
+  for (const t of list) { const k = t.c && mean > 0 ? clamp(lum(t.c) / mean, 0.82, 1.18) : 1, w = t.c ? clamp((t.c.r - t.c.b) / Math.max(lum(t.c), 0.05) * 0.06, -0.05, 0.05) : 0;
+    t.pc = new THREE.Color(clamp(k * (1 + w), 0.6, 1.3), clamp(k, 0.6, 1.3), clamp(k * (1 - w), 0.6, 1.3)); }
+}
 // trees: [{kind, v?, x, y, z, s (height, m), sx?, r?, tilt?, tilt2?, c (foliage / dead-wood tint), bc? (bark tint)}]
 // -> LOD'd, cell-culled instanced sets (one per species variant) with trunk colliders. Past the mid LOD, trees switch
 // to a far version instead of disappearing, so forests never thin out with distance.
@@ -1060,8 +1141,10 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
     // conifer tiers past ~300 m read the same with 9 segments as with 16: the detailed set stays close
     const hiD = sp.short ? () => Q.ferns * 0.5 : sp.tiny ? () => Q.ferns * 1.1 : sp.small ? () => Q.treeHi * 0.55 : sp.mat === 'fir' ? () => Math.min(hiDist(), Q.treeHi * 0.6) : sp.hiScale ? () => hiDist() * sp.hiScale : hiDist;
     const loD = sp.short ? () => Q.ferns * 1.1 : sp.tiny ? () => Q.treeHi * 0.7 : sp.small ? () => Q.trees * 0.3 : farDist;
-    const lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
-    if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) });
+    let lods = !sp.tiny && !sp.short && packTreeLods(kind, v, sp, hiD, loD);
+    if (lods) packTint(list);
+    else { lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
+      if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) }); }
     if ((MATS[sp.mat] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true; // wind-swayed: shadows redrawn near (sky.js)
     withScatterMeta({ prefab: TREE_PREFAB[kind] || 'tree_' + kind, category: 'vegetation', field: sp.tiny || kind === 'twigs' ? 'forest_floor' : null }, () => new Scatter(list, lods, sp.tiny ? 128 : cell));
     if (colliders && sp.trunk) for (const t of list) { const r = sp.trunk * t.s * (t.sx || 1); if (r > 0.07) addCircle(t.x, t.z, r + 0.05); }

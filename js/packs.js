@@ -16,7 +16,7 @@ import { windPatch } from './terrain.js';
 const LIB = new URL('../ModeleZPaczek/', import.meta.url), CFG = new URL('../tools/packs.json', import.meta.url);
 let pending = null, packs = null;
 // how far each kind is drawn (a share of the quality's prop distance, Q.props: 260 m on High) and how much it sways
-const KIND = { crop: { dist: 0.45, sway: 3.0, tint: true }, tree: { dist: 1.25, sway: 1.1, tint: true }, prop: { dist: 0.3 }, building: { dist: 1.0 }, lod: { dist: 1, sway: 1.1 } };
+const KIND = { crop: { dist: 0.45, sway: 3.0, tint: true }, tree: { dist: 1.25, sway: 1.1, tint: true }, prop: { dist: 0.3 }, building: { dist: 1.0 }, lod: { dist: 1, sway: 0 } }; // (lod: parts handed to other systems — trees.js puts its own wind and shading on them)
 
 export function loadPacks() {
   if (pending) return pending;

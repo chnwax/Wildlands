@@ -101,56 +101,64 @@
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_Grown_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_peach_grown_01"
+     "src": "anime_japan/tree_garden",
+     "note": "no POLYGON Farm trees: drawn with anime_japan/tree_garden"
     },
     {
      "id": "farm_pear",
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_Grown_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_pear_grown_01"
+     "src": "illustrated_nature/tree_beech_01",
+     "note": "no POLYGON Farm trees: drawn with illustrated_nature/tree_beech_01"
     },
     {
      "id": "farm_plum",
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Plum_Grown_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_plum_grown_01"
+     "src": "anime_japan/tree_garden",
+     "note": "no POLYGON Farm trees: drawn with anime_japan/tree_garden"
     },
     {
      "id": "farm_apple",
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Apple_Grown_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_apple_grown_01"
+     "src": "anime_japan/tree_garden",
+     "note": "no POLYGON Farm trees: drawn with anime_japan/tree_garden"
     },
     {
      "id": "farm_mikan",
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Orange_Grown_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_orange_grown_01"
+     "src": "anime_japan/tree_garden",
+     "note": "no POLYGON Farm trees: drawn with anime_japan/tree_garden"
     },
     {
      "id": "farm_cherry_fruit",
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Cherry_Grown_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_cherry_grown_01"
+     "src": "anime_japan/tree_cherry_02",
+     "note": "no POLYGON Farm trees: drawn with anime_japan/tree_cherry_02"
     },
     {
      "id": "farm_peach_young",
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Peach_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_peach_01"
+     "src": "anime_japan/tree_garden",
+     "note": "no POLYGON Farm trees: drawn with anime_japan/tree_garden"
     },
     {
      "id": "farm_pear_young",
      "kind": "tree",
      "prefab": "Prefabs/Environments/SM_Env_Tree_Pear_01.prefab",
      "category": "orchard",
-     "src": "polygon_farm/env_tree_pear_01"
+     "src": "illustrated_nature/tree_beech_01",
+     "note": "no POLYGON Farm trees: drawn with illustrated_nature/tree_beech_01"
     },
     {
      "id": "farm_wheelbarrow",
@@ -1617,6 +1625,211 @@
      ]
     }
    }
+  },
+  "trees": {
+   "pack": "mixed",
+   "licence": "Unity Asset Store EULA (The Illustrated Nature 1.9, Idyllic Woodlands 1.2, Idyllic Anime Japan 1.1.1): models used inside the game; source assets are not redistributed",
+   "note": "the town trees (js/trees.js PACK_TREES): near and lower-detail levels per species variant",
+   "assets": [
+    {
+     "id": "tr_wl_tree02",
+     "kind": "lod",
+     "category": "tree",
+     "src": "idyllic_woodlands/tree02"
+    },
+    {
+     "id": "tr_wl_tree03",
+     "kind": "lod",
+     "category": "tree",
+     "src": "idyllic_woodlands/tree03"
+    },
+    {
+     "id": "tr_il_pine_01",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_01"
+    },
+    {
+     "id": "tr_il_pine_01_l1",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_01__lod1"
+    },
+    {
+     "id": "tr_il_pine_02",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_02"
+    },
+    {
+     "id": "tr_il_pine_02_l1",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_02__lod1"
+    },
+    {
+     "id": "tr_il_pine_03",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_03"
+    },
+    {
+     "id": "tr_il_pine_03_l1",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_03__lod1"
+    },
+    {
+     "id": "tr_il_pine_01_dead",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_01_dead"
+    },
+    {
+     "id": "tr_il_birch_02_dead",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_02_dead"
+    },
+    {
+     "id": "tr_il_beech_01",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_01"
+    },
+    {
+     "id": "tr_il_beech_01_l2",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_01__lod2"
+    },
+    {
+     "id": "tr_il_beech_02",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_02"
+    },
+    {
+     "id": "tr_il_beech_02_l2",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_02__lod2"
+    },
+    {
+     "id": "tr_il_beech_03",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_03"
+    },
+    {
+     "id": "tr_il_beech_03_l2",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_03__lod2"
+    },
+    {
+     "id": "tr_il_birch_01",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_01"
+    },
+    {
+     "id": "tr_il_birch_01_l2",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_01__lod2"
+    },
+    {
+     "id": "tr_il_birch_02",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_02"
+    },
+    {
+     "id": "tr_il_birch_02_l2",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_02__lod2"
+    },
+    {
+     "id": "tr_jp_garden",
+     "kind": "lod",
+     "category": "tree",
+     "src": "anime_japan/tree_garden"
+    },
+    {
+     "id": "tr_jp_tall_01",
+     "kind": "lod",
+     "category": "tree",
+     "src": "anime_japan/tree_tall_01"
+    },
+    {
+     "id": "tr_jp_tall_02",
+     "kind": "lod",
+     "category": "tree",
+     "src": "anime_japan/tree_tall_02"
+    },
+    {
+     "id": "tr_jp_cherry",
+     "kind": "lod",
+     "category": "tree",
+     "src": "anime_japan/tree_cherry"
+    },
+    {
+     "id": "tr_jp_cherry_02",
+     "kind": "lod",
+     "category": "tree",
+     "src": "anime_japan/tree_cherry_02"
+    },
+    {
+     "id": "tr_il_pine_01_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_01__card"
+    },
+    {
+     "id": "tr_il_pine_02_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_02__card"
+    },
+    {
+     "id": "tr_il_pine_03_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_pine_03__card"
+    },
+    {
+     "id": "tr_il_beech_01_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_01__card"
+    },
+    {
+     "id": "tr_il_beech_02_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_02__card"
+    },
+    {
+     "id": "tr_il_beech_03_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_03__card"
+    },
+    {
+     "id": "tr_il_birch_01_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_01__card"
+    },
+    {
+     "id": "tr_il_birch_02_card",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_02__card"
+    }
+   ]
   }
  }
 }
