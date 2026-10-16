@@ -103,4 +103,6 @@ export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins }
   for (const lx of [-w / 4, w / 4]) outside('jp_ventilation_01', lx, H + 0.03, -d / 2 + 1.4, Math.PI, 1);
   outside('jp_ventilation_03', -2, 3.0, -d / 2 - 0.04, Math.PI, 1);
   outside('jp_fusebox_large', 1.5, 0, -d / 2 - 0.26, Math.PI, 0.9);
+  outside('jp_warning_panel_08', 1.5, 1.15, -d / 2 - 0.49, Math.PI, 1.2);          // (a high-voltage warning on it)
+  outside('jp_warning_panel_02', bins[0] + 0.26, 1.6, glassZ + 0.012, 0, 1.1);   // (the recycling notice over the bins)
 }

@@ -107,6 +107,8 @@ function garbagePoint_build(B, x, y, z, r, rng) {
   for (const [sx, sz] of [[-0.8, -0.45], [0.8, -0.45], [-0.8, 0.45], [0.8, 0.45]]) B.box('alu', sx, 0, sz, 0.04, 0.95, 0.04, { color: g });
   for (const yy of [0.02, 0.93]) { B.box('alu', 0, yy, -0.45, 1.64, 0.03, 0.03, { color: g }); B.box('alu', 0, yy, 0.45, 1.64, 0.03, 0.03, { color: g }); B.box('alu', -0.8, yy, 0, 0.03, 0.03, 0.94, { color: g }); B.box('alu', 0.8, yy, 0, 0.03, 0.03, 0.94, { color: g }); }
   for (let k = 0; k < 7; k++) B.box('alu', -0.8 + k * 0.267, 0.02, 0.45, 0.012, 0.92, 0.012, { color: g });
+  // (the collection point's notice on its back rail: Idyllic Anime Japan's panel, when the model library is there)
+  if (packsReady()) { const p = B.P([0, 0.62, -0.47]); packProp('jp_warning_panel_01', p[0], p[1], p[2], B.F.r, 1.2); }
   const n = 1 + Math.floor(rng() * 4);
   for (let k = 0; k < n; k++) { const z2 = (rng() - 0.5) * 0.3, h = 0.3 + rng() * 0.15; rng(); const p = B.P([-0.52 + k * 0.36, 0.02, z2]);
     queueClutter(k % 3 === 2 ? 'refuse_sacks' : 'refuse_sack', p[0], p[1], p[2], r + k * 1.7, { s: h / 0.4 * 0.8 }); }

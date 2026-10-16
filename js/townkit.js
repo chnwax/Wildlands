@@ -688,7 +688,7 @@ const signMats = {}, signPlate = new THREE.PlaneGeometry(0.75, 0.75);
 // the Idyllic Anime Japan sign (with its post) for each kind; kinds the pack draws only: pedestrian crossing, traffic
 // signal ahead, no entry, no parking, limit 50, keep left / right arrows, the curve warning. (The level-crossing warning
 // has no pack model: it stays the painted plate.)
-const PACK_SIGN = { school: 'jp_sign_traffic_016', street: 'jp_sign_traffic_017', cycle: 'jp_sign_traffic_015', stop: 'jp_sign_traffic_008', speed30: 'jp_sign_traffic_013', limit50: 'jp_sign_traffic_005', xwalk: 'jp_sign_traffic_014', signal: 'jp_sign_traffic_010',
+const PACK_SIGN = { school: 'jp_sign_traffic_016', street1: 'jp_sign_streetname_01', street2: 'jp_sign_streetname_02', street3: 'jp_sign_streetname_03', cycle: 'jp_sign_traffic_015', stop: 'jp_sign_traffic_008', speed30: 'jp_sign_traffic_013', limit50: 'jp_sign_traffic_005', xwalk: 'jp_sign_traffic_014', signal: 'jp_sign_traffic_010',
   noentry: 'jp_sign_traffic_006', noparking: 'jp_sign_traffic_004', curve: 'jp_sign_traffic_011', straight: 'jp_sign_traffic_001' };
 function roadSign_build(B, x, y, z, r, kind) {
   if (PACK_SIGN[kind] && packsReady() && packProp(PACK_SIGN[kind], x, y - 0.05, z, r) !== null) { addCircle(x, z, 0.06); return; }

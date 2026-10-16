@@ -827,13 +827,6 @@
      "src": "anime_japan/sign_traffic_016"
     },
     {
-     "id": "jp_sign_traffic_017",
-     "kind": "prop",
-     "prefab": "Prefabs/Traffic Signs/SM_sign_traffic_017.prefab",
-     "category": "street",
-     "src": "anime_japan/sign_traffic_017"
-    },
-    {
      "id": "jp_warning_panel_1",
      "kind": "prop",
      "prefab": "Prefabs/Signs and Boards/SM_warning_panel_01.prefab",
@@ -1752,6 +1745,36 @@
      "kind": "prop",
      "category": "shop",
      "src": "anime_japan/ventilation_03"
+    },
+    {
+     "id": "jp_sign_streetname_03",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/sign_streetname_03"
+    },
+    {
+     "id": "jp_warning_panel_01",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/warning_panel_01"
+    },
+    {
+     "id": "jp_warning_panel_02",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/warning_panel_02"
+    },
+    {
+     "id": "jp_warning_panel_04",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/warning_panel_04"
+    },
+    {
+     "id": "jp_warning_panel_08",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/warning_panel_08"
     }
    ]
   },

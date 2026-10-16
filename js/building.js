@@ -751,6 +751,7 @@ function shopBuilding_build(B, s, rng, extras) {
     if (closed) {
       B.quad('shutter', [sf.x0, sf.y0, zb + 0.1], [sf.x1, sf.y0, zb + 0.1], [sf.x1, sf.y1, zb + 0.1], [sf.x0, sf.y1, zb + 0.1], { color: jitter(rng, [0.72, 0.74, 0.74], 0.08), uv: 1.2 });
       B.bbox('alu', 0, sf.y0, zb + 0.12, sf.x1 - sf.x0, 0.06, 0.06, 0.008, { color: [0.6, 0.6, 0.6] });
+      framePack(B, 'jp_warning_panel_04', (sf.x0 + sf.x1) / 2, 1.25, zb + 0.105); // (駐車禁止 on the shutter)
     } else {
       B.quad('shopWindow', [sf.x0, sf.y0, zb], [sf.x1, sf.y0, zb], [sf.x1, sf.y1, zb], [sf.x0, sf.y1, zb], { color: [1, 0.95, interior], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
       const bays = Math.max(2, Math.round((sf.x1 - sf.x0) / 1.8)), bwid = (sf.x1 - sf.x0) / bays, door = Math.floor(rng() * bays);
