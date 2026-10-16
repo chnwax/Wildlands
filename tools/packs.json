@@ -1524,6 +1524,48 @@
      "kind": "prop",
      "category": "street",
      "src": "anime_japan/utility_pole_01"
+    },
+    {
+     "id": "jp_vendingmachine_bottles_03",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/vendingmachine_bottles_03"
+    },
+    {
+     "id": "jp_vendingmachine_02",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/vendingmachine_02"
+    },
+    {
+     "id": "jp_vendingmachine_01",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/vendingmachine_01"
+    },
+    {
+     "id": "jp_bicycle_1",
+     "kind": "prop",
+     "category": "plot",
+     "src": "anime_japan/bicycle_1"
+    },
+    {
+     "id": "jp_bicycle_2",
+     "kind": "prop",
+     "category": "plot",
+     "src": "anime_japan/bicycle_2"
+    },
+    {
+     "id": "jp_mofa_vehicle_1",
+     "kind": "prop",
+     "category": "plot",
+     "src": "anime_japan/mofa_vehicle_1"
+    },
+    {
+     "id": "jp_mofa_vehicle_2",
+     "kind": "prop",
+     "category": "plot",
+     "src": "anime_japan/mofa_vehicle_2"
     }
    ]
   },

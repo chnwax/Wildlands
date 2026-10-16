@@ -68,7 +68,7 @@ export function dressTown(ctx) {
 
   // ---------------------------------------------------------------- vending machines: the recycling bin beside each group
   {
-    const vm = props.items.filter(it => it.kind === 'vendingMachine' && it.parts[0]).map(it => { const e = it.parts[0].matrix.elements; return { x: e[12], z: e[14], yaw: Math.atan2(e[8], e[10]) }; });
+    const vm = props.items.filter(it => (it.kind === 'vendingMachine' || /^pack:jp_vendingmachine/.test(it.kind)) && it.parts[0]).map(it => { const e = it.parts[0].matrix.elements; return { x: e[12], z: e[14], yaw: Math.atan2(e[8], e[10]) }; });
     const done = [];
     for (const v of vm) {
       if (done.some(d => Math.hypot(d[0] - v.x, d[1] - v.z) < 2.6)) continue;

@@ -4,7 +4,7 @@ import { env } from './sky.js';
 import { relief, weather, asphaltAge, wornPaint, windowMaterial, paving } from './surface.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 import { addCatalog } from './world/catalog.js';
-import { packProp, packsReady, packGlow } from './packs.js';
+import { packProp, packsReady, packGlow, packParts } from './packs.js';
 
 // ---------------------------------------------------------------- batched builder
 // Geometry is accumulated per (material, 96 m chunk) and flushed into a few hundred meshes.
@@ -466,7 +466,12 @@ const vmFrontGeo = new THREE.PlaneGeometry(1.0, 1.83).translate(0, 0, 0.375);
 const vmSideMats = [0xc8102e, 0x0b4ea2, 0xf3f3ef, 0x1b1b1b, 0xe8e8e8].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.4, metalness: 0.3 }));
 const _pm = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pe = new THREE.Euler(), _pv = new THREE.Vector3(), _ps = new THREE.Vector3(1, 1, 1);
 const propMatrix = (x, y, z, ry, out = new THREE.Matrix4()) => out.compose(_pv.set(x, y, z), _pq.setFromEuler(_pe.set(0, ry, 0)), _ps);
+// Idyllic Anime Japan's drink machines when the model library is there: the four stocked fronts and the two plain ones,
+// in turn (their lit fronts glow at night, packs.js)
+const VM_PACK = ['jp_vendingmachine_bottles_01', 'jp_vendingmachine_bottles_02', 'jp_vendingmachine_bottles_03', 'jp_vendingmachine_bottles_04', 'jp_vendingmachine_bottles_01', 'jp_vendingmachine_02'];
 function vendingMachine_build(x, y, z, r, i, B = null) {
+  // (at a real machine's size: rows of them stand 1.1 m apart)
+  if (packsReady() && packProp(VM_PACK[i % VM_PACK.length], x, y, z, r, [0.9, 0.92, 0.95]) !== null) { addBox(x, z, 0.6, 0.38, r); return null; }
   const t = vendingTexture(i);
   const front = new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0, roughness: 0.35 });
   front.userData.glow = 0.55; glowMats.push(front);
@@ -874,7 +879,11 @@ export function bicycles(list, rng) { // list: [{x,y,z,r}]
   paintM.name = 'bicycle_paint'; restM.name = 'bicycle_metal';
   const items = list.map(b => ({ x: b.x, y: b.y, z: b.z, s: 1, r: b.r, tilt2: (rng() - 0.5) * 0.08 + 0.06, c: new THREE.Color(...cols[Math.floor(rng() * cols.length)]) }));
   const parts = lo => { const G = bicycleGeometry(lo); return [{ geometry: G.paint, material: paintM, tint: true, castShadow: true }, { geometry: G.rest, material: restM, castShadow: true }]; };
-  withScatterMeta({ prefab: 'bicycle', category: 'vehicle' }, () => new Scatter(items, [{ dist: () => 30 * (Q.lodScale || 1), parts: parts(0) }, { dist: () => Infinity, parts: parts(1) }], 128));
+  // near: Idyllic Anime Japan's city bicycle (the silver one, tinted per bike) at a real bicycle's size, when the model
+  // library is there; past 45 m the light procedural bike
+  const pk = packParts('jp_bicycle_1');
+  const near = pk ? pk.map(p => ({ geometry: p.geometry.clone().scale(0.8, 0.8, 0.8), material: p.material, tint: true, castShadow: true })) : parts(0);
+  withScatterMeta({ prefab: 'bicycle', category: 'vehicle', materials: pk ? [paintM, restM] : null }, () => new Scatter(items, [{ dist: () => (pk ? 45 : 30) * (Q.lodScale || 1), parts: near }, { dist: () => Infinity, parts: parts(1) }], 128));
   return items;
 }
 // A clock as a whole object: a round painted-metal case, a bezel round each dial, and one dial (on a wall) or two

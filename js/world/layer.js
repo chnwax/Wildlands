@@ -110,7 +110,10 @@ export class WorldLayer {
       for (const o0 of c.meshes) o0.traverse(q => { if (q.isMesh && !Array.isArray(q.material)) nameNew(q.material, ent.prefab); });
     }
     // instanced objects
+    // (a set whose near look now comes from a model pack keeps its former materials named, meta.materials: edits that
+    // painted other objects with them still find them)
     scatters.forEach((s, si) => { if (!s.meta || !s.items) return; s.wsi = si; this.sets.push(s); const P = s.meta.prefab; if (!this.scatterPrefabs.has(P)) this.scatterPrefabs.set(P, []); this.scatterPrefabs.get(P).push(s);
+      for (const m of s.meta.materials || []) if (!this.matName.has(m)) this.nameMaterial(m, m.name.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
       for (const part of s.lods[0].parts) if (!this.matName.has(part.material)) this.nameMaterial(part.material, part.material.name ? part.material.name.toLowerCase().replace(/[^a-z0-9]+/g, '_') : P + '_' + (s.lods[0].parts.indexOf(part) + 1)); });
     // every merged mesh in build order (loose details are addressed by mesh number and triangle)
     this.buckets = []; scene.traverse(o => { if (o.isMesh && o.userData.bucket) this.buckets.push(o); });
