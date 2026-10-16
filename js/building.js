@@ -364,10 +364,17 @@ function solarPanels(B, w, z0, z1, yAt, rows) {
   }
 }
 export function antenna(B, x, y, z) { B.detail(1, () => antenna0(B, x, y, z)); }
+// (Idyllic Anime Japan's two TV aerials when the model library is there, every one in town aimed the same way — at the
+// transmitter on the hills; the guy wires stay drawn)
+const AERIAL_YAW = 0.7;
 function antenna0(B, x, y, z) {
-  B.cyl('alu', x, y, z, 0.025, 0.02, 2.3, 6, { color: [0.7, 0.72, 0.75] });
-  B.box('alu', x, y + 1.9, z, 0.03, 0.03, 1.4, { color: [0.7, 0.72, 0.75] });
-  for (let i = 0; i < 5; i++) B.box('alu', x, y + 1.9, z - 0.6 + i * 0.3, 0.7 - i * 0.08, 0.02, 0.02, { color: [0.7, 0.72, 0.75] });
+  const p = B.P([x, y, z]), h = Math.abs(Math.floor(p[0] * 3.3) + Math.floor(p[2] * 1.7)) % 2, mx = h ? 0.35 : 0.075, mz = -0.04; // (the mast's foot in the model)
+  const c = Math.cos(AERIAL_YAW), sn = Math.sin(AERIAL_YAW), ax = p[0] - (mx * c + mz * sn), az = p[2] - (-mx * sn + mz * c);
+  if (!(packsReady() && packProp(h ? 'jp_antenna_02' : 'jp_antenna_01', ax, p[1], az, AERIAL_YAW) !== null)) {
+    B.cyl('alu', x, y, z, 0.025, 0.02, 2.3, 6, { color: [0.7, 0.72, 0.75] });
+    B.box('alu', x, y + 1.9, z, 0.03, 0.03, 1.4, { color: [0.7, 0.72, 0.75] });
+    for (let i = 0; i < 5; i++) B.box('alu', x, y + 1.9, z - 0.6 + i * 0.3, 0.7 - i * 0.08, 0.02, 0.02, { color: [0.7, 0.72, 0.75] });
+  }
   for (const [dx, dz] of [[0.9, 0.5], [-0.9, -0.5]]) B.beam('steel', [x, y + 1.6, z], [x + dx, y - 0.15, z + dz], 0.008, 0.008, { color: [0.4, 0.4, 0.4] }); // guy wires
 }
 // walls of a box (centre cx on x, w by d, from y0 to y1) with per-face holes; mats per band [[mat, color, uv, yTop]]

@@ -12,6 +12,7 @@
 import { THREE, Q, Scatter, withScatterMeta, gltfLoader, addProp } from './core.js';
 import { addCatalog } from './world/catalog.js';
 import { windPatch } from './terrain.js';
+import { CAP } from './world/capture.js';
 
 const LIB = new URL('../ModeleZPaczek/', import.meta.url), CFG = new URL('../tools/packs.json', import.meta.url);
 let pending = null, packs = null;
@@ -85,7 +86,7 @@ export function queuePack(id, x, y, z, r = 0, o = {}) {
 // and deleted with it in the World Builder. s: uniform scale or [sx, sy, sz]; tilt: [about x, about z] after the yaw.
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 export function packProp(id, x, y, z, r = 0, s = 1, tilt = null) {
-  const m = packs && packs.models[id]; if (!m) return null;
+  const m = packs && packs.models[id]; if (!m || CAP.scratch) return null; // (a scratch build is thrown away: its props would stay behind)
   _e.set(tilt ? tilt[0] : 0, r, tilt ? tilt[1] : 0); _q.setFromEuler(_e);
   if (Array.isArray(s)) _s.set(s[0], s[1], s[2]); else _s.setScalar(s);
   _m.compose(_p.set(x, y, z), _q, _s);

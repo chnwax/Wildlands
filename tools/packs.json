@@ -1775,6 +1775,12 @@
      "kind": "prop",
      "category": "street",
      "src": "anime_japan/warning_panel_08"
+    },
+    {
+     "id": "jp_antenna_02",
+     "kind": "prop",
+     "category": "house",
+     "src": "anime_japan/antenna_02"
     }
    ]
   },

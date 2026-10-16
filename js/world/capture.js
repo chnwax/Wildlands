@@ -7,7 +7,7 @@
 // Objects may nest (a playground builds benches): an inner object is its own entity and records its parent.
 import { scene, capHooks, lampPoints } from '../core.js';
 
-export const CAP = { ents: [], active: false };
+export const CAP = { ents: [], active: false, scratch: false }; // (scratch: inside uncaptured(), a build that is thrown away)
 export const owner = new WeakMap(); // loose scene mesh -> the captured object it belongs to
 const stack = [];
 let top = null;
@@ -49,10 +49,10 @@ export function endEntity() {
 }
 // run fn with the capture paused: scratch builds (a building measured off-site to plan its plot) are not world objects
 export function uncaptured(fn) {
-  if (!CAP.active) return fn();
+  if (!CAP.active) { const was = CAP.scratch; CAP.scratch = true; try { return fn(); } finally { CAP.scratch = was; } }
   const saved = [capHooks.bucket, capHooks.collider, capHooks.prop, capHooks.frame, top, stack.length];
-  CAP.active = false; capHooks.bucket = capHooks.collider = capHooks.prop = capHooks.frame = null; top = null;
-  try { return fn(); } finally { CAP.active = true; [capHooks.bucket, capHooks.collider, capHooks.prop, capHooks.frame, top] = saved; stack.length = saved[5]; }
+  const was = CAP.scratch; CAP.active = false; CAP.scratch = true; capHooks.bucket = capHooks.collider = capHooks.prop = capHooks.frame = null; top = null;
+  try { return fn(); } finally { CAP.active = true; CAP.scratch = was; [capHooks.bucket, capHooks.collider, capHooks.prop, capHooks.frame, top] = saved; stack.length = saved[5]; }
 }
 // run fn as one placed object (base null: taken from the builder's first frame, see capHooks.frame)
 export function entity(prefab, fn, base = null, opts) {
