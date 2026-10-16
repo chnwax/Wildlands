@@ -1686,6 +1686,66 @@
      "kind": "prop",
      "category": "shop",
      "src": "anime_japan/sticker_store_ads_02"
+    },
+    {
+     "id": "jp_shelves_store",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/shelves_store"
+    },
+    {
+     "id": "jp_counter_shop",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/counter_shop"
+    },
+    {
+     "id": "jp_shelf_wooden",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/shelf_wooden"
+    },
+    {
+     "id": "jp_bottle_drink_03",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/bottle_drink_03"
+    },
+    {
+     "id": "jp_bottle_drink_04",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/bottle_drink_04"
+    },
+    {
+     "id": "jp_sticker_atm",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_atm"
+    },
+    {
+     "id": "jp_sticker_tobacco",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_tobacco"
+    },
+    {
+     "id": "jp_trash_can_02",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/trash_can_02"
+    },
+    {
+     "id": "jp_sign_3d_konbini",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sign_3d_konbini"
+    },
+    {
+     "id": "jp_ventilation_03",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/ventilation_03"
     }
    ]
   },

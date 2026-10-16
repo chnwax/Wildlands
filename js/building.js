@@ -7,7 +7,8 @@
 import { scene, clamp, lerp, mulberry32, addCircle } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS } from './townkit.js';
 import { cropSet } from './crops.js';
-import { packsReady, queuePack, packProp } from './packs.js';
+import { packsReady, queuePack, packProp, packParts } from './packs.js';
+import { konbiniDress } from './konbini.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
@@ -849,11 +850,12 @@ function konbini_build(B, s, rng, extras) {
   const back = [{ x0: -w / 2 + 1.5, x1: -w / 2 + 2.4, y0: 0.1, y1: 2.2, d: 0.12 }, { x0: w / 2 - 4.2, x1: w / 2 - 2.0, y0: 0.1, y1: 2.6, d: 0.12 }];
   boxWalls(B, 0, w, d, 0, H + 0.5, [['stucco', [0.97, 0.97, 0.96], 3]], fi => fi === 0 ? [gl] : fi === 1 ? back : fi === 2 ? [sideWin] : [], [0.9, 0.9, 0.9]);
   flatRoof(B, { w, d, y: H, para: 0.5, color: [0.97, 0.97, 0.96], wallMat: 'stucco' });
+  const dress = packsReady() && packParts('jp_shelves_store'), bins = []; // (the shop floor from the model library: konbini.js)
   const stripes = [[0.05, 0.55, 0.3], [0.95, 0.95, 0.95], [0.1, 0.35, 0.75], [0.95, 0.95, 0.95], [0.95, 0.55, 0.1]];
   stripes.forEach((c, i) => B.bbox('plain', 0, 3.2 + i * 0.16, 0, w + 0.08, 0.16, d + 0.08, 0.004, { color: c, skip: 'ny py' }));
   const glaze = (h, n, doorBay) => {
     const zb = -h.d + 0.04, bwid = (h.x1 - h.x0) / n;
-    B.quad('shopWindow', [h.x0, h.y0, zb], [h.x1, h.y0, zb], [h.x1, h.y1, zb], [h.x0, h.y1, zb], { color: [1.4, 1.45, 0.0625], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
+    if (!dress) B.quad('shopWindow', [h.x0, h.y0, zb], [h.x1, h.y0, zb], [h.x1, h.y1, zb], [h.x0, h.y1, zb], { color: [1.4, 1.45, 0.0625], uvs: [[0, 0], [1, 0], [1, 1], [0, 1]] });
     for (let i = 0; i <= n; i++) B.bbox('alu', h.x0 + i * bwid, h.y0, zb + 0.05, 0.08, h.y1 - h.y0, 0.1, 0.008, { color: [0.82, 0.84, 0.86] });
     B.bbox('alu', (h.x0 + h.x1) / 2, h.y1 - 0.07, zb + 0.05, h.x1 - h.x0, 0.07, 0.1, 0.008, { color: [0.82, 0.84, 0.86] });
     B.bbox('alu', (h.x0 + h.x1) / 2, 2.35, zb + 0.05, h.x1 - h.x0, 0.06, 0.1, 0.008, { color: [0.82, 0.84, 0.86] });
@@ -868,10 +870,10 @@ function konbini_build(B, s, rng, extras) {
     B.bbox('plastic', dx, 0, 1.0, bwid + 0.4, 0.015, 1.3, 0.004, { color: [0.3, 0.32, 0.34] }); // entrance mat
     // bins station and a smoking stand by the door
     const bc = [[0.2, 0.45, 0.8], [0.25, 0.6, 0.3], [0.85, 0.55, 0.15], [0.7, 0.7, 0.72]];
-    bc.forEach((c, i) => { const bx2 = dx + bwid * 0.9 + 0.6 + i * 0.52; B.bbox('plastic', bx2, 0, 0.45, 0.48, 1.0, 0.5, 0.03, { color: [0.92, 0.92, 0.9] }); B.box('plastic', bx2, 0.8, 0.705, 0.34, 0.1, 0.01, { color: c }); B.box('dark', bx2, 0.62, 0.705, 0.18, 0.1, 0.012, { color: [0.1, 0.1, 0.1] }); });
+    bc.forEach((c, i) => { const bx2 = dx + bwid * 0.9 + 0.6 + i * 0.52; bins.push(bx2); if (dress) return; B.bbox('plastic', bx2, 0, 0.45, 0.48, 1.0, 0.5, 0.03, { color: [0.92, 0.92, 0.9] }); B.box('plastic', bx2, 0.8, 0.705, 0.34, 0.1, 0.01, { color: c }); B.box('dark', bx2, 0.62, 0.705, 0.18, 0.1, 0.012, { color: [0.1, 0.1, 0.1] }); });
     extras.push({ t: 'box', p: B.P([dx + bwid * 0.9 + 1.4, 0, 0.45]), hx: 1.1, hz: 0.3, r });
     B.cyl('steel', dx - bwid, 0, 1.2, 0.18, 0.2, 0.85, 12, { color: [0.35, 0.36, 0.38], cap: true });
-    for (let i = 0; i < 3; i++) B.sweep('steel', circle(0.015, 5), [[gl.x1 - 3 + i * 0.9, 0.02, 1.3], [gl.x1 - 3 + i * 0.9, 0.6, 1.3], [gl.x1 - 2.4 + i * 0.9, 0.6, 1.3], [gl.x1 - 2.4 + i * 0.9, 0.02, 1.3]], { color: [0.7, 0.7, 0.72] }); // bike racks
+    if (!dress) for (let i = 0; i < 3; i++) B.sweep('steel', circle(0.015, 5), [[gl.x1 - 3 + i * 0.9, 0.02, 1.3], [gl.x1 - 3 + i * 0.9, 0.6, 1.3], [gl.x1 - 2.4 + i * 0.9, 0.6, 1.3], [gl.x1 - 2.4 + i * 0.9, 0.02, 1.3]], { color: [0.7, 0.7, 0.72] }); // bike racks
     const sign = signMesh(6, 1.0, (g, W2, H2) => {
       g.fillStyle = '#fff'; g.fillRect(0, 0, W2, H2);
       g.fillStyle = '#0a8a4b'; g.fillRect(0, 0, W2, H2 * 0.22); g.fillStyle = '#1a5fb4'; g.fillRect(0, H2 * 0.78, W2, H2 * 0.22);
@@ -888,6 +890,7 @@ function konbini_build(B, s, rng, extras) {
     meterBox(B, -w / 2 + 3.2, 1.45, 'power');
   });
   for (let i = 0; i < 5; i++) inFrame(B, [-w / 2 + 2.5 + i * 1.3, 0, -d / 4], 0, () => acUnit(B, 0, H + 0.03, rng, { pipeTo: H + 0.4 }));
+  if (dress) { const bwid = (gl.x1 - gl.x0) / 6; konbiniDress(B, { w, d, H, gl, sideWin, glassZ: d / 2 - gl.d + 0.04, dx: gl.x0 + 1.5 * bwid, bwid, bins }); }
   lampPoints.push({ p: B.P([0, 2.6, d / 2 + 2]), s: 1.4 }, { p: B.P([-w / 3, 2.6, d / 2 + 2]), s: 1.2 }, { p: B.P([w / 3, 2.6, d / 2 + 2]), s: 1.2 });
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
 }
