@@ -1299,7 +1299,7 @@ export function packShrubLods(i, hs, nearD, farD, shadow = true) {
   const [a, b] = PACK_SHRUBS[i % PACK_SHRUBS.length], dims = P.dims(a); if (!dims) return null;
   const sp = { mat: 'bush' }, h = dims[1] / hs, near = packTreeParts(a, h, sp, true), far = packTreeParts(b, h, sp, false);
   if (!near || !far) return null;
-  return [{ dist: nearD, parts: near.map(p => ({ ...p, castShadow: shadow })) }, { dist: farD, parts: far.map(p => ({ ...p, castShadow: shadow })) }];
+  return [{ dist: nearD, parts: near.map(p => ({ ...p, castShadow: shadow })) }, { dist: farD, parts: far.map(p => ({ ...p, castShadow: false, sway: false })) }]; // (past the near level: no shadow, no sway)
 }
 export const shrubTint = list => packTint(list);
 // shrubs and low greenery (bush, hydra, hedge, ivy): no trunk collider worth having below ~1 m; only the big ones block
@@ -1309,7 +1309,7 @@ export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * (
   const seed = { hydra: 21, hedge: 25, ivy: 27 }[kind] || 17;
   const M = materials(kind), hi = broadleafGeo(kind === 'hedge' ? 1 : 0, seed, kind), lo = broadleafGeo(1, seed, kind);
   const sp = { mat: kind, cardShadow: kind !== 'hydra' };
-  let lods = kind === 'bush' && packShrubLods(0, 0.79, () => Math.min(hiDist(), 45), farDist); // (the pack's shrub at the drawn bush's height)
+  let lods = kind === 'bush' && packShrubLods(0, 0.79, () => Math.min(hiDist(), 30), farDist); // (the pack's shrub at the drawn bush's height)
   if (lods) packTint(bushes); else lods = [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }];
   if ((MATS[kind] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true;
   withScatterMeta({ prefab: { hydra: 'hydrangea' }[kind] || kind, category: 'vegetation', field: kind === 'hedge' || kind === 'ivy' ? 'hedgerow' : null }, () => new Scatter(bushes, lods, 192));
