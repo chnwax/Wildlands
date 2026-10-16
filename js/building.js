@@ -1129,10 +1129,18 @@ function allotment_build(B, s, rng, gy) {
   const offset = Math.floor(rng() * kinds.length);
   for (let i = 0; i < nb; i++) {
     const bx = -w / 2 + 0.9 + (i + 0.5) * (w - 1.8) / nb, L = bedsZ1 - bedsZ0, zc = (bedsZ0 + bedsZ1) / 2, kind = kinds[(i + offset) % kinds.length];
-    B.poly('soil', [[bx - bw / 2 - 0.12, 0.02, bedsZ0], [bx - bw / 2 - 0.12, 0.02, bedsZ1], [bx - bw / 2 + 0.08, 0.22, bedsZ1], [bx - bw / 2 + 0.08, 0.22, bedsZ0]], [-1, 1, 0], { color: SOIL, uv: 1 });
-    B.poly('soil', [[bx + bw / 2 + 0.12, 0.02, bedsZ0], [bx + bw / 2 + 0.12, 0.02, bedsZ1], [bx + bw / 2 - 0.08, 0.22, bedsZ1], [bx + bw / 2 - 0.08, 0.22, bedsZ0]], [1, 1, 0], { color: SOIL, uv: 1 });
-    B.box('soil', bx, 0.02, zc, bw - 0.16, 0.2, L, { color: mul(SOIL, 1.08), skip: 'ny', uv: 2.5 });
-    for (const e of [bedsZ0, bedsZ1]) B.poly('soil', [[bx - bw / 2 - 0.12, 0.02, e], [bx + bw / 2 + 0.12, 0.02, e], [bx + bw / 2 - 0.08, 0.22, e], [bx - bw / 2 + 0.08, 0.22, e]], [0, 0, e > 0 ? 1 : -1], { color: SOIL });
+    // a raised bed of hoed earth: rounded shoulders and a flattish crown, its edges wandering a little (its own noise, no
+    // draws of rng), the crown paler, the flanks darker, mottled from piece to piece
+    { const h = (j, k) => { const v = Math.sin((j * 1.7 + k * 57.3 + bx * 13.7 + x * 0.37 + z * 0.71) * 12.9898) * 43758.5453; return (v - Math.floor(v)) * 2 - 1; };
+      const wob = (u, k) => { const i = Math.floor(u), f = u - i, t = f * f * (3 - 2 * f); return lerp(h(i, k), h(i + 1, k), t); };
+      const PR = [[-bw / 2 - 0.12, 0.02], [-bw / 2 - 0.02, 0.14], [-bw / 2 + 0.08, 0.21], [0, 0.222], [bw / 2 - 0.08, 0.21], [bw / 2 + 0.02, 0.14], [bw / 2 + 0.12, 0.02]];
+      const BC = [mul(SOIL, 0.86), mul(SOIL, 0.97), mul(SOIL, 1.08), mul(SOIL, 1.08), mul(SOIL, 0.97), mul(SOIL, 0.86)];
+      const NZ = Math.max(4, Math.ceil(L / 0.5)), rows = [];
+      for (let k = 0; k <= NZ; k++) { const zz = bedsZ0 + L * k / NZ, u = zz * 1.1, cx = bx + wob(u, 1) * 0.025, sl = 1 + wob(u * 1.4, 2) * 0.08, sr = 1 + wob(u * 1.4, 3) * 0.08;
+        rows.push(PR.map(([px, py], j) => [cx + px * (j < 3 ? sl : j > 3 ? sr : 1), py + (j > 0 && j < 6 ? wob(u * 2.1, 4 + j) * 0.012 : 0), zz])); }
+      for (let k = 0; k < NZ; k++) { const m = 1 + wob(k * 0.61 + 0.5, 9) * 0.07;
+        for (let j = 0; j < 6; j++) B.quad('soil', rows[k][j], rows[k + 1][j], rows[k + 1][j + 1], rows[k][j + 1], { color: mul(BC[j], m), uvs: [rows[k][j], rows[k + 1][j], rows[k + 1][j + 1], rows[k][j + 1]].map(p => [p[0] / 2.5, p[2] / 2.5]) }); }
+      B.poly('soil', rows[0], [0, 0, -1], { color: mul(SOIL, 0.92) }); B.poly('soil', [...rows[NZ]].reverse(), [0, 0, 1], { color: mul(SOIL, 0.92) }); }
     if (kind === 'mulch' || kind === 'eggplant' || kind === 'tomato') B.box('dark', bx, 0.222, zc, bw - 0.1, 0.004, L - 0.1, { color: kind === 'mulch' ? [0.72, 0.74, 0.76] : [0.1, 0.1, 0.11] });
     B.detail(1, () => {
       for (let zz = bedsZ0 + 0.35; zz < bedsZ1 - 0.2; zz += kind === 'leek' ? 0.2 : kind === 'greens' ? 0.3 : 0.45) {
@@ -1235,18 +1243,26 @@ function field_build(B, s, rng, gy) {
     const bw = pitch * 0.42, tw = pitch * (kind === 'leek' ? 0.15 : 0.27), hh = kind === 'leek' ? 0.32 : kind === 'fallow' ? 0.1 : 0.19 + rng() * 0.05;
     const film = kind === 'mulchB' ? [0.06, 0.06, 0.07] : kind === 'mulchS' ? [0.7, 0.72, 0.74] : null;
     const mat = film ? 'plastic' : 'soil', topC = film || DRY, sideC = film || SOIL;
+    // a hoed ridge: a rounded mound (base, shoulder, crown on each side) every half metre, its line, width and height
+    // wandering a little (the field's own noise: no draws of rng), the crown dried paler, the flanks darker toward the
+    // furrow, the colour mottled from piece to piece
+    const NZ = Math.max(nz * 4, 4), wob = (u, k) => { const i = Math.floor(u), f = u - i, h = j => { const v = Math.sin((j + k * 57.3 + xc * 13.7 + x * 0.37 + z * 0.71) * 12.9898) * 43758.5453; return v - Math.floor(v); };
+      const t = f * f * (3 - 2 * f); return lerp(h(i), h(i + 1), t) * 2 - 1; };
     const st = [];
-    for (let k = 0; k <= nz; k++) { const zz = zA + (zB - zA) * k / nz, g = at(xc, zz);
-      st.push({ zz, g, L0: [xc - bw, at(xc - bw, zz), zz], L1: [xc - tw, g + hh, zz], R1: [xc + tw, g + hh, zz], R0: [xc + bw, at(xc + bw, zz), zz] }); }
-    for (let k = 0; k < nz; k++) { const p = st[k], q = st[k + 1];
-      q4(mat, p.L0, q.L0, q.L1, p.L1, sideC); q4(mat, p.L1, q.L1, q.R1, p.R1, topC); q4(mat, p.R1, q.R1, q.R0, p.R0, sideC); }
-    for (const [e, sg] of [[st[0], -1], [st[nz], 1]]) B.poly(mat, [e.L0, e.L1, e.R1, e.R0], [0, 0, sg], { color: sideC, uv: US });
-    const topAt = zz => { const k = Math.min(nz - 1, Math.floor((zz - zA) / (zB - zA) * nz)), t = ((zz - zA) / (zB - zA) * nz) - k; return lerp(st[k].g, st[k + 1].g, t) + hh; };
+    for (let k = 0; k <= NZ; k++) { const zz = zA + (zB - zA) * k / NZ, u = zz * 0.9, cx = xc + wob(u, 1) * 0.035, sh = 1 + wob(u * 1.7, 2) * 0.12, g = at(cx, zz);
+      const bl = bw * (1 + wob(u * 1.3, 3) * 0.07), br = bw * (1 + wob(u * 1.3, 4) * 0.07), H = hh * sh;
+      st.push({ zz, g, H, row: [[cx - bl, at(cx - bl, zz), zz], [cx - (bl + tw) * 0.55, g + H * 0.62, zz], [cx - tw, g + H * 0.96, zz], [cx, g + H, zz],
+        [cx + tw, g + H * 0.96, zz], [cx + (br + tw) * 0.55, g + H * 0.62, zz], [cx + br, at(cx + br, zz), zz]] }); }
+    const BAND = film ? [sideC, sideC, topC, topC, sideC, sideC] : [mul(SOIL, 0.86), mul(SOIL, 0.97), DRY, DRY, mul(SOIL, 0.97), mul(SOIL, 0.86)];
+    for (let k = 0; k < NZ; k++) { const p = st[k].row, q = st[k + 1].row, m = film ? 1 : 1 + wob(k * 0.61 + 0.5, 5) * 0.07;
+      for (let j = 0; j < 6; j++) q4(mat, p[j], q[j], q[j + 1], p[j + 1], film ? BAND[j] : mul(BAND[j], m)); }
+    for (const [e, sg] of [[st[0], -1], [st[NZ], 1]]) B.poly(mat, sg < 0 ? e.row : [...e.row].reverse(), [0, 0, sg], { color: film ? sideC : mul(SOIL, 0.92), uv: US });
+    const topAt = zz => { const f = clamp((zz - zA) / (zB - zA) * NZ, 0, NZ - 1e-6), k = Math.floor(f), t = f - k; return lerp(st[k].g + st[k].H, st[k + 1].g + st[k + 1].H, t); };
     if (kind === 'tunnel') { // white non-woven row cover on hoops (トンネル)
       const R = bw * 0.95, H = 0.5, arcP = (k, zz, g) => { const a = Math.PI * k / 6; return [xc - Math.cos(a) * R, g + Math.sin(a) * H, zz]; };
-      for (let k = 0; k < nz; k++) { const p = st[k], q = st[k + 1];
+      for (let k = 0; k < NZ; k++) { const p = st[k], q = st[k + 1];
         for (let i = 0; i < 6; i++) q4('plain', arcP(i, p.zz, p.g), arcP(i, q.zz, q.g), arcP(i + 1, q.zz, q.g), arcP(i + 1, p.zz, p.g), [0.8, 0.82, 0.8]); }
-      for (const [e, sg] of [[st[0], -1], [st[nz], 1]]) for (let i = 0; i < 6; i++) B.poly('plain', [[xc, e.g, e.zz], arcP(i, e.zz, e.g), arcP(i + 1, e.zz, e.g)], [0, 0, sg], { color: [0.76, 0.78, 0.76] });
+      for (const [e, sg] of [[st[0], -1], [st[NZ], 1]]) for (let i = 0; i < 6; i++) B.poly('plain', [[xc, e.g, e.zz], arcP(i, e.zz, e.g), arcP(i + 1, e.zz, e.g)], [0, 0, sg], { color: [0.76, 0.78, 0.76] });
       B.detail(1, () => { for (let zz = zA + 0.6; zz < zB; zz += 1.5) { const g = topAt(zz) - hh, hoop = []; for (let i = 0; i <= 8; i++) { const a = Math.PI * i / 8; hoop.push([xc - Math.cos(a) * (R + 0.02), g + Math.sin(a) * (H + 0.02), zz]); } B.sweep('plastic', circle(0.008, 5), hoop, { color: [0.3, 0.55, 0.75] }); } });
       return;
     }
