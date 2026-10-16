@@ -29,6 +29,7 @@ import { DANCHI, DANCHI_ROADS, danchiGround, inDanchi, buildDanchi } from './dan
 import { perf } from './perf.js';
 import { startCapture, stopCapture, entity } from './world/capture.js';
 import { finalizeWorld } from './world/layer.js';
+import { windFarm } from './windfarm.js';
 
 export const meta = { name: 'Sakuragawa 桜川', startHour: 16.6, sunAzimuth: 2.6 };
 const Y0 = 6;
@@ -1768,6 +1769,7 @@ export async function build(progress, opts = {}) {
 
   // ---------------------------------------------------------------- world data: object ids, the edits in world/town/edits (world/layer.js)
   stopCapture();
+  const wind = windFarm((x, z) => hf.groundAt(x, z)); // (turbines on the far hills: scenery, not world objects)
   const layer = await finalizeWorld({ map: opts.map || 'town', editor: !!opts.editor, progress, areaOf: townArea, materialSets: { town: MT, landmark: landmarkMaterials() } });
   // ---------------------------------------------------------------- night lighting: every fixture lights its surroundings (citylights.js)
   const cropInfo = buildCrops();
@@ -1842,6 +1844,7 @@ export async function build(progress, opts = {}) {
       if (Math.abs(p.z) <= RIVER_END && p.y < Y0 - 0.5) { const rx = riverX(p.z), rd = p.x - rx; if (Math.abs(rd) > REV_WL - 0.2 && Math.abs(rd) < 15) p.x = rx + Math.sign(rd) * (REV_WL - 0.2); } for (const tr of trains) { const sp = tr.span(); if (!sp) continue; const tz = RAIL.z[tr.track]; if (p.x > sp[0] - 0.4 && p.x < sp[1] + 0.4 && Math.abs(p.z - tz) < 1.9 && p.y < tr.y + 3.5) p.z = tz + Math.sign(p.z - tz || 1) * 1.9; } },
     update(dt, t, cam) {
       perf.begin(PW.lights); updateNight(); updateGlow(); perf.end(PW.lights);
+      if (wind) wind.update(t);
       perf.begin(PW.lod); updateLod(cam); perf.end(PW.lod);
       perf.begin(PW.crops); updateCrops(cam); perf.end(PW.crops);
       perf.begin(PW.props); landmarks.update(); parkBenches.update(); danchiBenches.update(); perf.end(PW.props);

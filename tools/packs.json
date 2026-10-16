@@ -712,6 +712,12 @@
      "category": "orchard",
      "prefab": "Prefabs/Plants/SM_Prop_Plant_Potato_01_L.prefab",
      "src": "polygon_farm/prop_plant_potato_01_l"
+    },
+    {
+     "id": "farm_windfarm",
+     "kind": "lod",
+     "category": "scenery",
+     "src": "polygon_farm/prop_windfarm_01"
     }
    ]
   },
