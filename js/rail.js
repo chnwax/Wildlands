@@ -4,6 +4,7 @@ import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints,
 import { Emitter, audio } from './audio.js';
 import { stationBuilding } from './station.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { packProp, packParts, packsReady } from './packs.js';
 
 export const RAIL = { z: [-82.1, -77.9], gauge: 1.067, portal: 700, portalW: 700, portalE: 700, stationX: -8, platformLen: 100 };
 // tunnel portal headwall set into the hillside: arched opening, cornice, wing walls down the cutting banks, dark bore.
@@ -446,11 +447,34 @@ function basePlate(B, w, d) {
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const bx = sx * (w / 2 - 0.05), bz = sz * (d / 2 - 0.05);
     B.cyl('steel', bx, 0.022, bz, 0.03, 0.03, 0.022, 6, { color: [0.5, 0.52, 0.54], cap: true, smooth: false }); B.cyl('steel', bx, 0.044, bz, 0.013, 0.011, 0.035, 6, { color: [0.55, 0.56, 0.58], cap: true }); }
 }
+// Idyllic Anime Japan's level-crossing kit, when the model library is there: the yellow-and-black warning post with its
+// crossbuck and twin lamps (lamps on its +z face only: two stand back to back), the barrier machine housing and the
+// striped boom. Lens centres, the boom's hub and bar as measured on the models (model units).
+const XP_S = 0.9, XP_LENS = [[-0.414, 2.333], [0.414, 2.333]], XP_LENS_Z = 0.214;
+const BOOM_HUB = [-2.4, 0.105, 0.185], BOOM_LEN = 5.09; // (hub x, bar centre height, -bar z; hub to tip)
+const boomGeo = new Map();
+function packBoom(armL, mirror) { // the boom's parts, the hub at the origin and the bar along +x, armL long
+  const key = armL.toFixed(2) + (mirror ? 'm' : ''); if (boomGeo.has(key)) return boomGeo.get(key);
+  const P = packParts('jp_gate_train'); if (!P) return null;
+  const out = P.map(q => { const g = q.geometry.clone().translate(-BOOM_HUB[0], -BOOM_HUB[1], BOOM_HUB[2]).scale(armL / BOOM_LEN, 1, mirror ? -1 : 1);
+    if (mirror && g.index) { const a = g.index.array; for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } } // (winding back to front-facing)
+    g.computeVertexNormals(); g.computeBoundingSphere(); return { geometry: g, material: q.material }; });
+  boomGeo.set(key, out); return out;
+}
 // Warning post (警報機) at (x, y, z), lamps facing each of `faces` (yaw; 0 = toward +z): a concrete footing and bolted
 // base plate, a galvanised mast with a terminal box and its conduit, a steel cross-arm carrying back-to-back lamp
 // targets (black boards with a white rim) with twin hooded red lamps each way, a direction indicator, the red-and-white
 // crossbuck and a bell speaker on top. Lamps go to c.lamps (alternate flashing).
 function warningPost(B, c, x, y, z, { H = 3.45, lampY = 2.3, span = 0.6, faces = [0, Math.PI], k = 1, crossbuck = true } = {}) {
+  if (packsReady() && packParts('jp_traincrossing_cross')) { // (the pack's post, one per face, the second a hair larger: no flicker where the masts coincide)
+    faces.forEach((face, i) => { packProp('jp_traincrossing_cross', x, y - 0.02, z, face, XP_S * (1 + i * 0.004));
+      const c0 = Math.cos(face), s0 = Math.sin(face), zz = (XP_LENS_Z + 0.012) * XP_S * (1 + i * 0.004);
+      for (const [lx, ly] of XP_LENS) { const l = new THREE.Mesh(new THREE.CircleGeometry(0.12, 20), lampOff), ax = lx * XP_S;
+        l.position.set(x + ax * c0 + zz * s0, y - 0.02 + ly * XP_S, z - ax * s0 + zz * c0); l.rotation.y = face; scene.add(l);
+        swapsTo(l, lampOn, lampOff); c.lamps.push({ m: l, phase: lx > 0 ? 0 : 1 }); } });
+    B.frame(x, y, z, 0); B.bbox('concrete', 0, -0.4, 0, 0.62 * k, 0.45, 0.62 * k, 0.03, { color: CONC }); B.frame(0, 0, 0, 0);
+    addCircle(x, z, 0.2); return;
+  }
   B.frame(x, y, z, 0);
   B.bbox('concrete', 0, -0.4, 0, 0.62 * k, 0.45, 0.62 * k, 0.03, { color: CONC });
   inFrameY(B, 0.05, () => basePlate(B, 0.4 * k, 0.4 * k));
@@ -496,6 +520,8 @@ function inFrameY(B, dy, fn) { const F = B.F; B.frame(F.x, F.y + dy, F.z, F.r); 
 // the counterweight arm with stacked cast weights, and the boom itself — tapered, banded red and white, with two small
 // red lamps along its top and a steady red lamp at the tip. A boom rest (fork on a post) stands on the far side.
 function barrierMachine(B, c, x, y, z, { side, m, armL, pivotY = 0.98, reach = 0.36, k = 1, restX = null, restY = null }) {
+  const pk = packsReady() && packParts('jp_gatelift') && packBoom(armL, m !== side);
+  if (pk) return packBarrier(B, c, x, y, z, { side, m, armL, pivotY, reach, restX, restY });
   B.frame(x, y, z, 0);
   B.bbox('concrete', 0, -0.36, 0, 0.78 * k, 0.44, 0.66 * k, 0.03, { color: CONC });
   inFrameY(B, 0.08, () => basePlate(B, 0.56 * k, 0.46 * k));
@@ -557,6 +583,31 @@ function barrierMachine(B, c, x, y, z, { side, m, armL, pivotY = 0.98, reach = 0
     B.cyl('steel', 0, 0.06, 0, 0.045, 0.04, pivotY + (y - ry) - 0.2, 10, { color: GALV });
     const fy = pivotY + (y - ry) - 0.14;
     B.box('steel', 0, fy - 0.02, 0.03 * side, 0.1, 0.04, 0.2, { color: GALV });
+    for (const e of [-1, 1]) B.box('dark', 0, fy, 0.03 * side + e * 0.085, 0.08, 0.12, 0.02, { color: BLACK });
+    B.frame(0, 0, 0, 0); addCircle(restX, z + side * reach, 0.08);
+  }
+  return pv;
+}
+// the barrier with the pack's housing and boom: the boom turns about its hub in a group (updateCrossings), its bar along
+// -m across the road; its lamps (small heads along the top, a steady one at the tip) as on the drawn boom
+function packBarrier(B, c, x, y, z, { side, m, armL, pivotY, reach, restX, restY }) {
+  packProp('jp_gatelift', x, y - 0.02, z, side > 0 ? 0 : Math.PI, 1);
+  B.frame(x, y, z, 0); B.bbox('concrete', 0, -0.36, 0, 0.84, 0.4, 0.74, 0.03, { color: CONC }); B.frame(0, 0, 0, 0);
+  addBox(x, z, 0.4, 0.36, 0);
+  const pv = new THREE.Group(); pv.position.set(x, y + pivotY, z + side * reach);
+  const parts = packBoom(armL, m !== side);
+  for (const q of parts) { const me = new THREE.Mesh(q.geometry, q.material); me.castShadow = true; if (m > 0) me.rotation.y = Math.PI; pv.add(me); }
+  const lampAt = [0.36, 0.7, 0.985].map(f => -m * armL * f);
+  lampAt.forEach((lx, i) => { for (const f of [-1, 1]) { const l = new THREE.Mesh(new THREE.CircleGeometry(0.032, 12), lampOff); l.position.set(lx, 0.16, f * 0.05); l.rotation.y = f > 0 ? 0 : Math.PI; pv.add(l); swapsTo(l, lampOn, lampOff); c.lamps.push({ m: l, phase: i % 2, steady: i === 2, boom: true }); } });
+  pv.userData.dynamicCaster = true; scene.add(pv);
+  c.arms.push({ pivot: pv, side: m, len: armL, x0: x, z: z + side * reach });
+  if (restX !== null) {
+    const ry = restY ?? y;
+    B.frame(restX, ry, z + side * reach, 0);
+    B.bbox('concrete', 0, -0.3, 0, 0.36, 0.36, 0.36, 0.02, { color: CONC });
+    B.cyl('steel', 0, 0.06, 0, 0.045, 0.04, pivotY + (y - ry) - 0.2, 10, { color: [0.12, 0.12, 0.12] });
+    const fy = pivotY + (y - ry) - 0.14;
+    B.box('steel', 0, fy - 0.02, 0.03 * side, 0.1, 0.04, 0.2, { color: [0.85, 0.65, 0.1] });
     for (const e of [-1, 1]) B.box('dark', 0, fy, 0.03 * side + e * 0.085, 0.08, 0.12, 0.02, { color: BLACK });
     B.frame(0, 0, 0, 0); addCircle(restX, z + side * reach, 0.08);
   }

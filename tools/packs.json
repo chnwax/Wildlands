@@ -1793,6 +1793,24 @@
      "kind": "lod",
      "category": "street",
      "src": "anime_japan/trafficlight_pedestrian_02"
+    },
+    {
+     "id": "jp_traincrossing_cross",
+     "kind": "prop",
+     "category": "rail",
+     "src": "anime_japan/traincrossing_cross"
+    },
+    {
+     "id": "jp_gatelift",
+     "kind": "prop",
+     "category": "rail",
+     "src": "anime_japan/gatelift"
+    },
+    {
+     "id": "jp_gate_train",
+     "kind": "lod",
+     "category": "rail",
+     "src": "anime_japan/gate_train"
     }
    ]
   },
