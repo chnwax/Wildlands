@@ -1340,15 +1340,16 @@ export async function build(progress, opts = {}) {
       if (queuePack('jp_sign_traffic_008', x, hf.groundAt(x, z) - 0.05, z, dir > 0 ? -Math.PI / 2 : Math.PI / 2)) addCircle(x, z, 0.06);
     }
   }
-  // service drops: every house takes its supply from the nearest pole, a sagging cable to a bracket under the eaves
+  // service drops: some houses take their supply overhead from the nearest pole, a sagging cable to a bracket under the
+  // eaves (one in four, on a short span: the rest are fed underground)
   {
     const pts = [], cell = new Map(), key = (x2, z2) => Math.floor(x2 / 30) + ',' + Math.floor(z2 / 30);
     for (const p of allPoles) { const k = key(p.pts[0][0], p.pts[0][2]); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(p); }
     for (const lot of lots) {
-      const I = lot.info; if (!I || !I.eave) continue;
+      const I = lot.info; if (!I || !I.eave || Math.abs(Math.floor(lot.x * 3) * 7 + Math.floor(lot.z * 3) * 13) % 4) continue;
       const c = Math.cos(lot.r), s2 = Math.sin(lot.r), W2 = (lx, lz) => [lot.x + lx * c + lz * s2, lot.z - lx * s2 + lz * c];
       const front = W2(I.hx, I.hz + I.D / 2);
-      let best = null, bd = 32;
+      let best = null, bd = 20;
       for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const p of cell.get((Math.floor(front[0] / 30) + i) + ',' + (Math.floor(front[1] / 30) + j)) || []) {
         const q = p.pts.reduce((m, v) => v[1] < m[1] ? v : m, p.pts[0]), d = Math.hypot(q[0] - front[0], q[2] - front[1]);
         if (d < bd) { bd = d; best = q; } }
