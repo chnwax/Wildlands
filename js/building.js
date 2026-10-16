@@ -7,7 +7,7 @@
 import { scene, clamp, lerp, mulberry32 } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS } from './townkit.js';
 import { cropSet } from './crops.js';
-import { packsReady, queuePack } from './packs.js';
+import { packsReady, queuePack, packProp } from './packs.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
@@ -264,13 +264,19 @@ export function flatRoof(B, o) {
 
 // ---------------------------------------------------------------- service details (wall frame, ground at y = g)
 export function acUnit(B, x, g, rng, opt = {}) { B.detail(1, () => acUnit0(B, x, g, rng, opt)); }
+// Idyllic Anime Japan's outdoor units and meter boxes stand in for the drawn ones when the model library is there (the
+// pipe duct, drain hose, brackets and gas pipes stay drawn); which model, from the spot on the wall (no draws of rng)
+const wallHash = (B, x, y) => { const p = B.P([x, y, 0]); return Math.abs(Math.floor(p[0] * 3.1) * 7 + Math.floor(p[2] * 2.3) * 13 + Math.floor(y * 5)) % 16; };
 function acUnit0(B, x, g, rng, { pipeTo = 2.4, onWall = false, z = 0.22 } = {}) {
   const y = onWall ? g : g + 0.1, c = [0.93, 0.93, 0.9];
-  B.bbox('plain', x, y, z, 0.8, 0.56, 0.28, 0.025, { color: c });
-  const cx = x - 0.12, cy = y + 0.28, zf = z + 0.141, R = 0.21;
-  for (let i = 0; i < 14; i++) { const a0 = i / 14 * TAU, a1 = (i + 1) / 14 * TAU; B.poly('dark', [[cx, cy, zf], [cx + Math.cos(a0) * R, cy + Math.sin(a0) * R, zf], [cx + Math.cos(a1) * R, cy + Math.sin(a1) * R, zf]], [0, 0, 1], { color: [0.16, 0.17, 0.18] }); }
-  B.detail(2, () => { for (let i = -2; i <= 2; i++) B.box('plain', cx, cy + i * 0.075 - 0.006, zf, 2 * Math.sqrt(Math.max(0, R * R - (i * 0.075) ** 2)), 0.012, 0.01, { color: [0.82, 0.82, 0.8] });
-    for (let i = 0; i < 5; i++) B.box('plain', x + 0.25, y + 0.12 + i * 0.08, zf - 0.004, 0.2, 0.012, 0.012, { color: [0.8, 0.8, 0.78] }); });
+  const h = packsReady() ? wallHash(B, x, y) : -1, pk = h >= 0 && (() => { const p = B.P([x, y, z]); return h % 5 === 4 ? packProp('jp_airconditioner_02', p[0], p[1], p[2], B.F.r, [0.66, 0.5, 0.52]) : packProp('jp_airconditioner_01', p[0], p[1], p[2], B.F.r, [0.86, 0.66, 0.74]); })() !== null;
+  if (!pk) {
+    B.bbox('plain', x, y, z, 0.8, 0.56, 0.28, 0.025, { color: c });
+    const cx = x - 0.12, cy = y + 0.28, zf = z + 0.141, R = 0.21;
+    for (let i = 0; i < 14; i++) { const a0 = i / 14 * TAU, a1 = (i + 1) / 14 * TAU; B.poly('dark', [[cx, cy, zf], [cx + Math.cos(a0) * R, cy + Math.sin(a0) * R, zf], [cx + Math.cos(a1) * R, cy + Math.sin(a1) * R, zf]], [0, 0, 1], { color: [0.16, 0.17, 0.18] }); }
+    B.detail(2, () => { for (let i = -2; i <= 2; i++) B.box('plain', cx, cy + i * 0.075 - 0.006, zf, 2 * Math.sqrt(Math.max(0, R * R - (i * 0.075) ** 2)), 0.012, 0.01, { color: [0.82, 0.82, 0.8] });
+      for (let i = 0; i < 5; i++) B.box('plain', x + 0.25, y + 0.12 + i * 0.08, zf - 0.004, 0.2, 0.012, 0.012, { color: [0.8, 0.8, 0.78] }); });
+  }
   if (!onWall) for (const sx of [-0.3, 0.3]) B.bbox('plastic', x + sx, g, z, 0.1, 0.1, 0.34, 0.01, { color: [0.28, 0.28, 0.3] });
   else for (const sx of [-0.3, 0.3]) { B.box('steel', x + sx, g - 0.04, 0.2, 0.04, 0.04, 0.4, { color: [0.6, 0.6, 0.6] }); B.beam('steel', [x + sx, g - 0.03, 0.38], [x + sx, g - 0.35, 0.02], 0.03, 0.03, { color: [0.6, 0.6, 0.6] }); }
   // pipe duct up the wall into a wall cap, drain hose to the ground
@@ -282,6 +288,9 @@ function acUnit0(B, x, g, rng, { pipeTo = 2.4, onWall = false, z = 0.22 } = {}) 
 }
 export function meterBox(B, x, y, kind = 'power') { B.detail(2, () => meterBox0(B, x, y, kind)); }
 function meterBox0(B, x, y, kind = 'power') {
+  if (packsReady()) { const h = wallHash(B, x, y), p = B.P([x, y - 0.04, 0.065]);
+    if (kind === 'power' && packProp(['jp_fusebox_wall_02', 'jp_fusebox_wall_09', 'jp_fusebox_wall_01'][h % 3], p[0], p[1], p[2], B.F.r, 0.8) !== null) return;
+    if (kind !== 'power' && packProp('jp_fusebox_wall_03', p[0], p[1] + 0.04, p[2], B.F.r, 0.7) !== null) { B.cyl('steel', x - 0.08, 0, 0.08, 0.018, 0.018, y, 6, { color: [0.7, 0.62, 0.3] }); B.cyl('steel', x + 0.08, y + 0.2, 0.08, 0.018, 0.018, 0.5, 6, { color: [0.7, 0.62, 0.3] }); return; } }
   if (kind === 'power') { B.bbox('plastic', x, y, 0.06, 0.24, 0.34, 0.12, 0.015, { color: [0.82, 0.83, 0.82] }); B.quad('glass', [x - 0.08, y + 0.14, 0.121], [x + 0.08, y + 0.14, 0.121], [x + 0.08, y + 0.27, 0.121], [x - 0.08, y + 0.27, 0.121], { color: [0.4, 0.45, 0.5] }); }
   else { B.bbox('plain', x, y, 0.08, 0.26, 0.26, 0.16, 0.02, { color: [0.62, 0.64, 0.62] }); B.cyl('steel', x - 0.08, 0, 0.08, 0.018, 0.018, y, 6, { color: [0.7, 0.62, 0.3] }); B.cyl('steel', x + 0.08, y + 0.26, 0.08, 0.018, 0.018, 0.5, 6, { color: [0.7, 0.62, 0.3] }); }
 }
