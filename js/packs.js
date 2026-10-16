@@ -34,6 +34,11 @@ export function loadPacks() {
     let next = 0;
     await Promise.all(Array.from({ length: 12 }, async () => { for (;;) { const i = next++; if (i >= want.length) return; await loadFile(want[i].src); } }));
     THREE.Cache.enabled = cacheWas;
+    // a Unity material shared by several models keeps its texture in only some of their files (the extraction found it
+    // there): the others borrow it by the material's name, so which file loads first no longer decides the look
+    const named = new Map();
+    for (const a of want) { const g = await loadFile(a.src); if (g) g.scene.traverse(o => { if (o.isMesh && o.material.map) { const k = a.src.split('/')[0] + '/' + o.material.name; if (!named.has(k)) named.set(k, o.material.map); } }); }
+    for (const a of want) { const g = await loadFile(a.src); if (g) g.scene.traverse(o => { if (o.isMesh && !o.material.map) { const t = named.get(a.src.split('/')[0] + '/' + o.material.name); if (t) { o.material.map = t; o.material.needsUpdate = true; } } }); }
     for (const a of want) {
       const g = await loadFile(a.src); if (!g) continue;
       const pack = a.src.split('/')[0], kind = a.kind || 'prop', K = KIND[kind] || KIND.prop, parts = [];
@@ -66,7 +71,8 @@ function material(src, pack, kind, sway, cache, texs) {
   // lamp glass, paper lanterns, the lit fronts of vending machines
   if (/emissive/i.test(src.name)) { m.emissive = new THREE.Color(0xfff0d6); m.userData.glow = 2.2; packGlow.push(m); }
   else if (/lantern/i.test(src.name) && m.map) { m.emissive = new THREE.Color(0xffd9a0); m.emissiveMap = m.map; m.userData.glow = /^M_lanterns/.test(src.name) ? 1.6 : 0.7; packGlow.push(m); } // (the paper lanterns brighter than lit stone)
-  else if (/vending|drinks|bottles/i.test(src.name)) { m.emissive = new THREE.Color(0xffffff); if (m.map) m.emissiveMap = m.map; m.userData.glow = 0.25; packGlow.push(m); }
+  else if (/drinks|bottles/i.test(src.name)) { m.emissive = new THREE.Color(0xffffff); if (m.map) m.emissiveMap = m.map; m.userData.glow = 0.25; packGlow.push(m); } // (the stocked display only)
+  if (/^M_vendingmachine/i.test(src.name)) m.color.multiplyScalar(0.82); // (the white bodies blew out into bloom in full sun)
   if (sw) windPatch(m, 'packWind' + sw.toFixed(2) + (m.alphaTest > 0 ? 'a' : '') + (m.transparent ? 't' : ''), sw);
   cache.set(key, m);
   return m;

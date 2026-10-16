@@ -1753,12 +1753,6 @@
      "src": "anime_japan/sign_streetname_03"
     },
     {
-     "id": "jp_warning_panel_01",
-     "kind": "prop",
-     "category": "street",
-     "src": "anime_japan/warning_panel_01"
-    },
-    {
      "id": "jp_warning_panel_02",
      "kind": "prop",
      "category": "street",
@@ -1781,6 +1775,18 @@
      "kind": "prop",
      "category": "house",
      "src": "anime_japan/antenna_02"
+    },
+    {
+     "id": "jp_trash_container_02",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/trash_container_02"
+    },
+    {
+     "id": "jp_vendingmachine_bottles_03_1",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/vendingmachine_bottles_03_1"
     }
    ]
   },

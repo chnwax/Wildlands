@@ -344,10 +344,15 @@ const HOUSE_ROOFS = [[0.2, 0.33, 0.6], [0.2, 0.5, 0.52], [0.72, 0.28, 0.2], [0.2
 const FRAMES = { alu: [0.8, 0.82, 0.84], white: [0.96, 0.96, 0.94], brown: [0.36, 0.25, 0.18], black: [0.16, 0.16, 0.18], wood: [0.5, 0.35, 0.22] };
 const FLOWERS = [[1, 0.45, 0.55], [0.98, 0.3, 0.28], [1, 0.86, 0.3], [0.96, 0.96, 0.94], [0.72, 0.52, 0.95], [1, 0.62, 0.8]];
 export function doorGap(LW, gw) { return [LW / 2 - 0.5 - gw, LW / 2 - 0.5]; }
+const POTS = [['jp_flowerpot_08', 0.55], ['jp_flowerpot_03', 0.62], ['jp_flowerpot_05', 0.42], ['jp_flowerpot_09', 0.5], ['jp_flowerpot_07', 0.45]];
 function flowerBox(B, cx, y, w, rng) { B.detail(1, () => flowerBox0(B, cx, y, w, rng)); }
 function flowerBox0(B, cx, y, w, rng) {
   B.bbox('wood', cx, y - 0.3, 0.14, w, 0.22, 0.24, 0.015, { color: [0.55, 0.38, 0.26] });
   const c = pick(rng, FLOWERS), n = Math.max(3, Math.floor(w / 0.18));
+  // (planted with Idyllic Anime Japan's little flower pots when the model library is there: a row of them, sunk in the soil)
+  if (packsReady()) { const m = Math.max(2, Math.floor(w / 0.27)), h0 = Math.abs(Math.floor(B.P([cx, y, 0])[0] * 7 + B.P([cx, y, 0])[2] * 3)) % POTS.length;
+    let ok = true; for (let i = 0; i < m && ok; i++) { const [id, sc] = POTS[(h0 + i) % POTS.length], p = B.P([cx - w / 2 + (i + 0.5) * w / m, y - 0.11, 0.14]); ok = packProp(id, p[0], p[1], p[2], B.F.r + i * 1.3, sc) !== null; }
+    if (ok) return; }
   for (let i = 0; i < n; i++) B.box('plain', cx - w / 2 + (i + 0.5) * w / n, y - 0.1, 0.12 + (i % 2) * 0.06, 0.13, 0.12 + (i % 3) * 0.03, 0.13, { color: i % 3 === 2 ? [0.3, 0.6, 0.3] : c });
 }
 function solarPanels(B, w, z0, z1, yAt, rows) {

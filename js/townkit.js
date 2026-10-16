@@ -466,9 +466,9 @@ const vmFrontGeo = new THREE.PlaneGeometry(1.0, 1.83).translate(0, 0, 0.375);
 const vmSideMats = [0xc8102e, 0x0b4ea2, 0xf3f3ef, 0x1b1b1b, 0xe8e8e8].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.4, metalness: 0.3 }));
 const _pm = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pe = new THREE.Euler(), _pv = new THREE.Vector3(), _ps = new THREE.Vector3(1, 1, 1);
 const propMatrix = (x, y, z, ry, out = new THREE.Matrix4()) => out.compose(_pv.set(x, y, z), _pq.setFromEuler(_pe.set(0, ry, 0)), _ps);
-// Idyllic Anime Japan's drink machines when the model library is there: the four stocked fronts and the two plain ones,
+// Idyllic Anime Japan's drink machines when the model library is there: its five stocked fronts
 // in turn (their lit fronts glow at night, packs.js)
-const VM_PACK = ['jp_vendingmachine_bottles_01', 'jp_vendingmachine_bottles_02', 'jp_vendingmachine_bottles_03', 'jp_vendingmachine_bottles_04', 'jp_vendingmachine_bottles_01', 'jp_vendingmachine_02'];
+const VM_PACK = ['jp_vendingmachine_bottles_01', 'jp_vendingmachine_bottles_02', 'jp_vendingmachine_bottles_03', 'jp_vendingmachine_bottles_04', 'jp_vendingmachine_bottles_03_1', 'jp_vendingmachine_bottles_02']; // (the pack's plain machines have no textures in the library: left out)
 function vendingMachine_build(x, y, z, r, i, B = null) {
   // (at a real machine's size: rows of them stand 1.1 m apart)
   if (packsReady() && packProp(VM_PACK[i % VM_PACK.length], x, y, z, r, [0.9, 0.92, 0.95]) !== null) { addBox(x, z, 0.6, 0.38, r); return null; }
@@ -903,7 +903,9 @@ export function bicycles(list, rng) { // list: [{x,y,z,r}]
   // near: Idyllic Anime Japan's city bicycle (the silver one, tinted per bike) at a real bicycle's size, when the model
   // library is there; past 45 m the light procedural bike
   const pk = packParts('jp_bicycle_1');
-  const near = pk ? pk.map(p => ({ geometry: p.geometry.clone().scale(0.8, 0.8, 0.8), material: p.material, tint: true, castShadow: true })) : parts(0);
+  // (the sets' tilt2 pitches a bike about its middle — the drawn bikes' kickstand stance: the model is pitched back by the
+  // mean of it and lifted a little, so neither wheel sinks into the paving)
+  const near = pk ? pk.map(p => ({ geometry: p.geometry.clone().scale(0.8, 0.8, 0.8).rotateZ(-0.06).translate(0, 0.025, 0), material: p.material, tint: true, castShadow: true })) : parts(0);
   withScatterMeta({ prefab: 'bicycle', category: 'vehicle', materials: pk ? [paintM, restM] : null }, () => new Scatter(items, [{ dist: () => (pk ? 45 : 30) * (Q.lodScale || 1), parts: near }, { dist: () => Infinity, parts: parts(1) }], 128));
   return items;
 }
