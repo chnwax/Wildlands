@@ -1053,21 +1053,24 @@ const TREE_PREFAB = { young: 'tree_young_fir', spruce: 'tree_spruce', tall: 'tre
 // [near model, lower-detail model (optional)]; the geometry is scaled to unit height so an item's s stays its height.
 // Levels: the full model near, the lighter one to the middle distance, then the painted procedural mid and far levels
 // (masses that hold the forest's colour to the horizon at a fraction of the cost).
-const PACK_TREES = { // [near model, lower-detail model, far card (The Illustrated Nature's crossed cards, 4 triangles)]
-  young: [['tr_wl_tree03', null, 'tr_il_pine_01_card'], ['tr_il_pine_01', 'tr_il_pine_01_l1', 'tr_il_pine_01_card']],
-  spruce: [['tr_wl_tree03', null, 'tr_il_pine_02_card'], ['tr_il_pine_02', 'tr_il_pine_02_l1', 'tr_il_pine_02_card']], // (Woodlands' Tree01 wears its autumn leaves: not used)
-  tall: [['tr_wl_tree02', null, 'tr_il_pine_03_card']],
-  old: [['tr_il_pine_02', 'tr_il_pine_02_l1', 'tr_il_pine_02_card'], ['tr_wl_tree02', null, 'tr_il_pine_03_card']],
-  pine: [['tr_il_pine_03', 'tr_il_pine_03_l1', 'tr_il_pine_03_card']],
+// [near model, lower-detail model]: conifers are Idyllic Woodlands' dark firs only (The Illustrated Nature's pines are a
+// light teal that stood out of the forest); past the middle distance every species turns into the procedural masses,
+// which keep the hillsides as full and as dark as the near trees (the packs' crossed cards thinned out and paled)
+const PACK_TREES = {
+  young: [['tr_wl_tree03']],
+  spruce: [['tr_wl_tree03'], ['tr_wl_tree02']], // (Woodlands' Tree01 wears its autumn leaves: not used)
+  tall: [['tr_wl_tree02']],
+  old: [['tr_wl_tree02'], ['tr_wl_tree03']],
+  pine: [['tr_wl_tree02']],
   jpine: [['tr_jp_garden'], ['tr_jp_garden'], ['tr_jp_garden']],
   snag: [['tr_il_pine_01_dead']],
-  broken: [['tr_il_birch_02_dead']],
-  leaf: [['tr_il_beech_01', 'tr_il_beech_01_l2', 'tr_il_beech_01_card'], ['tr_il_beech_03', 'tr_il_beech_03_l2', 'tr_il_beech_03_card']],
-  oak: [['tr_il_beech_02', 'tr_il_beech_02_l2', 'tr_il_beech_02_card']],
-  birch: [['tr_il_birch_01', 'tr_il_birch_01_l2', 'tr_il_birch_01_card']],
-  zelkova: [['tr_jp_tall_01', null, 'tr_il_beech_02_card'], ['tr_jp_tall_02', null, 'tr_il_beech_02_card'], ['tr_il_beech_02', 'tr_il_beech_02_l2', 'tr_il_beech_02_card']],
-  maple: [['tr_il_beech_01', 'tr_il_beech_01_l2', 'tr_il_beech_01_card'], ['tr_jp_tall_02', null, 'tr_il_beech_02_card']],
-  willow: [['tr_il_birch_02', 'tr_il_birch_02_l2', 'tr_il_birch_02_card']],
+  broken: [['tr_il_pine_01_dead']],
+  leaf: [['tr_il_beech_01', 'tr_il_beech_01_l2'], ['tr_il_beech_03', 'tr_il_beech_03_l2']],
+  oak: [['tr_il_beech_02', 'tr_il_beech_02_l2']],
+  birch: [['tr_il_birch_01', 'tr_il_birch_01_l2']],
+  zelkova: [['tr_jp_tall_01'], ['tr_jp_tall_02'], ['tr_il_beech_02', 'tr_il_beech_02_l2']],
+  maple: [['tr_il_beech_01', 'tr_il_beech_01_l2'], ['tr_jp_tall_02']],
+  willow: [['tr_il_birch_02', 'tr_il_birch_02_l2']],
   sakura: [['tr_jp_cherry'], ['tr_jp_cherry_02']],
 };
 const packTreeCache = new Map();
@@ -1104,23 +1107,24 @@ function packTreeParts(id, h, sp, near) {
 function packTreeLods(kind, v, sp, hiD, loD) {
   if (!packsReady()) return null;
   const vars = PACK_TREES[kind]; if (!vars) return null;
-  const [nearId, lowId, cardId] = vars[v % vars.length], P = packsReady(), dims = P.dims(nearId); if (!dims) return null;
+  const [nearId, lowId] = vars[v % vars.length], P = packsReady(), dims = P.dims(nearId); if (!dims) return null;
   const h = dims[1], near = packTreeParts(nearId, h, sp, true), low = lowId ? packTreeParts(lowId, h, sp, false) : near;
-  const card = cardId && P.dims(cardId) ? packTreeParts(cardId, P.dims(cardId)[1], sp, false) : null;
   if (!near || !low) return null;
   const d0 = () => Math.min(hiD(), 70), d1 = () => Math.max(d0() + 1, Math.min(hiD(), 190));
   const lods = [{ dist: d0, parts: near }, { dist: d1, parts: low }];
-  // past the middle distance: the pack's own painted card to the horizon, or (species without one: the cherries, the
-  // garden pines) the procedural masses
-  if (card) lods.push({ dist: () => Infinity, parts: card.map(p => ({ ...p, castShadow: false, sway: false })) });
-  else { lods.push({ dist: () => Math.max(d1() + 1, loD()), parts: speciesParts(sp, materials(sp.mat), sp.geo(1, v), 1) });
-    if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, materials(sp.mat), sp.geo(2, v), 2) }); }
+  // past the middle distance: the procedural masses of the species, to the horizon
+  lods.push({ dist: () => Math.max(d1() + 1, loD()), parts: speciesParts(sp, materials(sp.mat), sp.geo(1, v), 1) });
+  if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, materials(sp.mat), sp.geo(2, v), 2) });
   return lods;
 }
 // the per-item tint of a pack tree: the procedural foliage colour turned into a gentle brightness / warmth variation
 // around white (the pack's own textures carry the colour)
-function packTint(list) {
+function packTint(list, sp) {
   let sum = 0, n = 0; const lum = c => c ? 0.3 * c.r + 0.59 * c.g + 0.11 * c.b : 0;
+  // (conifers: the procedural masses past the middle distance take the Woodlands firs' olive, at their own brightness,
+  // so the forest keeps one colour from the near trees to the far hillsides)
+  if (sp && sp.mat === 'fir') { const o = { r: 0.36, g: 0.4, b: 0.15 }, lo = lum(o);
+    for (const t of list) if (t.c) { const k = lum(t.c) / lo; t.c.setRGB(t.c.r * 0.35 + o.r * k * 0.65, t.c.g * 0.35 + o.g * k * 0.65, t.c.b * 0.35 + o.b * k * 0.65); } }
   for (const t of list) if (t.c) { sum += lum(t.c); n++; }
   const mean = n ? sum / n : 1;
   for (const t of list) { const k = t.c && mean > 0 ? clamp(lum(t.c) / mean, 0.82, 1.18) : 1, w = t.c ? clamp((t.c.r - t.c.b) / Math.max(lum(t.c), 0.05) * 0.06, -0.05, 0.05) : 0;
@@ -1142,7 +1146,7 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
     const hiD = sp.short ? () => Q.ferns * 0.5 : sp.tiny ? () => Q.ferns * 1.1 : sp.small ? () => Q.treeHi * 0.55 : sp.mat === 'fir' ? () => Math.min(hiDist(), Q.treeHi * 0.6) : sp.hiScale ? () => hiDist() * sp.hiScale : hiDist;
     const loD = sp.short ? () => Q.ferns * 1.1 : sp.tiny ? () => Q.treeHi * 0.7 : sp.small ? () => Q.trees * 0.3 : farDist;
     let lods = !sp.tiny && !sp.short && packTreeLods(kind, v, sp, hiD, loD);
-    if (lods) packTint(list);
+    if (lods) packTint(list, sp);
     else { lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
       if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) }); }
     if ((MATS[sp.mat] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true; // wind-swayed: shadows redrawn near (sky.js)

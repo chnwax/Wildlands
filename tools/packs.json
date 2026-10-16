@@ -1961,52 +1961,10 @@
      "src": "idyllic_woodlands/tree03"
     },
     {
-     "id": "tr_il_pine_01",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_01"
-    },
-    {
-     "id": "tr_il_pine_01_l1",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_01__lod1"
-    },
-    {
-     "id": "tr_il_pine_02",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_02"
-    },
-    {
-     "id": "tr_il_pine_02_l1",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_02__lod1"
-    },
-    {
-     "id": "tr_il_pine_03",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_03"
-    },
-    {
-     "id": "tr_il_pine_03_l1",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_03__lod1"
-    },
-    {
      "id": "tr_il_pine_01_dead",
      "kind": "lod",
      "category": "tree",
      "src": "illustrated_nature/tree_pine_01_dead"
-    },
-    {
-     "id": "tr_il_birch_02_dead",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_birch_02_dead"
     },
     {
      "id": "tr_il_beech_01",
@@ -2097,54 +2055,6 @@
      "kind": "lod",
      "category": "tree",
      "src": "anime_japan/tree_cherry_02"
-    },
-    {
-     "id": "tr_il_pine_01_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_01__card"
-    },
-    {
-     "id": "tr_il_pine_02_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_02__card"
-    },
-    {
-     "id": "tr_il_pine_03_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_pine_03__card"
-    },
-    {
-     "id": "tr_il_beech_01_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_beech_01__card"
-    },
-    {
-     "id": "tr_il_beech_02_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_beech_02__card"
-    },
-    {
-     "id": "tr_il_beech_03_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_beech_03__card"
-    },
-    {
-     "id": "tr_il_birch_01_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_birch_01__card"
-    },
-    {
-     "id": "tr_il_birch_02_card",
-     "kind": "lod",
-     "category": "tree",
-     "src": "illustrated_nature/tree_birch_02__card"
     }
    ]
   },
