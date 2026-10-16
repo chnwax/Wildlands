@@ -496,7 +496,10 @@ export async function build(progress, opts = {}) {
   // zebra crossings on every arm of the main road and road B at their junctions, just past the curb returns;
   // stop lines on the minor approaches (behind the crossing where there is one)
   const zebras = [], stops = [];
-  const isSignal = I => I.roads.some(R => R.id === 'A') && I.roads.some(R => R.id === 'B'); // the one signalised junction
+  // signalised: every junction of two through roads (A x B, A x DA, B x F, F x DA); each has its own cycle, its two roads
+  // their phases ('A' and 'B' at A x B, road@junction elsewhere)
+  const isSignal = I => I.roads.every(R => R.kind === 'main' || R.kind === 'road') && !onBridge(I.p[0], I.p[1]);
+  const sigKey = (I, R) => I.roads.some(r => r.id === 'A') && I.roads.some(r => r.id === 'B') ? R.id : R.id + '@' + Math.round(I.p[0]) + ',' + Math.round(I.p[1]);
   for (const I of inters) {
     const [r1, r2] = I.roads;
     const [major, minor] = RN.RANK[r1.kind] >= RN.RANK[r2.kind] ? [r1, r2] : [r2, r1];
@@ -504,14 +507,14 @@ export async function build(progress, opts = {}) {
     const band = 4;
     for (const arm of I.arms) {
       const R = arm.n.R, other = arm.n.R === r1 ? r2 : r1;
-      const hasX = ((R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340 || R.district && other.district || R.district && other.id === 'A') && !other.noMarks; // no zebras across alley mouths
+      const hasX = ((R.id === 'A' || R.id === 'B') && Math.abs(I.p[0]) < 460 && Math.abs(I.p[1]) < 340 || R.district && other.district || R.district && other.id === 'A' || isSignal(I)) && !other.noMarks; // no zebras across alley mouths
       // (past the curb returns on both sides — on a skewed or curving junction their tangent points lie further out)
       const tc = Math.max(0, ...Object.values(arm.cornerT).map(Math.abs)), d = Math.max(other.w / 2 + I.rF + 0.4, tc + 1.4) + band / 2;
       const cq = RN.sampleAt(arm.n, clamp(arm.s + arm.dir * d, 0, arm.n.PL.len));
       if (hasX && !onBridge(cq.x, cq.z)) zebras.push({ id: R.id, s: arm.s + arm.dir * d, band, I }); else if (hasX) continue;
       if (isSignal(I)) { // every approach stops at its line on red
         const ss = arm.s + arm.dir * (d + band / 2 + 1.2); if (ss < 1 || ss > arm.n.PL.len - 1) continue;
-        stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, sign: false, legend: false, signal: R.id });
+        stops.push({ id: R.id, s: ss, dir: -arm.dir, arm, sign: false, legend: false, signal: sigKey(I, R) });
       } else if (R === minor || R.kind === major.kind && R === r2 && R.kind === 'lane') {
         const ds = hasX ? d + band / 2 + 1.2 : arm.L + 0.3;
         const ss = arm.s + arm.dir * ds; if (ss < 1 || ss > arm.n.PL.len - 1) continue;
@@ -588,33 +591,35 @@ export async function build(progress, opts = {}) {
     const signAt = (n, s, dir, kind, back = 0) => { const q = RN.sampleAt(n, s - dir * back), d = [q.d[0] * dir, q.d[1] * dir], off = n.hw + (n.walk ? n.walk - 0.45 : 0.75);
       const x = q.x + d[1] * off, z = q.z - d[0] * off; if (onBridge(x, z) || onRail(z)) return; roadSign(B, x, topY(x, z), z, Math.atan2(-d[0], -d[1]), kind); };
     for (const zb of zebras) { if (zb.bank) continue; const n = RN.byId.get(zb.id); if (!n || !n.walk) continue; for (const dir of [1, -1]) signAt(n, zb.s, dir, 'xwalk', zb.band / 2 + 0.6); }
-    const SI = inters.find(isSignal);
-    if (SI) for (const arm of SI.arms) { const n = arm.n, sIn = arm.s - arm.dir * 0, L = n.PL.len, s = sIn + arm.dir * 55; if (s < 5 || s > L - 5) continue; signAt(n, s, -arm.dir, 'signal'); }
+    for (const SI of inters.filter(isSignal)) for (const arm of SI.arms) { const n = arm.n, sIn = arm.s - arm.dir * 0, L = n.PL.len, s = sIn + arm.dir * 55; if (s < 5 || s > L - 5) continue; signAt(n, s, -arm.dir, 'signal'); }
   }
   // traffic signals at A x B: a mast on the far-left corner of every approach (arm over the approach lane), pedestrian
   // heads facing across both crosswalks at each corner. 36 s cycle: A green 16 s, amber 3, all-red 1, B green 12, amber 3, all-red 1
-  const signals = { t: 0, lamps: [], mats: {} };
+  const signals = { t: 0, lamps: [], mats: {}, groups: new Map() };
   {
-    const I = inters.find(isSignal), mat = (g, k) => signals.mats[g + k] || (signals.mats[g + k] = signalLampMaterial(k));
+    const mat = (g, k) => signals.mats[g + k] || (signals.mats[g + k] = signalLampMaterial(k));
+    // phases: the higher-ranked road (or the first of two equal ones) runs first; the junctions' cycles are offset
+    inters.filter(isSignal).forEach((I, j) => { const [r1, r2] = I.roads, first = RN.RANK[r2.kind] > RN.RANK[r1.kind] ? r2 : r1;
+      for (const R of I.roads) signals.groups.set(sigKey(I, R), { ph: R === first ? 0 : 1, off: j * 9 }); });
     const disc = new THREE.CircleGeometry(packsReady() ? 0.155 : 0.13, 20), sq = new THREE.PlaneGeometry(0.28, 0.28); // (the lamps fill the lenses of the pack heads, townkit.js)
-    if (I) for (const arm of I.arms) {
+    for (const I of inters.filter(isSignal)) for (const arm of I.arms) {
       const n = arm.n, other = I.nets.find(o => o !== n), h = [-arm.d[0], -arm.d[1]], L = [h[1], -h[0]];
       const rF = I.rF, oh = other.hw + rF, ol = n.hw + rF, k = (rF - 0.6) / Math.SQRT2;
       const ph = oh - k, pl = ol - k, x = I.p[0] + h[0] * ph + L[0] * pl, z = I.p[1] + h[1] * ph + L[1] * pl;
-      const g = n.R.id, og = other.R.id;
+      const g = sigKey(I, n.R), og = sigKey(I, other.R);
       const out = signalMast(B, x, topY(x, z), z, Math.atan2(-h[0], -h[1]), { arm: pl - n.hw / 2 + 0.95, peds: [{ a: Math.PI / 2, group: og }, { a: 0, group: g }] });
       for (const v of out.veh) { const m = new THREE.Mesh(disc, mat(g, v.k)); m.position.set(...v.p); m.rotation.y = v.r; scene.add(m); }
       for (const v of out.ped) { const m = new THREE.Mesh(sq, mat('p' + v.group, v.k)); m.position.set(...v.p); m.rotation.y = v.r; scene.add(m); }
     }
-    const cyc = () => signals.t % 36;
-    signals.state = g => { const c = cyc(); return g === 'A' ? (c < 16 ? 'g' : c < 19 ? 'y' : 'r') : (c >= 20 && c < 32 ? 'g' : c >= 32 && c < 35 ? 'y' : 'r'); };
+    const grp = g => signals.groups.get(g) || { ph: g === 'A' ? 0 : 1, off: 0 }, cyc = G => (signals.t + G.off) % 36;
+    signals.state = g => { const G = grp(g), c = cyc(G); return G.ph === 0 ? (c < 16 ? 'g' : c < 19 ? 'y' : 'r') : (c >= 20 && c < 32 ? 'g' : c >= 32 && c < 35 ? 'y' : 'r'); };
     // cars already within braking distance run the amber; nobody enters on red
     signals.go = (g, d) => { const s = signals.state(g); return s === 'g' || s === 'y' && d < 7; };
     signals.update = dt => {
-      signals.t += dt; const c = cyc(), blink = Math.floor(signals.t * 2) % 2;
-      for (const g of ['A', 'B']) { const s = signals.state(g); for (const k of ['g', 'y', 'r']) { const m = signals.mats[g + k]; if (m) m.emissiveIntensity = s === k ? m.userData.on : 0; } }
-      for (const g of ['A', 'B']) { // walkers parallel to that road's traffic: walk, then a flashing green, then red
-        const start = g === 'A' ? 0 : 20, e = c - start, walk = e >= 0 && e < 13 ? 1 : e >= 13 && e < 16 ? blink : 0;
+      signals.t += dt; const blink = Math.floor(signals.t * 2) % 2;
+      for (const g of signals.groups.keys()) { const s = signals.state(g); for (const k of ['g', 'y', 'r']) { const m = signals.mats[g + k]; if (m) m.emissiveIntensity = s === k ? m.userData.on : 0; } }
+      for (const g of signals.groups.keys()) { // walkers parallel to that road's traffic: walk, then a flashing green, then red
+        const G = grp(g), c = cyc(G), start = G.ph === 0 ? 0 : 20, e = c - start, walk = e >= 0 && e < 13 ? 1 : e >= 13 && e < 16 ? blink : 0;
         const w = signals.mats['p' + g + 'walk'], r = signals.mats['p' + g + 'stop'];
         if (w) w.emissiveIntensity = walk ? w.userData.on : 0; if (r) r.emissiveIntensity = walk || (e >= 13 && e < 16) ? 0 : r.userData.on;
       }
