@@ -1811,6 +1811,66 @@
      "kind": "lod",
      "category": "rail",
      "src": "anime_japan/gate_train"
+    },
+    {
+     "id": "jp_ramenshop",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/ramenshop"
+    },
+    {
+     "id": "jp_restaurant_traditional_building",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/restaurant_traditional_building"
+    },
+    {
+     "id": "jp_shop_building_01",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/shop_building_01"
+    },
+    {
+     "id": "jp_shop_building_02",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/shop_building_02"
+    },
+    {
+     "id": "jp_shop_building_03",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/shop_building_03"
+    },
+    {
+     "id": "jp_shop_building_04",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/shop_building_04"
+    },
+    {
+     "id": "jp_shop_building_05",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/shop_building_05"
+    },
+    {
+     "id": "jp_store_rowbuilding_01",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/store_rowbuilding_01"
+    },
+    {
+     "id": "jp_store_rowbuilding_02",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/store_rowbuilding_02"
+    },
+    {
+     "id": "jp_store_rowbuilding_03",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/store_rowbuilding_03"
     }
    ]
   },

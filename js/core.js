@@ -332,7 +332,9 @@ function colKeys(minX, minZ, maxX, maxZ, fn) {
   for (let z = Math.floor(minZ / COL_CELL); z <= Math.floor(maxZ / COL_CELL); z++)
     for (let x = Math.floor(minX / COL_CELL); x <= Math.floor(maxX / COL_CELL); x++) fn(colKey(x, z));
 }
+export const COL_OFF = { on: false }; // (a scratch build that is thrown away adds no colliders)
 function colAdd(c, minX, minZ, maxX, maxZ) {
+  if (COL_OFF.on) return;
   colKeys(minX, minZ, maxX, maxZ, k => { if (!colliders.has(k)) colliders.set(k, []); colliders.get(k).push(c); });
   if (capHooks.collider) capHooks.collider(c);
 }

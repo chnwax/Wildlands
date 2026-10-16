@@ -4,12 +4,12 @@
 // ground. Around them: foundations with vents, corner boards, band courses, and the service clutter of a lived-in
 // Japanese street (AC units with pipe ducts, meters, vent hoods, water heaters, nameplates, intercoms, gate pillars).
 // All of it goes through GeoBuilder frames; in a wall frame X runs along the wall, Y up, +Z out of the face (z = 0).
-import { scene, clamp, lerp, mulberry32, addCircle } from './core.js';
-import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS } from './townkit.js';
+import { scene, clamp, lerp, mulberry32, addCircle, COL_OFF } from './core.js';
+import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS, GeoBuilder, glowMats } from './townkit.js';
 import { cropSet } from './crops.js';
 import { packsReady, queuePack, packProp, packParts } from './packs.js';
 import { konbiniDress } from './konbini.js';
-import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
+import { placeable, atXYZR, atObj, atLocal, uncaptured } from './world/capture.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
 const jitter = (rng, c, a = 0.04) => c.map(v => clamp(v + (rng() - 0.5) * a, 0, 1));
@@ -702,7 +702,50 @@ const BOARDS = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' };
 const STICKERS = ['jp_sticker_store_01', 'jp_sticker_store_02', 'jp_sticker_store_03', 'jp_sticker_store_04', 'jp_sticker_store_05', 'jp_sticker_store_ads', 'jp_sticker_store_ads_02'];
 // a pack model in the builder's frame (local position, turn dr from the frame's yaw); null when not there
 const framePack = (B, id, lx, ly, lz, dr = 0, sc = 1) => { if (!packsReady()) return null; const p = B.P([lx, ly, lz]); return packProp(id, p[0], p[1], p[2], B.F.r + dr, sc); };
+// Idyllic Anime Japan's shop buildings, when the model library is there: [id, width, height, depth] (model units). The
+// eateries take the ramen stall or the timber restaurant, the old streets the two-storey shop houses, the others the shop
+// houses and the concrete row buildings in turn.
+const PACK_SHOPS = {
+  ramen: ['jp_ramenshop', 6.52, 4.49, 4.59], restaurant: ['jp_restaurant_traditional_building', 8.49, 8.03, 8.33],
+  house: [['jp_shop_building_01', 6.39, 8.46, 7.74], ['jp_shop_building_02', 6.97, 9.67, 6.97], ['jp_shop_building_03', 5.68, 9.67, 7.56], ['jp_shop_building_04', 6.29, 9.67, 8.08], ['jp_shop_building_05', 6.45, 8.46, 7.74]],
+  row: [['jp_store_rowbuilding_01', 5.51, 10.93, 7.43], ['jp_store_rowbuilding_02', 5.45, 11.43, 7.75], ['jp_store_rowbuilding_03', 5.49, 12.06, 7.24]],
+};
+const tradeOf = s => Math.floor(mulberry32(Math.floor(s.x * 131 + s.z * 71) | 0)() * SHOP_NAMES.length);
+function packShopModel(s) {
+  const t = tradeOf(s), h = Math.abs(Math.floor(s.x * 3.7) * 7 + Math.floor(s.z * 2.3) * 13);
+  const P = t === 0 && s.d > 6 ? PACK_SHOPS.ramen : [3, 12, 16, 6, 8].includes(t) ? PACK_SHOPS.restaurant
+    : s.old || h % 3 === 0 ? PACK_SHOPS.house[h % 5] : PACK_SHOPS.row[h % 3];
+  return packsReady() && packParts(P[0]) ? P : null;
+}
 function shopBuilding_build(B, s, rng, extras) {
+  const P = packShopModel(s);
+  if (!P) return shopBuildingDrawn(B, s, rng, extras);
+  // the drawn shop is built once off-site and thrown away (no geometry, props, colliders, lamps or meshes kept), so the
+  // town's draws of rng and deco run exactly as they did: everything built after the shops keeps its place and its id
+  const sc = scene.children.length, lp = lampPoints.length, gm = glowMats.length;
+  COL_OFF.on = true;
+  try { uncaptured(() => shopBuildingDrawn(new GeoBuilder(1e4), s, rng, [])); } finally { COL_OFF.on = false; }
+  while (scene.children.length > sc) { const m = scene.children[scene.children.length - 1]; scene.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material && m.material.map) m.material.map.dispose(); }
+  lampPoints.length = lp; glowMats.length = gm;
+  packShopBuilding(B, s, P, extras);
+}
+// a pack shop building on the lot, its front on the lot's street edge, scaled to the frontage (a little, and a little
+// wider than tall at most); the foundation slab as the drawn shop has it (the World Builder's edits of it still apply),
+// a projecting sign with the trade's name at the front corner, a menu board or A-board out front, a light at the door
+function packShopBuilding(B, s, [id, mw, mh, md], extras) {
+  const { x, y, z, r, w, d } = s, W = w - 0.1, t = tradeOf(s), own = mulberry32((Math.floor(x * 31) * 7919 + Math.floor(z * 17) * 104729) >>> 0);
+  B.frame(x, y, z, r);
+  B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
+  const su = clamp(W / mw, 1, 1.3), sx = clamp(W / (mw * su), 1, 1.2), BW = mw * su * sx, D = Math.min(md * su, d), zc = d / 2 - D / 2;
+  framePack(B, id, 0, 0.02, zc, 0, [su * sx, su, D / md]);
+  const vy = Math.min(4.2, mh * su - 2.6), vs = verticalSign(own, t), vp = B.P([BW / 2 - 0.35, vy + 1.0, d / 2 + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
+  for (const yy of [vy + 0.1, vy + 1.9]) B.bbox('steel', BW / 2 - 0.35, yy, d / 2 + 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] });
+  if (own() < 0.7) { const bx = (own() < 0.5 ? -1 : 1) * Math.min(BW / 2 - 0.6, 1.6), bid = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' }[t] || 'jp_board_foldable_0' + (1 + Math.floor(own() * 3));
+    if (framePack(B, bid, bx, 0.12, d / 2 + 0.55, (own() - 0.5) * 0.6, 0.95) !== null) { const p = B.P([bx, 0, d / 2 + 0.55]); addCircle(p[0], p[2], 0.3); } }
+  lampPoints.push({ p: B.P([0, 2.9, d / 2 + 0.8]), s: 0.8 });
+  extras.push({ t: 'box', p: B.P([0, 0, zc]), hx: BW / 2, hz: D / 2, r });
+}
+function shopBuildingDrawn(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
   // three shopfront types: RC flat-roofed (2-3 floors), 看板建築 (a flat false front hiding a pitched roof) and the
