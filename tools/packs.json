@@ -1830,6 +1830,43 @@
      "src": "illustrated_nature/tree_birch_02__card"
     }
    ]
+  },
+  "rocks": {
+   "pack": "mixed",
+   "licence": "Unity Asset Store EULA (The Illustrated Nature 1.9, Idyllic Woodlands 1.2, Idyllic Anime Japan 1.1.1): models used inside the game; source assets are not redistributed",
+   "note": "stones and boulders (town.js rock scatter)",
+   "assets": [
+    {
+     "id": "rk_il_boulder_01",
+     "kind": "lod",
+     "category": "rock",
+     "src": "illustrated_nature/rock_boulder_01"
+    },
+    {
+     "id": "rk_il_boulder_02",
+     "kind": "lod",
+     "category": "rock",
+     "src": "illustrated_nature/rock_boulder_02"
+    },
+    {
+     "id": "rk_il_boulder_03",
+     "kind": "lod",
+     "category": "rock",
+     "src": "illustrated_nature/rock_boulder_03"
+    },
+    {
+     "id": "rk_wl_rock01",
+     "kind": "lod",
+     "category": "rock",
+     "src": "idyllic_woodlands/rock01"
+    },
+    {
+     "id": "rk_wl_rock02",
+     "kind": "lod",
+     "category": "rock",
+     "src": "idyllic_woodlands/rock02"
+    }
+   ]
   }
  }
 }

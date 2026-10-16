@@ -15,7 +15,7 @@ import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { buildCrops, updateCrops } from './crops.js';
 import { furnishYards } from './yards.js';
 import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
-import { loadPacks, flushPacks, queuePack } from './packs.js';
+import { loadPacks, flushPacks, queuePack, packParts } from './packs.js';
 import { farmstead } from './farmstead.js';
 import { dressTown } from './dress.js';
 import { loadCrowd } from './crowd.js';
@@ -1595,8 +1595,13 @@ export async function build(progress, opts = {}) {
   // the district's rocks (danchi.js, danchipark.js): each stone of the scanned rock set is its own instanced model,
   // the boulder another; every stone sits on the lowest ground under it, sunk by the fraction its record asks
   { const [rockSet, boulderM] = await rockModelsP, stones = [];
-    if (rockSet) for (const p of extractParts(rockSet)) stones.push({ parts: [p], dim: normalizeParts([p], false) });
-    const bould = boulderM ? (() => { const parts = extractParts(boulderM); return { parts, dim: normalizeParts(parts, false) }; })() : null;
+    // the stones and boulders from The Illustrated Nature / Idyllic Woodlands (packs.js) when the library is there, else the
+    // scanned set (each part a stone of its own)
+    const packRock = id => { const src = packParts(id); if (!src) return null; const parts = src.map(p => ({ geometry: p.geometry.clone(), material: p.material })); return { parts, dim: normalizeParts(parts, false), pack: true }; };
+    const pr = ['rk_il_boulder_01', 'rk_il_boulder_02', 'rk_il_boulder_03', 'rk_wl_rock01', 'rk_wl_rock02'].map(packRock).filter(Boolean);
+    if (pr.length >= 3) stones.push(...pr.slice(0, 3));
+    else if (rockSet) for (const p of extractParts(rockSet)) stones.push({ parts: [p], dim: normalizeParts([p], false) });
+    const bould = pr.length >= 3 ? packRock('rk_il_boulder_01') : boulderM ? (() => { const parts = extractParts(boulderM); return { parts, dim: normalizeParts(parts, false) }; })() : null;
     const low = (x, z, r) => Math.min(hf.groundAt(x, z), hf.groundAt(x - r, z), hf.groundAt(x + r, z), hf.groundAt(x, z - r), hf.groundAt(x, z + r)), groups = new Map();
     for (const q of [...(danchi.rocks || []), ...riverRocks]) { const M = q.kind === 'b' && bould ? bould : stones.length ? stones[q.part % stones.length] : bould; if (!M) continue;
       const h = q.s * M.dim.h * (q.sy || 1), y = low(q.x, q.z, q.s * M.dim.w * 0.3) - h * q.sink;
@@ -1604,9 +1609,26 @@ export async function build(progress, opts = {}) {
       if (h * (1 - q.sink) > 0.4) addCircle(q.x, q.z, q.s * M.dim.w * 0.36); }
     // painted like the town's other stone (toon.js): the scan's brightness evened out, its hue kept a little, the
     // instance tint deciding the colour of each stone
-    for (const M of [...stones, bould]) if (M) for (const p of M.parts) { p.material = p.material.clone(); p.material.userData.toonNorm = 0.5; }
+    for (const M of [...stones, bould]) if (M && !M.pack) for (const p of M.parts) { p.material = p.material.clone(); p.material.userData.toonNorm = 0.5; }
     for (const [M, items] of groups) withScatterMeta({ prefab: M === bould ? 'boulder' : 'rock_' + (stones.indexOf(M) + 1), category: 'rock' }, () => new Scatter(items, [{ dist: () => 110, parts: M.parts.map(p => ({ ...p, castShadow: true, tint: true })) },
-      { dist: () => 360, parts: M.parts.map(p => ({ ...p, geometry: decimate(p.geometry, 10), castShadow: true, tint: true })) }], 96)); }
+      { dist: () => 360, parts: M.parts.map(p => ({ ...p, geometry: decimate(p.geometry, 10), castShadow: true, tint: true })) }], 96));
+    // stones in the woods and on the hillsides (the packs' boulders and standing rocks): an rng of their own, on free natural
+    // ground only — under the forest canopy and on steep slopes, never on roads, footways, plots, paddies or by the river
+    if (pr.length >= 5) {
+      const krng = mulberry32(7171), forestStones = pr.map(() => []), n = new THREE.Vector3();
+      for (let k = 0; k < 14000 && forestStones.reduce((a, l) => a + l.length, 0) < 520; k++) {
+        const x = (krng() * 2 - 1) * 940, z = (krng() * 2 - 1) * 940, y = hf.groundAt(x, z); hf.normalAt(x, z, n);
+        const fo = FOREST[hf.idx(x, z)] || 0, steep = 1 - n.y;
+        if (fo < 0.45 && steep < 0.18) continue;
+        if (RN.roadAt(x, z) || RN.walkY(x, z) !== null || occRect(x, z, 2, 2, 0, 0, true) || inPaddyZone(x, z) || Math.abs(x - riverX(z)) < 26 || y < Y0 - 1) continue;
+        if (Math.abs(x) < 470 && Math.abs(z) < 345 && fo < 0.6) continue; // (in town only inside its groves)
+        const big = krng() < 0.12, i = big ? 3 + Math.floor(krng() * 2) : Math.floor(krng() * 3), M = pr[i], s2 = big ? 1.6 + krng() * 1.6 : 0.5 + krng() * krng() * 2.2;
+        const h = s2 * M.dim.h; forestStones[i].push({ x, y: y - h * (big ? 0.18 : 0.3), z, s: s2, r: krng() * 6.283, tilt: (krng() - 0.5) * 0.3, tilt2: (krng() - 0.5) * 0.3, c: new THREE.Color().setHSL(0.08 + krng() * 0.05, 0.08, 0.62 + krng() * 0.14) });
+        if (h > 0.5) addCircle(x, z, s2 * M.dim.w * 0.38);
+      }
+      forestStones.forEach((items, i) => { if (items.length) withScatterMeta({ prefab: 'forest_rock_' + (i + 1), category: 'rock' }, () => new Scatter(items, [{ dist: () => 120, parts: pr[i].parts.map(p => ({ ...p, castShadow: true, tint: true })) },
+        { dist: () => 420, parts: pr[i].parts.map(p => ({ ...p, castShadow: false, tint: true })) }], 128)); });
+    } }
   const shrubs = [], pots = [], weeds = [], crates = [], boxes = [];
   for (const lot of lots) {
     const c = Math.cos(lot.r), s = Math.sin(lot.r), W = (lx, lz) => [lot.x + lx * c + lz * s, lot.z - lx * s + lz * c];
