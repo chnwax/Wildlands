@@ -1596,6 +1596,96 @@
      "kind": "prop",
      "category": "house",
      "src": "anime_japan/fusebox_wall_09"
+    },
+    {
+     "id": "jp_sunscreen_shop_05",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sunscreen_shop_05"
+    },
+    {
+     "id": "jp_sunscreen_shop_06",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sunscreen_shop_06"
+    },
+    {
+     "id": "jp_signboard_vertical_01",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/signboard_vertical_01"
+    },
+    {
+     "id": "jp_signboard_vertical_03",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/signboard_vertical_03"
+    },
+    {
+     "id": "jp_signboard_vertical_04",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/signboard_vertical_04"
+    },
+    {
+     "id": "jp_board_digital_01",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/board_digital_01"
+    },
+    {
+     "id": "jp_board_digital_02",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/board_digital_02"
+    },
+    {
+     "id": "jp_sticker_open",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_open"
+    },
+    {
+     "id": "jp_sticker_store_01",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_store_01"
+    },
+    {
+     "id": "jp_sticker_store_02",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_store_02"
+    },
+    {
+     "id": "jp_sticker_store_03",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_store_03"
+    },
+    {
+     "id": "jp_sticker_store_04",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_store_04"
+    },
+    {
+     "id": "jp_sticker_store_05",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_store_05"
+    },
+    {
+     "id": "jp_sticker_store_ads",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_store_ads"
+    },
+    {
+     "id": "jp_sticker_store_ads_02",
+     "kind": "prop",
+     "category": "shop",
+     "src": "anime_japan/sticker_store_ads_02"
     }
    ]
   },

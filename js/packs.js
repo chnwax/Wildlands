@@ -64,7 +64,7 @@ function material(src, pack, kind, sway, cache, texs) {
   // light sources glow at night (townkit.js updateGlow drives packGlow with the town's other lamps): the packs' emissive
   // lamp glass, paper lanterns, the lit fronts of vending machines
   if (/emissive/i.test(src.name)) { m.emissive = new THREE.Color(0xfff0d6); m.userData.glow = 2.2; packGlow.push(m); }
-  else if (/lantern/i.test(src.name) && m.map) { m.emissive = new THREE.Color(0xffd9a0); m.emissiveMap = m.map; m.userData.glow = 0.7; packGlow.push(m); }
+  else if (/lantern/i.test(src.name) && m.map) { m.emissive = new THREE.Color(0xffd9a0); m.emissiveMap = m.map; m.userData.glow = /^M_lanterns/.test(src.name) ? 1.6 : 0.7; packGlow.push(m); } // (the paper lanterns brighter than lit stone)
   else if (/vending|drinks|bottles/i.test(src.name)) { m.emissive = new THREE.Color(0xffffff); if (m.map) m.emissiveMap = m.map; m.userData.glow = 0.25; packGlow.push(m); }
   if (sw) windPatch(m, 'packWind' + sw.toFixed(2) + (m.alphaTest > 0 ? 'a' : '') + (m.transparent ? 't' : ''), sw);
   cache.set(key, m);

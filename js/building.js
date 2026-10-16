@@ -4,7 +4,7 @@
 // ground. Around them: foundations with vents, corner boards, band courses, and the service clutter of a lived-in
 // Japanese street (AC units with pipe ducts, meters, vent hoods, water heaters, nameplates, intercoms, gate pillars).
 // All of it goes through GeoBuilder frames; in a wall frame X runs along the wall, Y up, +Z out of the face (z = 0).
-import { scene, clamp, lerp, mulberry32 } from './core.js';
+import { scene, clamp, lerp, mulberry32, addCircle } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS } from './townkit.js';
 import { cropSet } from './crops.js';
 import { packsReady, queuePack, packProp } from './packs.js';
@@ -673,6 +673,22 @@ function barn(B, w, d, rng, extras) {
 // rolled-down shutter), sign board on a backing frame lit by gooseneck lamps, fabric awning on steel arms, noren and
 // lanterns; living quarters above with real windows, wall-bracket AC units; back yard with service door, meters,
 // water heater and sometimes an external steel stair; flat roof with parapet coping, water tank, condensers.
+// Idyllic Anime Japan's shopfront dressing, when the model library is there (each trade its own): printed noren for the
+// eateries, red lanterns at the ramen, izakaya, soba, sushi and sake shops, the pack's awnings in the drawn awning's
+// colour, projecting signs for the pharmacy, izakaya and ramen shop, a standing menu board or A-board and stickers on the
+// glass of open shops. The town's draws of rng and deco stay as they were; boards and stickers take their own stream.
+const NOREN = { 0: ['jp_cloth_storefront_01', 4.73, 1.263], 3: ['jp_cloth_storefront_02', 3.76, 1.263], 8: ['jp_cloth_storefront_02', 3.76, 1.263],
+  12: ['jp_cloth_storefront_02', 3.76, 1.263], 16: ['jp_cloth_storefront_02', 3.76, 1.263], 6: ['jp_cloth_storefront_02', 3.76, 1.263],
+  7: ['jp_cloth_storefront_03', 4.94, 0.918], 11: ['jp_cloth_storefront_03', 4.94, 0.918] };
+const LANTERN_TRADES = [0, 3, 8, 12, 16];
+const AWNING_COLS = [[0.85, 0.2, 0.18], [0.2, 0.55, 0.35], [0.22, 0.38, 0.75], [0.98, 0.7, 0.2], [0.9, 0.45, 0.6], [0.3, 0.65, 0.7]];
+const AWNINGS = [['jp_sunscreen_shop_04', 5.42, 0.92, 1.86, 0.6, 1.15], ['jp_sunscreen_shop_03', 4.58, 1.74, 1.32, 0.9, 1.0], ['jp_sunscreen_shop_05', 4.29, 0.9, 1.97, 0.6, 1.15],
+  ['jp_sunscreen_shop_01', 5.55, 1.45, 1.16, 0.85, 1.0], ['jp_sunscreen_shop_06', 4.56, 0.89, 1.52, 0.6, 1.1], ['jp_sunscreen_shop_05', 4.29, 0.9, 1.97, 0.6, 1.15]]; // [id, w, h, d (model), h, d (drawn)]
+const VSIGN = { 1: 'jp_signboard_vertical_01', 3: 'jp_signboard_vertical_04', 0: 'jp_signboard_vertical_03' };
+const BOARDS = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' };
+const STICKERS = ['jp_sticker_store_01', 'jp_sticker_store_02', 'jp_sticker_store_03', 'jp_sticker_store_04', 'jp_sticker_store_05', 'jp_sticker_store_ads', 'jp_sticker_store_ads_02'];
+// a pack model in the builder's frame (local position, turn dr from the frame's yaw); null when not there
+const framePack = (B, id, lx, ly, lz, dr = 0, sc = 1) => { if (!packsReady()) return null; const p = B.P([lx, ly, lz]); return packProp(id, p[0], p[1], p[2], B.F.r + dr, sc); };
 function shopBuilding_build(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
@@ -745,12 +761,22 @@ function shopBuilding_build(B, s, rng, extras) {
       B.bbox('alu', dx, sf.y0, zb + 0.06, bwid - 0.07, 0.05, 0.05, 0.006, { color: frameC });
       B.bbox('steel', dx + bwid * 0.3, 0.95, zb + 0.12, 0.03, 0.6, 0.03, 0.006, { color: [0.8, 0.8, 0.78] }); // door pull
       const nx = dx;
-      if (deco() < 0.6) { // noren over the door
+      if (deco() < 0.6) { // noren over the door (the eateries': the pack's printed ones)
         const nc = pick(deco, [[0.14, 0.22, 0.48], [0.78, 0.18, 0.15], [0.96, 0.94, 0.88], [0.22, 0.48, 0.36], [0.5, 0.25, 0.42], [0.95, 0.62, 0.2]]);
         B.bbox('wood', nx, 2.18, 0.12, 1.95, 0.05, 0.05, 0.008, { color: [0.45, 0.32, 0.22] });
-        for (let k = 0; k < 3; k++) { const x0 = nx - 0.9 + k * 0.61, x1 = x0 + 0.57; B.quad('plain', [x0, 1.55, 0.14], [x1, 1.55, 0.14], [x1, 2.18, 0.14], [x0, 2.18, 0.14], { color: nc }); B.quad('plain', [x1, 1.55, 0.14], [x0, 1.55, 0.14], [x0, 2.18, 0.14], [x1, 2.18, 0.14], { color: mul(nc, 0.7) }); }
+        const N = NOREN[tradeIdx], ns = N && 2.1 / N[1];
+        if (!N || framePack(B, N[0], nx, 2.21 - N[2] * ns, 0.15, 0, ns) === null)
+          for (let k = 0; k < 3; k++) { const x0 = nx - 0.9 + k * 0.61, x1 = x0 + 0.57; B.quad('plain', [x0, 1.55, 0.14], [x1, 1.55, 0.14], [x1, 2.18, 0.14], [x0, 2.18, 0.14], { color: nc }); B.quad('plain', [x1, 1.55, 0.14], [x0, 1.55, 0.14], [x0, 2.18, 0.14], [x1, 2.18, 0.14], { color: mul(nc, 0.7) }); }
       }
-      if (deco() < 0.45) for (const sd of [-1, 1]) { const lx = nx + sd * 1.35; B.box('dark', lx, 2.45, 0.3, 0.02, 0.2, 0.02); chochin(B, lx, 1.95, 0.3, deco() < 0.8 ? [1, 0.28, 0.18] : [1, 0.85, 0.6], 0.95); }
+      if (deco() < 0.45) for (const sd of [-1, 1]) { const lx = nx + sd * 1.35, lc = deco() < 0.8 ? [1, 0.28, 0.18] : [1, 0.85, 0.6];
+        B.box('dark', lx, 2.45, 0.3, 0.02, 0.2, 0.02);
+        if (!LANTERN_TRADES.includes(tradeIdx) || framePack(B, lc[1] > 0.5 ? 'jp_lantern_traditional_01' : sd < 0 ? 'jp_lantern_traditional_02' : 'jp_lantern_traditional_04', lx, 2.47 - 1.63 * 0.72, 0.3, 0, 0.72) === null) chochin(B, lx, 1.95, 0.3, lc, 0.95); }
+      // open shops: a menu board or A-board out front, stickers on the glass (their own stream)
+      const prng = mulberry32((Math.floor(x * 13) * 4111 + Math.floor(z * 29) * 7) >>> 0);
+      if (packsReady() && prng() < 0.65) { const sd = prng() < 0.5 ? -1 : 1, bx = clamp(dx + sd * (bwid / 2 + 0.35), sf.x0 + 0.35, sf.x1 - 0.35), id = BOARDS[tradeIdx] || 'jp_board_foldable_0' + (1 + Math.floor(prng() * 3));
+        if (framePack(B, id, bx, 0.12, 0.5, (prng() - 0.5) * 0.6, 0.95) !== null) { const p = B.P([bx, 0, 0.5]); addCircle(p[0], p[2], 0.3); } }
+      framePack(B, 'jp_sticker_open', dx - bwid * 0.22, 1.3, zb + 0.012);
+      for (let i = 0; i < bays; i++) if (i !== door && prng() < 0.45) framePack(B, STICKERS[Math.floor(prng() * STICKERS.length)], sf.x0 + (i + 0.5) * bwid + (prng() - 0.5) * 0.3, 1.45 + prng() * 0.3, zb + 0.012);
     }
     // shutter box over the storefront, sign board on a backing frame with lamps
     B.bbox('alu', 0, sf.y1 + 0.02, 0.12, sf.x1 - sf.x0 + 0.2, 0.3, 0.24, 0.012, { color: [0.72, 0.72, 0.7] });
@@ -758,18 +784,22 @@ function shopBuilding_build(B, s, rng, extras) {
     B.bbox(type === 'machiya' ? 'wood' : 'plain', 0, signY, 0.06, signW + 0.14, 0.92, 0.12, 0.012, { color: type === 'machiya' ? [0.3, 0.22, 0.16] : [0.3, 0.3, 0.32] });
     const sign = shopSign(rng, signW, tradeIdx); sign.position.set(...B.P([0, signY + 0.45, 0.125])); sign.rotation.y = r; scene.add(sign);
     if (type !== 'machiya') for (let i = 0; i < 3; i++) { const lx = (i - 1) * signW / 3; B.sweep('steel', circle(0.012, 5), [[lx, 4.05, 0.02], [lx, 4.15, 0.25], [lx, 4.05, 0.42]], { closed: true, color: [0.25, 0.25, 0.27] }); B.bbox('lamp', lx, 3.97, 0.42, 0.12, 0.08, 0.1, 0.02, { color: [1, 0.95, 0.85] }); }
-    if (type !== 'machiya' && rng() < 0.55) { // fabric awning on steel arms
-      const ac = pick(rng, [[0.85, 0.2, 0.18], [0.2, 0.55, 0.35], [0.22, 0.38, 0.75], [0.98, 0.7, 0.2], [0.9, 0.45, 0.6], [0.3, 0.65, 0.7]]);
-      const ax = W / 2 - 0.3, y0 = 2.92, y1 = 2.6, dz = 1.1;
+    if (type !== 'machiya' && rng() < 0.55) { // fabric awning on steel arms (the pack's, in its colour)
+      const ac = pick(rng, AWNING_COLS);
+      const ax = W / 2 - 0.3, y0 = 2.92, y1 = 2.6, dz = 1.1, A = AWNINGS[AWNING_COLS.indexOf(ac)];
+      if (framePack(B, A[0], 0, 2.98 - A[4], A[5] / 2, 0, [2 * ax / A[1], A[4] / A[2], A[5] / A[3]]) === null) {
       B.poly('plain', [[-ax, y0, 0.02], [ax, y0, 0.02], [ax, y1, dz], [-ax, y1, dz]], [0, 1, 0.3], { color: ac });
       B.poly('plain', [[-ax, y0 - 0.02, 0.02], [ax, y0 - 0.02, 0.02], [ax, y1 - 0.02, dz], [-ax, y1 - 0.02, dz]], [0, -1, -0.3], { color: mul(ac, 0.62) });
       for (const e of [-1, 1]) B.poly('plain', [[e * ax, y0, 0.02], [e * ax, y1, dz], [e * ax, y1 - 0.25, dz]], [e, 0, 0], { color: mul(ac, 0.8) });
       B.quad('plain', [-ax, y1 - 0.25, dz], [ax, y1 - 0.25, dz], [ax, y1, dz], [-ax, y1, dz], { color: mul(ac, 0.9) });
       B.quad('plain', [ax, y1 - 0.25, dz - 0.01], [-ax, y1 - 0.25, dz - 0.01], [-ax, y1, dz - 0.01], [ax, y1, dz - 0.01], { color: mul(ac, 0.6) });
       for (const e of [-1, 0, 1]) B.beam('steel', [e * (ax - 0.1), y0 - 0.45, 0.03], [e * (ax - 0.1), y1 - 0.04, dz - 0.05], 0.025, 0.025, { color: [0.3, 0.3, 0.32] });
+      }
     }
-    if (type !== 'machiya' && rng() < 0.5) { const vs = verticalSign(rng, tradeIdx), vp = B.P([W / 2 - 0.5, 5.2, 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
-      for (const yy of [4.3, 6.0]) B.bbox('steel', W / 2 - 0.5, yy, 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] }); }
+    if (type !== 'machiya' && rng() < 0.5) {
+      if (VSIGN[tradeIdx] && framePack(B, VSIGN[tradeIdx], W / 2 - 0.5, 3.95, 0.68 * 0.9, Math.PI / 2, 0.9) !== null) rng(); // (the draw the drawn sign takes)
+      else { const vs = verticalSign(rng, tradeIdx), vp = B.P([W / 2 - 0.5, 5.2, 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
+        for (const yy of [4.3, 6.0]) B.bbox('steel', W / 2 - 0.5, yy, 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] }); } }
     // living quarters: a wall-bracket AC unit beside some upper windows
     for (let f = 1; f < floors; f++) if (rng() < 0.5) acUnit(B, -W / 2 + 0.75, f * fh + 0.45, rng, { onWall: true, pipeTo: f * fh + 2.2, z: 0.25 });
     lampPoints.push({ p: B.P([0, 2.9, 0.8]), s: 0.8 });
