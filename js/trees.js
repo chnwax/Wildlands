@@ -1093,6 +1093,7 @@ function packTreeParts(id, h, sp, near) {
       // conifer or broadleaf green so the far hillsides keep the near trees' tone)
       if (/card/i.test(p.material.name)) { if (sp.mat === 'fir' || sp.mat === 'dead') m.color.setRGB(0.2, 0.33, 0.23); else m.color.setRGB(0.33, 0.45, 0.24); }
       if (cut) { m.alphaToCoverage = Q.msaa > 0; m.side = THREE.DoubleSide; }
+      if (sp.mat === 'bush') m.color.multiplyScalar(0.62).lerp(new THREE.Color(0.42, 0.48, 0.3), 0.25); // (the shrubs' bright leaf texture under the foliage light read neon: toned to the hedges' green)
       foliagePatch(m, 'packTree' + sp.mat + (cut ? 'c' : 's') + p.material.name, sway, cut);
       d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: cut ? m.map : null, alphaTest: cut ? m.alphaTest : 0 });
       windPatch(d, 'packTreeDepth' + sp.mat + (cut ? 'c' : 's'), sway);
@@ -1290,6 +1291,17 @@ export function buildFarForest(sets) {
   });
 }
 
+// The Illustrated Nature's round shrubs for the bush and shrub sets, when the model library is there: [near, middle]
+// levels (its lod1 and lod3 files) at hs x unit height, with the trees' leaf shading and wind, tinted per item
+const PACK_SHRUBS = [['tr_il_shrub_01_l1', 'tr_il_shrub_01_l3'], ['tr_il_shrub_02_l1', 'tr_il_shrub_02_l3'], ['tr_il_shrub_03_l1', 'tr_il_shrub_03_l3']];
+export function packShrubLods(i, hs, nearD, farD, shadow = true) {
+  const P = packsReady(); if (!P) return null;
+  const [a, b] = PACK_SHRUBS[i % PACK_SHRUBS.length], dims = P.dims(a); if (!dims) return null;
+  const sp = { mat: 'bush' }, h = dims[1] / hs, near = packTreeParts(a, h, sp, true), far = packTreeParts(b, h, sp, false);
+  if (!near || !far) return null;
+  return [{ dist: nearD, parts: near.map(p => ({ ...p, castShadow: shadow })) }, { dist: farD, parts: far.map(p => ({ ...p, castShadow: shadow })) }];
+}
+export const shrubTint = list => packTint(list);
 // shrubs and low greenery (bush, hydra, hedge, ivy): no trunk collider worth having below ~1 m; only the big ones block
 // (full blob detail only within ~a hundred metres; hedges and ivy are low and many, so they start at the mid LOD)
 export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * (kind === 'hedge' || kind === 'ivy' ? 0.12 : 0.22), farDist = () => Q.trees * 0.35, collide = true } = {}) {
@@ -1297,7 +1309,8 @@ export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * (
   const seed = { hydra: 21, hedge: 25, ivy: 27 }[kind] || 17;
   const M = materials(kind), hi = broadleafGeo(kind === 'hedge' ? 1 : 0, seed, kind), lo = broadleafGeo(1, seed, kind);
   const sp = { mat: kind, cardShadow: kind !== 'hydra' };
-  const lods = [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }];
+  let lods = kind === 'bush' && packShrubLods(0, 0.79, () => Math.min(hiDist(), 45), farDist); // (the pack's shrub at the drawn bush's height)
+  if (lods) packTint(bushes); else lods = [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }];
   if ((MATS[kind] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true;
   withScatterMeta({ prefab: { hydra: 'hydrangea' }[kind] || kind, category: 'vegetation', field: kind === 'hedge' || kind === 'ivy' ? 'hedgerow' : null }, () => new Scatter(bushes, lods, 192));
   if (collide) for (const b of bushes) if (b.s > 1.2 && kind !== 'ivy') addCircle(b.x, b.z, 0.35 * b.s * (kind === 'hedge' ? 0.6 : 1));

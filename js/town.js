@@ -3,7 +3,7 @@
 import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, flushProps,
   Scatter, addBox, addCircle, addPlatform, colliders, decimate, withScatterMeta } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt, pondWaterMaterial, flowWaterMaterial, foamMaterial } from './terrain.js';
-import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor } from './trees.js';
+import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor, packShrubLods, shrubTint } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree, crownR } from './ecology.js';
 import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
@@ -1666,7 +1666,10 @@ export async function build(progress, opts = {}) {
     for (let k = 0; k < 4; k++) if (prng() < 0.25) { const [x, z] = W((prng() - 0.5) * lot.w, lot.d / 2 - 0.15); weeds.push({ x, y: hf.groundAt(x, z), z, s: 0.25 + prng() * 0.3, r: prng() * 6.28 }); }
     if (prng() < 0.05) { const [x, z] = W(lot.w / 2 - 0.5, lot.d / 2 + 0.4); boxes.push({ x, y: hf.groundAt(x, z), z, s: 1.3, r: lot.r }); addCircle(x, z, 0.4); }
   }
-  scatterModel(shrub, shrubs, true, () => Q.props, true, true, { prefab: 'shrub', category: 'vegetation' });
+  // (the yard shrubs: The Illustrated Nature's round shrubs when the model library is there, in the same four sets)
+  if (packsReady() && packShrubLods(0, 1, () => 35, () => Q.props)) { shrubTint(shrubs);
+    for (let i = 0; i < 4; i++) { const mine = shrubs.filter((_, k) => k % 4 === i); if (mine.length) withScatterMeta({ prefab: 'shrub_' + (i + 1), category: 'vegetation' }, () => new Scatter(mine, packShrubLods([0, 1, 2, 1][i], 1, () => 35, () => Q.props), 128)); } }
+  else scatterModel(shrub, shrubs, true, () => Q.props, true, true, { prefab: 'shrub', category: 'vegetation' });
   buildBushes(bushes, 'bush');
   buildBushes(hydras, 'hydra');
   buildBushes(green.hedges, 'hedge', { collide: false });

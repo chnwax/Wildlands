@@ -2055,6 +2055,42 @@
      "kind": "lod",
      "category": "tree",
      "src": "anime_japan/tree_cherry_02"
+    },
+    {
+     "id": "tr_il_shrub_01_l1",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_01__lod1"
+    },
+    {
+     "id": "tr_il_shrub_01_l3",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_01__lod3"
+    },
+    {
+     "id": "tr_il_shrub_02_l1",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_02__lod1"
+    },
+    {
+     "id": "tr_il_shrub_02_l3",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_02__lod3"
+    },
+    {
+     "id": "tr_il_shrub_03_l1",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_03__lod1"
+    },
+    {
+     "id": "tr_il_shrub_03_l3",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_03__lod3"
     }
    ]
   },
