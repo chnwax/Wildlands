@@ -15,7 +15,7 @@ import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { buildCrops, updateCrops } from './crops.js';
 import { furnishYards } from './yards.js';
 import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
-import { loadPacks, flushPacks, queuePack, packParts, packsReady } from './packs.js';
+import { loadPacks, flushPacks, queuePack, packParts, packsReady, packProp } from './packs.js';
 import { farmstead } from './farmstead.js';
 import { dressTown } from './dress.js';
 import { loadCrowd } from './crowd.js';
@@ -1211,6 +1211,8 @@ export async function build(progress, opts = {}) {
         const kind = urng(), sz = kind < 0.4 ? 0.2 : kind < 0.75 ? 0.3 : 0.45, col = kind < 0.4 ? [0.3, 0.32, 0.36] : kind < 0.75 ? [0.95, 0.78, 0.12] : [0.38, 0.36, 0.34];
         B.detail(2, () => RN.decal(B, 'metal', [cx, cz], q.d, sz, sz, { color: col, lift: 0.006, y: yf, road: false, cell: 1 }));
         if (onWalk && urng() < 0.25) entity('fire_hydrant', () => { const hx = x0 + l[0] * side * (n.hw + n.walk - 0.35), hz = z0 + l[1] * side * (n.hw + n.walk - 0.35), hy = topY(hx, hz);
+          // (Idyllic Anime Japan's standpipe hydrant facing the road, when the model library is there)
+          if (packsReady() && packProp('jp_firehydrant', hx, hy - 0.02, hz, Math.atan2(-side * l[0], -side * l[1]), 0.85) !== null) { addCircle(hx, hz, 0.3); return; }
           B.frame(hx, hy, hz, 0); B.cyl('plastic', 0, -0.02, 0, 0.1, 0.1, 0.6, 12, { color: [0.85, 0.12, 0.1] }); B.cyl('plastic', 0, 0.58, 0, 0.12, 0.05, 0.12, 12, { color: [0.85, 0.12, 0.1], cap: true });
           for (const e of [-1, 1]) B.cyl('steel', e * 0.1, 0.35, 0, 0.035, 0.035, 0.08, 8, { color: [0.7, 0.7, 0.68], cap: true }); B.frame(0, 0, 0, 0); addCircle(hx, hz, 0.14); });
       }

@@ -10,6 +10,7 @@ import { crowdMeshes } from './crowd.js';
 import { torii, shimenawa, toro, offeringBox } from './shrine.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 import { queueClutter } from './clutter.js';
+import { packProp, packsReady } from './packs.js';
 
 const plantAt = (B, type, lx, ly, lz, rng, s = 1) => { const p = B.P([lx, ly, lz]); cropSet.add(type, p[0], p[1], p[2], B.F.r + rng() * Math.PI * 2, s * (0.85 + rng() * 0.3)); };
 const addPlatformAt = (p, hx, hz, r, top) => addPlatform(p[0], p[2], hx, hz, r, top);
@@ -70,6 +71,8 @@ function standBoard_build(B, x, y, z, r, col) {
 }
 // red Japanese pillar post box
 function postBox_build(B, x, y, z, r) {
+  // (Idyllic Anime Japan's red post box, when the model library is there)
+  if (packsReady() && packProp('jp_mailbox_post', x, y, z, r, 1.05) !== null) { addCircle(x, z, 0.3); return; }
   B.frame(x, y, z, r);
   const red = [0.86, 0.14, 0.1];
   B.bbox('concrete', 0, 0, 0, 0.5, 0.1, 0.5, 0.012, { color: [0.7, 0.7, 0.68] });
@@ -124,6 +127,8 @@ function dryingRack_build(B, x, y, z, r, rng, len = 2.4) {
 function mailbox_build(B, x, y, z, r, col) {
   B.frame(x, y, z, r);
   B.bbox('alu', 0, 0, 0, 0.06, 0.95, 0.06, 0.012, { color: [0.4, 0.4, 0.42] });
+  // (on its post, one of Idyllic Anime Japan's two house mailboxes when the model library is there)
+  if (packsReady()) { const p = B.P([0, 0.78, 0.1]); if (packProp((col[0] + col[2]) % 0.2 < 0.1 ? 'jp_mailbox_resident_01' : 'jp_mailbox_resident_02', p[0], p[1], p[2], r) !== null) return; }
   B.bbox('plain', 0, 0.95, 0, 0.36, 0.34, 0.22, 0.012, { color: col });
   B.bbox('dark', 0, 1.18, 0.112, 0.22, 0.03, 0.01, 0.012);
   B.bbox('plain', 0, 1.02, 0.112, 0.2, 0.08, 0.01, 0.012, { color: WHITE }); // name plate
