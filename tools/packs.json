@@ -1470,6 +1470,30 @@
      "category": "park",
      "prefab": "Prefabs/Nature/SM_tree_tall_02.prefab",
      "src": "anime_japan/tree_tall_02"
+    },
+    {
+     "id": "jp_mirror_round_02",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/mirror_round_02"
+    },
+    {
+     "id": "jp_mirror_round_03",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/mirror_round_03"
+    },
+    {
+     "id": "jp_sign_traffic_002",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/sign_traffic_002"
+    },
+    {
+     "id": "jp_sign_traffic_003",
+     "kind": "prop",
+     "category": "street",
+     "src": "anime_japan/sign_traffic_003"
     }
    ]
   },

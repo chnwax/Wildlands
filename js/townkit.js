@@ -4,6 +4,7 @@ import { env } from './sky.js';
 import { relief, weather, asphaltAge, wornPaint, windowMaterial, paving } from './surface.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 import { addCatalog } from './world/catalog.js';
+import { packProp, packsReady } from './packs.js';
 
 // ---------------------------------------------------------------- batched builder
 // Geometry is accumulated per (material, 96 m chunk) and flushed into a few hundred meshes.
@@ -597,6 +598,8 @@ const mirrorVisor = new THREE.CylinderGeometry(0.47, 0.47, 0.16, 24, 1, true, Ma
 const mirrorPlate = new THREE.BoxGeometry(0.16, 0.06, 0.008), mirrorTab = new THREE.BoxGeometry(0.05, 0.12, 0.03), mirrorPlateMat = new THREE.MeshStandardMaterial({ color: 0xf4f4ee, roughness: 0.6 });
 
 function curveMirror_build(B, x, y, z, r, heads = 1) {
+  // Idyllic Anime Japan's curve mirrors when the model library is there (single, or the T-bar pair), facing the same way
+  if (packsReady() && packProp(heads === 2 ? 'jp_mirror_round_03' : 'jp_mirror_round_02', x, y - 0.03, z, r) !== null) { addCircle(x, z, 0.12); return; }
   B.frame(x, y, z, r);
   const OR = [0.94, 0.47, 0.1], H = 3.3, R = 0.4;
   B.cyl('concrete', 0, -0.06, 0, 0.16, 0.18, 0.1, 12, { color: [0.68, 0.68, 0.66], cap: true });
@@ -647,7 +650,14 @@ function roadSignTex(kind) {
   return signTex[kind];
 }
 const signMats = {}, signPlate = new THREE.PlaneGeometry(0.75, 0.75);
+// the Idyllic Anime Japan sign (with its post) for each kind; kinds the pack draws only: pedestrian crossing, traffic
+// signal ahead, no entry, no parking, limit 50, keep left / right arrows, the curve warning. (The level-crossing warning
+// has no pack model: it stays the painted plate.)
+const PACK_SIGN = { stop: 'jp_sign_traffic_008', speed30: 'jp_sign_traffic_013', limit50: 'jp_sign_traffic_005', xwalk: 'jp_sign_traffic_014', signal: 'jp_sign_traffic_010',
+  noentry: 'jp_sign_traffic_006', noparking: 'jp_sign_traffic_004', curve: 'jp_sign_traffic_011', straight: 'jp_sign_traffic_001' };
 function roadSign_build(B, x, y, z, r, kind) {
+  if (PACK_SIGN[kind] && packsReady() && packProp(PACK_SIGN[kind], x, y - 0.05, z, r) !== null) { addCircle(x, z, 0.06); return; }
+  if (!signMats[kind] && !['stop', 'speed30', 'crossing'].includes(kind)) return; // (a pack-only kind without the library)
   B.frame(x, y, z, r);
   const ph = kind === 'stop' ? 2.1 : 2.6, sy = kind === 'stop' ? 1.85 : 2.3;
   B.cyl('alu', 0, -0.15, 0, 0.032, 0.03, ph + 0.15, 12, { color: [0.82, 0.84, 0.86] });

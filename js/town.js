@@ -15,7 +15,7 @@ import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
 import { buildCrops, updateCrops } from './crops.js';
 import { furnishYards } from './yards.js';
 import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
-import { loadPacks, flushPacks, queuePack, packParts } from './packs.js';
+import { loadPacks, flushPacks, queuePack, packParts, packsReady } from './packs.js';
 import { farmstead } from './farmstead.js';
 import { dressTown } from './dress.js';
 import { loadCrowd } from './crowd.js';
@@ -433,6 +433,7 @@ export async function build(progress, opts = {}) {
   const modelsP = Promise.all(['shrub_02', 'potted_plant_04', 'planter_box_01', 'plastic_crate_01', 'utility_box_02', 'weed_plant_02', 'water_manhole_cover'].map(loadModel));
   const rockModelsP = Promise.all(['rock_moss_set_01', 'boulder_01'].map(loadModel));
   await hf.generate(p => progress('Shaping the valley', p * 0.3));
+  await packsP; // (the street furniture below already draws from the model library)
 
   // ---------------------------------------------------------------- occupancy grid (1 m) for lots
   const OG = 1600, occ = new Uint8Array(OG * OG), oi = (x, z) => (Math.floor(z) + 800) * OG + (Math.floor(x) + 800);
@@ -579,6 +580,16 @@ export async function build(progress, opts = {}) {
     stopSpots.push({ x: q.x, z: q.z, hx, hz, signal });
   };
   for (const st of stops) addStop(st.id, st.s, st.dir, st.sign, st.legend ?? true, st.signal ?? null);
+  // signs from the Idyllic Anime Japan library (packs.js; none without it): 横断歩道 at the zebras of the main road, road B
+  // and the district roads — one each side, on the driver's left of the traffic it faces — and 'signals ahead' on the
+  // approaches to the signalised junction A x B (left-hand traffic: the driver's left of heading d is -L, L = [-d.z, d.x])
+  if (packsReady()) {
+    const signAt = (n, s, dir, kind, back = 0) => { const q = RN.sampleAt(n, s - dir * back), d = [q.d[0] * dir, q.d[1] * dir], off = n.hw + (n.walk ? n.walk - 0.45 : 0.75);
+      const x = q.x + d[1] * off, z = q.z - d[0] * off; if (onBridge(x, z) || onRail(z)) return; roadSign(B, x, topY(x, z), z, Math.atan2(-d[0], -d[1]), kind); };
+    for (const zb of zebras) { if (zb.bank) continue; const n = RN.byId.get(zb.id); if (!n || !n.walk) continue; for (const dir of [1, -1]) signAt(n, zb.s, dir, 'xwalk', zb.band / 2 + 0.6); }
+    const SI = inters.find(isSignal);
+    if (SI) for (const arm of SI.arms) { const n = arm.n, sIn = arm.s - arm.dir * 0, L = n.PL.len, s = sIn + arm.dir * 55; if (s < 5 || s > L - 5) continue; signAt(n, s, -arm.dir, 'signal'); }
+  }
   // traffic signals at A x B: a mast on the far-left corner of every approach (arm over the approach lane), pedestrian
   // heads facing across both crosswalks at each corner. 36 s cycle: A green 16 s, amber 3, all-red 1, B green 12, amber 3, all-red 1
   const signals = { t: 0, lamps: [], mats: {} };

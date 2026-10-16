@@ -59,6 +59,7 @@ function material(src, pack, kind, sway, cache, texs) {
   m.envMapIntensity = 0.6;
   if (m.alphaTest > 0) { m.transparent = false; m.alphaToCoverage = false; m.side = THREE.DoubleSide; m.shadowSide = THREE.DoubleSide; }
   if (wl.kind === 'glass') { m.transparent = true; m.depthWrite = false; }
+  if (/mirror/i.test(src.name)) { m.metalness = 0.85; m.roughness = 0.1; m.envMapIntensity = 1.2; } // (curve mirrors: a real reflection)
   if (sw) windPatch(m, 'packWind' + sw.toFixed(2) + (m.alphaTest > 0 ? 'a' : '') + (m.transparent ? 't' : ''), sw);
   cache.set(key, m);
   return m;
