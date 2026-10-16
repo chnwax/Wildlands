@@ -1070,7 +1070,13 @@ function greenhouse_build(B, s, rng, gy) {
   // end walls: film on a pipe frame, a sliding door with its own frame; the south door stands open
   if (!bare) for (const e of [-1, 1]) {
     const zz = e * d / 2, open = e > 0;
-    for (let i = 0; i < n; i++) { const p = arc(i), q = arc(i + 1); B.poly('poly', [[0, 1.1, zz], [p[0], p[1], zz], [q[0], q[1], zz]], [0, 0, e], { color: FILM }); }
+    // the film under the arch in vertical strips down to the side panels — and down only to the door head over the door
+    // (a fan from the middle covered the top of the doorway: a square of film over the open door)
+    const P = [];
+    for (let i = 0; i <= n; i++) { const a = arc(i), b = i < n ? arc(i + 1) : null; P.push(a);
+      if (b) for (const sx of [-0.6, 0.6]) if ((a[0] - sx) * (b[0] - sx) < 0) { const t = (sx - a[0]) / (b[0] - a[0]); P.push([sx, a[1] + t * (b[1] - a[1])]); } }
+    for (let i = 0; i + 1 < P.length; i++) { const a = P[i], b = P[i + 1], yb = Math.abs((a[0] + b[0]) / 2) < 0.6 ? 2.25 : 1.1;
+      B.poly('poly', [[a[0], yb, zz], [a[0], a[1], zz], [b[0], b[1], zz], [b[0], yb, zz]], [0, 0, e], { color: FILM }); }
     for (const s2 of [-1, 1]) B.quad('poly', [s2 * 0.6, 0, zz], [s2 * R2, 0, zz], [s2 * R2, 1.1, zz], [s2 * 0.6, 1.1, zz], { color: FILM });
     for (const px of [-0.6, 0.6]) pipe([px, 0, zz], [px, 2.25, zz], 0.025);
     pipe([-0.6, 2.25, zz], [0.6, 2.25, zz], 0.025); pipe([-0.62, 2.28, zz + e * 0.05], [1.9, 2.28, zz + e * 0.05], 0.015);                // door head + rail
