@@ -4,10 +4,10 @@
 // ground. Around them: foundations with vents, corner boards, band courses, and the service clutter of a lived-in
 // Japanese street (AC units with pipe ducts, meters, vent hoods, water heaters, nameplates, intercoms, gate pillars).
 // All of it goes through GeoBuilder frames; in a wall frame X runs along the wall, Y up, +Z out of the face (z = 0).
-import { scene, clamp, lerp, mulberry32, addCircle, COL_OFF } from './core.js';
+import { THREE, scene, clamp, lerp, mulberry32, addCircle, COL_OFF } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS, GeoBuilder, glowMats } from './townkit.js';
 import { cropSet } from './crops.js';
-import { packsReady, queuePack, packProp, packParts, packKit, packKitHas } from './packs.js';
+import { packsReady, queuePack, packProp, packParts, packKit, packKitHas, packPropMats } from './packs.js';
 import { konbiniDress } from './konbini.js';
 import { placeable, atXYZR, atObj, atLocal, uncaptured } from './world/capture.js';
 
@@ -718,14 +718,33 @@ const PACK_SHOPS = {
 // shopping street: the west end in midtown, by the station, and over the river in the new town
 const KONBINI_LOTS = [[-189, -13], [-76, -36], [161, -37]];
 const tradeOf = s => Math.floor(mulberry32(Math.floor(s.x * 131 + s.z * 71) | 0)() * SHOP_NAMES.length);
-const TRADE_SHOP = { 0: 'ramen', 3: 'restaurant', 8: 'restaurant', 12: ['house', 4], 16: ['house', 4], 7: ['house', 0], 6: ['house', 0], 11: ['house', 0], 14: ['house', 2],
-  15: ['house', 1], 1: ['row', 0], 10: ['row', 0], 2: ['row', 2], 5: ['row', 2], 9: ['row', 2], 13: ['row', 2], 17: ['row', 2], 4: ['row', 1] };
+// each trade's candidate buildings (the shops of one trade differ from lot to lot); null: the drawn shop (flat-roofed,
+// 看板建築 or machiya) — a quarter of the other lots keep it, for a street that is not one catalogue repeated
+const H = PACK_SHOPS.house, RW = PACK_SHOPS.row;
+const TRADE_SHOPS = { 0: [PACK_SHOPS.ramen, H[4]], 3: [PACK_SHOPS.restaurant, H[4]], 8: [PACK_SHOPS.restaurant, H[0]], 12: [H[4], H[0], PACK_SHOPS.restaurant], 16: [H[4], PACK_SHOPS.restaurant, H[0]],
+  7: [H[0], H[1], H[3]], 6: [H[0], H[3], H[1]], 11: [H[0], H[1], RW[2]], 14: [H[2]], 15: [H[1], RW[1]], 1: [RW[0], RW[2], H[3]], 10: [RW[0], H[3], H[1]],
+  2: [RW[2], RW[1], H[3]], 5: [RW[2], H[3], RW[0]], 9: [RW[1], H[1], RW[2]], 13: [RW[2], RW[0], H[3]], 17: [RW[1], RW[2], H[1]], 4: [RW[1], H[3]] };
+const lotHash = s => Math.abs(Math.floor(s.x * 3.7) * 7 + Math.floor(s.z * 2.3) * 13 + Math.floor(s.x * 0.37) * 31);
 function packShopModel(s) {
   if (KONBINI_LOTS.some(([kx, kz]) => Math.hypot(s.x - kx, s.z - kz) < 2)) return packsReady() && packParts(PACK_SHOPS.konbini[0]) ? PACK_SHOPS.konbini : null;
-  const t = tradeOf(s), k = TRADE_SHOP[t] || ['row', 1];
-  const P = k === 'ramen' ? (s.d > 6 ? PACK_SHOPS.ramen : PACK_SHOPS.house[4]) : k === 'restaurant' ? PACK_SHOPS.restaurant : PACK_SHOPS[k[0]][k[1]];
-  return packsReady() && packParts(P[0]) ? P : null;
+  const t = tradeOf(s), h = lotHash(s), list = TRADE_SHOPS[t] || [RW[1], H[3]];
+  if (![0, 3, 8, 12, 16, 14].includes(t) && h % 4 === 1) return null; // (the drawn shop here)
+  // (never the same building as a neighbour within 16 m: the next candidate, another shop house or row building, or the
+  // drawn shop)
+  const near = id => PLACED_SHOPS.some(q => q.id === id && Math.hypot(q.x - s.x, q.z - s.z) < 16);
+  const cands = [...list.slice(h % list.length), ...list.slice(0, h % list.length), H[1], H[3], RW[1], RW[0], H[0]];
+  let P = cands.find(c => !near(c[0]) && !(c === PACK_SHOPS.ramen && s.d <= 6)) || null;
+  if (!P || !packsReady() || !packParts(P[0])) return null;
+  PLACED_SHOPS.push({ id: P[0], x: s.x, z: s.z });
+  return P;
 }
+const PLACED_SHOPS = [];
+// wall colours for the pack buildings (their plaster and concrete multiplied): white, warm cream, pale blue-grey, sage,
+// blush, sand, darker grey — one per lot, so neighbouring copies of a model do not read as copies
+const SHOP_TINTS = [[1, 1, 1], [1.0, 0.94, 0.84], [0.86, 0.92, 0.98], [0.88, 0.95, 0.86], [1.0, 0.9, 0.88], [0.96, 0.9, 0.78], [0.78, 0.79, 0.82]];
+const tintCache = new Map();
+const tinted = (m, k) => { if (!k || !/base_wall|concrete_assets|roof_base/.test(m.name)) return m; const key = m.uuid + '|' + k;
+  if (!tintCache.has(key)) { const c = m.clone(); c.color.multiply(new THREE.Color(...SHOP_TINTS[k])); c.name = m.name; tintCache.set(key, c); } return tintCache.get(key); };
 function shopBuilding_build(B, s, rng, extras) {
   const P = packShopModel(s);
   if (!P) return shopBuildingDrawn(B, s, rng, extras);
@@ -746,11 +765,18 @@ function packShopBuilding(B, s, [id, mw, mh, md], extras) {
   B.frame(x, y, z, r);
   B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
   const kb = id === PACK_SHOPS.konbini[0], su = clamp(W / mw, kb ? 0.8 : 1, 1.3), sx = clamp(W / (mw * su), 1, 1.2), BW = mw * su * sx, D = Math.min(md * su, d), zc = d / 2 - D / 2;
-  framePack(B, id, 0, 0.02, zc, 0, [su * sx, su, D / md]);
-  const src = 'anime_japan/' + id.slice(3), o = B.P([0, 0.02, zc]);
-  packKit(src, o[0], o[1], o[2], B.F.r, [su * sx, su, D / md], su); // (its dressing inside and out)
+  const tk = kb ? 0 : lotHash(s) % SHOP_TINTS.length, o = B.P([0, 0.02, zc]);
+  { const M = new THREE.Matrix4().compose(new THREE.Vector3(...o), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), B.F.r), new THREE.Vector3(su * sx, su, D / md));
+    packPropMats(id, M, m => tinted(m, tk)); }
+  // its dressing inside and out; on a shop that is not a konbini the kit's own name boards (another shop's name, a
+  // konbini sign) give way to the trade's sign, hung where the kit's board was
+  const src = 'anime_japan/' + id.slice(3), signs = [];
+  const keep = t === 14 ? /flowerstore/ : null, skip = kb ? null : /signboard_wide|signboard_small|signboard_vertical|sign_3d_/;
+  packKit(src, o[0], o[1], o[2], B.F.r, [su * sx, su, D / md], su, { skip: skip && { test: q => skip.test(q) && !(keep && keep.test(q)) }, signs });
+  const main = signs.filter(q => /signboard_wide|sign_3d_konbini/.test(q.src)).sort((a, b) => b.w - a.w)[0];
+  if (main) { const sg = shopSign(own, Math.min(main.w * 0.95, BW - 0.6), t); sg.position.copy(main.p); sg.position.y += main.h * 0.5; sg.rotation.y = r; sg.translateZ(0.09); scene.add(sg); }
   const vy = Math.min(4.2, mh * su - 2.6), vs = verticalSign(own, t);
-  if (!packKitHas(src, /signboard_vertical|sign_3d/)) { const vp = B.P([BW / 2 - 0.35, vy + 1.0, d / 2 + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
+  if (!kb) { // (a konbini carries its own name only) const vp = B.P([BW / 2 - 0.35, vy + 1.0, d / 2 + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
     for (const yy of [vy + 0.1, vy + 1.9]) B.bbox('steel', BW / 2 - 0.35, yy, d / 2 + 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] }); }
   if (own() < 0.7 && !packKitHas(src, /board_/)) { const bx = (own() < 0.5 ? -1 : 1) * Math.min(BW / 2 - 0.6, 1.6), bid = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' }[t] || 'jp_board_foldable_0' + (1 + Math.floor(own() * 3));
     if (framePack(B, bid, bx, 0.12, d / 2 + 0.55, (own() - 0.5) * 0.6, 0.95) !== null) { const p = B.P([bx, 0, d / 2 + 0.55]); addCircle(p[0], p[2], 0.3); } }

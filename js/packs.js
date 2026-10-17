@@ -115,16 +115,24 @@ export function packProp(id, x, y, z, r = 0, s = 1, tilt = null) {
 // r, scaled s ([sx, sy, sz]); each prop goes where the kit puts it in the building's frame, turned with it, at su x its
 // own size (a stretched shop front does not stretch its stools). Returns how many were placed (0: no kit).
 const _kr = new THREE.Matrix4(), _kb = new THREE.Matrix4(), _kq = new THREE.Quaternion(), _ky = new THREE.Quaternion(), _kY = new THREE.Vector3(0, 1, 0);
-export function packKit(src, x, y, z, r, s, su = 1) {
+// opt.skip: props left out (a shop's own sign goes where the kit's stood: their world positions and widths in opt.signs)
+export function packKit(src, x, y, z, r, s, su = 1, opt = {}) {
   const K = packs && packs.kits[src]; if (!K || CAP.scratch) return 0;
   _kb.compose(_p.set(x, y, z), _ky.setFromAxisAngle(_kY, r), _s.set(s[0], s[1], s[2]));
   let n = 0;
   for (const p of K.props) { const m = packs.models[p.src]; if (!m) continue;
-    _kr.fromArray(p.m).decompose(_p, _kq, _s); _p.applyMatrix4(_kb); _kq.premultiply(_ky); _s.multiplyScalar(su); _m.compose(_p, _kq, _s);
+    _kr.fromArray(p.m).decompose(_p, _kq, _s); _p.applyMatrix4(_kb); _kq.premultiply(_ky); _s.multiplyScalar(su);
+    if (opt.skip && opt.skip.test(p.src)) { if (opt.signs) opt.signs.push({ p: _p.clone(), w: m.dims[0] * _s.x, h: m.dims[1] * _s.y, src: p.src }); continue; }
+    _m.compose(_p, _kq, _s);
     const big = Math.max(...m.dims) * su; // (small things drawn near only, and only the larger ones cast shadows)
     addProp('pack:' + p.src, m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: q.castShadow !== false && m.dims[1] * su > 1.0, near: big < 1.6 ? 70 : 170 }))); n++;
     if (/shelves_store$/.test(p.src)) stockShelf(_sh.copy(_m), x * 7 + z * 13 + n); }
   return n;
+}
+// a pack model placed as one prop with some of its materials swapped (a shop building's walls in another colour)
+export function packPropMats(id, M, swap) {
+  const m = packs && packs.models[id]; if (!m || CAP.scratch) return null;
+  return addProp('pack:' + id, m.parts.map(q => ({ geometry: q.geometry, material: swap(q.material), matrix: M, castShadow: q.castShadow !== false })));
 }
 // a store rack stocked shelf by shelf (its own noise: no draws of anyone's rng): drinks in runs of one kind, boxed goods
 // on the top shelf. Shelf heights and length as measured on the pack's rack (model units).
