@@ -7,7 +7,7 @@
 //    broadleaf, spreading oak / camphor, airy birch, vase-shaped zelkova, layered maple, weeping willow, sakura, bamboo)
 // Normals are smoothed toward each blob / the whole crown, so every tree reads as a soft painted shape with one bright
 // sunlit side and one cool shaded side.
-import { withScatterMeta, THREE, S, Q, mulberry32, lerp, clamp, phTex, Scatter, addCircle } from './core.js';
+import { withScatterMeta, THREE, S, Q, mulberry32, lerp, clamp, phTex, Scatter, addCircle, renderer } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { windPatch } from './terrain.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
@@ -1115,12 +1115,70 @@ function packTreeLods(kind, v, sp, hiD, loD) {
   const [nearId, lowId] = vars[v % vars.length], P = packsReady(), dims = P.dims(nearId); if (!dims) return null;
   const h = dims[1], near = packTreeParts(nearId, h, sp, true), low = lowId ? packTreeParts(lowId, h, sp, false) : near;
   if (!near || !low) return null;
-  const d0 = () => Math.min(hiD(), 70), d1 = () => Math.max(d0() + 1, Math.min(hiD(), 190));
-  const lods = [{ dist: d0, parts: near }, { dist: d1, parts: low }];
-  // past the middle distance: the procedural masses of the species, to the horizon
-  lods.push({ dist: () => Math.max(d1() + 1, loD()), parts: speciesParts(sp, materials(sp.mat), sp.geo(1, v), 1) });
-  if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, materials(sp.mat), sp.geo(2, v), 2) });
+  // the model itself to 90 m (its lower level, where the pack has one, to 200 m), then the model's own picture (an
+  // impostor drawn from it at load: the same silhouette, crown and colours) to the horizon
+  const d0 = () => Math.min(hiD(), lowId ? 90 : 200), d1 = () => Math.max(d0() + 1, Math.min(hiD(), 200));
+  const lods = lowId ? [{ dist: d0, parts: near }, { dist: d1, parts: low }] : [{ dist: d0, parts: near }];
+  const imp = packImpostor(nearId, h, sp);
+  if (imp) lods.push({ dist: () => Infinity, parts: imp });
+  else { lods.push({ dist: () => Math.max(lods[lods.length - 1].dist() + 1, loD()), parts: speciesParts(sp, materials(sp.mat), sp.geo(1, v), 1) });
+    if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, materials(sp.mat), sp.geo(2, v), 2) }); }
   return lods;
+}
+// A pack tree's far level drawn from the model itself: K views round it rendered once (albedo: its own textures and
+// colours, unlit) into the tiles of one atlas, shown on K crossed vertical quads through the trunk at the model's size,
+// their normals bent outward and up like a crown's so the scene's sun shades them as a rounded mass. The same
+// silhouette, crown size and colours as the near model, so the swap to it at distance reads as the same tree.
+const impCache = new Map(), IMP_K = 4, IMP_T = 256, IMP_DIM = { fir: 0.85, dead: 0.9, sakura: 0.85, jpine: 0.8 };
+function packImpostor(id, h, sp) {
+  const key = id + '|' + h + '|' + sp.mat; if (impCache.has(key)) return impCache.get(key);
+  const src = packParts(id); if (!src || !renderer) return null;
+  // the model at unit height, in plain albedo materials
+  const sc = new THREE.Scene(), box = new THREE.Box3(), mats = [];
+  let leafCol = new THREE.Color(0.3, 0.42, 0.18);
+  for (const p of src) {
+    const tone = /leaf/i.test(p.material.name) && TREE_TONE[id];
+    const m = new THREE.MeshBasicMaterial({ map: p.material.map || null, color: p.material.color.clone(), alphaTest: p.material.alphaTest > 0 ? 0.5 : 0, side: THREE.DoubleSide });
+    if (tone) m.color.multiplyScalar(tone[0]).lerp(new THREE.Color(...tone[1]), tone[2]);
+    if (/card/i.test(p.material.name)) continue;
+    if (p.material.alphaTest > 0) leafCol = m.color.clone();
+    const g = p.geometry.clone().scale(1 / h, 1 / h, 1 / h); g.computeBoundingBox(); box.union(g.boundingBox);
+    sc.add(new THREE.Mesh(g, m)); mats.push(m);
+  }
+  const R = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z), S2 = Math.max(box.max.y * 1.02, 2 * R * 1.04), W = S2 / 2;
+  const rt = new THREE.WebGLRenderTarget(IMP_T * IMP_K, IMP_T, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
+  rt.texture.colorSpace = THREE.SRGBColorSpace; rt.texture.anisotropy = 4;
+  const cam = new THREE.OrthographicCamera(-W, W, S2, 0, 0.01, 50);
+  const prev = renderer.getRenderTarget(), pc = renderer.getClearColor(new THREE.Color()), pa = renderer.getClearAlpha(), pac = renderer.autoClear, psh = renderer.shadowMap.autoUpdate;
+  renderer.shadowMap.autoUpdate = false; renderer.autoClear = false;
+  renderer.setRenderTarget(rt); renderer.setClearColor(leafCol, 0); renderer.clear(true, true, true); // (transparent, in the leaves' colour: no dark fringe in the mips)
+  for (let k = 0; k < IMP_K; k++) {
+    const a = k * Math.PI / IMP_K; cam.position.set(Math.sin(a) * 20, 0, Math.cos(a) * 20); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+    rt.viewport.set(k * IMP_T, 0, IMP_T, IMP_T); rt.scissor.set(k * IMP_T, 0, IMP_T, IMP_T); rt.scissorTest = true;
+    renderer.setRenderTarget(rt); renderer.render(sc, cam);
+  }
+  rt.scissorTest = false; rt.viewport.set(0, 0, IMP_T * IMP_K, IMP_T);
+  renderer.setRenderTarget(prev); renderer.setClearColor(pc, pa); renderer.autoClear = pac; renderer.shadowMap.autoUpdate = psh;
+  for (const o of sc.children) o.geometry.dispose(); for (const m of mats) m.dispose();
+  // K crossed quads, each with its tile; normals: out from the crown's centre and up
+  const pos = [], uv = [], nor = [], idx = [], cy = S2 * 0.55;
+  for (let k = 0; k < IMP_K; k++) {
+    const a = k * Math.PI / IMP_K, ux = Math.cos(a), uz = -Math.sin(a), base = pos.length / 3;
+    for (const [s, y] of [[-1, 0], [1, 0], [1, S2], [-1, S2]]) {
+      const x = s * W * ux, z = s * W * uz; pos.push(x, y, z); uv.push((k + (s + 1) / 2) / IMP_K, y / S2);
+      const n = new THREE.Vector3(x, (y - cy) * 0.6 + 0.7 * S2, z).normalize(); nor.push(n.x, n.y, n.z);
+    }
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx); g.computeBoundingSphere();
+  // (the picture has no self-shadowing: a crown's inner leaves, dark in the model, are as bright as its outer ones — the
+  // colour is brought down to the near model's average in light)
+  const m = new THREE.MeshStandardMaterial({ map: rt.texture, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, metalness: 0, envMapIntensity: 0.4, color: new THREE.Color().setScalar(IMP_DIM[sp.mat] ?? 0.8) });
+  m.name = 'impostor:' + id;
+  const parts = [{ geometry: g, material: m, tint: 'pc', castShadow: false, sway: false }];
+  impCache.set(key, parts);
+  return parts;
 }
 // the per-item tint of a pack tree: the procedural foliage colour turned into a gentle brightness / warmth variation
 // around white (the pack's own textures carry the colour)
