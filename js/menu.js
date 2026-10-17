@@ -21,7 +21,7 @@ const UNLISTED = { nature: { name: 'Wildlands', kanji: '' }, assetmap: { name: '
 export const cityOfMap = map => CITIES.find(c => c.map === map) || UNLISTED[map] || { name: map, kanji: '' };
 
 // arrival time: null keeps the map's own start hour
-const ARRIVE = [['Dawn', 5.75], ['Morning', 8], ['Noon', 12.5], ['Afternoon', null], ['Golden hour', 17.3], ['Blue hour', 18.4], ['Night', 23]];
+const ARRIVE = [['Dawn', 5.75], ['Morning', 8], ['Noon', 12.5], ['Afternoon', null], ['Golden hour', 17.3], ['Night', 23]];
 const TIPS = [
   ['F', 'fly mode: drift over the rooftops, F again to land'],
   ['[ ]', 'move the clock half an hour back or forward'],

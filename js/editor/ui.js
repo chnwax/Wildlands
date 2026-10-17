@@ -114,7 +114,7 @@ function onKey(e, U, ed) {
 }
 
 // ---------------------------------------------------------------- toolbar
-const PRESETS = [['Dawn', 5.75], ['Morning', 8], ['Noon', 12.5], ['Golden', 17.3], ['Blue hour', 18.4], ['Night', 23]];
+const PRESETS = [['Dawn', 5.75], ['Morning', 8], ['Noon', 12.5], ['Golden', 17.3], ['Night', 23]];
 const fmtHour = h => { const hh = Math.floor(h), mm = Math.floor((h - hh) * 60); return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0'); };
 export function setHour(h) { time.hour = ((h % 24) + 24) % 24; updateSky(true); ui.tb.hour && (ui.tb.hour.value = time.hour, ui.tb.clock.textContent = fmtHour(time.hour)); }
 function buildToolbar(U, ed) {
