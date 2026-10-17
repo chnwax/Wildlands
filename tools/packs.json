@@ -1871,6 +1871,12 @@
      "kind": "lod",
      "category": "shop",
      "src": "anime_japan/store_rowbuilding_03"
+    },
+    {
+     "id": "jp_convenience_store",
+     "kind": "lod",
+     "category": "shop",
+     "src": "anime_japan/convenience_store"
     }
    ]
   },

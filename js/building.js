@@ -712,11 +712,16 @@ const PACK_SHOPS = {
   ramen: ['jp_ramenshop', 6.52, 4.49, 4.59], restaurant: ['jp_restaurant_traditional_building', 8.49, 8.03, 8.33],
   house: [['jp_shop_building_01', 6.39, 8.46, 7.74], ['jp_shop_building_02', 6.97, 9.67, 6.97], ['jp_shop_building_03', 5.68, 9.67, 7.56], ['jp_shop_building_04', 6.29, 9.67, 8.08], ['jp_shop_building_05', 6.45, 8.46, 7.74]],
   row: [['jp_store_rowbuilding_01', 5.51, 10.93, 7.43], ['jp_store_rowbuilding_02', 5.45, 11.43, 7.75], ['jp_store_rowbuilding_03', 5.49, 12.06, 7.24]],
+  konbini: ['jp_convenience_store', 12.13, 5.26, 8.89],
 };
+// three more konbini (the pack's convenience store with its demo dressing) along the main road, one in each part of the
+// shopping street: the west end in midtown, by the station, and over the river in the new town
+const KONBINI_LOTS = [[-189, -13], [-76, -36], [161, -37]];
 const tradeOf = s => Math.floor(mulberry32(Math.floor(s.x * 131 + s.z * 71) | 0)() * SHOP_NAMES.length);
 const TRADE_SHOP = { 0: 'ramen', 3: 'restaurant', 8: 'restaurant', 12: ['house', 4], 16: ['house', 4], 7: ['house', 0], 6: ['house', 0], 11: ['house', 0], 14: ['house', 2],
   15: ['house', 1], 1: ['row', 0], 10: ['row', 0], 2: ['row', 2], 5: ['row', 2], 9: ['row', 2], 13: ['row', 2], 17: ['row', 2], 4: ['row', 1] };
 function packShopModel(s) {
+  if (KONBINI_LOTS.some(([kx, kz]) => Math.hypot(s.x - kx, s.z - kz) < 2)) return packsReady() && packParts(PACK_SHOPS.konbini[0]) ? PACK_SHOPS.konbini : null;
   const t = tradeOf(s), k = TRADE_SHOP[t] || ['row', 1];
   const P = k === 'ramen' ? (s.d > 6 ? PACK_SHOPS.ramen : PACK_SHOPS.house[4]) : k === 'restaurant' ? PACK_SHOPS.restaurant : PACK_SHOPS[k[0]][k[1]];
   return packsReady() && packParts(P[0]) ? P : null;
@@ -740,7 +745,7 @@ function packShopBuilding(B, s, [id, mw, mh, md], extras) {
   const { x, y, z, r, w, d } = s, W = w - 0.1, t = tradeOf(s), own = mulberry32((Math.floor(x * 31) * 7919 + Math.floor(z * 17) * 104729) >>> 0);
   B.frame(x, y, z, r);
   B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
-  const su = clamp(W / mw, 1, 1.3), sx = clamp(W / (mw * su), 1, 1.2), BW = mw * su * sx, D = Math.min(md * su, d), zc = d / 2 - D / 2;
+  const kb = id === PACK_SHOPS.konbini[0], su = clamp(W / mw, kb ? 0.8 : 1, 1.3), sx = clamp(W / (mw * su), 1, 1.2), BW = mw * su * sx, D = Math.min(md * su, d), zc = d / 2 - D / 2;
   framePack(B, id, 0, 0.02, zc, 0, [su * sx, su, D / md]);
   const src = 'anime_japan/' + id.slice(3), o = B.P([0, 0.02, zc]);
   packKit(src, o[0], o[1], o[2], B.F.r, [su * sx, su, D / md], su); // (its dressing inside and out)
