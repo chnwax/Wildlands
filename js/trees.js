@@ -1308,17 +1308,12 @@ export function packShrubLods(i, hs, nearD, farD, shadow = true, shape = null, n
   return [{ dist: nearD, parts: near.map(p => ({ ...p, geometry: sh(p), castShadow: shadow })) }, { dist: farD, parts: far.map(p => ({ ...p, geometry: sh(p), castShadow: false, sway: false })) }]; // (past the near level: no shadow, no sway)
 }
 export const shrubTint = list => packTint(list);
-// a hedge's segments (a drawn hedge block 1.26 m long at unit height, stretched along its local x by sx) as rows of the
-// pack's round shrubs at their own proportions: a low hedge's long segment becomes several shrubs, not one shrub pulled
-// flat. (Hedges are a field — no World Builder ids per segment — so the list may change.)
+// a hedge's segments drawn with the pack's round shrub: a segment stretched long and low (a low hedge's sx up to 2.4)
+// keeps the shrub's own proportions instead — less stretch, a little more height — so the hedge is a row of full round
+// shrubs, not flat lumps. The same items (World Builder ids and edits unchanged), only their proportions.
 function hedgeShrubs(list) {
-  const out = [];
-  for (const it of list) {
-    const L = 1.26 * it.s * (it.sx || 1), w = 1.1 * it.s, k = Math.max(1, Math.round(L / (w * 0.8))), c = Math.cos(it.r || 0), sn = Math.sin(it.r || 0);
-    for (let i = 0; i < k; i++) { const u = (i + 0.5) / k * L - L / 2, h = Math.sin((it.x + i * 3.7) * 12.9898 + it.z * 78.233) * 43758.5453, f = h - Math.floor(h);
-      out.push({ ...it, x: it.x + c * u, z: it.z - sn * u, sx: clamp(L / k / w * 1.25, 0.9, 1.35), s: it.s * (0.94 + f * 0.12), r: (it.r || 0) + (f - 0.5) * 0.5 }); }
-  }
-  return out;
+  for (const it of list) { const sx = it.sx || 1; if (sx > 1.3) { it.s *= Math.min(1.35, Math.sqrt(sx / 1.3)); it.sx = 1.3; } }
+  return list;
 }
 // shrubs and low greenery (bush, hydra, hedge, ivy): no trunk collider worth having below ~1 m; only the big ones block
 // (full blob detail only within ~a hundred metres; hedges and ivy are low and many, so they start at the mid LOD)
