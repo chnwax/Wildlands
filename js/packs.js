@@ -122,8 +122,29 @@ export function packKit(src, x, y, z, r, s, su = 1) {
   for (const p of K.props) { const m = packs.models[p.src]; if (!m) continue;
     _kr.fromArray(p.m).decompose(_p, _kq, _s); _p.applyMatrix4(_kb); _kq.premultiply(_ky); _s.multiplyScalar(su); _m.compose(_p, _kq, _s);
     const big = Math.max(...m.dims) * su; // (small things drawn near only, and only the larger ones cast shadows)
-    addProp('pack:' + p.src, m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: q.castShadow !== false && m.dims[1] * su > 1.0, near: big < 1.6 ? 70 : 170 }))); n++; }
+    addProp('pack:' + p.src, m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: q.castShadow !== false && m.dims[1] * su > 1.0, near: big < 1.6 ? 70 : 170 }))); n++;
+    if (/shelves_store$/.test(p.src)) stockShelf(_sh.copy(_m), x * 7 + z * 13 + n); }
   return n;
+}
+// a store rack stocked shelf by shelf (its own noise: no draws of anyone's rng): drinks in runs of one kind, boxed goods
+// on the top shelf. Shelf heights and length as measured on the pack's rack (model units).
+const _sh = new THREE.Matrix4(), _sl = new THREE.Matrix4(), _sm2 = new THREE.Matrix4();
+const SHELF_Y = [0.14, 0.58, 1.02, 1.46, 2.0], GOODS = ['anime_japan/bottle_drink_01', 'anime_japan/bottle_drink_02', 'anime_japan/bottle_drink_03', 'anime_japan/bottle_drink_04'];
+function stockShelf(M, seed) {
+  const h = k => { const v = Math.sin((seed + k) * 12.9898) * 43758.5453; return v - Math.floor(v); };
+  let k = 0;
+  SHELF_Y.forEach((y, li) => {
+    for (let u = -1.66; u <= 1.66;) {
+      if (li === 4) { const id = 'anime_japan/carton_03', m = packs.models[id]; if (m) put(M, m, id, u, y, 0, (h(k++) - 0.5) * 0.3, 0.5); u += 0.32 + h(k++) * 0.12; continue; }
+      const id = GOODS[Math.floor(h(k++) * GOODS.length)], m = packs.models[id], run = 3 + Math.floor(h(k++) * 5);
+      for (let r = 0; r < run && u <= 1.66; r++, u += 0.13) if (m) for (const v of [-0.18, 0.02]) put(M, m, id, u, y, v, h(k++) * 6.28, id.endsWith('04') ? 0.75 : 0.8);
+      u += 0.06;
+    }
+  });
+}
+function put(M, m, id, u, y, v, r, sc) {
+  _sl.compose(_p.set(u, y, v), _q.setFromAxisAngle(_kY, r), _s.setScalar(sc)); _sm2.multiplyMatrices(M, _sl);
+  addProp('pack:' + id + ':shelf', m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _sm2, castShadow: false, near: 45 })));
 }
 export const packKitHas = (src, re) => !!(packs && packs.kits[src] && packs.kits[src].props.some(p => re.test(p.src)));
 // items [{ x, y, z, r, s?, sx?, sy?, sz?, c? }] of one model -> an instanced world object (prefab = the model id)
