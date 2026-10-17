@@ -1160,6 +1160,12 @@ function plant(B, type, lx, ly, lz, rng, s = 1, t = null) { const p = B.P([lx, l
 // different crops — cabbages, leeks, tomatoes on cane frames, eggplants, potatoes, some under black or silver mulch
 // film — a cucumber net, bird netting over the brassicas, paths of trodden earth, a tool box, water tank and hose,
 // compost bin and a wheelbarrow. Local frame: the street side is +z.
+// the end face of a mound profile (base point, shoulders, crown, ..., base point): a fan of triangles from the middle of
+// its base (GeoBuilder.poly draws three or four corners only: a seven-point end came out half open)
+function profileCap(B, mat, row, hint, opt) {
+  const a = row[0], b = row[row.length - 1], c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 0.02, (a[2] + b[2]) / 2];
+  for (let i = 0; i + 1 < row.length; i++) B.poly(mat, [c, row[i], row[i + 1]], hint, opt);
+}
 function allotment_build(B, s, rng, gy) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
@@ -1190,7 +1196,7 @@ function allotment_build(B, s, rng, gy) {
         rows.push(PR.map(([px, py], j) => [cx + px * (j < 3 ? sl : j > 3 ? sr : 1), py + (j > 0 && j < 6 ? wob(u * 2.1, 4 + j) * 0.012 : 0), zz])); }
       for (let k = 0; k < NZ; k++) { const m = 1 + wob(k * 0.61 + 0.5, 9) * 0.07;
         for (let j = 0; j < 6; j++) B.quad('soil', rows[k][j], rows[k + 1][j], rows[k + 1][j + 1], rows[k][j + 1], { color: mul(BC[j], m), uvs: [rows[k][j], rows[k + 1][j], rows[k + 1][j + 1], rows[k][j + 1]].map(p => [p[0] / 2.5, p[2] / 2.5]) }); }
-      B.poly('soil', rows[0], [0, 0, -1], { color: mul(SOIL, 0.92) }); B.poly('soil', [...rows[NZ]].reverse(), [0, 0, 1], { color: mul(SOIL, 0.92) }); }
+      profileCap(B, 'soil', rows[0], [0, 0, -1], { color: mul(SOIL, 0.92) }); profileCap(B, 'soil', rows[NZ], [0, 0, 1], { color: mul(SOIL, 0.92) }); }
     if (kind === 'mulch' || kind === 'eggplant' || kind === 'tomato') B.box('dark', bx, 0.222, zc, bw - 0.1, 0.004, L - 0.1, { color: kind === 'mulch' ? [0.72, 0.74, 0.76] : [0.1, 0.1, 0.11] });
     B.detail(1, () => {
       for (let zz = bedsZ0 + 0.35; zz < bedsZ1 - 0.2; zz += kind === 'leek' ? 0.2 : kind === 'greens' ? 0.3 : 0.45) {
@@ -1306,7 +1312,7 @@ function field_build(B, s, rng, gy) {
     const BAND = film ? [sideC, sideC, topC, topC, sideC, sideC] : [mul(SOIL, 0.86), mul(SOIL, 0.97), DRY, DRY, mul(SOIL, 0.97), mul(SOIL, 0.86)];
     for (let k = 0; k < NZ; k++) { const p = st[k].row, q = st[k + 1].row, m = film ? 1 : 1 + wob(k * 0.61 + 0.5, 5) * 0.07;
       for (let j = 0; j < 6; j++) q4(mat, p[j], q[j], q[j + 1], p[j + 1], film ? BAND[j] : mul(BAND[j], m)); }
-    for (const [e, sg] of [[st[0], -1], [st[NZ], 1]]) B.poly(mat, sg < 0 ? e.row : [...e.row].reverse(), [0, 0, sg], { color: film ? sideC : mul(SOIL, 0.92), uv: US });
+    for (const [e, sg] of [[st[0], -1], [st[NZ], 1]]) profileCap(B, mat, e.row, [0, 0, sg], { color: film ? sideC : mul(SOIL, 0.92), uv: US });
     const topAt = zz => { const f = clamp((zz - zA) / (zB - zA) * NZ, 0, NZ - 1e-6), k = Math.floor(f), t = f - k; return lerp(st[k].g + st[k].H, st[k + 1].g + st[k + 1].H, t); };
     if (kind === 'tunnel') { // white non-woven row cover on hoops (トンネル)
       const R = bw * 0.95, H = 0.5, arcP = (k, zz, g) => { const a = Math.PI * k / 6; return [xc - Math.cos(a) * R, g + Math.sin(a) * H, zz]; };
