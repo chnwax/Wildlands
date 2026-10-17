@@ -1074,6 +1074,9 @@ const PACK_TREES = {
   sakura: [['tr_jp_cherry'], ['tr_jp_cherry_02']],
 };
 const packTreeCache = new Map();
+// a model's own leaf tone where its shared material reads wrong on it: The Illustrated Nature's tall beech (its crown of
+// sunlit leaf cards came out neon in full sun) toned down toward an olive green, its lower level with it
+const TREE_TONE = { tr_il_beech_03: [0.55, [0.26, 0.38, 0.14], 0.35], tr_il_beech_03_l2: [0.55, [0.26, 0.38, 0.14], 0.35] };
 // a pack model's parts at unit height (h: the height of the variant's near model, so its levels line up), with the
 // tree look: the foliage shading of the procedural trees (cloud shade, sunlight through the leaves, rim), the wind of
 // the species, wind-swayed alpha-tested shadows
@@ -1084,7 +1087,7 @@ function packTreeParts(id, h, sp, near) {
   const sway = (MATS[sp.mat] || MATS.leaf).sway;
   const parts = src.map(p => {
     const g = p.geometry.clone().scale(1 / h, 1 / h, 1 / h); g.computeBoundingSphere(); g.computeBoundingBox();
-    const mk = 'packTree|' + p.material.name + '|' + sp.mat;
+    const tone = /leaf/i.test(p.material.name) && TREE_TONE[id], mk = 'packTree|' + p.material.name + '|' + sp.mat + (tone ? '|' + id : '');
     let m = packTreeCache.get(mk), d = packTreeCache.get(mk + '|d');
     if (!m) {
       m = p.material.clone(); const cut = m.alphaTest > 0;
@@ -1093,6 +1096,7 @@ function packTreeParts(id, h, sp, near) {
       // conifer or broadleaf green so the far hillsides keep the near trees' tone)
       if (/card/i.test(p.material.name)) { if (sp.mat === 'fir' || sp.mat === 'dead') m.color.setRGB(0.2, 0.33, 0.23); else m.color.setRGB(0.33, 0.45, 0.24); }
       if (cut) { m.alphaToCoverage = Q.msaa > 0; m.side = THREE.DoubleSide; }
+      if (tone) m.color.multiplyScalar(tone[0]).lerp(new THREE.Color(...tone[1]), tone[2]);
       if (sp.mat === 'bush') m.color.multiplyScalar(0.62).lerp(new THREE.Color(0.42, 0.48, 0.3), 0.25); // (the shrubs' bright leaf texture under the foliage light read neon: toned to the hedges' green)
       foliagePatch(m, 'packTree' + sp.mat + (cut ? 'c' : 's') + p.material.name, sway, cut);
       d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: cut ? m.map : null, alphaTest: cut ? m.alphaTest : 0 });
