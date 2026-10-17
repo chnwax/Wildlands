@@ -1,6 +1,6 @@
 // Railway: double track (1067 mm gauge), catenary, tunnels, girder bridge, station, level crossings, EMU trains.
 import { THREE, scene, S, clamp, lerp, smoothstep, mulberry32, addBox, addCircle, addPlatform, swapsTo, addProp } from './core.js';
-import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints, glowMats, wireMat } from './townkit.js';
+import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints, glowMats, wireMat, clockHead } from './townkit.js';
 import { Emitter, audio } from './audio.js';
 import { stationBuilding } from './station.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -166,20 +166,18 @@ export function buildRailway(ctx) {
     B.box('concrete', (sx0 + sx1) / 2, y0 - 0.3, zc, sx1 - sx0, ptop - y0 + 0.3, dz, { color: [0.74, 0.74, 0.72], skip: 'py', uv: 3 });
     B.box('pavement', (sx0 + sx1) / 2, ptop - 0.001, zc, sx1 - sx0, 0.001, dz, { color: [0.9, 0.9, 0.88], uv: 1.5, skip: 'ny' });
     B.box('plain', (sx0 + sx1) / 2, ptop, edge + P.side * 0.12, sx1 - sx0, 0.01, 0.2, { color: [0.95, 0.95, 0.93] });
+    // the edge: a precast coping slab overhanging the track by 8 cm, the platform face under it in a darker band with a
+    // shadow recess (the refuge space under the coping), drain spouts every 10 m
+    { const t = -P.side, L = sx1 - sx0, xm = (sx0 + sx1) / 2;
+      B.box('concrete', xm, ptop - 0.16, edge + t * 0.04 - P.side * 0.12, L, 0.155, 0.32, { color: [0.82, 0.82, 0.8], uv: 1 });
+      B.box('dark', xm, ptop - 0.42, edge + t * 0.004, L, 0.26, 0.01, { color: [0.2, 0.2, 0.21] });
+      B.box('concrete', xm, y0 + 0.2, edge + t * 0.006, L, ptop - y0 - 0.62, 0.01, { color: [0.6, 0.6, 0.58], uv: 2 });
+      B.detail(1, () => { for (let x = sx0 + 5; x < sx1; x += 10) B.box('metal', x, ptop - 0.75, edge + t * 0.06, 0.1, 0.06, 0.12, { color: [0.4, 0.42, 0.44] }); }); }
     { const tz = edge + P.side * 0.95, ty = ptop + 0.004, L = sx1 - sx0; // warning blocks along the platform edge
       B.poly('tactileD', [[sx0, ty, tz - 0.15], [sx1, ty, tz - 0.15], [sx1, ty, tz + 0.15], [sx0, ty, tz + 0.15]], [0, 1, 0], { uvs: [[0, 0], [L / 0.3, 0], [L / 0.3, 1], [0, 1]] }); }
     addPlatform((sx0 + sx1) / 2, zc, (sx1 - sx0) / 2, dz / 2, 0, ptop);
-    // canopy over the middle
     const c0 = RAIL.stationX - 24, c1 = RAIL.stationX + 24, back = P.side > 0 ? P.z1 - 0.8 : P.z0 + 0.8;
-    for (let x0 = c0; x0 <= c1; x0 += 8) { const dx = x0 - (RAIL.stationX + 6), x = P.side > 0 && Math.abs(dx) < 2.6 ? RAIL.stationX + 6 + 2.7 * (Math.sign(dx) || 1) : x0; // clear of the station door
-      B.frame(x, ptop, back, 0); B.box('metal', 0, 0, 0, 0.2, 3.3, 0.2, { color: [0.3, 0.33, 0.36] }); addBox(x, back, 0.15, 0.15, 0); }
-    B.frame(0, 0, 0, 0);
-    const cz0 = P.side > 0 ? P.z0 + 0.3 : P.z0 - 0.4, cz1 = P.side > 0 ? P.z1 + 0.4 : P.z1 - 0.3;
-    B.quad('roofMetal', [c0 - 1, ptop + 3.4, cz1], [c1 + 1, ptop + 3.4, cz1], [c1 + 1, ptop + 3.6, cz0], [c0 - 1, ptop + 3.6, cz0], { color: [0.55, 0.57, 0.58], uv: 2 });
-    B.quad('plain', [c1 + 1, ptop + 3.4, cz1], [c0 - 1, ptop + 3.4, cz1], [c0 - 1, ptop + 3.6, cz0], [c1 + 1, ptop + 3.6, cz0], { color: [0.8, 0.8, 0.78] });
-    for (const [zf, yf] of [[cz1, ptop + 3.4], [cz0, ptop + 3.6]]) B.bbox('metal', (c0 + c1) / 2, yf - 0.2, zf + Math.sign(zf - (cz0 + cz1) / 2) * 0.03, c1 - c0 + 2.06, 0.28, 0.06, 0.01, { color: [0.5, 0.53, 0.55] }); // fascias
-    for (const xe of [c0 - 1.03, c1 + 1.03]) B.poly('metal', [[xe, ptop + 3.2, cz1], [xe, ptop + 3.2, cz0], [xe, ptop + 3.66, cz0], [xe, ptop + 3.46, cz1]], [Math.sign(xe - RAIL.stationX), 0, 0], { color: [0.5, 0.53, 0.55] });
-    for (let x = c0 + 2; x < c1; x += 6) { B.frame(x, ptop + 3.3, (cz0 + cz1) / 2, 0); B.box('lamp', 0, 0, 0, 1.2, 0.05, 0.12); lampPoints.push({ p: [x, ptop + 3.0, (cz0 + cz1) / 2], s: 0.7 }); }
+    platformCanopy(B, P, { c0, c1, back, edge, ptop, door: P.side > 0 ? RAIL.stationX + 6 : null });
     // fence along the back edge
     B.frame(0, 0, 0, 0);
     const fz = P.side > 0 ? P.z1 - 0.05 : P.z0 + 0.05;
@@ -202,6 +200,7 @@ export function buildRailway(ctx) {
       B.frame(x, ptop, back + (P.side > 0 ? -0.3 : 0.3), 0); for (const o of [-1.1, 1.1]) B.box('metal', o, 0, 0, 0.08, 2.5, 0.08, { color: [0.3, 0.3, 0.3] });
     }
   }
+  for (const P of platforms) platformFurniture(B, P, { ptop, back: P.side > 0 ? P.z1 - 0.8 : P.z0 + 0.8, stationX: RAIL.stationX });
   // home and starting signals (left-hand running: westbound trains on the south track, eastbound on the north)
   signal(B, sx1 + 45, y0, -75.6, Math.PI / 2, 1); signal(B, sx0 - 12, y0, -75.6, Math.PI / 2, 0);
   signal(B, sx0 - 45, y0, -84.4, -Math.PI / 2, 0); signal(B, sx1 + 12, y0, -84.4, -Math.PI / 2, 2);
@@ -300,6 +299,108 @@ function packSignalHead(x, y0, z, r, aspect) {
   const lens = RS_LENS.map(lx => new THREE.Vector3(lx, RS_LENS_Y, RS_LENS_Z).applyMatrix4(_rm)).sort((a, b) => a.y - b.y); // bottom to top
   lens.forEach((p, k) => { const m = new THREE.Mesh(rsDisc, k === aspect ? rsOn[k] : rsOff); m.position.copy(p); m.rotation.y = r; scene.add(m); });
   return true;
+}
+// ---------------------------------------------------------------- platform canopies and furniture
+// A rural JR-style side-platform canopy: H-section steel columns along the back third every 8 m (clear of the station
+// door), at each a cantilever beam out over the platform edge and back over the fence, braced from the column, purlins
+// along the bays, a ribbed steel roof falling gently to a gutter at the back with downpipes down the columns, a white
+// fascia at the front, the soffit lined, LED strip lights in every bay, and hanging under it platform-number boards,
+// yellow exit signs, a station clock and a departure indicator facing the waiting passengers.
+const STEEL = [0.32, 0.35, 0.38], FASCIA = [0.92, 0.92, 0.9], SOFFIT = [0.86, 0.86, 0.84];
+function hcol(B, x, y, z, h) { // an H-section column, flanges across the track
+  B.box('metal', x, y, z - 0.085, 0.2, h, 0.016, { color: STEEL }); B.box('metal', x, y, z + 0.085, 0.2, h, 0.016, { color: STEEL });
+  B.box('metal', x, y, z, 0.014, h, 0.17, { color: STEEL });
+  B.box('steel', x, y, z, 0.32, 0.02, 0.32, { color: [0.5, 0.52, 0.54] });                                                  // base plate
+}
+// (hung across the platform, read along it: facing +x and, back to back, -x)
+function hangSign(B, x, y, z, w, h, draw, both = true) {
+  const m = signMesh(w, h, draw, 1.0, 256); m.position.set(x, y, z); m.rotation.y = Math.PI / 2; scene.add(m);
+  if (both) { const m2 = m.clone(); m2.rotation.y = -Math.PI / 2; m2.position.x -= 0.002; scene.add(m2); }
+  for (const e of [-w * 0.35, w * 0.35]) B.box('steel', x, y + h / 2, z + e, 0.015, 0.45, 0.015, { color: [0.4, 0.42, 0.44] });
+  return m;
+}
+function platformCanopy(B, P, { c0, c1, back, edge, ptop, door }) {
+  B.frame(0, 0, 0, 0);
+  const t = -P.side, zF = edge + t * 0.35, zB = back - t * 1.1, yF = ptop + 3.75, yB = ptop + 3.45, yAt = z => yF + (yB - yF) * (z - zF) / (zB - zF);
+  const cols = []; for (let x0 = c0; x0 <= c1; x0 += 8) { const dx = door === null ? 9 : x0 - door; cols.push(Math.abs(dx) < 2.6 ? door + 2.7 * (Math.sign(dx) || 1) : x0); }
+  for (const x of cols) {
+    hcol(B, x, ptop, back, yAt(back) - ptop - 0.32); addBox(x, back, 0.15, 0.15, 0);
+    // the cantilever: a tapered beam (deep at the column, slim at the tips), the brace from the column up to it
+    for (const [za, zb] of [[back, zF], [back, zB]]) { const ya = yAt(za) - 0.08, yb = yAt(zb) - 0.08;
+      B.poly('metal', [[x - 0.07, ya - 0.42, za], [x - 0.07, yb - 0.14, zb], [x - 0.07, yb, zb], [x - 0.07, ya, za]], [-1, 0, 0], { color: STEEL });
+      B.poly('metal', [[x + 0.07, ya - 0.42, za], [x + 0.07, ya, za], [x + 0.07, yb, zb], [x + 0.07, yb - 0.14, zb]], [1, 0, 0], { color: STEEL });
+      B.poly('metal', [[x - 0.07, ya - 0.42, za], [x + 0.07, ya - 0.42, za], [x + 0.07, yb - 0.14, zb], [x - 0.07, yb - 0.14, zb]], [0, -1, 0], { color: STEEL }); }
+    B.beam('steel', [x, ptop + 2.55, back], [x, yAt(back + (zF - back) * 0.6) - 0.3, back + (zF - back) * 0.6], 0.07, 0.07, { color: STEEL });
+    // downpipe from the gutter, down the column
+    B.cyl('plastic', x + 0.16, ptop + 0.05, back, 0.045, 0.045, yAt(zB) - ptop - 0.15, 8, { color: [0.62, 0.64, 0.64] });
+  }
+  // purlins along the bays
+  for (const f of [0.08, 0.35, 0.62, 0.9]) { const z = zF + (zB - zF) * f; B.box('metal', (c0 + c1) / 2, yAt(z) - 0.34, z, c1 - c0 + 1.8, 0.1, 0.06, { color: [0.4, 0.43, 0.46] }); }
+  // roof: ribbed sheet, soffit lining, fascia, gutter, end boards
+  const xa = c0 - 1, xb = c1 + 1;
+  B.poly('roofMetal', [[xa, yF, zF], [xb, yF, zF], [xb, yB, zB], [xa, yB, zB]], [0, 1, 0], { color: [0.48, 0.52, 0.55], uv: 2 });
+  B.detail(1, () => { for (let x = xa + 0.25; x < xb; x += 0.5) B.beam('metal', [x, yF + 0.02, zF], [x, yB + 0.02, zB], 0.03, 0.03, { color: [0.52, 0.56, 0.6] }); }); // standing seams
+  B.poly('plain', [[xb, yF - 0.22, zF], [xa, yF - 0.22, zF], [xa, yB - 0.22, zB], [xb, yB - 0.22, zB]], [0, -1, 0], { color: SOFFIT }); // (the lined soffit, seen from the platform)
+  B.bbox('plain', (xa + xb) / 2, yF - 0.3, zF + t * 0.03, xb - xa + 0.06, 0.36, 0.06, 0.012, { color: FASCIA });                     // fascia
+  B.bbox('metal', (xa + xb) / 2, yB - 0.24, zB - t * 0.06, xb - xa + 0.06, 0.14, 0.14, 0.02, { color: [0.6, 0.62, 0.64] });          // gutter
+  for (const xe of [xa - 0.03, xb + 0.03]) B.poly('plain', [[xe, yF - 0.3, zF], [xe, yB - 0.3, zB], [xe, yB + 0.03, zB], [xe, yF + 0.06, zF]], [Math.sign(xe - (xa + xb) / 2), 0, 0], { color: FASCIA });
+  // LED strips: one per bay, between the front and middle purlins; the light they give
+  for (let i = 0; i + 1 < cols.length; i++) { const x = (cols[i] + cols[i + 1]) / 2, z = zF + (zB - zF) * 0.3;
+    B.box('lamp', x, yAt(z) - 0.27, z, 2.4, 0.04, 0.12, { color: [1, 0.98, 0.94] }); B.box('metal', x, yAt(z) - 0.24, z, 2.5, 0.03, 0.16, { color: [0.7, 0.72, 0.74] });
+    lampPoints.push({ p: [x, ptop + 3.0, z], s: 0.75 }); }
+  // hanging under it: platform number, exit, clock, departure board
+  const zS = zF + (zB - zF) * 0.42, yS = z => yAt(z) - 0.95, no = P.side > 0 ? 1 : 2, dirTxt = P.side > 0 ? 'もりやま方面' : 'はなみ方面';
+  hangSign(B, c0 + 4, yS(zS), zS, 1.3, 0.42, (g, W, H) => { g.fillStyle = '#16365c'; g.fillRect(0, 0, W, H); g.fillStyle = '#fff'; g.textBaseline = 'middle';
+    g.font = `bold ${H * 0.62}px Arial`; g.textAlign = 'left'; g.fillText(String(no), W * 0.05, H * 0.55); g.font = `bold ${H * 0.3}px ${JP_FONT}`; g.fillText('番線', W * 0.2, H * 0.4);
+    g.font = `${H * 0.22}px ${JP_FONT}`; g.fillText(dirTxt, W * 0.2, H * 0.75); });
+  hangSign(B, c1 - 4, yS(zS), zS, 1.3, 0.42, (g, W, H) => { g.fillStyle = '#16365c'; g.fillRect(0, 0, W, H); g.fillStyle = '#fff'; g.textBaseline = 'middle';
+    g.font = `bold ${H * 0.62}px Arial`; g.textAlign = 'left'; g.fillText(String(no), W * 0.05, H * 0.55); g.font = `bold ${H * 0.3}px ${JP_FONT}`; g.fillText('番線', W * 0.2, H * 0.4);
+    g.font = `${H * 0.22}px ${JP_FONT}`; g.fillText(dirTxt, W * 0.2, H * 0.75); });
+  const exitX = door !== null ? door : (c0 + c1) / 2 - 18; // (platform 2's exit: the crossing at the west end)
+  hangSign(B, exitX, yS(zS), zS, 1.1, 0.34, (g, W, H) => { g.fillStyle = '#f5c800'; g.fillRect(0, 0, W, H); g.fillStyle = '#111'; g.textBaseline = 'middle';
+    g.font = `bold ${H * 0.5}px ${JP_FONT}`; g.textAlign = 'left'; g.fillText('出口', W * 0.08, H * 0.55); g.font = `bold ${H * 0.32}px Arial`; g.fillText('Exit', W * 0.48, H * 0.58);
+    g.beginPath(); g.moveTo(W * 0.92, H * 0.25); g.lineTo(W * 0.82, H * 0.5); g.lineTo(W * 0.92, H * 0.75); g.lineWidth = H * 0.1; g.strokeStyle = '#111'; g.stroke(); });
+  { const x = (c0 + c1) / 2 + (door !== null ? -6 : 6), dep = hangSign(B, x, yS(zS) - 0.05, zS, 1.9, 0.5, (g, W, H) => { g.fillStyle = '#0d0d0f'; g.fillRect(0, 0, W, H);
+      g.fillStyle = '#ffae2a'; g.textBaseline = 'middle'; g.font = `bold ${H * 0.3}px ${JP_FONT}`; g.textAlign = 'left';
+      g.fillText('普通', W * 0.03, H * 0.3); g.fillText(P.side > 0 ? 'もりやま' : 'はなみ', W * 0.22, H * 0.3); g.textAlign = 'right'; g.fillText(P.side > 0 ? '10:24' : '10:31', W * 0.97, H * 0.3);
+      g.fillStyle = '#5cff6a'; g.textAlign = 'left'; g.fillText('普通', W * 0.03, H * 0.72); g.fillStyle = '#ffae2a'; g.fillText(P.side > 0 ? 'もりやま' : 'はなみ', W * 0.22, H * 0.72); g.textAlign = 'right'; g.fillText(P.side > 0 ? '10:54' : '11:01', W * 0.97, H * 0.72); }, true);
+    dep.material.userData.glow = 1.6;
+    B.box('metal', x - 0.001, yS(zS) - 0.32, zS, 0.06, 0.6, 2.0, { color: [0.18, 0.19, 0.2] }); }
+  { const ck = clockHead(0.3, { faces: 2 }); ck.position.set((c0 + c1) / 2 + (door !== null ? 6 : -6), yS(zS) + 0.05, zS); ck.rotation.y = Math.PI / 2; scene.add(ck);
+    B.box('steel', ck.position.x, ck.position.y + 0.3, zS, 0.03, 0.4, 0.03, { color: [0.4, 0.42, 0.44] }); }
+}
+// on the platform: a glazed waiting room with a bench, a drinks machine and a recycling bin beside it (Idyllic Anime
+// Japan's, when the model library is there), and a timetable board
+function platformFurniture(B, P, { ptop, back, stationX }) {
+  const t = -P.side, x0 = stationX + (P.side > 0 ? -21 : 15), zc = back + t * 0.95, L = 4.2, D = 1.7, H = 2.35;
+  B.frame(0, 0, 0, 0);
+  const z0 = zc - D / 2, z1 = zc + D / 2, AL = [0.78, 0.8, 0.82];
+  B.box('concrete', x0, ptop, zc, L, 0.06, D, { color: [0.7, 0.7, 0.68] });
+  for (const [cx, cz] of [[x0 - L / 2, z0], [x0 + L / 2, z0], [x0 - L / 2, z1], [x0 + L / 2, z1]]) B.box('alu', cx, ptop, cz, 0.08, H, 0.08, { color: AL });
+  B.bbox('metal', x0, ptop + H, zc, L + 0.3, 0.12, D + 0.3, 0.02, { color: [0.62, 0.65, 0.68] });                                     // roof
+  // glass on all four sides, a sliding door in the track-facing side, rails and a kick plate round the bottom
+  const glass = (a, b) => { B.quad('poly', [a[0], ptop + 0.35, a[1]], [b[0], ptop + 0.35, b[1]], [b[0], ptop + H - 0.05, b[1]], [a[0], ptop + H - 0.05, a[1]], { color: [0.8, 0.9, 0.95] }); // (clear glass: the poly film material is see-through and double-sided)
+    const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2, w = Math.hypot(b[0] - a[0], b[1] - a[1]), along = Math.abs(b[0] - a[0]) > 0.01;
+    for (const yy of [ptop + 0.05, ptop + 1.0, ptop + H - 0.06]) B.box('alu', mx, yy, mz, along ? w : 0.06, yy === ptop + 0.05 ? 0.3 : 0.05, along ? 0.06 : w, { color: AL }); };
+  glass([x0 - L / 2, z0], [x0 + L / 2, z0]); glass([x0 - L / 2, z1], [x0 + L / 2, z1]); glass([x0 - L / 2, z0], [x0 - L / 2, z1]); glass([x0 + L / 2, z0], [x0 + L / 2, z1]);
+  const zs = P.side > 0 ? z0 : z1;
+  B.box('alu', x0 + 0.6, ptop + 0.05, zs, 0.06, H - 0.1, 0.08, { color: AL }); B.box('alu', x0 - 0.4, ptop + 0.05, zs, 0.06, H - 0.1, 0.08, { color: AL }); // door frame
+  // inside: a long bench along the back, a small lamp
+  const zi = (P.side > 0 ? z1 : z0) - t * -0.35;
+  B.box('wood', x0, ptop + 0.42, zi, L - 0.4, 0.05, 0.4, { color: [0.62, 0.46, 0.3] }); for (const e of [-1.5, 0, 1.5]) B.box('metal', x0 + e, ptop, zi, 0.05, 0.42, 0.36, { color: [0.3, 0.3, 0.32] });
+  B.box('lamp', x0, ptop + H - 0.1, zc, 1.0, 0.03, 0.15); lampPoints.push({ p: [x0, ptop + 2.0, zc], s: 0.4 });
+  addBox(x0, zc, L / 2, D / 2, 0, ptop - 2, ptop + H);
+  // the drinks machine and its recycling bin beside the waiting room, backs to the fence
+  const vx = x0 + L / 2 + 1.0, yaw = P.side > 0 ? Math.PI : 0;
+  if (packProp('jp_vendingmachine_bottles_0' + (P.side > 0 ? 1 : 3), vx, ptop, back + t * 0.05, yaw, [0.9, 0.92, 0.95]) !== null) addBox(vx, back + t * 0.35, 0.5, 0.38, 0);
+  packProp('jp_trash_recycling', vx + 0.95, ptop, back + t * 0.2, yaw, 0.85);
+  // timetable board on two posts
+  { const tx = x0 - L / 2 - 1.4; for (const e of [-0.45, 0.45]) B.box('steel', tx + e, ptop, back + t * 0.1, 0.05, 1.9, 0.05, { color: [0.35, 0.37, 0.4] });
+    const m = signMesh(1.0, 0.75, (g, W, H2) => { g.fillStyle = '#fbfbf8'; g.fillRect(0, 0, W, H2); g.fillStyle = '#146c43'; g.fillRect(0, 0, W, H2 * 0.16);
+      g.fillStyle = '#fff'; g.font = `bold ${H2 * 0.11}px ${JP_FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('時刻表', W / 2, H2 * 0.08);
+      g.fillStyle = '#222'; g.font = `${H2 * 0.07}px Arial`; g.textAlign = 'left';
+      for (let h = 6; h <= 22; h++) { const y = H2 * 0.2 + (h - 6) * H2 * 0.047; g.fillText(String(h), W * 0.04, y); g.fillText(h % 2 ? '04   24   54' : '14   44', W * 0.2, y); } }, 0.6, 256);
+    m.position.set(tx, ptop + 1.55, back + t * 0.12); m.rotation.y = P.side > 0 ? Math.PI : 0; scene.add(m); }
 }
 function signal(B, x, y0, z, r, aspect) {
   B.frame(x, y0, z, r);
