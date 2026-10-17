@@ -3,7 +3,7 @@
 // drying racks, mailboxes, rooftop tanks, and people walking the streets (instanced, animated in the vertex shader).
 import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle, addPlatform } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { canvasTex, signMesh, JP_FONT, lampPoints, materials, clockHead } from './townkit.js';
+import { canvasTex, signMesh, JP_FONT, lampPoints, materials, clockHead, floodMast } from './townkit.js';
 import { wallFill, reveals, windowUnit, inFrame } from './building.js';
 import { cropSet } from './crops.js';
 import { crowdMeshes } from './crowd.js';
@@ -70,6 +70,8 @@ function standBoard_build(B, x, y, z, r, col) {
   }
 }
 // red Japanese pillar post box
+// build fn in a frame at local (x, y, z) of the current one, turned by dr
+function inFrameAt(B, x, y, z, dr, fn) { const F = B.F, p = B.P([x, y, z]); B.frame(p[0], p[1], p[2], F.r + dr); const o = fn(); B.F = F; return o; }
 function postBox_build(B, x, y, z, r) {
   // (Idyllic Anime Japan's red post box, when the model library is there)
   if (packsReady() && packProp('jp_mailbox_post', x, y, z, r, 1.05) !== null) { addCircle(x, z, 0.3); return; }
@@ -619,10 +621,7 @@ function school_build(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   }
   for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { // floodlights
     at(fx + lx * (fw / 2 + 2.5), fz + lz * (fd / 2 + 2.5), Math.atan2(lx, lz) + Math.PI);
-    B.cyl('steel', 0, 0, 0, 0.2, 0.12, 14, 12, { color: [0.72, 0.74, 0.76] });
-    B.bbox('steel', 0, 14, 0.2, 2.6, 0.1, 0.1, 0.01, { color: [0.6, 0.62, 0.64] }); B.bbox('steel', 0, 14.9, 0.2, 2.6, 0.1, 0.1, 0.01, { color: [0.6, 0.62, 0.64] });
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) { B.bbox('steel', -0.9 + i * 0.6, 14.12 + j * 0.9, 0.3, 0.44, 0.34, 0.3, 0.03, { color: [0.3, 0.32, 0.34] }); B.box('lamp', -0.9 + i * 0.6, 14.16 + j * 0.9, 0.455, 0.36, 0.26, 0.01, { color: [1, 0.97, 0.9] }); }
-    for (let k = 0; k < 18; k++) B.box('steel', 0.14, 0.8 + k * 0.7, -0.12, 0.25, 0.03, 0.03, { color: [0.6, 0.62, 0.64] }); // climbing rungs
+    floodMast(B, { H: 14.3, cols: 4, rows: 2, pitch: 0.42 });
     extras.push({ t: 'circle', p: B.P([0, 0, 0]), r: 0.25 });
   }
   for (const e of [-1, 1]) { // team benches under polycarbonate shelters
@@ -911,10 +910,7 @@ function tennisCourts_build(B, x, y, z, r, rng, extras, lampPts) {
   // floodlights on the long sides, benches, a store shed and a sign by the gate
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const px = sx * (hw + 0.6), pz = sz * 10;
-    B.bbox('concrete', px, -0.3, pz, 0.6, 0.45, 0.6, 0.02, { color: KC });
-    B.cyl('steel', px, 0.15, pz, 0.12, 0.08, 9.85, 10, { color: [0.64, 0.66, 0.68] });
-    B.bbox('steel', px - sx * 0.3, 10, pz, 0.9, 0.08, 0.9, 0.01, { color: [0.5, 0.5, 0.52] });
-    for (const k of [-0.25, 0.25]) { B.bbox('plastic', px - sx * 0.45, 9.55, pz + k, 0.45, 0.4, 0.35, 0.02, { color: [0.3, 0.32, 0.34] }); B.bbox('lamp', px - sx * 0.68, 9.6, pz + k, 0.02, 0.3, 0.26, 0.01); }
+    { const F0 = B.F; inFrameAt(B, px, 0, pz, sx > 0 ? -Math.PI / 2 : Math.PI / 2, () => floodMast(B, { H: 10, cols: 2, rows: 1, pitch: 0.5, k: 0.75 })); B.F = F0; } // (heads toward the court)
     if (lampPts) lampPts.push({ p: B.P([px - sx * 0.8, 9.5, pz]), s: 1.4 });
   }
   for (const sx of [-1, 1]) { B.bbox('wood', sx * (hw - 1.2), TOP + 0.42, 0, 0.45, 0.06, 2.2, 0.01, { color: [0.62, 0.46, 0.3] }); for (const zz of [-0.9, 0.9]) B.box('steel', sx * (hw - 1.2), TOP, zz, 0.4, 0.42, 0.05, { color: [0.4, 0.4, 0.42] }); }

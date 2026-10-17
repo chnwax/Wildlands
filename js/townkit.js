@@ -712,6 +712,66 @@ function roadSign_build(B, x, y, z, r, kind) {
     B.box('alu', 0, sy + dy - 0.02, 0.037, 0.12, 0.04, 0.008, { color: [0.66, 0.68, 0.7] }); } });
 }
 
+// ---------------------------------------------------------------- floodlights (照明塔)
+// A sports floodlight mast in the current frame, its lamps facing +z down onto the pitch: a concrete footing with a bolted
+// base, a tapered galvanised mast, a caged ladder up its back to a service platform with grating and handrail, and on top
+// a lamp frame of two cross-bars and end posts carrying rows of floodlight heads. Each head: a die-cast housing with
+// cooling fins down its back, a bezel round the glass, the lit glass, a visor over it, hung in a U-shaped yoke from the
+// bar and tilted down by `pitch`. Returns the world positions of the heads' glass (for the town's night lights).
+function obox(B, mat, c, hu, hv, hw, pitch, color) { // box centred at c (half sizes), tilted down about local x
+  const cp = Math.cos(pitch), sp = Math.sin(pitch), P = (u, v, w) => [c[0] + u, c[1] + v * cp - w * sp, c[2] + v * sp + w * cp];
+  const N = (u, v, w) => [u, v * cp - w * sp, v * sp + w * cp];
+  const F = [[[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1], [0, 0, 1]], [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1], [0, 0, -1]],
+    [[-1, 1, 1], [1, 1, 1], [1, 1, -1], [-1, 1, -1], [0, 1, 0]], [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1], [0, -1, 0]],
+    [[1, -1, 1], [1, -1, -1], [1, 1, -1], [1, 1, 1], [1, 0, 0]], [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1], [-1, 0, 0]]];
+  for (const f of F) B.poly(mat, f.slice(0, 4).map(([u, v, w]) => P(u * hu, v * hv, w * hw)), N(...f[4]), { color });
+  return P;
+}
+function floodHead(B, x, y, z, pitch, out) {
+  const DG = [0.26, 0.28, 0.3], G = [0.62, 0.64, 0.66], cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const g = obox(B, 'metal', [x, y, z], 0.27, 0.21, 0.12, pitch, DG);                                     // housing
+  obox(B, 'metal', g(0, 0, 0.13), 0.29, 0.23, 0.025, pitch, [0.36, 0.38, 0.4]);                          // bezel
+  B.poly('lamp', [g(-0.24, -0.18, 0.158), g(0.24, -0.18, 0.158), g(0.24, 0.18, 0.158), g(-0.24, 0.18, 0.158)], [0, -sp, cp], { color: [1, 0.97, 0.9] }); // glass
+  B.poly('metal', [g(-0.3, 0.235, 0.16), g(0.3, 0.235, 0.16), g(0.3, 0.2, 0.36), g(-0.3, 0.2, 0.36)], [0, cp, sp], { color: DG }); // visor
+  B.poly('metal', [g(-0.3, 0.215, 0.36), g(0.3, 0.215, 0.36), g(0.3, 0.215, 0.16), g(-0.3, 0.215, 0.16)], [0, -cp, -sp], { color: DG });
+  B.detail(1, () => { for (let k = -3; k <= 3; k++) obox(B, 'metal', g(k * 0.075, 0, -0.17), 0.012, 0.18, 0.05, pitch, DG); }); // cooling fins
+  // the yoke: side arms from the housing's pivots back to the bar, a pivot boss each side, the yoke's back bar
+  for (const e of [-1, 1]) { const pv = g(e * 0.3, 0, 0); B.beam('steel', [x + e * 0.31, y, z - 0.3], [pv[0], pv[1], pv[2]], 0.025, 0.06, { color: G });
+    B.detail(1, () => B.cyl('steel', pv[0] + e * 0.012, pv[1] - 0.045, pv[2], 0.045, 0.045, 0.09, 10, { color: [0.5, 0.52, 0.54], cap: true })); }
+  B.beam('steel', [x - 0.31, y, z - 0.3], [x + 0.31, y, z - 0.3], 0.04, 0.04, { color: G });
+  if (out) out.push(B.P(g(0, 0, 0.3)));
+}
+export function floodMast(B, { H = 14, cols = 4, rows = 2, pitch = 0.4, k = 1 } = {}) {
+  const G = [0.68, 0.7, 0.72], Y = [0.9, 0.78, 0.2], out = [], span = cols * 0.68;
+  B.bbox('concrete', 0, -0.35, 0, 0.9 * k, 0.5, 0.9 * k, 0.03, { color: [0.7, 0.7, 0.68] });
+  B.box('steel', 0, 0.15, 0, 0.56 * k, 0.03, 0.56 * k, { color: G });
+  B.cyl('steel', 0, 0.15, 0, 0.21 * k, 0.12 * k, H - 0.15, 14, { color: G });
+  B.cyl('steel', 0, H, 0, 0.12 * k, 0.05, 0.25, 10, { color: G, cap: true });
+  // lamp frame: two cross-bars and end posts in front of the mast top, braced back to it
+  const yb = H - 0.35, yt = yb + rows * 0.62, zf = 0.22;
+  for (const yy of [yb, yt]) B.bbox('steel', 0, yy - 0.05, zf, span + 0.3, 0.1, 0.1, 0.01, { color: G });
+  for (const e of [-1, 1]) { B.bbox('steel', e * (span / 2 + 0.1), yb - 0.05, zf, 0.08, yt - yb + 0.1, 0.08, 0.01, { color: G });
+    B.beam('steel', [0, yb - 1.2, 0], [e * span / 2, yb - 0.05, zf], 0.05, 0.05, { color: G }); }
+  // service platform under the frame: grating with its bars, handrails in safety yellow, struts back to the mast
+  const py = yb - 0.8;
+  B.bbox('metal', 0, py, 0.05, span + 0.6, 0.05, 1.2, 0.01, { color: [0.36, 0.38, 0.4] });
+  B.detail(1, () => { for (let i = 0; i < 12; i++) B.box('metal', -span / 2 - 0.25 + i * (span + 0.5) / 11, py + 0.051, 0.05, 0.02, 0.005, 1.15, { color: [0.24, 0.25, 0.27] }); });
+  for (const [ax, az, bx, bz] of [[-span / 2 - 0.3, -0.55, span / 2 + 0.3, -0.55], [-span / 2 - 0.3, -0.55, -span / 2 - 0.3, 0.65], [span / 2 + 0.3, -0.55, span / 2 + 0.3, 0.65]]) {
+    B.beam('steel', [ax, py + 1.0, az], [bx, py + 1.0, bz], 0.04, 0.04, { color: Y }); B.beam('steel', [ax, py + 0.5, az], [bx, py + 0.5, bz], 0.03, 0.03, { color: Y });
+    for (const [px, pz] of [[ax, az], [bx, bz]]) B.box('steel', px, py, pz, 0.04, 1.0, 0.04, { color: Y }); }
+  for (const e of [-1, 1]) B.beam('steel', [0, py - 1.3, 0], [e * span / 2, py, 0.05], 0.05, 0.05, { color: G });
+  // caged ladder up the back of the mast
+  const lz = -0.34 * k;
+  for (const e of [-0.2, 0.2]) B.box('steel', e, 2.2, lz, 0.03, py - 2.2, 0.03, { color: G });
+  B.detail(1, () => { for (let yy = 2.4; yy < py; yy += 0.3) B.box('steel', 0, yy, lz, 0.4, 0.025, 0.025, { color: G });
+    for (let yy = 3.0; yy < py; yy += 1.1) { const ring = []; for (let i = 0; i <= 10; i++) { const a = Math.PI * i / 10; ring.push([Math.cos(a) * 0.36, yy, lz - Math.sin(a) * 0.36]); }
+      B.sweep('steel', [[0.012, 0], [0, 0.012], [-0.012, 0], [0, -0.012]], ring, { closed: true, color: G }); }
+    for (const a of [0.3, 1.2, 1.94, 2.84]) B.box('steel', Math.cos(a) * 0.36, 3.0, lz - Math.sin(a) * 0.36, 0.02, py - 3.0, 0.02, { color: G }); });
+  B.bbox('metal', 0.24 * k, 1.1, 0.0, 0.3, 0.45, 0.2, 0.02, { color: [0.72, 0.74, 0.74] });             // switch box
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) floodHead(B, (c - (cols - 1) / 2) * 0.68, yb + 0.31 + r * 0.62, zf + 0.42, pitch, out);
+  return out;
+}
+
 // ---------------------------------------------------------------- traffic signals (信号機)
 // Galvanised mast with a cantilever arm; a horizontal LED head (green / yellow / red from the left, hooded) hangs over the
 // approach lane, pedestrian heads (red standing figure over green walking figure) face across the crosswalks.

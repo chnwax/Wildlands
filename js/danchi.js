@@ -48,7 +48,7 @@ export function danchiGround(x, z, h, Y0) {
 
 // ---------------------------------------------------------------- building the district
 import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle, buildCompound, addCompound } from './core.js';
-import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed, clockPole, vendingMachine } from './townkit.js';
+import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed, clockPole, vendingMachine, floodMast } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
 import { turfU } from './terrain.js';
@@ -886,9 +886,7 @@ export function buildDanchi(ctx) {
         B.beam('dark', [xa, ty(xa, za) + 0.016, za], [xb, ty(xb, zb) + 0.016, zb], 0.06, 0.005, { color: [0.16, 0.16, 0.17] }); } }
     // floodlights at the corners, a shed for the goals and the line marker by the maintenance gate
     for (const [x, z] of [[x0 + 2, z0 + 2], [x1 - 2, z0 + 2], [x1 - 2, z1 - 2], [x0 + 2, z1 - 2]]) { entity('floodlight', () => { const y = gy(x, z), yaw = Math.atan2(cx - x, cz - z);
-      B.frame(x, y, z, yaw); B.bbox('concrete', 0, -0.3, 0, 0.8, 0.5, 0.8, 0.02, { color: [0.7, 0.7, 0.68] }); B.cyl('steel', 0, 0.2, 0, 0.16, 0.1, 14, 10, { color: [0.7, 0.72, 0.74] });
-      B.box('steel', 0, 14.1, 0.15, 2.2, 0.1, 0.1, { color: [0.6, 0.62, 0.64] });
-      for (const e of [-0.75, 0, 0.75]) { B.bbox('metal', e, 13.9, 0.35, 0.6, 0.5, 0.3, 0.02, { color: [0.4, 0.42, 0.44] }); B.box('lamp', e, 13.94, 0.51, 0.5, 0.42, 0.02); }
+      B.frame(x, y, z, yaw); floodMast(B, { H: 14, cols: 3, rows: 2, pitch: 0.45 });
       B.frame(0, 0, 0, 0); lampPoints.push({ p: [x, y + 13.5, z], s: 1.4 }); addCircle(x, z, 0.25); }); }
     // the goals' store by the maintenance gate: a steel 物置 in the enclosure's green, doors toward the pitch
     entity('equipment_shed', () => { const x = x1 - 4.5, z = EZ + 5.5, y = gy(x, z), r = -Math.PI / 2; B.frame(x, y, z, r);
