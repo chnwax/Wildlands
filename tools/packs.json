@@ -1877,6 +1877,12 @@
      "kind": "lod",
      "category": "shop",
      "src": "anime_japan/convenience_store"
+    },
+    {
+     "id": "jp_train_japan_01",
+     "kind": "lod",
+     "category": "rail",
+     "src": "anime_japan/train_japan_01"
     }
    ]
   },

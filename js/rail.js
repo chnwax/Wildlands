@@ -1073,28 +1073,99 @@ function wheelsetGeo() {
   return mergeGeometries(parts.map(g => { g = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(g.attributes)) if (!['position', 'normal'].includes(k)) g.deleteAttribute(k); return g; }));
 }
 
+// ---------------------------------------------------------------- the pack's train (Idyllic Anime Japan)
+// The pack's red-and-cream railcar, when the model library is there, made into proper 17 m cars: the model is cut through
+// the wall between two windows at each end of one window bay (a = -1.15, b = 0.83 along it: one bay, 1.98 m), and that
+// bay is repeated so the car has ten windows a side instead of five, its two ends (the cab with its windscreen and roll
+// sign, the gangway end) and bogies as the model has them; then turned into the car frame (x along, y up, z across) and
+// scaled to a 2.95 m wide body on the narrow gauge. Lamps at each end split apart, so the leading end's headlights and
+// the trailing end's tail lights light as the train runs; windows glow warm at night.
+const PT_A = -1.15, PT_P = 1.98, PT_N = 5, PT_S = 0.82;
+let packCar = null;
+function clipPoly(poly, v, below) { // Sutherland-Hodgman against the plane z = v (vertices: [x, y, z, nx, ny, nz, u, w])
+  const out = [], inside = p => below ? p[2] <= v : p[2] >= v;
+  for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], ia = inside(a), ib = inside(b);
+    if (ia) out.push(a);
+    if (ia !== ib) { const t = (v - a[2]) / (b[2] - a[2]); out.push(a.map((q, k) => q + (b[k] - q) * t)); } }
+  return out;
+}
+function buildPackCar() {
+  if (packCar !== null) return packCar;
+  const src = packsReady() && packParts('jp_train_japan_01'); if (!src) return (packCar = false);
+  const b = PT_A + PT_P, shift = PT_N * PT_P / 2, parts = [];
+  for (const p of src) {
+    const g = p.geometry.index ? p.geometry.toNonIndexed() : p.geometry, P = g.attributes.position.array, N = g.attributes.normal.array, U = g.attributes.uv ? g.attributes.uv.array : null;
+    const light = /light_circle|emissive_red/.test(p.material.name), buckets = light ? { front: [], rear: [] } : { all: [] };
+    const emit = poly => { if (poly.length < 3) return; for (let i = 1; i + 1 < poly.length; i++) for (const q of [poly[0], poly[i], poly[i + 1]]) {
+      // pack (x across, y up, z along) -> car (x along, y up, z across), scaled
+      const key = light ? (q[2] > 0 ? 'front' : 'rear') : 'all';
+      buckets[key].push([q[2] * PT_S, q[1] * PT_S, -q[0] * PT_S, q[5], q[4], -q[3], q[6], q[7]]); } };
+    for (let t = 0; t < P.length / 9; t++) {
+      const tri = [0, 1, 2].map(k => { const i = t * 3 + k; return [P[i * 3], P[i * 3 + 1], P[i * 3 + 2], N[i * 3], N[i * 3 + 1], N[i * 3 + 2], U ? U[i * 2] : 0, U ? U[i * 2 + 1] : 0]; });
+      const zs = tri.map(q => q[2]), lo = Math.min(...zs), hi = Math.max(...zs);
+      const sh = (poly, dz) => poly.map(q => { const r = q.slice(); r[2] += dz; return r; });
+      if (hi <= PT_A) { emit(sh(tri, -shift)); continue; }
+      if (lo >= b) { emit(sh(tri, shift)); continue; }
+      emit(sh(clipPoly(tri, PT_A, true), -shift)); emit(sh(clipPoly(tri, b, false), shift));
+      const mid = clipPoly(clipPoly(tri, PT_A, false), b, true);
+      if (mid.length >= 3) for (let k = 0; k <= PT_N; k++) emit(sh(mid, -shift + k * PT_P));
+    }
+    for (const [role, vs] of Object.entries(buckets)) { if (!vs.length) continue;
+      const geo = new THREE.BufferGeometry(), pos = new Float32Array(vs.length * 3), nor = new Float32Array(vs.length * 3), uv = new Float32Array(vs.length * 2);
+      vs.forEach((q, i) => { pos.set([q[0], q[1], q[2]], i * 3); nor.set([q[3], q[4], q[5]], i * 3); uv.set([q[6], q[7]], i * 2); });
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      geo.computeBoundingSphere(); parts.push({ geometry: geo, material: p.material, role, kind: /light_circle/.test(p.material.name) ? 'head' : /emissive_red/.test(p.material.name) ? 'tail' : /glass/i.test(p.material.name) ? 'glass' : 'body' }); }
+  }
+  let x0 = 1e9, x1 = -1e9; for (const q of parts) { q.geometry.computeBoundingBox(); x0 = Math.min(x0, q.geometry.boundingBox.min.x); x1 = Math.max(x1, q.geometry.boundingBox.max.x); }
+  return (packCar = { parts, len: x1 - x0 });
+}
+let ptGlass = null;
+const ptHeadOn = new THREE.MeshStandardMaterial({ color: 0xfff6e0, emissive: 0xfff2d0, emissiveIntensity: 4 }), ptTailOn = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff2010, emissiveIntensity: 5 });
+// one car: the shared geometry, its own lamp materials; flip: turned end for end (the trailing car's cab faces back)
+function makePackCar(flip) {
+  const C = buildPackCar(), g = new THREE.Group(), lamps = { head: { front: [], rear: [] }, tail: { front: [], rear: [] } };
+  if (!ptGlass) { const src = C.parts.find(q => q.kind === 'glass'); ptGlass = (src ? src.material : new THREE.MeshStandardMaterial()).clone(); ptGlass.emissive = new THREE.Color(0xffd9a0); ptGlass.emissiveIntensity = 0; }
+  for (const q of C.parts) {
+    const m = new THREE.Mesh(q.geometry, q.kind === 'glass' ? ptGlass : q.kind === 'body' ? q.material : q.material.clone());
+    m.castShadow = q.kind === 'body'; m.receiveShadow = true; g.add(m);
+    if (q.kind === 'head' || q.kind === 'tail') { m.userData.off = m.material; lamps[q.kind][flip ? (q.role === 'front' ? 'rear' : 'front') : q.role].push(m); }
+  }
+  if (flip) g.rotation.y = Math.PI;
+  return { g, lamps, pack: true };
+}
+
 export class Train {
   constructor(y0, cars = 4) {
     if (!TM) TM = trainMaterials();
-    this.y = railTop(y0); this.n = cars; this.len = cars * 20;
+    this.y = railTop(y0); this.n = cars;
     this.group = new THREE.Group();
-    this.cars = [];
-    for (let i = 0; i < cars; i++) {
-      const c = makeCar(i === 0 ? -1 : i === cars - 1 ? 1 : 0, i === 1);
-      c.g.position.x = (i - (cars - 1) / 2) * 20;
-      this.group.add(c.g); this.cars.push(c);
+    this.cars = []; this.spin = 0; this.wheels = null;
+    const PC = buildPackCar();
+    if (PC) { // the pack's cars: cab first and last (the last turned end for end), bellows between them
+      const step = PC.len + 0.55; this.len = cars * step;
+      for (let i = 0; i < cars; i++) { const c = makePackCar(i === 0); c.g.position.x = (i - (cars - 1) / 2) * step; this.group.add(c.g); this.cars.push(c); }
+      const bel = new THREE.MeshStandardMaterial({ color: 0x2a2b2d, roughness: 0.9 });
+      for (let i = 0; i + 1 < cars; i++) { const x = (i + 0.5 - (cars - 1) / 2) * step;
+        for (let k = 0; k < 5; k++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.11, 2.15, 1.25), bel); m.position.set(x - 0.32 + k * 0.16, 2.2, 0); this.group.add(m); } }
+    } else {
+      this.len = cars * 20;
+      for (let i = 0; i < cars; i++) {
+        const c = makeCar(i === 0 ? -1 : i === cars - 1 ? 1 : 0, i === 1);
+        c.g.position.x = (i - (cars - 1) / 2) * 20;
+        this.group.add(c.g); this.cars.push(c);
+      }
+      // the wheelsets, four a car, turned as the train runs
+      this.axles = []; for (let i = 0; i < cars; i++) for (const ax of [-7.95, -5.85, 5.85, 7.95]) this.axles.push((i - (cars - 1) / 2) * 20 + ax);
+      this.wheels = new THREE.InstancedMesh(wheelsetGeo(), TM.under, this.axles.length); this.wheels.castShadow = true; this.wheels.receiveShadow = true; this.wheels.frustumCulled = false;
+      this.group.add(this.wheels); this.setWheels();
     }
-    // the wheelsets, four a car, turned as the train runs
-    this.axles = []; for (let i = 0; i < cars; i++) for (const ax of [-7.95, -5.85, 5.85, 7.95]) this.axles.push((i - (cars - 1) / 2) * 20 + ax);
-    this.wheels = new THREE.InstancedMesh(wheelsetGeo(), TM.under, this.axles.length); this.wheels.castShadow = true; this.wheels.receiveShadow = true; this.wheels.frustumCulled = false;
-    this.group.add(this.wheels); this.spin = 0; this.setWheels();
     this.group.userData.dynamicCaster = true; // (moving: its shadow is redrawn in every cascade update, sky.js)
     scene.add(this.group);
     this.sound = new Emitter('train');
     this.state = 'hidden'; this.wait = 0; this.v = 0; this.acc = 0; this.x = 0; this.dir = 1; this.track = 0; this.horn = 0;
     this.vmax = 22; this.dwell = 0; this.stopped = false;
   }
-  setWheels() { const m = new THREE.Matrix4(), r = new THREE.Matrix4().makeRotationZ(this.spin);
+  setWheels() { if (!this.wheels) return; const m = new THREE.Matrix4(), r = new THREE.Matrix4().makeRotationZ(this.spin);
     this.axles.forEach((x, i) => { m.makeTranslation(x, 0.43, 0).multiply(r); this.wheels.setMatrixAt(i, m); }); this.wheels.instanceMatrix.needsUpdate = true; }
   start(dir, delay) { this.dir = dir; this.track = dir > 0 ? 0 : 1; this.x = -dir * (RAIL.portal + 260); this.v = this.vmax * 0.8; this.state = 'wait'; this.wait = delay; this.served = false; this.group.visible = false; }
   head() { return this.x + this.dir * this.len / 2; }
@@ -1130,6 +1201,12 @@ export class Train {
       c.lights.head.forEach(m => m.material = lead ? TM.head : TM.off);
       c.lights.tail.forEach(m => m.material = lead ? TM.off : TM.tail);
     }
+    // (pack cars: the leading end of the first car in the direction of travel lit white, the trailing end of the last red)
+    this.cars.forEach((c, i) => { if (!c.pack) return; const L = c.lamps;
+      for (const m of [...L.head.front, ...L.head.rear, ...L.tail.front, ...L.tail.rear]) m.material = m.userData.off;
+      if (i === this.cars.length - 1) for (const m of L.head.front) m.material = ptHeadOn;
+      if (i === 0) for (const m of L.tail.rear) m.material = ptTailOn; });
+    if (ptGlass) ptGlass.emissiveIntensity = night.value * 0.8;
     TM.glass.emissiveIntensity = night.value * 0.9;
     this.spin -= this.v * dt / 0.43; if (this.v > 0.01) this.setWheels();
     this.sound.on = true;
