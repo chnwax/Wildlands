@@ -601,7 +601,7 @@ export async function build(progress, opts = {}) {
     // phases: the higher-ranked road (or the first of two equal ones) runs first; the junctions' cycles are offset
     inters.filter(isSignal).forEach((I, j) => { const [r1, r2] = I.roads, first = RN.RANK[r2.kind] > RN.RANK[r1.kind] ? r2 : r1;
       for (const R of I.roads) signals.groups.set(sigKey(I, R), { ph: R === first ? 0 : 1, off: j * 9 }); });
-    const disc = new THREE.CircleGeometry(packsReady() ? 0.155 : 0.13, 20), sq = new THREE.PlaneGeometry(0.28, 0.28); // (the lamps fill the lenses of the pack heads, townkit.js)
+    const disc = new THREE.CircleGeometry(packsReady() ? 0.155 : 0.13, 20), sq = packsReady() ? new THREE.PlaneGeometry(0.335, 0.375) : new THREE.PlaneGeometry(0.28, 0.28); // (a pack head's lamp covers its whole lens: the model's own printed walking figure must not show through) // (the lamps fill the lenses of the pack heads, townkit.js)
     // a mast on every approach, on the driver's left at the back of the footway between the crossing and the stop line,
     // set square to the road there, its head over the approach lane facing the oncoming cars; a pedestrian head on the
     // mast and a pedestrian signal post at the far end of the crossing, facing each other across it (left-hand traffic:

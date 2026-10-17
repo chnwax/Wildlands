@@ -741,7 +741,7 @@ export function signalLampMaterial(kind) { // kind: 'g' | 'y' | 'r' | 'walk' | '
 // (lenses on both faces; turned half round here, its arm then reaches back to the mast along the town's) and the
 // pedestrian head. Lens centres and planes as measured on the models (model units); the lamps (town.js) light in them.
 const SIG_S = 1.29, SIG_LENS = [0.617, 0.93, 1.245], SIG_LENS_Y = 0.69, SIG_LENS_Z = 0.29, SIG_ARM_Y = 0.7; // (lenses on both faces, domed to 0.29)
-const PED_S = 1.3, PED_LENS_Y = { stop: 0.46, walk: 0.2 }, PED_LENS_Z = 0.073;
+const PED_S = 1.3, PED_LENS_Y = { stop: 0.468, walk: 0.19 }, PED_LENS_Z = 0.073; // (lamp centres: each covers its half of the lens board and its bevel)
 const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sv = new THREE.Vector3(), _ss = new THREE.Vector3(), _sy = new THREE.Vector3(0, 1, 0);
 const signalPart = (key, parts, p, r, s) => { _sm.compose(_sv.set(p[0], p[1], p[2]), _sq.setFromAxisAngle(_sy, r), _ss.setScalar(s));
   return addProp(key, parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _sm, castShadow: true }))); };
