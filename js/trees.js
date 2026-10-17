@@ -1294,12 +1294,14 @@ export function buildFarForest(sets) {
 // The Illustrated Nature's round shrubs for the bush and shrub sets, when the model library is there: [near, middle]
 // levels (its lod1 and lod3 files) at hs x unit height, with the trees' leaf shading and wind, tinted per item
 const PACK_SHRUBS = [['tr_il_shrub_01_l1', 'tr_il_shrub_01_l3'], ['tr_il_shrub_02_l1', 'tr_il_shrub_02_l3'], ['tr_il_shrub_03_l1', 'tr_il_shrub_03_l3']];
-export function packShrubLods(i, hs, nearD, farD, shadow = true) {
+// shape: [x, y, z] stretch of the unit-height shrub (a hedge's segment: longer than deep); near: the near level's file
+export function packShrubLods(i, hs, nearD, farD, shadow = true, shape = null, nearLevel = 'l1') {
   const P = packsReady(); if (!P) return null;
-  const [a, b] = PACK_SHRUBS[i % PACK_SHRUBS.length], dims = P.dims(a); if (!dims) return null;
+  const [a0, b] = PACK_SHRUBS[i % PACK_SHRUBS.length], a = a0.replace(/_l1$/, '_' + nearLevel), dims = P.dims(a0); if (!dims || !P.dims(a)) return null;
   const sp = { mat: 'bush' }, h = dims[1] / hs, near = packTreeParts(a, h, sp, true), far = packTreeParts(b, h, sp, false);
   if (!near || !far) return null;
-  return [{ dist: nearD, parts: near.map(p => ({ ...p, castShadow: shadow })) }, { dist: farD, parts: far.map(p => ({ ...p, castShadow: false, sway: false })) }]; // (past the near level: no shadow, no sway)
+  const sh = q => shape ? (() => { const k = 'shape|' + q.geometry.uuid + '|' + shape.join(','); if (!packTreeCache.has(k)) { const g = q.geometry.clone().scale(...shape); g.computeBoundingSphere(); g.computeBoundingBox(); packTreeCache.set(k, g); } return packTreeCache.get(k); })() : q.geometry;
+  return [{ dist: nearD, parts: near.map(p => ({ ...p, geometry: sh(p), castShadow: shadow })) }, { dist: farD, parts: far.map(p => ({ ...p, geometry: sh(p), castShadow: false, sway: false })) }]; // (past the near level: no shadow, no sway)
 }
 export const shrubTint = list => packTint(list);
 // shrubs and low greenery (bush, hydra, hedge, ivy): no trunk collider worth having below ~1 m; only the big ones block
@@ -1309,7 +1311,11 @@ export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * (
   const seed = { hydra: 21, hedge: 25, ivy: 27 }[kind] || 17;
   const M = materials(kind), hi = broadleafGeo(kind === 'hedge' ? 1 : 0, seed, kind), lo = broadleafGeo(1, seed, kind);
   const sp = { mat: kind, cardShadow: kind !== 'hydra' };
-  let lods = kind === 'bush' && packShrubLods(0, 0.79, () => Math.min(hiDist(), 30), farDist); // (the pack's shrub at the drawn bush's height)
+  // (the pack's shrub at the drawn bush's height; a hedge's segments: the shrub pressed to the segment's length and depth,
+  // neighbours overlapping into one growing hedge)
+  let lods = kind === 'bush' ? packShrubLods(0, 0.79, () => Math.min(hiDist(), 30), farDist)
+    : kind === 'hedge' ? packShrubLods(1, 0.96, () => Math.min(hiDist(), 35), farDist, true, [1.25, 1, 0.72], 'l2')
+    : kind === 'hydra' ? packShrubLods(2, 0.74, () => Math.min(hiDist(), 30), farDist) : null; // (the flowering mounds read poorly beside the pack's shrubs: shrubs too)
   if (lods) packTint(bushes); else lods = [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }];
   if ((MATS[kind] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true;
   withScatterMeta({ prefab: { hydra: 'hydrangea' }[kind] || kind, category: 'vegetation', field: kind === 'hedge' || kind === 'ivy' ? 'hedgerow' : null }, () => new Scatter(bushes, lods, 192));

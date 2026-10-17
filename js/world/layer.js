@@ -269,13 +269,20 @@ export class WorldLayer {
         if (G.lod) mesh.userData.lodDist = G.m.userData.lodDist;
         group.add(mesh); parts.push({ mesh, slot: this.materialNameOf(G.m.material), baseMat: G.m.material, lod: G.lod });
       }
+      // the object's props: the parts of one model and material together in one instanced mesh (an apartment block's
+      // forty AC units are one draw, not forty)
+      const pg = new Map();
       for (const pid of src.cap.props) props.items[pid].parts.forEach((p, k) => {
-        const im = new THREE.InstancedMesh(p.group.geometry, p.group.material, 1); im.setMatrixAt(0, _m.identity());
-        _m.multiplyMatrices(inv, p.matrix).decompose(im.position, im.quaternion, im.scale);
-        im.castShadow = p.group.castShadow; im.receiveShadow = p.group.receiveShadow; if (p.mesh) im.layers.mask = p.mesh.layers.mask;
-        group.add(im); parts.push({ mesh: im, slot: this.materialNameOf(p.group.material), baseMat: p.group.material });
+        const key = p.group.geometry.uuid + '|' + p.group.material.uuid + '|' + (p.group.castShadow ? 1 : 0) + (p.group.receiveShadow ? 1 : 0) + '|' + (p.mesh ? p.mesh.layers.mask : 1);
+        let q = pg.get(key); if (!q) pg.set(key, q = { g: p.group, layers: p.mesh ? p.mesh.layers.mask : null, ms: [] });
+        q.ms.push(new THREE.Matrix4().multiplyMatrices(inv, p.matrix));
         if (collapse) setPropMatrix(pid, k, ZERO);
       });
+      for (const q of pg.values()) {
+        const im = new THREE.InstancedMesh(q.g.geometry, q.g.material, q.ms.length); q.ms.forEach((m, i) => im.setMatrixAt(i, m)); im.computeBoundingSphere();
+        im.castShadow = q.g.castShadow; im.receiveShadow = q.g.receiveShadow; if (q.layers !== null) im.layers.mask = q.layers;
+        group.add(im); parts.push({ mesh: im, slot: this.materialNameOf(q.g.material), baseMat: q.g.material });
+      }
       for (const o of src.cap.meshes) {
         o.updateMatrixWorld();
         const c = o.clone(); _m.multiplyMatrices(inv, o.matrixWorld).decompose(c.position, c.quaternion, c.scale); c.matrixAutoUpdate = true; c.userData = { ...o.userData, loose: true };

@@ -121,7 +121,8 @@ export function packKit(src, x, y, z, r, s, su = 1) {
   let n = 0;
   for (const p of K.props) { const m = packs.models[p.src]; if (!m) continue;
     _kr.fromArray(p.m).decompose(_p, _kq, _s); _p.applyMatrix4(_kb); _kq.premultiply(_ky); _s.multiplyScalar(su); _m.compose(_p, _kq, _s);
-    addProp('pack:' + p.src, m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: q.castShadow !== false && m.dims[1] * su > 0.6 }))); n++; }
+    const big = Math.max(...m.dims) * su; // (small things drawn near only, and only the larger ones cast shadows)
+    addProp('pack:' + p.src, m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: q.castShadow !== false && m.dims[1] * su > 1.0, near: big < 1.6 ? 70 : 170 }))); n++; }
   return n;
 }
 export const packKitHas = (src, re) => !!(packs && packs.kits[src] && packs.kits[src].props.some(p => re.test(p.src)));

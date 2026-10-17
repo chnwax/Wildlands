@@ -2175,6 +2175,24 @@
      "kind": "lod",
      "category": "vegetation",
      "src": "illustrated_nature/shrub_round_03__lod3"
+    },
+    {
+     "id": "tr_il_shrub_01_l2",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_01__lod2"
+    },
+    {
+     "id": "tr_il_shrub_02_l2",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_02__lod2"
+    },
+    {
+     "id": "tr_il_shrub_03_l2",
+     "kind": "lod",
+     "category": "vegetation",
+     "src": "illustrated_nature/shrub_round_03__lod2"
     }
    ]
   },

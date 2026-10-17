@@ -705,16 +705,18 @@ export class Scatter {
 // adverts — are collected while the map is built and drawn as one instanced mesh per part, material and 512 m cell
 // (flushProps). Each placed prop keeps an id: props.items[id] = {kind, parts: [{mesh, instance}]} once flushed, with its
 // world matrix per part, so it can still be picked and edited (setPropMatrix).
-export const props = { groups: new Map(), items: [], flushed: false };
-const PROP_CELL = 512;
-export function addProp(kind, parts) { // parts: [{geometry, material, matrix (world), castShadow?, receiveShadow?}]
+// Parts with a `near` distance (small things: a shop's stools, bowls, bottles, flower pots) are grouped in 64 m cells and
+// drawn only while the camera is within that distance of the cell (cullProps, every frame).
+export const props = { groups: new Map(), items: [], flushed: false, near: [] };
+const PROP_CELL = 512, NEAR_CELL = 64;
+export function addProp(kind, parts) { // parts: [{geometry, material, matrix (world), castShadow?, receiveShadow?, near?}]
   const id = props.items.length, item = { id, kind, parts: [] };
   props.items.push(item);
   for (const p of parts) {
-    const e = p.matrix.elements, cx = Math.floor((e[12] + 4096) / PROP_CELL), cz = Math.floor((e[14] + 4096) / PROP_CELL);
-    const key = p.geometry.uuid + '|' + p.material.uuid + '|' + (p.castShadow ? 1 : 0) + (p.receiveShadow === false ? 0 : 1) + '|' + cx + ',' + cz;
+    const e = p.matrix.elements, C = p.near ? NEAR_CELL : PROP_CELL, cx = Math.floor((e[12] + 4096) / C), cz = Math.floor((e[14] + 4096) / C);
+    const key = p.geometry.uuid + '|' + p.material.uuid + '|' + (p.castShadow ? 1 : 0) + (p.receiveShadow === false ? 0 : 1) + '|' + (p.near || 0) + '|' + cx + ',' + cz;
     let g = props.groups.get(key);
-    if (!g) props.groups.set(key, g = { geometry: p.geometry, material: p.material, castShadow: !!p.castShadow, receiveShadow: p.receiveShadow !== false, matrices: [], ids: [], mesh: null });
+    if (!g) props.groups.set(key, g = { geometry: p.geometry, material: p.material, castShadow: !!p.castShadow, receiveShadow: p.receiveShadow !== false, near: p.near || 0, matrices: [], ids: [], mesh: null });
     item.parts.push({ group: g, instance: g.matrices.length, matrix: p.matrix.clone() });
     g.matrices.push(p.matrix.clone()); g.ids.push(id);
   }
@@ -728,10 +730,15 @@ export function flushProps() {
     g.matrices.forEach((m, i) => im.setMatrixAt(i, m));
     im.castShadow = g.castShadow; im.receiveShadow = g.receiveShadow; im.matrixAutoUpdate = false; im.matrixWorldAutoUpdate = false;
     im.computeBoundingSphere(); im.userData.props = g.ids;
+    if (g.near) { im.userData.near = g.near; props.near.push(im); }
     scene.add(im); g.mesh = im;
   }
   for (const it of props.items) for (const p of it.parts) p.mesh = p.group.mesh;
   props.flushed = true;
+}
+export function cullProps(cam) {
+  const c = cam.position, k = Q.lodScale || 1;
+  for (const m of props.near) { const s = m.boundingSphere; if (s) m.visible = c.distanceTo(s.center) - s.radius < m.userData.near * k; }
 }
 export function setPropMatrix(id, part, matrix) {
   const p = props.items[id].parts[part]; p.matrix.copy(matrix); p.group.matrices[p.instance].copy(matrix);

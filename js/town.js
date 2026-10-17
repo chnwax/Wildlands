@@ -1,7 +1,7 @@
 // "Sakuragawa" — a small Japanese town in a valley: station and level crossings, commuter trains, traffic,
 // houses and shops, utility poles, a river with concrete banks, rice paddies and cedar-covered hills.
 import { THREE, scene, Q, S, clamp, lerp, smoothstep, mulberry32, tick, fbm, erosion, loadTex, phTex, NFLAT, loadModel, extractParts, normalizeParts, flushProps,
-  Scatter, addBox, addCircle, addPlatform, colliders, decimate, withScatterMeta } from './core.js';
+  Scatter, addBox, addCircle, addPlatform, colliders, decimate, withScatterMeta, cullProps } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, farForestAt, pondWaterMaterial, flowWaterMaterial, foamMaterial } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor, packShrubLods, shrubTint } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree, crownR } from './ecology.js';
@@ -1085,7 +1085,7 @@ export async function build(progress, opts = {}) {
       if (drng() < 0.5) { const col = [[0.86, 0.18, 0.14], [0.18, 0.4, 0.78], [0.98, 0.78, 0.2], [0.22, 0.62, 0.42], [0.95, 0.5, 0.65]][Math.floor(drng() * 5)];
         for (const o of [2.3, 2.95]) { const [nx, nz] = lotW(lot, -lot.w / 2 + o, sfz + 0.4); nobori(B, nx, y, nz, lot.r, col); addCircle(nx, nz, 0.18); } }
       if (drng() < 0.35) { const [bx, bz] = lotW(lot, lot.w * 0.08, sfz + 0.7); standBoard(B, bx, y, bz, lot.r + (drng() - 0.5) * 0.4, [[0.92, 0.9, 0.86], [0.55, 0.36, 0.24], [0.2, 0.3, 0.45]][Math.floor(drng() * 3)]); addCircle(bx, bz, 0.3); }
-      if (drng() < 0.4) for (let k = 0, n = 1 + Math.floor(drng() * 3); k < n; k++) { const [bx, bz] = lotW(lot, lot.w * 0.22 + k * 0.62, sfz + 1.05); bikeList.push({ x: bx, y, z: bz, r: lot.r + Math.PI / 2 + (drng() - 0.5) * 0.15 }); }
+      if (drng() < 0.4) for (let k = 0, n = 1 + Math.floor(drng() * 3); k < n; k++) { const [bx, bz] = lotW(lot, lot.w * 0.22 + k * 0.62, sfz + 1.05); bikeList.push({ x: bx, y: Math.max(y, topY(bx, bz)), z: bz, r: lot.r + Math.PI / 2 + (drng() - 0.5) * 0.15 }); } // (on the footway's top where they stand on it)
     } else {
       const ex0 = extras.length; // (what the house registers — colliders of its service fittings — tells its yard where things are)
       const info = house(B, { x: lot.x, y, z: lot.z, r: lot.r, w: lot.w, d: lot.d, district: lot.district, front: lot.front, fence: lot.fence, era: lot.era, back: lot.back }, rng, extras);
@@ -1873,7 +1873,7 @@ export async function build(progress, opts = {}) {
     update(dt, t, cam) {
       perf.begin(PW.lights); updateNight(); updateGlow(); perf.end(PW.lights);
       if (wind) wind.update(t);
-      perf.begin(PW.lod); updateLod(cam); perf.end(PW.lod);
+      perf.begin(PW.lod); updateLod(cam); cullProps(cam); perf.end(PW.lod);
       perf.begin(PW.crops); updateCrops(cam); perf.end(PW.crops);
       perf.begin(PW.props); landmarks.update(); parkBenches.update(); danchiBenches.update(); perf.end(PW.props);
       if (!SIM) { fleet.commit(cam.position, cam); cityLightU.uCLI.value = smoothstep(0.2, 0.5, night.value); return; } // editor: static scenery only
