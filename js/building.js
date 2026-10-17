@@ -7,7 +7,7 @@
 import { scene, clamp, lerp, mulberry32, addCircle, COL_OFF } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS, GeoBuilder, glowMats } from './townkit.js';
 import { cropSet } from './crops.js';
-import { packsReady, queuePack, packProp, packParts } from './packs.js';
+import { packsReady, queuePack, packProp, packParts, packKit, packKitHas } from './packs.js';
 import { konbiniDress } from './konbini.js';
 import { placeable, atXYZR, atObj, atLocal, uncaptured } from './world/capture.js';
 
@@ -702,19 +702,23 @@ const BOARDS = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' };
 const STICKERS = ['jp_sticker_store_01', 'jp_sticker_store_02', 'jp_sticker_store_03', 'jp_sticker_store_04', 'jp_sticker_store_05', 'jp_sticker_store_ads', 'jp_sticker_store_ads_02'];
 // a pack model in the builder's frame (local position, turn dr from the frame's yaw); null when not there
 const framePack = (B, id, lx, ly, lz, dr = 0, sc = 1) => { if (!packsReady()) return null; const p = B.P([lx, ly, lz]); return packProp(id, p[0], p[1], p[2], B.F.r + dr, sc); };
-// Idyllic Anime Japan's shop buildings, when the model library is there: [id, width, height, depth] (model units). The
-// eateries take the ramen stall or the timber restaurant, the old streets the two-storey shop houses, the others the shop
-// houses and the concrete row buildings in turn.
+// Idyllic Anime Japan's shop buildings, when the model library is there: [id, width, height, depth] (model units), each
+// with its dressing kit inside and out (the pack's demo scene, tools/packs-kits.mjs), so each trade takes the building
+// whose kit fits it: the ramen stall (counter, stools, bowls), the timber restaurant for izakaya and sake, the eatery
+// with its counter, bowls and sushi plates for soba and sushi, the tea-house front with tables for cafés and sweets,
+// the flower shop, the cycle shop, the row building with shelves and drinks for the pharmacy and books, the one with a
+// counter and signs for offices and salons, the one with an awning for the cleaners.
 const PACK_SHOPS = {
   ramen: ['jp_ramenshop', 6.52, 4.49, 4.59], restaurant: ['jp_restaurant_traditional_building', 8.49, 8.03, 8.33],
   house: [['jp_shop_building_01', 6.39, 8.46, 7.74], ['jp_shop_building_02', 6.97, 9.67, 6.97], ['jp_shop_building_03', 5.68, 9.67, 7.56], ['jp_shop_building_04', 6.29, 9.67, 8.08], ['jp_shop_building_05', 6.45, 8.46, 7.74]],
   row: [['jp_store_rowbuilding_01', 5.51, 10.93, 7.43], ['jp_store_rowbuilding_02', 5.45, 11.43, 7.75], ['jp_store_rowbuilding_03', 5.49, 12.06, 7.24]],
 };
 const tradeOf = s => Math.floor(mulberry32(Math.floor(s.x * 131 + s.z * 71) | 0)() * SHOP_NAMES.length);
+const TRADE_SHOP = { 0: 'ramen', 3: 'restaurant', 8: 'restaurant', 12: ['house', 4], 16: ['house', 4], 7: ['house', 0], 6: ['house', 0], 11: ['house', 0], 14: ['house', 2],
+  15: ['house', 1], 1: ['row', 0], 10: ['row', 0], 2: ['row', 2], 5: ['row', 2], 9: ['row', 2], 13: ['row', 2], 17: ['row', 2], 4: ['row', 1] };
 function packShopModel(s) {
-  const t = tradeOf(s), h = Math.abs(Math.floor(s.x * 3.7) * 7 + Math.floor(s.z * 2.3) * 13);
-  const P = t === 0 && s.d > 6 ? PACK_SHOPS.ramen : [3, 12, 16, 6, 8].includes(t) ? PACK_SHOPS.restaurant
-    : s.old || h % 3 === 0 ? PACK_SHOPS.house[h % 5] : PACK_SHOPS.row[h % 3];
+  const t = tradeOf(s), k = TRADE_SHOP[t] || ['row', 1];
+  const P = k === 'ramen' ? (s.d > 6 ? PACK_SHOPS.ramen : PACK_SHOPS.house[4]) : k === 'restaurant' ? PACK_SHOPS.restaurant : PACK_SHOPS[k[0]][k[1]];
   return packsReady() && packParts(P[0]) ? P : null;
 }
 function shopBuilding_build(B, s, rng, extras) {
@@ -738,9 +742,12 @@ function packShopBuilding(B, s, [id, mw, mh, md], extras) {
   B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
   const su = clamp(W / mw, 1, 1.3), sx = clamp(W / (mw * su), 1, 1.2), BW = mw * su * sx, D = Math.min(md * su, d), zc = d / 2 - D / 2;
   framePack(B, id, 0, 0.02, zc, 0, [su * sx, su, D / md]);
-  const vy = Math.min(4.2, mh * su - 2.6), vs = verticalSign(own, t), vp = B.P([BW / 2 - 0.35, vy + 1.0, d / 2 + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
-  for (const yy of [vy + 0.1, vy + 1.9]) B.bbox('steel', BW / 2 - 0.35, yy, d / 2 + 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] });
-  if (own() < 0.7) { const bx = (own() < 0.5 ? -1 : 1) * Math.min(BW / 2 - 0.6, 1.6), bid = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' }[t] || 'jp_board_foldable_0' + (1 + Math.floor(own() * 3));
+  const src = 'anime_japan/' + id.slice(3), o = B.P([0, 0.02, zc]);
+  packKit(src, o[0], o[1], o[2], B.F.r, [su * sx, su, D / md], su); // (its dressing inside and out)
+  const vy = Math.min(4.2, mh * su - 2.6), vs = verticalSign(own, t);
+  if (!packKitHas(src, /signboard_vertical|sign_3d/)) { const vp = B.P([BW / 2 - 0.35, vy + 1.0, d / 2 + 0.45]); vs.position.set(...vp); vs.rotation.y = r + Math.PI / 2; scene.add(vs);
+    for (const yy of [vy + 0.1, vy + 1.9]) B.bbox('steel', BW / 2 - 0.35, yy, d / 2 + 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] }); }
+  if (own() < 0.7 && !packKitHas(src, /board_/)) { const bx = (own() < 0.5 ? -1 : 1) * Math.min(BW / 2 - 0.6, 1.6), bid = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' }[t] || 'jp_board_foldable_0' + (1 + Math.floor(own() * 3));
     if (framePack(B, bid, bx, 0.12, d / 2 + 0.55, (own() - 0.5) * 0.6, 0.95) !== null) { const p = B.P([bx, 0, d / 2 + 0.55]); addCircle(p[0], p[2], 0.3); } }
   lampPoints.push({ p: B.P([0, 2.9, d / 2 + 0.8]), s: 0.8 });
   extras.push({ t: 'box', p: B.P([0, 0, zc]), hx: BW / 2, hz: D / 2, r });

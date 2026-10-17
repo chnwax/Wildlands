@@ -15,30 +15,42 @@ import { windPatch } from './terrain.js';
 import { CAP } from './world/capture.js';
 
 const LIB = new URL('../ModeleZPaczek/', import.meta.url), CFG = new URL('../tools/packs.json', import.meta.url);
+const FIXED = new URL('../assets/packs-fix/', import.meta.url); // (corrected copies of models the library got wrong: tools/packs-fix.mjs)
 let pending = null, packs = null;
 export const packGlow = []; // (materials that light up at night: townkit.js updateGlow)
 // how far each kind is drawn (a share of the quality's prop distance, Q.props: 260 m on High) and how much it sways
 const KIND = { crop: { dist: 0.45, sway: 3.0, tint: true }, tree: { dist: 1.25, sway: 1.1, tint: true }, prop: { dist: 0.3 }, building: { dist: 1.0 }, lod: { dist: 1, sway: 0 } }; // (lod: parts handed to other systems — trees.js puts its own wind and shading on them)
 
+const FIXES = {}; // (per-file corrections at load: none needed since assets/packs-fix)
+const MISSING_TEX = { M_pipes: 'anime_japan/M_pipes_BaseMap.png' };
+const await_tex = file => { const t = new THREE.TextureLoader().load(new URL('_tekstury/' + file, LIB).href); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; t.name = file.split('/').pop(); return t; };
 export function loadPacks() {
   if (pending) return pending;
   return (pending = (async () => {
-    const [cfg, kat] = await Promise.all([CFG, new URL('katalog.json', LIB)].map(u => fetch(u, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null)));
+    const [cfg, kat, fixed, kits] = await Promise.all([CFG, new URL('katalog.json', LIB), new URL('poprawki.json', FIXED), new URL('kits.json', FIXED)].map(u => fetch(u, { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null)));
     if (!cfg || !kat || !kat.modele) return null;
     const want = [];
     for (const L of Object.values(cfg.libraries)) if (L.runtime !== false) for (const a of L.assets) if (a.src && kat.modele[a.src]) want.push({ ...a, lib: L });
+    // the props of the shop buildings' dressing kits (tools/packs-kits.mjs: as the pack's demo scene dresses them), each
+    // under its library name
+    if (kits) { const have = new Set(want.map(a => a.id)); for (const K of Object.values(kits)) for (const p of K.props) if (!have.has(p.src) && kat.modele[p.src]) { have.add(p.src); want.push({ id: p.src, kind: 'prop', category: 'kit', src: p.src }); } }
     const models = {}, mats = new Map(), texs = new Map(), files = new Map();
     const cacheWas = THREE.Cache.enabled; THREE.Cache.enabled = true; // (the shared images are fetched once)
-    const loadFile = src => { if (!files.has(src)) files.set(src, gltfLoader.loadAsync(new URL(kat.modele[src].plik, LIB).href).catch(e => { console.warn('packs: ' + src, e); return null; })); return files.get(src); };
+    const loadFile = src => { if (!files.has(src)) files.set(src, gltfLoader.loadAsync((fixed && fixed[src] ? new URL(fixed[src], FIXED) : new URL(kat.modele[src].plik, LIB)).href).catch(e => { console.warn('packs: ' + src, e); return null; })); return files.get(src); };
     // a few files at a time
     let next = 0;
     await Promise.all(Array.from({ length: 12 }, async () => { for (;;) { const i = next++; if (i >= want.length) return; await loadFile(want[i].src); } }));
     THREE.Cache.enabled = cacheWas;
     // a Unity material shared by several models keeps its texture in only some of their files (the extraction found it
     // there): the others borrow it by the material's name, so which file loads first no longer decides the look
+    // known slips in the library's files that a corrected copy does not cover (FIXES), and images the extraction missed
+    // though they are in _tekstury (MISSING_TEX)
+    for (const a of want) { const g = await loadFile(a.src); if (!g || FIXES[a.src] === undefined || g.userData.wlFixed) continue; g.userData.wlFixed = true; FIXES[a.src](g); }
     const named = new Map();
     for (const a of want) { const g = await loadFile(a.src); if (g) g.scene.traverse(o => { if (o.isMesh && o.material.map) { const k = a.src.split('/')[0] + '/' + o.material.name; if (!named.has(k)) named.set(k, o.material.map); } }); }
     for (const a of want) { const g = await loadFile(a.src); if (g) g.scene.traverse(o => { if (o.isMesh && !o.material.map) { const t = named.get(a.src.split('/')[0] + '/' + o.material.name); if (t) { o.material.map = t; o.material.needsUpdate = true; } } }); }
+    for (const [mat, file] of Object.entries(MISSING_TEX)) { let t = null;
+      for (const a of want) { const g = await loadFile(a.src); if (g) g.scene.traverse(o => { if (o.isMesh && o.material.name === mat && !o.material.map) { t = t || await_tex(file); o.material.map = t; o.material.needsUpdate = true; } }); } }
     for (const a of want) {
       const g = await loadFile(a.src); if (!g) continue;
       const pack = a.src.split('/')[0], kind = a.kind || 'prop', K = KIND[kind] || KIND.prop, parts = [];
@@ -47,9 +59,10 @@ export function loadPacks() {
         parts.push({ geometry, material: material(o.material, pack, kind, a.sway ?? K.sway, mats, texs), castShadow: kind !== 'crop' || geometry.boundingBox.max.y > 0.8, tint: (a.tint ?? K.tint) || undefined }); });
       if (parts.length) models[a.id] = { kind, category: a.category, parts, dims: kat.modele[a.src].wymiary_m || [1, 1, 1], src: a.src };
     }
-    for (const [id, m] of Object.entries(models)) if (m.kind !== 'lod') addCatalog(id, m.kind === 'tree' ? 'tree' : m.kind === 'building' ? 'building' : 'prop', () => ({ parts: m.parts }));
+    for (const [id, m] of Object.entries(models)) if (m.kind !== 'lod' && m.category !== 'kit') addCatalog(id, m.kind === 'tree' ? 'tree' : m.kind === 'building' ? 'building' : 'prop', () => ({ parts: m.parts }));
     console.info(`packs: ${Object.keys(models).length} models from ModeleZPaczek (${files.size} files, ${texs.size} textures, ${mats.size} materials)`);
-    return (packs = { models, has: id => !!models[id], dims: id => models[id] && models[id].dims });
+    for (const a of want) if (a.category === 'kit' && models[a.id]) models[a.id].kitOnly = true;
+    return (packs = { models, kits: kits || {}, has: id => !!models[id], dims: id => models[id] && models[id].dims });
   })().catch(e => { console.warn('packs:', e); return null; }));
 }
 export const packsReady = () => packs;
@@ -98,6 +111,20 @@ export function packProp(id, x, y, z, r = 0, s = 1, tilt = null) {
   _m.compose(_p.set(x, y, z), _q, _s);
   return addProp('pack:' + id, m.parts.map(p => ({ geometry: p.geometry, material: p.material, matrix: _m, castShadow: p.castShadow !== false && m.dims[1] * (Array.isArray(s) ? s[1] : s) > 0.5 })));
 }
+// a building's dressing kit (packs-kits.mjs) as props of the object being built: the building stands at (x, y, z) turned
+// r, scaled s ([sx, sy, sz]); each prop goes where the kit puts it in the building's frame, turned with it, at su x its
+// own size (a stretched shop front does not stretch its stools). Returns how many were placed (0: no kit).
+const _kr = new THREE.Matrix4(), _kb = new THREE.Matrix4(), _kq = new THREE.Quaternion(), _ky = new THREE.Quaternion(), _kY = new THREE.Vector3(0, 1, 0);
+export function packKit(src, x, y, z, r, s, su = 1) {
+  const K = packs && packs.kits[src]; if (!K || CAP.scratch) return 0;
+  _kb.compose(_p.set(x, y, z), _ky.setFromAxisAngle(_kY, r), _s.set(s[0], s[1], s[2]));
+  let n = 0;
+  for (const p of K.props) { const m = packs.models[p.src]; if (!m) continue;
+    _kr.fromArray(p.m).decompose(_p, _kq, _s); _p.applyMatrix4(_kb); _kq.premultiply(_ky); _s.multiplyScalar(su); _m.compose(_p, _kq, _s);
+    addProp('pack:' + p.src, m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: q.castShadow !== false && m.dims[1] * su > 0.6 }))); n++; }
+  return n;
+}
+export const packKitHas = (src, re) => !!(packs && packs.kits[src] && packs.kits[src].props.some(p => re.test(p.src)));
 // items [{ x, y, z, r, s?, sx?, sy?, sz?, c? }] of one model -> an instanced world object (prefab = the model id)
 export function packScatter(P, id, items, { dist = null, shadow = true, category = null } = {}) {
   const m = P && P.models[id];

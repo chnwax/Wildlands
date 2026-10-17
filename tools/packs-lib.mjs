@@ -152,10 +152,12 @@ export class PackBaker {
   // one triangle list per material: { prims: Map(material -> {pos, nor, uv}), tris }
   // (pre: scale on the raw coordinates before M — the GameObject transforms are in metres; post: after it — the FBX node
   // transforms are in the file's units)
+  // (Unity numbers a mesh's sub-meshes by the order in which its materials first occur in the polygons — unused material
+  // slots dropped — and a renderer's m_Materials follow that numbering, not the FBX's material indices)
   _emit(prims, g, M, pre, post, upZ, slots, matFor) {
-    let tris = 0; const flip = det3(M) < 0;
+    let tris = 0; const flip = det3(M) < 0, rank = subMeshRank(g);
     for (let t = 0; t < g.pos.length / 9; t++) {
-      const si = g.mat[t] ?? 0, mi = matFor(si, slots[si]?.name || 'default');
+      const si = g.mat[t] ?? 0, mi = matFor(rank.get(si) ?? si, slots[si]?.name || 'default');
       let P = prims.get(mi); if (!P) prims.set(mi, P = { pos: [], nor: [], uv: [] });
       for (const v of flip ? [0, 2, 1] : [0, 1, 2]) {
         const i = t * 9 + v * 3; let p = xf(M, [g.pos[i] * pre, g.pos[i + 1] * pre, g.pos[i + 2] * pre]), n = g.nor.length ? xf(M, [g.nor[i], g.nor[i + 1], g.nor[i + 2]], 0) : [0, 1, 0];
@@ -227,6 +229,8 @@ export class PackBaker {
 // imageUri(job) -> a relative uri for an external image, or null to embed it. Only the materials and textures the
 // assets use are written.
 const pad4 = n => (n + 3) & ~3;
+// FBX material index -> Unity sub-mesh index (first occurrence in the polygons)
+export function subMeshRank(g) { const r = new Map(); for (let t = 0; t < g.pos.length / 9; t++) { const si = g.mat[t] ?? 0; if (!r.has(si)) r.set(si, r.size); } return r; }
 export function writeGLB(file, assets, materials, textures, { imageUri = null, generator = 'Wildlands packs' } = {}) {
   const chunks = []; let byteLength = 0;
   const append = data => { const b = Buffer.isBuffer(data) ? data : Buffer.from(data.buffer, data.byteOffset, data.byteLength), start = byteLength;
