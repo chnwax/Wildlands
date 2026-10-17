@@ -750,11 +750,7 @@ function shopBuilding_build(B, s, rng, extras) {
   if (!P) return shopBuildingDrawn(B, s, rng, extras);
   // the drawn shop is built once off-site and thrown away (no geometry, props, colliders, lamps or meshes kept), so the
   // town's draws of rng and deco run exactly as they did: everything built after the shops keeps its place and its id
-  const sc = scene.children.length, lp = lampPoints.length, gm = glowMats.length;
-  COL_OFF.on = true;
-  try { uncaptured(() => shopBuildingDrawn(new GeoBuilder(1e4), s, rng, [])); } finally { COL_OFF.on = false; }
-  while (scene.children.length > sc) { const m = scene.children[scene.children.length - 1]; scene.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material && m.material.map) m.material.map.dispose(); }
-  lampPoints.length = lp; glowMats.length = gm;
+  offsite(B2 => shopBuildingDrawn(B2, s, rng, []));
   packShopBuilding(B, s, P, extras);
 }
 // a pack shop building on the lot, its front on the lot's street edge, scaled to the frontage (a little, and a little
@@ -1191,6 +1187,15 @@ function plant(B, type, lx, ly, lz, rng, s = 1, t = null) { const p = B.P([lx, l
 // different crops — cabbages, leeks, tomatoes on cane frames, eggplants, potatoes, some under black or silver mulch
 // film — a cucumber net, bird netting over the brassicas, paths of trodden earth, a tool box, water tank and hose,
 // compost bin and a wheelbarrow. Local frame: the street side is +z.
+// a build run once off-site and thrown away — no geometry, props, colliders, lamps, glowing materials, queued models or
+// scene meshes kept — only for the draws of rng it makes (a replaced generator keeps the town's sequence as it was)
+export function offsite(fn) {
+  const sc = scene.children.length, lp = lampPoints.length, gm = glowMats.length;
+  COL_OFF.on = true;
+  try { uncaptured(() => fn(new GeoBuilder(1e4))); } finally { COL_OFF.on = false; }
+  while (scene.children.length > sc) { const m = scene.children[scene.children.length - 1]; scene.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material && m.material.map) m.material.map.dispose(); }
+  lampPoints.length = lp; glowMats.length = gm;
+}
 // the end face of a mound profile (base point, shoulders, crown, ..., base point): a fan of triangles from the middle of
 // its base (GeoBuilder.poly draws three or four corners only: a seven-point end came out half open)
 function profileCap(B, mat, row, hint, opt) {

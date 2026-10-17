@@ -8,7 +8,8 @@ import { plantForest, forestFloor, moistureField, makeTree, crownR } from './eco
 import { plantTown } from './towngreen.js';
 import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks, landmarkMaterials } from './landmarks.js';
-import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, field, inFrame, shedRoof } from './building.js';
+import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, field, inFrame, shedRoof, offsite } from './building.js';
+import { mansion, PALETTES } from './apartments.js';
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
 import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
@@ -870,7 +871,11 @@ export async function build(progress, opts = {}) {
   // apartment block
   const apt = { x: -95, z: 138, r: Math.PI, w: 34, d: 11 };
   reserve(apt.x, apt.z, apt.w / 2 + 3.6, apt.d / 2 + 5.6, apt.r);
-  apartment(B, { ...apt, y: hf.groundAt(apt.x, apt.z) }, rng, extras);
+  // the block is the danchi's mid-rise (apartments.js mansion: balconies with glass and panel fronts, gallery access,
+  // stair tower, lobby, its name on the canopy) in place of the old box; the old block is still built off-site for the
+  // town's draws of rng, and the new one has its own
+  offsite(B2 => apartment(B2, { ...apt, y: hf.groundAt(apt.x, apt.z) }, rng, []));
+  mansion(B, { x: apt.x, y: hf.groundAt(apt.x, apt.z) + 0.02, z: apt.z, r: apt.r, w: apt.w, d: apt.d, floors: 5, pal: PALETTES.cream, name: 'コーポ桜川', gy: (x2, z2) => hf.groundAt(x2, z2) }, mulberry32(4141), extras);
   B.frame(0, 0, 0, 0); B.box('asphaltLane2', apt.x, Y0 - 0.1, 126, 34, 0.15, 11, { uv: 4, skip: 'ny' });
   hf.paint2(2, apt.x - 18, 118, apt.x + 18, 146, () => 1);
   for (let i = 0; i < 6; i++) carSpots.push({ p: [apt.x - 14 + i * 5.5, Y0, 127], r: 0 });

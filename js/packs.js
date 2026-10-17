@@ -96,7 +96,7 @@ export const packParts = id => packs && packs.models[id] ? packs.models[id].part
 // models placed while the map is built (builders that know nothing of the libraries queue them; the map lays them out)
 export const packQueue = new Map();
 export function queuePack(id, x, y, z, r = 0, o = {}) {
-  if (!packs || !packs.models[id]) return false;
+  if (!packs || !packs.models[id] || CAP.scratch) return false;
   if (!packQueue.has(id)) packQueue.set(id, []);
   packQueue.get(id).push({ x, y, z, r, s: 1, ...o });
   return true;
