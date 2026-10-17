@@ -1,5 +1,5 @@
 // Railway: double track (1067 mm gauge), catenary, tunnels, girder bridge, station, level crossings, EMU trains.
-import { THREE, scene, S, clamp, lerp, smoothstep, mulberry32, addBox, addCircle, addPlatform, swapsTo } from './core.js';
+import { THREE, scene, S, clamp, lerp, smoothstep, mulberry32, addBox, addCircle, addPlatform, swapsTo, addProp } from './core.js';
 import { GeoBuilder, materials, canvasTex, signMesh, JP_FONT, night, lampPoints, glowMats, wireMat } from './townkit.js';
 import { Emitter, audio } from './audio.js';
 import { stationBuilding } from './station.js';
@@ -282,10 +282,34 @@ export function buildRailway(ctx) {
 }
 
 // colour-light signal on a mast beside the track, head facing local +Z (the approaching train); aspect 0 G, 1 Y, 2 R
+// Idyllic Anime Japan's signal head (the road signals' three-lamp head) stood upright on the mast, its own arm down
+// the mast as the bracket: lenses (model units, measured) green at the bottom, yellow, red at the top, lit by aspect
+const RS_S = 1.29, RS_LENS = [-0.617, -0.93, -1.245], RS_LENS_Y = 0.69, RS_LENS_Z = 0.3;
+const rsOn = [0x19e0b0, 0xffb21a, 0xff2a18].map(c => new THREE.MeshStandardMaterial({ color: 0x1b1d1f, roughness: 0.25, emissive: c, emissiveIntensity: 3.2 }));
+const rsOff = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.2, metalness: 0.3 });
+const rsDisc = new THREE.CircleGeometry(0.155, 20), _rm = new THREE.Matrix4(), _rq = new THREE.Quaternion(), _rv = new THREE.Vector3(), _rs = new THREE.Vector3(), _re = new THREE.Euler();
+function packSignalHead(x, y0, z, r, aspect) {
+  const parts = packsReady() && packParts('jp_trafficlight_cars_0'); if (!parts) return false;
+  // upright: the model's -x (its lenses' row) up, then turned to face the trains (its +z lens face toward yaw r); the
+  // middle lens 4.1 m up, 0.2 m in front of the mast
+  _re.set(0, r, -Math.PI / 2, 'YXZ'); _rq.setFromEuler(_re);
+  // (turned upright the lenses sit RS_LENS_Y beside the model's axis: shifted back over the mast)
+  const c = Math.cos(r), sn = Math.sin(r), up = 4.1 + RS_LENS[1] * RS_S, side = -RS_LENS_Y * RS_S, fx = sn * 0.2 + c * side, fz = c * 0.2 - sn * side;
+  _rm.compose(_rv.set(x + fx, y0 + up, z + fz), _rq, _rs.setScalar(RS_S));
+  addProp('pack:jp_trafficlight_cars_0:rail', parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _rm, castShadow: true })));
+  const lens = RS_LENS.map(lx => new THREE.Vector3(lx, RS_LENS_Y, RS_LENS_Z).applyMatrix4(_rm)).sort((a, b) => a.y - b.y); // bottom to top
+  lens.forEach((p, k) => { const m = new THREE.Mesh(rsDisc, k === aspect ? rsOn[k] : rsOff); m.position.copy(p); m.rotation.y = r; scene.add(m); });
+  return true;
+}
 function signal(B, x, y0, z, r, aspect) {
   B.frame(x, y0, z, r);
   B.bbox('concrete', 0, -0.15, 0, 0.6, 0.4, 0.6, 0.03, { color: [0.7, 0.7, 0.68] });
   B.cyl('steel', 0, 0.25, 0, 0.085, 0.075, 5.25, 12, { color: [0.56, 0.58, 0.6] });
+  if (packSignalHead(x, y0, z, r, aspect)) { // (aspect 0 green, 1 yellow, 2 red: bottom to top)
+    for (let k = 0; k < 9; k++) B.box('steel', 0, 0.6 + k * 0.33, -0.12, 0.3, 0.025, 0.025, { color: [0.5, 0.52, 0.54] }); // ladder rungs
+    for (const e of [-0.15, 0.15]) B.box('steel', e, 0.5, -0.12, 0.025, 2.9, 0.025, { color: [0.5, 0.52, 0.54] });
+    const p = B.P([0, 0, 0]); addCircle(p[0], p[2], 0.2); B.frame(0, 0, 0, 0); return;
+  }
   B.bbox('dark', 0, 3.72, 0.02, 0.72, 1.72, 0.03, 0.03);                // backboard
   B.bbox('dark', 0, 3.88, 0.15, 0.44, 1.4, 0.24, 0.05);                 // lamp case
   const cols = [[0.2, 1, 0.5], [1, 0.72, 0.1], [1, 0.12, 0.06]];
