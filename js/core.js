@@ -565,7 +565,7 @@ export class Scatter {
     // the far levels' cells are widened until a cell holds about 12k triangles: a draw call costs about as much GPU time
     // as that many off-screen triangles (measured), so sparse species and card levels share few wide cells while dense
     // stands keep the fine ones
-    let farTris = 0; for (let l = 1; l < lods.length; l++) for (const p of lods[l].parts) farTris += (p.geometry.index ? p.geometry.index.count : p.geometry.attributes.position.count) / 3;
+    let farTris = 0; for (let l = 1; l < lods.length; l++) for (const p of lods[l].parts) if (!p.shadowOnly) farTris += (p.geometry.index ? p.geometry.index.count : p.geometry.attributes.position.count) / 3;
     const perCell = N * farTris / Math.max(1, this.fine.length), grow = Math.min(8, 2 ** Math.max(0, Math.floor(Math.log2(Math.sqrt(12000 / Math.max(perCell, 1))))));
     this.coarse = grow > 1 ? group(cellSize * grow) : this.fine.map(c => ({ ...c })); this.cells = this.coarse;
     this.lod = new Int8Array(N).fill(-2); this.slot = new Int32Array(N); this.fineOf = new Int32Array(N); this.coarseOf = new Int32Array(N);
@@ -587,6 +587,7 @@ export class Scatter {
       if (!part.geometry.boundingSphere) part.geometry.computeBoundingSphere();
       let smax = 0; for (const i of idx) smax = Math.max(smax, this.scale[i]);
       if (part.geometry.boundingSphere.radius * smax < 1.2) im.layers.set(3);
+      if (part.shadowOnly) { im.userData.shadowOnly = true; im.layers.set(7); } // (drawn only into the shadow maps)
       im.matrixAutoUpdate = false; im.matrixWorldAutoUpdate = false; // static at the origin: skip the per-frame matrix walk
       if (part.depth) im.customDepthMaterial = part.depth;
       im.userData.scatter = this; im.userData.sways = !!part.sway; im.boundingSphere = this._bounds(idx, n, part.geometry, new THREE.Sphere()); // (sways: its shadow moves, sky.js)

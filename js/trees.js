@@ -895,7 +895,7 @@ export function bambooGeo(lod = 0, seed = 9, edge = false) {
 
 // ---------------------------------------------------------------- materials
 // shared foliage shading: toon lighting comes from toon.js; here a soft sky-tinted rim and sunlight through the leaves
-function foliagePatch(m, key, amount, cards) {
+function foliagePatch(m, key, amount, cards, mipCover = true) {
   m.defines = { CLOUD_SHADE_VARYING: '' };
   m.onBeforeCompile = sh => {
     sh.uniforms.uSunViewDir = S.uSunViewDir; sh.uniforms.uSunCol = S.uSunCol; sh.uniforms.uAmbC = S.uAmb;
@@ -922,6 +922,13 @@ function foliagePatch(m, key, amount, cards) {
       // cards keep the crown's smooth normal on both faces
       .replace('#include <normal_fragment_begin>', 'float faceDirection = 1.0; vec3 normal = normalize(vNormal); vec3 nonPerturbedNormal = normal;')
       .replace('#include <alphatest_fragment>', `
+        ${mipCover ? `#ifdef USE_MAP
+          // (a leaf texture's smaller mip levels average its alpha down: thin leaves faded out with distance and a crown
+          // went see-through past a few tens of metres; the alpha is raised with the mip level, so a crown keeps its
+          // density from near to far, as the far levels draw it)
+          vec2 lfS = vec2(textureSize(map, 0)), lfX = dFdx(vMapUv * lfS), lfY = dFdy(vMapUv * lfS);
+          diffuseColor.a *= 1.0 + max(0.5 * log2(max(max(dot(lfX, lfX), dot(lfY, lfY)), 1e-6)), 0.0) * 0.25;
+        #endif` : ''}
         #ifdef ALPHA_TO_COVERAGE
           diffuseColor.a = clamp((diffuseColor.a - alphaTest) / max(fwidth(diffuseColor.a), 1e-3) + 0.5, 0.0, 1.0);
           if (diffuseColor.a <= 0.0) discard;
@@ -1125,15 +1132,103 @@ function packTreeLods(kind, v, sp, hiD, loD) {
     if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, materials(sp.mat), sp.geo(2, v), 2) }); }
   return lods;
 }
-// A pack tree's far level drawn from the model itself: K views round it rendered once (albedo: its own textures and
-// colours, unlit) into the tiles of one atlas, shown on K crossed vertical quads through the trunk at the model's size,
-// their normals bent outward and up like a crown's so the scene's sun shades them as a rounded mass. The same
-// silhouette, crown size and colours as the near model, so the swap to it at distance reads as the same tree.
-const impCache = new Map(), IMP_K = 4, IMP_T = 256, IMP_DIM = { fir: 0.85, dead: 0.9, sakura: 0.85, jpine: 0.8 };
-function packImpostor(id, h, sp) {
-  const key = id + '|' + h + '|' + sp.mat; if (impCache.has(key)) return impCache.get(key);
-  const src = packParts(id); if (!src || !renderer) return null;
-  // the model at unit height, in plain albedo materials
+// A pack tree's far level drawn from the model itself: K views round it rendered once into the tiles of two atlases —
+// its albedo (its own textures and colours, unlit) and its surface (the model's normals, and how much of the sun the
+// crown above leaves each leaf) — shown on one upright card through the trunk, turned toward the camera, blending the
+// two views nearest the side it is seen from. The picture is lit like the model: per pixel by the baked normals (sun
+// side bright, shade side dark), the tiers and the crown's underside in their own shade, with the foliage's
+// sunlight-through-leaves and rim; its smaller mip levels keep the crown's coverage (coverageTexture). A crown of the
+// model's own outline (a lathe of its leaf spread per height, drawn only into the shadow maps) casts its shadow, so a
+// tree keeps its shadow on the ground past the switch. The same silhouette, crown, colours, shading and shadow as the
+// near model: at distance the swap reads as the same tree. (IMP_DIM: the picture's brightness against the model's,
+// measured side by side at 100-120 m.)
+const impCache = new Map(), IMP_K = 8, IMP_T = 256, IMP_DIM = { fir: 1.12, dead: 1.06, sakura: 1, jpine: 1, bush: 1 };
+let impBakeMat = null;
+// mode 1: the model seen from straight above, its height per point (the top of the crown over each spot); mode 0: its
+// object-space normal (rgb) and its share of sunlight (a): low where the crown above overhangs a leaf (the tiers of a
+// fir dark under the tier above, a crown's underside in its own shade), as the model's own shadows darken it
+function impBakeMaterial() {
+  return impBakeMat || (impBakeMat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: null }, cut: { value: 0 }, mode: { value: 0 },
+      top: { value: null }, topVP: { value: new THREE.Matrix4() }, yTop: { value: 1 } },
+    vertexShader: `varying vec3 vN, vP; varying vec2 vUv;
+      void main() { vN = normal; vP = position; vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform sampler2D map, top; uniform float cut, mode, yTop; uniform mat4 topVP; varying vec3 vN, vP; varying vec2 vUv;
+      void main() {
+        if (cut > 0.5 && texture2D(map, vUv).a < 0.5) discard;
+        if (mode > 0.5) { gl_FragColor = vec4(vP.y / yTop, 0.0, 0.0, 1.0); return; }
+        vec2 tu = (topVP * vec4(vP, 1.0)).xy * 0.5 + 0.5, px = vec2(1.0 / 128.0);
+        float occ = 0.0;
+        for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) occ += smoothstep(0.012, 0.06, texture2D(top, tu + vec2(i, j) * px * 1.5).r * yTop - vP.y);
+        gl_FragColor = vec4(normalize(vN) * 0.5 + 0.5, 1.0 - 0.85 * occ / 9.0);
+      }`,
+    side: THREE.DoubleSide }));
+}
+// the crown's outline as a lathe round the model's axis: per height band the spread (90th percentile) of its vertices
+// about the band's centre; open bands (bare trunk) keep the trunk's width
+function impShadowGeo(src, h, bands) {
+  const pts = []; let y1 = 0;
+  for (const p of src) { const P = p.geometry.attributes.position.array; for (let i = 0; i < P.length; i += 3) { const y = P[i + 1] / h; pts.push(P[i] / h, y, P[i + 2] / h); if (y > y1) y1 = y; } }
+  const B = Array.from({ length: bands }, () => []);
+  for (let i = 0; i < pts.length; i += 3) B[Math.min(bands - 1, Math.max(0, Math.floor(pts[i + 1] / y1 * bands)))].push(i);
+  const ring = B.map(list => {
+    if (list.length < 3) return null;
+    let cx = 0, cz = 0; for (const i of list) { cx += pts[i]; cz += pts[i + 2]; } cx /= list.length; cz /= list.length;
+    const r = list.map(i => Math.hypot(pts[i] - cx, pts[i + 2] - cz)).sort((a, b) => a - b);
+    return [cx, cz, r[Math.floor(r.length * 0.9)]];
+  });
+  for (let k = 0; k < bands; k++) if (!ring[k]) ring[k] = ring[k - 1] || ring.find(r => r) || [0, 0, 0.02];
+  const SIDES = 5, pos = [], idx = [], at = (k, j) => k * SIDES + j;
+  for (let k = 0; k <= bands; k++) { // ring k at the band boundary: the wider of the two bands it joins
+    const a = ring[Math.max(0, k - 1)], b = ring[Math.min(bands - 1, k)], r = k === 0 || k === bands ? Math.min(a[2], b[2]) * 0.5 : Math.max(a[2], b[2]);
+    const cx = (a[0] + b[0]) / 2, cz = (a[1] + b[1]) / 2, y = k / bands * y1;
+    for (let j = 0; j < SIDES; j++) { const t = j / SIDES * Math.PI * 2; pos.push(cx + Math.cos(t) * r, y, cz + Math.sin(t) * r); }
+  }
+  for (let k = 0; k < bands; k++) for (let j = 0; j < SIDES; j++) { const j1 = (j + 1) % SIDES; idx.push(at(k, j), at(k + 1, j), at(k + 1, j1), at(k, j), at(k + 1, j1), at(k, j1)); }
+  const top = pos.length / 3; pos.push(ring[bands - 1][0], y1, ring[bands - 1][1]); for (let j = 0; j < SIDES; j++) idx.push(at(bands, j), top, at(bands, (j + 1) % SIDES));
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+  return g;
+}
+const impShadowMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
+// The albedo atlas with its smaller levels made so that each covers as much as the full picture: plain averaging turns a
+// sparse crown (a birch, a fir's open tiers) into an even half-alpha haze that the alpha test then fills in solid, so a
+// far tree became a dense blob, larger and brighter than the tree it stands for. Here each level's alpha is scaled until
+// the share of it past the alpha test is the full-size picture's share: far off, the crown keeps its gaps and its
+// weight. Colours are averaged by coverage, in linear light.
+const SRGB2LIN = Float32Array.from({ length: 256 }, (_, i) => { const c = i / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+const lin2srgb = v => Math.round(255 * Math.min(1, v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055));
+function coverageTexture(rt, cut) {
+  let w = rt.width, h = rt.height; const px = new Uint8Array(w * h * 4); renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+  let P = new Float32Array(w * h * 4); // premultiplied linear colour, alpha
+  for (let i = 0; i < w * h; i++) { const a = px[i * 4 + 3] / 255; P[i * 4] = SRGB2LIN[px[i * 4]] * a; P[i * 4 + 1] = SRGB2LIN[px[i * 4 + 1]] * a; P[i * 4 + 2] = SRGB2LIN[px[i * 4 + 2]] * a; P[i * 4 + 3] = a; }
+  const share = (A, n, k) => { let c = 0; for (let i = 0; i < n; i++) if (A[i * 4 + 3] * k >= cut) c++; return c / n; };
+  const target = share(P, w * h, 1), bg = [px[0], px[1], px[2]];
+  const levels = [{ data: px, width: w, height: h }];
+  while (w > 1 || h > 1) {
+    const nw = Math.max(1, w >> 1), nh = Math.max(1, h >> 1), Q2 = new Float32Array(nw * nh * 4);
+    for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) {
+      const o = (y * nw + x) * 4; let n = 0;
+      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const sx = Math.min(w - 1, x * 2 + dx), sy = Math.min(h - 1, y * 2 + dy), s = (sy * w + sx) * 4; for (let c = 0; c < 4; c++) Q2[o + c] += P[s + c]; n++; }
+      for (let c = 0; c < 4; c++) Q2[o + c] /= n;
+    }
+    // the alpha scale that keeps the covered share (bisection)
+    let lo = 0.5, hi = 16; for (let it = 0; it < 18; it++) { const k = (lo + hi) / 2; if (share(Q2, nw * nh, k) < target) lo = k; else hi = k; }
+    const k = (lo + hi) / 2, D = new Uint8Array(nw * nh * 4);
+    for (let i = 0; i < nw * nh; i++) { const a = Q2[i * 4 + 3];
+      if (a > 1e-4) for (let c = 0; c < 3; c++) D[i * 4 + c] = lin2srgb(Q2[i * 4 + c] / a); else for (let c = 0; c < 3; c++) D[i * 4 + c] = bg[c];
+      D[i * 4 + 3] = Math.round(255 * Math.min(1, a * k)); }
+    levels.push({ data: D, width: nw, height: nh }); P = Q2; w = nw; h = nh;
+  }
+  const t = new THREE.DataTexture(levels[0].data, levels[0].width, levels[0].height, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.mipmaps = levels; t.generateMipmaps = false; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.needsUpdate = true;
+  return t;
+}
+function packImpostor(id, h, sp, twin = 0) {
+  const key = id + '|' + h + '|' + sp.mat + '|' + twin; if (impCache.has(key)) return impCache.get(key);
+  let src = packParts(id); if (!src || !renderer) return null;
+  if (twin) src = src.map(p => ({ ...p, geometry: twinGeo(p.geometry, twin) }));
+  // the model at unit height, in plain albedo materials (and the bake material for its surface)
   const sc = new THREE.Scene(), box = new THREE.Box3(), mats = [];
   let leafCol = new THREE.Color(0.3, 0.42, 0.18);
   for (const p of src) {
@@ -1142,42 +1237,92 @@ function packImpostor(id, h, sp) {
     if (tone) m.color.multiplyScalar(tone[0]).lerp(new THREE.Color(...tone[1]), tone[2]);
     if (sp.mat === 'bush') m.color.multiplyScalar(0.62).lerp(new THREE.Color(0.42, 0.48, 0.3), 0.25); // (as the near shrubs are toned)
     if (/card/i.test(p.material.name)) continue;
-    if (p.material.alphaTest > 0) leafCol = m.color.clone();
     const g = p.geometry.clone().scale(1 / h, 1 / h, 1 / h); g.computeBoundingBox(); box.union(g.boundingBox);
-    sc.add(new THREE.Mesh(g, m)); mats.push(m);
+    if (p.material.alphaTest > 0) leafCol = m.color.clone();
+    const mesh = new THREE.Mesh(g, m); mesh.userData.cut = p.material.alphaTest > 0; sc.add(mesh); mats.push(m);
   }
   const R = Math.max(-box.min.x, box.max.x, -box.min.z, box.max.z), S2 = Math.max(box.max.y * 1.02, 2 * R * 1.04), W = S2 / 2;
-  const rt = new THREE.WebGLRenderTarget(IMP_T * IMP_K, IMP_T, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
-  rt.texture.colorSpace = THREE.SRGBColorSpace; rt.texture.anisotropy = 4;
-  const cam = new THREE.OrthographicCamera(-W, W, S2, 0, 0.01, 50);
+  const target = () => { const rt = new THREE.WebGLRenderTarget(IMP_T * IMP_K, IMP_T, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter }); rt.texture.anisotropy = 4; return rt; };
+  const rt = target(), rtN = target(); rt.texture.colorSpace = THREE.SRGBColorSpace; rt.texture.generateMipmaps = false;
+  const cam = new THREE.OrthographicCamera(-W, W, S2, 0, 0.01, 50), BK = impBakeMaterial();
   const prev = renderer.getRenderTarget(), pc = renderer.getClearColor(new THREE.Color()), pa = renderer.getClearAlpha(), pac = renderer.autoClear, psh = renderer.shadowMap.autoUpdate;
   renderer.shadowMap.autoUpdate = false; renderer.autoClear = false;
-  renderer.setRenderTarget(rt); renderer.setClearColor(leafCol, 0); renderer.clear(true, true, true); // (transparent, in the leaves' colour: no dark fringe in the mips)
-  for (let k = 0; k < IMP_K; k++) {
-    const a = k * Math.PI / IMP_K; cam.position.set(Math.sin(a) * 20, 0, Math.cos(a) * 20); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
-    rt.viewport.set(k * IMP_T, 0, IMP_T, IMP_T); rt.scissor.set(k * IMP_T, 0, IMP_T, IMP_T); rt.scissorTest = true;
-    renderer.setRenderTarget(rt); renderer.render(sc, cam);
-  }
-  rt.scissorTest = false; rt.viewport.set(0, 0, IMP_T * IMP_K, IMP_T);
-  renderer.setRenderTarget(prev); renderer.setClearColor(pc, pa); renderer.autoClear = pac; renderer.shadowMap.autoUpdate = psh;
-  for (const o of sc.children) o.geometry.dispose(); for (const m of mats) m.dispose();
-  // K crossed quads, each with its tile; normals: out from the crown's centre and up
-  const pos = [], uv = [], nor = [], idx = [], cy = S2 * 0.55;
-  for (let k = 0; k < IMP_K; k++) {
-    const a = k * Math.PI / IMP_K, ux = Math.cos(a), uz = -Math.sin(a), base = pos.length / 3;
-    for (const [s, y] of [[-1, 0], [1, 0], [1, S2], [-1, S2]]) {
-      const x = s * W * ux, z = s * W * uz; pos.push(x, y, z); uv.push((k + (s + 1) / 2) / IMP_K, y / S2);
-      const n = new THREE.Vector3(x, (y - cy) * 0.6 + 0.7 * S2, z).normalize(); nor.push(n.x, n.y, n.z);
+  // the crown's top, seen from above (for the overhang shade of the surface bake)
+  const rtTop = new THREE.WebGLRenderTarget(128, 128, { generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }), yTop = box.max.y * 1.02;
+  const topCam = new THREE.OrthographicCamera(-R * 1.05, R * 1.05, R * 1.05, -R * 1.05, 0.01, yTop + 2); topCam.position.set(0, yTop + 1, 0); topCam.up.set(0, 0, -1); topCam.lookAt(0, 0, 0); topCam.updateMatrixWorld();
+  Object.assign(BK.uniforms.yTop, { value: yTop }); BK.uniforms.top.value = null; BK.uniforms.topVP.value.multiplyMatrices(topCam.projectionMatrix, topCam.matrixWorldInverse);
+  for (const o of sc.children) { o.userData.m = o.material; o.onBeforeRender = () => { BK.uniforms.map.value = o.userData.m.map; BK.uniforms.cut.value = o.userData.cut ? 1 : 0; BK.uniformsNeedUpdate = true; }; }
+  const setMats = bake => { for (const o of sc.children) o.material = bake ? BK : o.userData.m; };
+  setMats(true); BK.uniforms.mode.value = 1; renderer.setRenderTarget(rtTop); renderer.setClearColor(0x000000, 1); renderer.clear(true, true, true); renderer.render(sc, topCam); BK.uniforms.mode.value = 0; BK.uniforms.top.value = rtTop.texture; setMats(false); // (bound only once drawn: no feedback loop)
+  for (const [T, clear, ca, bake] of [[rt, leafCol, 0, false], [rtN, new THREE.Color(0.5, 1, 0.5), 1, true]]) {
+    // (albedo: transparent, in the leaves' colour, so no dark fringe in the mips; surface: an upward normal, full light)
+    setMats(bake);
+    renderer.setRenderTarget(T); renderer.setClearColor(clear, ca); renderer.clear(true, true, true);
+    for (let k = 0; k < IMP_K; k++) {
+      const a = k * 2 * Math.PI / IMP_K; cam.position.set(Math.sin(a) * 20, 0, Math.cos(a) * 20); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+      T.viewport.set(k * IMP_T, 0, IMP_T, IMP_T); T.scissor.set(k * IMP_T, 0, IMP_T, IMP_T); T.scissorTest = true;
+      renderer.setRenderTarget(T); renderer.render(sc, cam);
     }
-    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    T.scissorTest = false; T.viewport.set(0, 0, IMP_T * IMP_K, IMP_T);
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx); g.computeBoundingSphere();
-  // (the picture has no self-shadowing: a crown's inner leaves, dark in the model, are as bright as its outer ones — the
-  // colour is brought down to the near model's average in light)
-  const m = new THREE.MeshStandardMaterial({ map: rt.texture, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, metalness: 0, envMapIntensity: 0.4, color: new THREE.Color().setScalar(IMP_DIM[sp.mat] ?? 0.8) });
-  m.name = 'impostor:' + id;
+  renderer.setRenderTarget(prev); renderer.setClearColor(pc, pa); renderer.autoClear = pac; renderer.shadowMap.autoUpdate = psh;
+  const albedo = coverageTexture(rt, 0.45); rt.dispose();
+  for (const o of sc.children) o.geometry.dispose(); for (const m of mats) m.dispose(); rtTop.dispose();
+  // one upright card through the trunk, turned to face the camera about the vertical: it shows the two views nearest the
+  // direction it is seen from, blended by the angle between them (full width from every side, no crossed planes)
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-W, 0, 0, W, 0, 0, W, S2, 0, -W, S2, 0], 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3)); g.setIndex([0, 1, 2, 0, 2, 3]);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, S2 / 2, 0), Math.hypot(W, S2 / 2));
+  const m = new THREE.MeshStandardMaterial({ map: albedo, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, metalness: 0, envMapIntensity: 0.4, color: new THREE.Color().setScalar(IMP_DIM[sp.mat] ?? 1.05) });
+  m.alphaToCoverage = Q.msaa > 0; m.name = 'impostor:' + id; m.userData.bake = [albedo, rtN];
+  foliagePatch(m, 'impostor', 0, true, false); // (its own levels keep their coverage)
+  const fol = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    fol(sh, r);
+    sh.uniforms.tImpN = { value: rtN.texture }; sh.uniforms.uImpPush = { value: R * 1.15 }; sh.uniforms.uLightDirW = S.uLightDir;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vImpX, vImpY, vImpZ; varying vec2 vImpUv0, vImpUv1; varying float vImpT; uniform float uImpPush; uniform vec3 uLightDirW;')
+      .replace('#include <project_vertex>', `
+        #ifdef USE_INSTANCING
+          mat3 imM = mat3(instanceMatrix); vec3 impC = instanceMatrix[3].xyz;
+        #else
+          mat3 imM = mat3(modelMatrix); vec3 impC = modelMatrix[3].xyz;
+        #endif
+        float impSx = length(imM[0]), impSy = length(imM[1]);
+        vec2 impTo = normalize(cameraPosition.xz - impC.xz + 1e-4);
+        vec3 impToW = vec3(impTo.x, 0.0, impTo.y);
+        // the side it is seen from, in the tree's own frame (the views were taken at k / K turns about it)
+        float impA = atan(dot(impToW, imM[0] / impSx), dot(impToW, imM[2] / length(imM[2])));
+        float impF = mod(impA / ${(2 * Math.PI / IMP_K).toFixed(6)} + ${IMP_K}.0, ${IMP_K}.0), impK0 = floor(impF), impK1 = mod(impK0 + 1.0, ${IMP_K}.0);
+        vImpT = impF - impK0; vImpUv0 = vec2((impK0 + uv.x) / ${IMP_K}.0, uv.y); vImpUv1 = vec2((impK1 + uv.x) / ${IMP_K}.0, uv.y);
+        vec3 impW = impC + vec3(impTo.y, 0.0, -impTo.x) * transformed.x * impSx + vec3(0.0, transformed.y * impSy, 0.0);
+        vec4 mvPosition = viewMatrix * vec4(impW, 1.0); gl_Position = projectionMatrix * mvPosition;
+        // the baked object-space normals to view space (inverse transpose of the instance's rotation and scale)
+        vImpX = normalMatrix * (imM[0] / dot(imM[0], imM[0])); vImpY = normalMatrix * (imM[1] / dot(imM[1], imM[1])); vImpZ = normalMatrix * (imM[2] / dot(imM[2], imM[2]));`)
+      .replace('#include <worldpos_vertex>', 'vec4 worldPosition = vec4(impW, 1.0);')
+      // (the card stands in the crown that casts the shadow: its shadow lookups are moved out toward the light by the
+      // crown's radius, so the tree's own shadow crown does not shade it and the baked normals do)
+      .replace('#include <shadowmap_vertex>', `#ifdef USE_SHADOWMAP
+        { vec4 impWp = worldPosition; worldPosition.xyz += uLightDirW * uImpPush * impSx;
+        #include <shadowmap_vertex>
+        worldPosition = impWp; }
+        #else
+        #include <shadowmap_vertex>
+        #endif`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vImpX, vImpY, vImpZ; varying vec2 vImpUv0, vImpUv1; varying float vImpT; uniform sampler2D tImpN;')
+      .replace('#include <map_fragment>', `diffuseColor *= mix(texture2D(map, vImpUv0), texture2D(map, vImpUv1), vImpT);
+        vec4 impS = mix(texture2D(tImpN, vImpUv0), texture2D(tImpN, vImpUv1), vImpT);`)
+      // (the baked light: the sun's share where the crown above shades a leaf, the sky's a little less)
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directDiffuse *= impS.a; reflectedLight.indirectDiffuse *= mix(0.8, 1.0, impS.a);')
+      .replace('float faceDirection = 1.0; vec3 normal = normalize(vNormal); vec3 nonPerturbedNormal = normal;',
+        'float faceDirection = 1.0; vec3 impO = impS.xyz * 2.0 - 1.0; vec3 normal = normalize(vImpX * impO.x + vImpY * impO.y + vImpZ * impO.z); vec3 nonPerturbedNormal = normal;');
+  };
+  m.customProgramCacheKey = () => 'impostor3';
+  // (shrubs a metre high cast no shadow worth its cost past 90 m: trees only)
   const parts = [{ geometry: g, material: m, tint: 'pc', castShadow: false, sway: false }];
+  if (sp.mat !== 'bush') parts.push({ geometry: impShadowGeo(src.filter(p => !/card/i.test(p.material.name)), h, 6), material: impShadowMat, castShadow: true, shadowOnly: true, sway: false }); // (65 triangles)
   impCache.set(key, parts);
   return parts;
 }
@@ -1354,15 +1499,27 @@ export function buildFarForest(sets) {
   });
 }
 
+// a shrub and a second copy of it turned about and set beside it, d apart each way from the middle (a hedge segment of two
+// shrubs grown into each other)
+const twinCache = new Map();
+function twinGeo(g, d) {
+  const k = g.uuid + '|' + d; if (twinCache.has(k)) return twinCache.get(k);
+  const t = mergeGeometries([g.clone().translate(-d, 0, d * 0.08), g.clone().rotateY(Math.PI * 0.8).translate(d, 0, -d * 0.08)]);
+  t.computeBoundingSphere(); t.computeBoundingBox(); twinCache.set(k, t);
+  return t;
+}
 // The Illustrated Nature's round shrubs for the bush and shrub sets, when the model library is there: [near, middle]
 // levels (its lod1 and lod3 files) at hs x unit height, with the trees' leaf shading and wind, tinted per item
 const PACK_SHRUBS = [['tr_il_shrub_01_l1', 'tr_il_shrub_01_l3'], ['tr_il_shrub_02_l1', 'tr_il_shrub_02_l3'], ['tr_il_shrub_03_l1', 'tr_il_shrub_03_l3']];
 // shape: [x, y, z] stretch of the unit-height shrub (a hedge's segment: longer than deep); near: the near level's file
-export function packShrubLods(i, hs, nearD, farD, shadow = true, shape = null, nearLevel = 'l1') {
+// twin: a hedge's segment, two shrubs grown together (the shrub's width x twin apart)
+export function packShrubLods(i, hs, nearD, farD, shadow = true, shape = null, nearLevel = 'l1', twin = 0) {
   const P = packsReady(); if (!P) return null;
   const [a0, b] = PACK_SHRUBS[i % PACK_SHRUBS.length], a = a0.replace(/_l1$/, '_' + nearLevel), dims = P.dims(a0); if (!dims || !P.dims(a)) return null;
-  const sp = { mat: 'bush' }, h = dims[1] / hs, near = packTreeParts(a, h, sp, true), far = packTreeParts(b, h, sp, false), imp = packImpostor(a0, h, sp);
+  const sp = { mat: 'bush' }, h = dims[1] / hs, d = twin * dims[0] / 2, imp = packImpostor(a0, h, sp, d);
+  let near = packTreeParts(a, h, sp, true), far = packTreeParts(b, h, sp, false);
   if (!near || !far) return null;
+  if (d) { near = near.map(p => ({ ...p, geometry: twinGeo(p.geometry, d / h) })); far = far.map(p => ({ ...p, geometry: twinGeo(p.geometry, d / h) })); }
   const sh = q => shape ? (() => { const k = 'shape|' + q.geometry.uuid + '|' + shape.join(','); if (!packTreeCache.has(k)) { const g = q.geometry.clone().scale(...shape); g.computeBoundingSphere(); g.computeBoundingBox(); packTreeCache.set(k, g); } return packTreeCache.get(k); })() : q.geometry;
   // the near level, the low level (no shadow, no sway) to 90 m, then the shrub's own picture (impostor) to the far distance
   const lods = [{ dist: nearD, parts: near.map(p => ({ ...p, geometry: sh(p), castShadow: shadow })) }];
@@ -1371,9 +1528,10 @@ export function packShrubLods(i, hs, nearD, farD, shadow = true, shape = null, n
   return lods;
 }
 export const shrubTint = list => packTint(list);
-// a hedge's segments drawn with the pack's round shrub: a segment stretched long and low (a low hedge's sx up to 2.4)
-// keeps the shrub's own proportions instead — less stretch, a little more height — so the hedge is a row of full round
-// shrubs, not flat lumps. The same items (World Builder ids and edits unchanged), only their proportions.
+// a hedge's segments drawn with the pack's round shrub, two to a segment grown into each other and into the next
+// segment's, so the hedge reads as one dense wall of leaves: a segment stretched long and low (a low hedge's sx up to
+// 2.4) keeps the shrubs' own proportions instead — less stretch, a little more height — so it is full, not flat lumps.
+// The same items (World Builder ids and edits unchanged), only their proportions.
 function hedgeShrubs(list) {
   for (const it of list) { const sx = it.sx || 1; if (sx > 1.3) { it.s *= Math.min(1.35, Math.sqrt(sx / 1.3)); it.sx = 1.3; } }
   return list;
@@ -1388,7 +1546,7 @@ export function buildBushes(bushes, kind = 'bush', { hiDist = () => Q.treeHi * (
   // (the pack's shrub at the drawn bush's height; a hedge's segments: the shrub pressed to the segment's length and depth,
   // neighbours overlapping into one growing hedge)
   let lods = kind === 'bush' ? packShrubLods(0, 0.79, () => Math.min(hiDist(), 30), farDist)
-    : kind === 'hedge' ? packShrubLods(1, 0.96, () => Math.min(hiDist(), 35), farDist, true, [1.1, 1, 0.9], 'l2')
+    : kind === 'hedge' ? packShrubLods(1, 0.96, () => Math.min(hiDist(), 35), farDist, true, [0.82, 1, 0.95], 'l2', 0.5)
     : kind === 'hydra' ? packShrubLods(2, 0.74, () => Math.min(hiDist(), 30), farDist) : null; // (the flowering mounds read poorly beside the pack's shrubs: shrubs too)
   if (lods && kind === 'hedge') bushes = hedgeShrubs(bushes);
   if (lods) packTint(bushes); else lods = [{ dist: hiDist, parts: speciesParts(sp, M, hi, 0) }, { dist: farDist, parts: speciesParts(sp, M, lo, 1) }];
