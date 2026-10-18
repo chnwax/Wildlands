@@ -2123,6 +2123,42 @@
      "src": "illustrated_nature/tree_birch_02__lod2"
     },
     {
+     "id": "tr_il_birch_03",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_03"
+    },
+    {
+     "id": "tr_il_birch_03_l2",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_03__lod2"
+    },
+    {
+     "id": "tr_il_beech_02_dead",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_02_dead"
+    },
+    {
+     "id": "tr_il_beech_03_dead",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_beech_03_dead"
+    },
+    {
+     "id": "tr_il_birch_02_dead",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_02_dead"
+    },
+    {
+     "id": "tr_il_birch_03_dead",
+     "kind": "lod",
+     "category": "tree",
+     "src": "illustrated_nature/tree_birch_03_dead"
+    },
+    {
      "id": "tr_jp_garden",
      "kind": "lod",
      "category": "tree",

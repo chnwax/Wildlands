@@ -533,11 +533,15 @@ const SC_MOVE = 2, SC_BUDGET = 60000; // re-evaluate a straddling cell after the
 // A single-level scatter keeps whole-cell visibility (cells within the level's distance are drawn).
 const cp16 = (d, dk, s, si) => { for (let j = 0; j < 16; j++) d[dk + j] = s[si + j]; }, cp3 = (d, dk, s, si) => { d[dk] = s[si]; d[dk + 1] = s[si + 1]; d[dk + 2] = s[si + 2]; };
 export class Scatter {
-  // items: {x,y,z,s,sx?,sy?,r?,tilt?,tilt2?,c?}; lods: [{dist: () => metres, parts: [{geometry, material, tint?, castShadow?, depth?, receiveShadow?}]}]
+  // items: {x,y,z,s,sx?,sy?,r?,tilt?,tilt2?,c?,pv?}; lods: [{dist: () => metres, parts: [{geometry, material, tint?, castShadow?, depth?, receiveShadow?, pv?}]}]
+  // Model variants (sets with several levels): a part with pv belongs only to the items whose pv is that number — one
+  // set of instanced meshes per variant and cell — so one set (one world object numbering) can draw several models.
   constructor(items, lods, cellSize, origin = 4096) {
     this.items = items; this.lods = lods; this.id = scatters.length; this.multi = lods.length > 1;
     this.meta = scatterMetaStack.length ? scatterMetaStack[scatterMetaStack.length - 1] : null; // world objects (world/capture.js)
     const N = items.length;
+    let nv = 1; if (this.multi) for (const lod of lods) for (const p of lod.parts) if (p.pv !== undefined) nv = Math.max(nv, p.pv + 1);
+    this.nv = nv; this.pv = new Uint8Array(N); if (nv > 1) items.forEach((it, i) => { this.pv[i] = Math.min(nv - 1, it.pv || 0); });
     this.mat = new Float32Array(N * 16); this.scale = new Float32Array(N);
     items.forEach((it, i) => {
       _se.set(it.tilt || 0, it.r || 0, it.tilt2 || 0); _sq.setFromEuler(_se);
@@ -565,19 +569,22 @@ export class Scatter {
     // the far levels' cells are widened until a cell holds about 12k triangles: a draw call costs about as much GPU time
     // as that many off-screen triangles (measured), so sparse species and card levels share few wide cells while dense
     // stands keep the fine ones
-    let farTris = 0; for (let l = 1; l < lods.length; l++) for (const p of lods[l].parts) if (!p.shadowOnly) farTris += (p.geometry.index ? p.geometry.index.count : p.geometry.attributes.position.count) / 3;
-    const perCell = N * farTris / Math.max(1, this.fine.length), grow = Math.min(8, 2 ** Math.max(0, Math.floor(Math.log2(Math.sqrt(12000 / Math.max(perCell, 1))))));
+    let farTris = 0; for (let l = 1; l < lods.length; l++) for (const p of lods[l].parts) if (!p.shadowOnly) farTris += (p.geometry.index ? p.geometry.index.count : p.geometry.attributes.position.count) / 3 / (p.pv !== undefined ? nv : 1);
+    const perCell = N * farTris / Math.max(1, this.fine.length), grow = Math.min(8, 2 ** Math.max(0, Math.floor(Math.log2(Math.sqrt(12000 / Math.max(perCell, 1) * nv))))); // (model variants split a cell's draws: wider cells by as much)
     this.coarse = grow > 1 ? group(cellSize * grow) : this.fine.map(c => ({ ...c })); this.cells = this.coarse;
     this.lod = new Int8Array(N).fill(-2); this.slot = new Int32Array(N); this.fineOf = new Int32Array(N); this.coarseOf = new Int32Array(N);
-    this.fine.forEach((c, ci) => { for (const i of c.idx) this.fineOf[i] = ci; c.box = this._box(0, c.idx, false); c.box.tight = true; });
-    this.coarse.forEach((c, ci) => { for (const i of c.idx) this.coarseOf[i] = ci; c.boxes = lods.map((lod, l) => l === 0 ? null : this._box(l, c.idx, false)); c.uniform = -3; c.ex = c.ez = 1e9; });
-    this.boxes = []; for (const c of this.fine) this.boxes.push(c.box); for (const c of this.coarse) for (const b of c.boxes) if (b) this.boxes.push(b);
+    // (per variant: its items of the cell, so each set of meshes has its own capacity and bounds)
+    const byV = idx => nv === 1 ? [idx] : Array.from({ length: nv }, (_, v) => idx.filter(i => this.pv[i] === v));
+    this.fine.forEach((c, ci) => { for (const i of c.idx) this.fineOf[i] = ci; c.boxv = byV(c.idx).map((ix, v) => { if (!ix.length) return null; const b = this._box(0, ix, false, nv > 1 ? v : -1); b.tight = true; return b; }); c.box = c.boxv[0]; });
+    this.coarse.forEach((c, ci) => { for (const i of c.idx) this.coarseOf[i] = ci; const iv = byV(c.idx); c.boxes = lods.map((lod, l) => l === 0 ? null : iv.map((ix, v) => ix.length ? this._box(l, ix, false, nv > 1 ? v : -1) : null)); c.uniform = -3; c.ex = c.ez = 1e9; });
+    this.boxes = []; for (const c of this.fine) for (const b of c.boxv) if (b) this.boxes.push(b); for (const c of this.coarse) for (const bv of c.boxes) if (bv) for (const b of bv) if (b) this.boxes.push(b);
     this.D = new Float64Array(lods.length); this.Dkey = ''; this.primed = false;
     scatters.push(this);
   }
-  // a cell's draw list for one level: one instanced mesh per part over (at most) the items idx
-  _box(l, idx, full) {
-    const parts = this.lods[l].parts, n = idx.length;
+  // a cell's draw list for one level (and model variant v, or -1: every part): one instanced mesh per part over (at
+  // most) the items idx
+  _box(l, idx, full, v = -1) {
+    const parts = v < 0 ? this.lods[l].parts : this.lods[l].parts.filter(p => p.pv === undefined || p.pv === v), n = idx.length;
     const box = { l, parts, list: full ? idx : new Int32Array(n), n: full ? n : 0, dirty: [], tight: false, meshes: [] };
     for (const part of parts) {
       const im = new THREE.InstancedMesh(part.geometry, part.material, n);
@@ -638,7 +645,7 @@ export class Scatter {
     return sphere;
   }
   _lodOf(d) { const D = this.D; for (let l = 0; l < D.length; l++) if (d < D[l]) return l; return -1; }
-  _boxOf(i, l) { return l === 0 ? this.fine[this.fineOf[i]].box : this.coarse[this.coarseOf[i]].boxes[l]; }
+  _boxOf(i, l) { return l === 0 ? this.fine[this.fineOf[i]].boxv[this.pv[i]] : this.coarse[this.coarseOf[i]].boxes[l][this.pv[i]]; }
   update(x, z) {
     if (!this.multi) {
       for (const c of this.cells) {

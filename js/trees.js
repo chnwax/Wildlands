@@ -1070,20 +1070,26 @@ const PACK_TREES = {
   old: [['tr_wl_tree02'], ['tr_wl_tree03']],
   pine: [['tr_wl_tree02']],
   jpine: [['tr_jp_garden'], ['tr_jp_garden'], ['tr_jp_garden']],
-  snag: [['tr_il_pine_01_dead']],
-  broken: [['tr_il_pine_01_dead']],
-  leaf: [['tr_il_beech_01', 'tr_il_beech_01_l2'], ['tr_il_beech_03', 'tr_il_beech_03_l2']],
-  oak: [['tr_il_beech_02', 'tr_il_beech_02_l2']],
-  birch: [['tr_il_birch_01', 'tr_il_birch_01_l2']],
+  // (a variant listing several models: its items share them out by place, packAlt)
+  snag: [[['tr_il_pine_01_dead'], ['tr_il_beech_03_dead'], ['tr_il_birch_03_dead']]],
+  broken: [[['tr_il_pine_01_dead'], ['tr_il_beech_02_dead'], ['tr_il_birch_02_dead']]],
+  leaf: [[['tr_il_beech_01', 'tr_il_beech_01_l2'], ['tr_il_beech_02', 'tr_il_beech_02_l2']], [['tr_il_beech_03', 'tr_il_beech_03_l2'], ['tr_il_birch_03', 'tr_il_birch_03_l2']]],
+  oak: [[['tr_il_beech_02', 'tr_il_beech_02_l2'], ['tr_il_beech_01', 'tr_il_beech_01_l2']]],
+  birch: [[['tr_il_birch_01', 'tr_il_birch_01_l2'], ['tr_il_birch_02', 'tr_il_birch_02_l2'], ['tr_il_birch_03', 'tr_il_birch_03_l2']]],
   zelkova: [['tr_jp_tall_01'], ['tr_jp_tall_02'], ['tr_il_beech_02', 'tr_il_beech_02_l2']],
-  maple: [['tr_il_beech_01', 'tr_il_beech_01_l2'], ['tr_jp_tall_02']],
-  willow: [['tr_il_birch_02', 'tr_il_birch_02_l2']],
+  maple: [[['tr_il_beech_01', 'tr_il_beech_01_l2'], ['tr_il_beech_03', 'tr_il_beech_03_l2']], ['tr_jp_tall_02']],
+  willow: [[['tr_il_birch_02', 'tr_il_birch_02_l2'], ['tr_il_birch_03', 'tr_il_birch_03_l2']]],
   sakura: [['tr_jp_cherry'], ['tr_jp_cherry_02']],
 };
 const packTreeCache = new Map();
-// a model's own leaf tone where its shared material reads wrong on it: The Illustrated Nature's tall beech (its crown of
-// sunlit leaf cards came out neon in full sun) toned down toward an olive green, its lower level with it
-const TREE_TONE = { tr_il_beech_03: [0.55, [0.26, 0.38, 0.14], 0.35], tr_il_beech_03_l2: [0.55, [0.26, 0.38, 0.14], 0.35] };
+// a model's own leaf tone where its shared material reads wrong on it (none at present: The Illustrated Nature's tall
+// beech had one before IL_TONE toned the whole pack down)
+const TREE_TONE = {};
+// The Illustrated Nature's trees paint their leaves and bark with the material colour over a white mask: a lime green
+// and a ruddy orange that read neon in full sun beside the other packs. Natural colours instead: a summer beech green, a
+// slightly yellower birch, grey-brown bark, birch bark off-white (sRGB)
+const IL_TONE = { IL3DN_Tree_Beech_Leaf: 0x5c7a34, IL3DN_Tree_Birch_Leaf: 0x6a843a, IL3DN_Tree_Beech_Bark: 0x6a5f56, IL3DN_Tree_Pine_Bark: 0x675a50, IL3DN_Tree_Birch_Bark: 0x9d9a93 };
+const ilTone = (m, name) => { const c = IL_TONE[name.replace(/^pack:/, '')]; if (c !== undefined) m.color.setHex(c); return m; };
 // a pack model's parts at unit height (h: the height of the variant's near model, so its levels line up), with the
 // tree look: the foliage shading of the procedural trees (cloud shade, sunlight through the leaves, rim), the wind of
 // the species, wind-swayed alpha-tested shadows
@@ -1097,7 +1103,7 @@ function packTreeParts(id, h, sp, near) {
     const tone = /leaf/i.test(p.material.name) && TREE_TONE[id], mk = 'packTree|' + p.material.name + '|' + sp.mat + (tone ? '|' + id : '');
     let m = packTreeCache.get(mk), d = packTreeCache.get(mk + '|d');
     if (!m) {
-      m = p.material.clone(); const cut = m.alphaTest > 0;
+      m = ilTone(p.material.clone(), p.material.name); const cut = m.alphaTest > 0;
       m.roughness = 1; m.metalness = 0; m.envMapIntensity = 0.4;
       // (the cards' Unity tint belongs to the pack's two-tone shader; their texture is a bright mask: painted to the forest's
       // conifer or broadleaf green so the far hillsides keep the near trees' tone)
@@ -1115,23 +1121,33 @@ function packTreeParts(id, h, sp, near) {
   packTreeCache.set(key, parts);
   return parts;
 }
-// LOD levels for a species variant from the packs, or null (no library, or a species the packs do not replace)
+// LOD levels for a species variant from the packs, or null (no library, or a species the packs do not replace). A
+// variant may list several models: each item of it takes one by its place (packAlt), all drawn by the one set (model
+// variants, Scatter pv) so the items and their world ids stay as they were; lods.alts: how many
 function packTreeLods(kind, v, sp, hiD, loD) {
-  if (!packsReady()) return null;
+  const P = packsReady(); if (!P) return null;
   const vars = PACK_TREES[kind]; if (!vars) return null;
-  const [nearId, lowId] = vars[v % vars.length], P = packsReady(), dims = P.dims(nearId); if (!dims) return null;
-  const h = dims[1], near = packTreeParts(nearId, h, sp, true), low = lowId ? packTreeParts(lowId, h, sp, false) : near;
-  if (!near || !low) return null;
+  const e = vars[v % vars.length], alts = (Array.isArray(e[0]) ? e : [e]).filter(([n]) => P.dims(n)); if (!alts.length) return null;
+  const many = alts.length > 1, tag = (parts, j) => many ? parts.map(p => ({ ...p, pv: j })) : parts, anyLow = alts.some(a => a[1]);
+  const near = [], low = []; let imp = [];
+  for (const [j, [nearId, lowId]] of alts.entries()) {
+    const h = P.dims(nearId)[1], n = packTreeParts(nearId, h, sp, true), l = lowId ? packTreeParts(lowId, h, sp, false) : n;
+    if (!n || !l) return null;
+    near.push(...tag(n, j)); low.push(...tag(l, j));
+    const im = imp && packImpostor(nearId, h, sp); imp = im ? imp.concat(tag(im, j)) : null;
+  }
   // the model itself to 90 m (its lower level, where the pack has one, to 200 m), then the model's own picture (an
   // impostor drawn from it at load: the same silhouette, crown and colours) to the horizon
-  const d0 = () => Math.min(hiD(), lowId ? 90 : 200), d1 = () => Math.max(d0() + 1, Math.min(hiD(), 200));
-  const lods = lowId ? [{ dist: d0, parts: near }, { dist: d1, parts: low }] : [{ dist: d0, parts: near }];
-  const imp = packImpostor(nearId, h, sp);
+  const d0 = () => Math.min(hiD(), anyLow ? 90 : 200), d1 = () => Math.max(d0() + 1, Math.min(hiD(), 200));
+  const lods = anyLow ? [{ dist: d0, parts: near }, { dist: d1, parts: low }] : [{ dist: d0, parts: near }];
   if (imp) lods.push({ dist: () => Infinity, parts: imp });
   else { lods.push({ dist: () => Math.max(lods[lods.length - 1].dist() + 1, loD()), parts: speciesParts(sp, materials(sp.mat), sp.geo(1, v), 1) });
     if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, materials(sp.mat), sp.geo(2, v), 2) }); }
+  lods.alts = alts.length;
   return lods;
 }
+// which of n models an item takes: a hash of its place (no shared random draws, the same every build)
+const packAlt = (t, n) => Math.floor(Math.abs(Math.sin(t.x * 12.9898 + t.z * 78.233) * 43758.5453)) % n;
 // A pack tree's far level drawn from the model itself: K views round it rendered once into the tiles of two atlases —
 // its albedo (its own textures and colours, unlit) and its surface (the model's normals, and how much of the sun the
 // crown above leaves each leaf) — shown on one upright card through the trunk, turned toward the camera, blending the
@@ -1233,7 +1249,7 @@ function packImpostor(id, h, sp, twin = 0) {
   let leafCol = new THREE.Color(0.3, 0.42, 0.18);
   for (const p of src) {
     const tone = /leaf/i.test(p.material.name) && TREE_TONE[id];
-    const m = new THREE.MeshBasicMaterial({ map: p.material.map || null, color: p.material.color.clone(), alphaTest: p.material.alphaTest > 0 ? 0.5 : 0, side: THREE.DoubleSide });
+    const m = ilTone(new THREE.MeshBasicMaterial({ map: p.material.map || null, color: p.material.color.clone(), alphaTest: p.material.alphaTest > 0 ? 0.5 : 0, side: THREE.DoubleSide }), p.material.name);
     if (tone) m.color.multiplyScalar(tone[0]).lerp(new THREE.Color(...tone[1]), tone[2]);
     if (sp.mat === 'bush') m.color.multiplyScalar(0.62).lerp(new THREE.Color(0.42, 0.48, 0.3), 0.25); // (as the near shrubs are toned)
     if (/card/i.test(p.material.name)) continue;
@@ -1355,7 +1371,7 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
     const hiD = sp.short ? () => Q.ferns * 0.5 : sp.tiny ? () => Q.ferns * 1.1 : sp.small ? () => Q.treeHi * 0.55 : sp.mat === 'fir' ? () => Math.min(hiDist(), Q.treeHi * 0.6) : sp.hiScale ? () => hiDist() * sp.hiScale : hiDist;
     const loD = sp.short ? () => Q.ferns * 1.1 : sp.tiny ? () => Q.treeHi * 0.7 : sp.small ? () => Q.trees * 0.3 : sp.farCards ? () => Math.min(farDist(), 700) : farDist; // (bamboo: its cards from 700 m, where a clump is a few pixels)
     let lods = !sp.tiny && !sp.short && packTreeLods(kind, v, sp, hiD, loD);
-    if (lods) packTint(list, sp);
+    if (lods) { packTint(list, sp); if (lods.alts > 1) for (const t of list) t.pv = packAlt(t, lods.alts); }
     else { lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
       if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) }); }
     if ((MATS[sp.mat] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true; // wind-swayed: shadows redrawn near (sky.js)
