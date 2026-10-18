@@ -12,6 +12,7 @@ import { THREE, scene, scatters, props, setPropMatrix, colRemove, colInsert, all
 import { buildCityLights } from '../citylights.js';
 import { CAP, owner as meshOwner } from './capture.js';
 import * as F from './format.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { catalogSet, catalogPrefabs, inCatalog } from './catalog.js';
 
 const DEG = Math.PI / 180, RAD = 180 / Math.PI;
@@ -62,6 +63,7 @@ export async function finalizeWorld(opts) {
   L.collect();
   await L.loadFiles();
   L.applyAll();
+  if (!opts.editor) L.bakeDetached();
   return L;
 }
 
@@ -759,6 +761,55 @@ export class WorldLayer {
     }
     this.applied = n;
     if (this.problems.length) for (const q of this.problems) (q.level === 'error' ? console.error : console.warn)('World data: ' + F.formatProblem(q));
+  }
+  // In the game (nothing is edited there): the edited objects' detached parts merged back into few draws. Their mesh parts
+  // by material, attribute layout and 128 m cell (detail parts keep their LOD distance, in one merged mesh per distance),
+  // their instanced parts (props, the copies of edited trees and bushes) by model, material and 128 m cell into one
+  // instanced mesh each. 250 edited objects then cost tens of draws instead of thousands. Loose meshes (signs, clocks,
+  // lamps that swap materials) and hidden parts are left as they are; colliders and lamps are untouched.
+  bakeDetached() {
+    const meshG = new Map(), instG = new Map(), C = 128, _w = new THREE.Matrix4(), _i = new THREE.Matrix4(), _c = new THREE.Color(), _p = new THREE.Vector3();
+    let nIn = 0;
+    for (const ent of this.ents.values()) {
+      const det = ent.det; if (!det || !det.group.parent) continue;
+      det.group.updateMatrixWorld(true);
+      for (const p of det.parts) {
+        const m = p.mesh; if (!m || p.loose || !m.parent || Array.isArray(m.material)) continue;
+        if (!m.visible || m.userData.partHidden || m.layers.mask === 0) { m.parent.remove(m); continue; } // (hidden in the edit: gone)
+        const g = m.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+        _p.copy(g.boundingSphere.center).applyMatrix4(m.matrixWorld);
+        const cell = Math.floor(_p.x / C) + ',' + Math.floor(_p.z / C), flags = (m.castShadow ? 1 : 0) + (m.receiveShadow ? 2 : 0) + '|' + m.layers.mask + '|' + m.renderOrder;
+        if (m.isInstancedMesh) {
+          const key = g.uuid + '|' + m.material.uuid + '|' + flags + '|' + (m.customDepthMaterial ? m.customDepthMaterial.uuid : '') + '|' + cell;
+          let q = instG.get(key); if (!q) instG.set(key, q = { g, mat: m.material, src: m, mats: [], cols: m.instanceColor ? [] : null });
+          for (let k = 0; k < m.count; k++) { m.getMatrixAt(k, _i); q.mats.push(_w.multiplyMatrices(m.matrixWorld, _i).clone());
+            if (q.cols) { m.getColorAt(k, _c); q.cols.push(_c.clone()); } }
+        } else {
+          const sig = Object.keys(g.attributes).sort().join(',') + '|' + (g.index ? 'i' : 'n'), lod = m.userData.lodDist || 0;
+          const key = m.material.uuid + '|' + sig + '|' + flags + '|' + lod + '|' + cell;
+          let q = meshG.get(key); if (!q) meshG.set(key, q = { mat: m.material, src: m, lod, geos: [] });
+          q.geos.push(g.clone().applyMatrix4(m.matrixWorld));
+        }
+        const i = this.detLod.indexOf(m); if (i >= 0) this.detLod.splice(i, 1);
+        m.parent.remove(m); nIn++;
+      }
+    }
+    let nOut = 0;
+    for (const q of meshG.values()) {
+      const g = q.geos.length === 1 ? q.geos[0] : mergeGeometries(q.geos); if (!g) continue;
+      g.computeBoundingSphere(); const m = new THREE.Mesh(g, q.mat);
+      m.castShadow = q.src.castShadow; m.receiveShadow = q.src.receiveShadow; m.layers.mask = q.src.layers.mask; m.renderOrder = q.src.renderOrder; m.userData.baked = true;
+      m.matrixAutoUpdate = false; if (q.lod) { m.userData.lodDist = q.lod; this.detLod.push(m); }
+      scene.add(m); nOut++;
+    }
+    for (const q of instG.values()) {
+      const m = new THREE.InstancedMesh(q.g, q.mat, q.mats.length);
+      q.mats.forEach((M, k) => m.setMatrixAt(k, M)); if (q.cols) q.cols.forEach((c, k) => m.setColorAt(k, c));
+      m.castShadow = q.src.castShadow; m.receiveShadow = q.src.receiveShadow; m.layers.mask = q.src.layers.mask; m.renderOrder = q.src.renderOrder;
+      if (q.src.customDepthMaterial) m.customDepthMaterial = q.src.customDepthMaterial; m.userData.sways = q.src.userData.sways; m.userData.baked = true;
+      m.matrixAutoUpdate = false; m.computeBoundingSphere(); scene.add(m); nOut++;
+    }
+    console.info(`world: ${nIn} parts of edited objects drawn as ${nOut}`);
   }
   // one record of an edit file: an override of a generated object, or an added object
   applyRecord(rec) {

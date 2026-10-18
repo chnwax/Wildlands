@@ -31,6 +31,7 @@ import { perf } from './perf.js';
 import { startCapture, stopCapture, entity } from './world/capture.js';
 import { finalizeWorld } from './world/layer.js';
 import { windFarm } from './windfarm.js';
+import { distCull } from './distcull.js';
 
 export const meta = { name: 'Sakuragawa 桜川', startHour: 16.6, sunAzimuth: 2.6 };
 const Y0 = 6;
@@ -1708,7 +1709,7 @@ export async function build(progress, opts = {}) {
   { // the props of daily life from the clutter pack (yards, streets): one instanced world object kind per prop
     const CP = await clutterP;
     if (CP) { const all = new Map(clutterQueue); for (const [name, items] of yardProps) all.set(name, [...(all.get(name) || []), ...items]);
-      for (const [name, items] of all) clutterScatter(CP, name, items, { dist: 70 * Q.props + 10 }); }
+      for (const [name, items] of all) clutterScatter(CP, name, items, { dist: 0.27 * Q.props + 10 }); } // (about 80 m on High: the old 70 x Q.props drew rakes and barrels from 18 km)
     clutterQueue.clear();
   }
   { // the town dressed from the model packs where each kind of place is missing something (dress.js), then every pack model
@@ -1881,6 +1882,7 @@ export async function build(progress, opts = {}) {
       perf.begin(PW.lod); updateLod(cam); cullProps(cam); perf.end(PW.lod);
       perf.begin(PW.crops); updateCrops(cam); perf.end(PW.crops);
       perf.begin(PW.props); landmarks.update(); parkBenches.update(); danchiBenches.update(); perf.end(PW.props);
+      if (SIM) distCull(cam);
       if (!SIM) { fleet.commit(cam.position, cam); cityLightU.uCLI.value = smoothstep(0.2, 0.5, night.value); return; } // editor: static scenery only
       perf.begin(PW.people); people.update(dt); perf.end(PW.people);
       const pl = _pl; pl.x = cam.position.x; pl.y = cam.position.y - 1.6; pl.z = cam.position.z;
