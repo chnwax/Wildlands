@@ -705,10 +705,10 @@ export class Scatter {
 // adverts — are collected while the map is built and drawn as one instanced mesh per part, material and 512 m cell
 // (flushProps). Each placed prop keeps an id: props.items[id] = {kind, parts: [{mesh, instance}]} once flushed, with its
 // world matrix per part, so it can still be picked and edited (setPropMatrix).
-// Parts with a `near` distance (small things: a shop's stools, bowls, bottles, flower pots) are grouped in 64 m cells and
+// Parts with a `near` distance (small things: a shop's stools, bowls, bottles, flower pots) are grouped in 128 m cells and
 // drawn only while the camera is within that distance of the cell (cullProps, every frame).
 export const props = { groups: new Map(), items: [], flushed: false, near: [] };
-const PROP_CELL = 512, NEAR_CELL = 64;
+const PROP_CELL = 512, NEAR_CELL = 128;
 export function addProp(kind, parts) { // parts: [{geometry, material, matrix (world), castShadow?, receiveShadow?, near?}]
   const id = props.items.length, item = { id, kind, parts: [] };
   props.items.push(item);

@@ -109,7 +109,10 @@ export function packProp(id, x, y, z, r = 0, s = 1, tilt = null) {
   _e.set(tilt ? tilt[0] : 0, r, tilt ? tilt[1] : 0); _q.setFromEuler(_e);
   if (Array.isArray(s)) _s.set(s[0], s[1], s[2]); else _s.setScalar(s);
   _m.compose(_p.set(x, y, z), _q, _s);
-  return addProp('pack:' + id, m.parts.map(p => ({ geometry: p.geometry, material: p.material, matrix: _m, castShadow: p.castShadow !== false && m.dims[1] * (Array.isArray(s) ? s[1] : s) > 0.5 })));
+  // (small things are drawn near only: an AC unit, a meter, a pot or a mailbox covers a pixel or two past ~110 m; things
+  // up to 2.5 m to ~220 m; larger ones as far as the frustum and the distance culler let them)
+  const k = Array.isArray(s) ? Math.max(...s) : s, size = Math.max(...m.dims) * k, near = size < 1.2 ? 110 : size < 2.5 ? 220 : 0;
+  return addProp('pack:' + id, m.parts.map(p => ({ geometry: p.geometry, material: p.material, matrix: _m, castShadow: p.castShadow !== false && m.dims[1] * (Array.isArray(s) ? s[1] : s) > 0.5, near })));
 }
 // a building's dressing kit (packs-kits.mjs) as props of the object being built: the building stands at (x, y, z) turned
 // r, scaled s ([sx, sy, sz]); each prop goes where the kit puts it in the building's frame, turned with it, at su x its

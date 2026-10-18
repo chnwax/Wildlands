@@ -1140,6 +1140,7 @@ function packImpostor(id, h, sp) {
     const tone = /leaf/i.test(p.material.name) && TREE_TONE[id];
     const m = new THREE.MeshBasicMaterial({ map: p.material.map || null, color: p.material.color.clone(), alphaTest: p.material.alphaTest > 0 ? 0.5 : 0, side: THREE.DoubleSide });
     if (tone) m.color.multiplyScalar(tone[0]).lerp(new THREE.Color(...tone[1]), tone[2]);
+    if (sp.mat === 'bush') m.color.multiplyScalar(0.62).lerp(new THREE.Color(0.42, 0.48, 0.3), 0.25); // (as the near shrubs are toned)
     if (/card/i.test(p.material.name)) continue;
     if (p.material.alphaTest > 0) leafCol = m.color.clone();
     const g = p.geometry.clone().scale(1 / h, 1 / h, 1 / h); g.computeBoundingBox(); box.union(g.boundingBox);
@@ -1207,13 +1208,13 @@ export function buildTrees(trees, { hiDist = () => Q.treeHi, farDist = () => Q.t
     const [kind, vs] = k.split('|'), v = +vs, sp = SPECIES[kind], M = materials(sp.mat);
     // conifer tiers past ~300 m read the same with 9 segments as with 16: the detailed set stays close
     const hiD = sp.short ? () => Q.ferns * 0.5 : sp.tiny ? () => Q.ferns * 1.1 : sp.small ? () => Q.treeHi * 0.55 : sp.mat === 'fir' ? () => Math.min(hiDist(), Q.treeHi * 0.6) : sp.hiScale ? () => hiDist() * sp.hiScale : hiDist;
-    const loD = sp.short ? () => Q.ferns * 1.1 : sp.tiny ? () => Q.treeHi * 0.7 : sp.small ? () => Q.trees * 0.3 : farDist;
+    const loD = sp.short ? () => Q.ferns * 1.1 : sp.tiny ? () => Q.treeHi * 0.7 : sp.small ? () => Q.trees * 0.3 : sp.farCards ? () => Math.min(farDist(), 700) : farDist; // (bamboo: its cards from 700 m, where a clump is a few pixels)
     let lods = !sp.tiny && !sp.short && packTreeLods(kind, v, sp, hiD, loD);
     if (lods) packTint(list, sp);
     else { lods = [{ dist: hiD, parts: speciesParts(sp, M, sp.geo(0, v), 0) }, { dist: loD, parts: speciesParts(sp, M, sp.geo(1, v), 1) }];
       if (!sp.small) lods.push({ dist: () => Infinity, parts: speciesParts(sp, M, sp.geo(2, v), 2) }); }
     if ((MATS[sp.mat] || MATS.leaf).sway > 0) for (const lod of lods) for (const part of lod.parts) part.sway = true; // wind-swayed: shadows redrawn near (sky.js)
-    withScatterMeta({ prefab: TREE_PREFAB[kind] || 'tree_' + kind, category: 'vegetation', field: sp.tiny || kind === 'twigs' ? 'forest_floor' : null }, () => new Scatter(list, lods, sp.tiny ? 128 : cell));
+    withScatterMeta({ prefab: TREE_PREFAB[kind] || 'tree_' + kind, category: 'vegetation', field: sp.tiny || kind === 'twigs' ? 'forest_floor' : null }, () => new Scatter(list, lods, sp.tiny ? 128 : sp.farCards ? 512 : cell) /* (bamboo: nine variants, groves all over the map — wider cells, a quarter of the draws) */);
     if (colliders && sp.trunk) for (const t of list) { const r = sp.trunk * t.s * (t.sx || 1); if (r > 0.07) addCircle(t.x, t.z, r + 0.05); }
   }
 }
@@ -1360,10 +1361,14 @@ const PACK_SHRUBS = [['tr_il_shrub_01_l1', 'tr_il_shrub_01_l3'], ['tr_il_shrub_0
 export function packShrubLods(i, hs, nearD, farD, shadow = true, shape = null, nearLevel = 'l1') {
   const P = packsReady(); if (!P) return null;
   const [a0, b] = PACK_SHRUBS[i % PACK_SHRUBS.length], a = a0.replace(/_l1$/, '_' + nearLevel), dims = P.dims(a0); if (!dims || !P.dims(a)) return null;
-  const sp = { mat: 'bush' }, h = dims[1] / hs, near = packTreeParts(a, h, sp, true), far = packTreeParts(b, h, sp, false);
+  const sp = { mat: 'bush' }, h = dims[1] / hs, near = packTreeParts(a, h, sp, true), far = packTreeParts(b, h, sp, false), imp = packImpostor(a0, h, sp);
   if (!near || !far) return null;
   const sh = q => shape ? (() => { const k = 'shape|' + q.geometry.uuid + '|' + shape.join(','); if (!packTreeCache.has(k)) { const g = q.geometry.clone().scale(...shape); g.computeBoundingSphere(); g.computeBoundingBox(); packTreeCache.set(k, g); } return packTreeCache.get(k); })() : q.geometry;
-  return [{ dist: nearD, parts: near.map(p => ({ ...p, geometry: sh(p), castShadow: shadow })) }, { dist: farD, parts: far.map(p => ({ ...p, geometry: sh(p), castShadow: false, sway: false })) }]; // (past the near level: no shadow, no sway)
+  // the near level, the low level (no shadow, no sway) to 90 m, then the shrub's own picture (impostor) to the far distance
+  const lods = [{ dist: nearD, parts: near.map(p => ({ ...p, geometry: sh(p), castShadow: shadow })) }];
+  if (imp) lods.push({ dist: () => Math.max(nearD() + 1, 90), parts: far.map(p => ({ ...p, geometry: sh(p), castShadow: false, sway: false })) }, { dist: farD, parts: imp.map(p => ({ ...p, geometry: sh(p) })) });
+  else lods.push({ dist: farD, parts: far.map(p => ({ ...p, geometry: sh(p), castShadow: false, sway: false })) });
+  return lods;
 }
 export const shrubTint = list => packTint(list);
 // a hedge's segments drawn with the pack's round shrub: a segment stretched long and low (a low hedge's sx up to 2.4)

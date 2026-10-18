@@ -613,11 +613,11 @@ export function followCamera(groundAt, yaw) {
   for (let i = 0; i < cascades.length; i++) {
     const l = cascades[i], half = Q.csm[i][0], size = Q.csm[i][1], rate = Q.csmRate[i] || 1, cached = cacheReady;
     if (!cached && csmFrame % rate !== i % rate && l.shadow.map) continue;
-    // cached cascades keep the direction they were aimed in until the view turns 25 degrees away from it: aimed anew on
+    // cached cascades keep the direction they were aimed in until the view turns 45 degrees away from it: aimed anew on
     // every turn, all four boxes moved with each frame of a fast turn and were redrawn continuously; the forward reach
-    // given up is under 5 % of a box
+    // given up is about 6 % of a box
     let ax = fx, az = fz;
-    if (cached) { const A = aim[i]; if (!A.set || A.x * fx + A.z * fz < 0.906) { A.x = fx; A.z = fz; A.set = true; } ax = A.x; az = A.z; }
+    if (cached) { const A = aim[i]; if (!A.set || A.x * fx + A.z * fz < 0.707) { A.x = fx; A.z = fz; A.set = true; } ax = A.x; az = A.z; }
     const center = snapV.set(c.x + ax * half * 0.5, 0, c.z + az * half * 0.5);
     center.y = groundAt(center.x, center.z);
     center.applyMatrix4(lsInv);
