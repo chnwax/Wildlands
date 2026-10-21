@@ -739,6 +739,13 @@ function packShopModel(s) {
   return P;
 }
 const PLACED_SHOPS = [];
+// Every shop as the game's shopkeepers and counters use it (shops.js): its trade (SHOP_NAMES' number, or 'konbini'),
+// where its shopkeeper stands and faces (behind the counter of the pack's building where its kit has one, inside the
+// shopfront otherwise; outside by the door of a drawn shop, whose interior is painted) and where a customer stands to be
+// served (outside, at the middle of the front); closed: a drawn shop with its shutter down
+export const SHOP_SITES = [];
+// [x, z] in the pack model's own frame: where its kit's counter has the shopkeeper
+const KEEPER_AT = { jp_ramenshop: [-0.6, -0.25], jp_shop_building_05: [0.25, -2.45], jp_store_rowbuilding_03: [-0.64, -1.25], jp_store_rowbuilding_02: [1.19, -0.45], jp_convenience_store: [-3.9, 2.3] };
 // wall colours for the pack buildings (their plaster and concrete multiplied): white, warm cream, pale blue-grey, sage,
 // blush, sand, darker grey — one per lot, so neighbouring copies of a model do not read as copies
 const SHOP_TINTS = [[1, 1, 1], [1.0, 0.94, 0.84], [0.86, 0.92, 0.98], [0.88, 0.95, 0.86], [1.0, 0.9, 0.88], [0.96, 0.9, 0.78], [0.78, 0.79, 0.82]];
@@ -746,17 +753,25 @@ const tintCache = new Map();
 const tinted = (m, k) => { if (!k || !/base_wall|concrete_assets|roof_base/.test(m.name)) return m; const key = m.uuid + '|' + k;
   if (!tintCache.has(key)) { const c = m.clone(); c.color.multiply(new THREE.Color(...SHOP_TINTS[k])); c.name = m.name; tintCache.set(key, c); } return tintCache.get(key); };
 function shopBuilding_build(B, s, rng, extras) {
-  const P = packShopModel(s);
-  if (!P) return shopBuildingDrawn(B, s, rng, extras);
+  const P = packShopModel(s), site = { trade: P && P[0] === PACK_SHOPS.konbini[0] ? 'konbini' : tradeOf(s), closed: false };
+  if (!P) {
+    const out = shopBuildingDrawn(B, s, rng, extras);
+    const { r, w, d } = s; B.frame(s.x, s.y, s.z, r);
+    const k = B.P([w / 2 - 1.3, 0.12, d / 2 + 0.6]); site.keeper = { x: k[0], y: k[1], z: k[2], yaw: r - 0.5 }; site.closed = !!s.closed;
+    const dp = B.P([0, 0, d / 2 + 1.4]); site.door = { x: dp[0], z: dp[2], yaw: r };
+    if (!COL_OFF.on) SHOP_SITES.push(site);
+    return out;
+  }
   // the drawn shop is built once off-site and thrown away (no geometry, props, colliders, lamps or meshes kept), so the
   // town's draws of rng and deco run exactly as they did: everything built after the shops keeps its place and its id
   offsite(B2 => shopBuildingDrawn(B2, s, rng, []));
-  packShopBuilding(B, s, P, extras);
+  packShopBuilding(B, s, P, extras, site);
+  if (!COL_OFF.on) SHOP_SITES.push(site);
 }
 // a pack shop building on the lot, its front on the lot's street edge, scaled to the frontage (a little, and a little
 // wider than tall at most); the foundation slab as the drawn shop has it (the World Builder's edits of it still apply),
 // a projecting sign with the trade's name at the front corner, a menu board or A-board out front, a light at the door
-function packShopBuilding(B, s, [id, mw, mh, md], extras) {
+function packShopBuilding(B, s, [id, mw, mh, md], extras, site = {}) {
   const { x, y, z, r, w, d } = s, W = w - 0.1, t = tradeOf(s), own = mulberry32((Math.floor(x * 31) * 7919 + Math.floor(z * 17) * 104729) >>> 0);
   B.frame(x, y, z, r);
   B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
@@ -778,6 +793,9 @@ function packShopBuilding(B, s, [id, mw, mh, md], extras) {
     if (framePack(B, bid, bx, 0.12, d / 2 + 0.55, (own() - 0.5) * 0.6, 0.95) !== null) { const p = B.P([bx, 0, d / 2 + 0.55]); addCircle(p[0], p[2], 0.3); } }
   lampPoints.push({ p: B.P([0, 2.9, d / 2 + 0.8]), s: 0.8 });
   extras.push({ t: 'box', p: B.P([0, 0, zc]), hx: BW / 2, hz: D / 2, r });
+  const [kx, kz] = KEEPER_AT[id] || [0, md / 2 - 2.2], kp = B.P([kx * su * sx, 0.06, zc + kz * D / md]);
+  site.keeper = { x: kp[0], y: kp[1], z: kp[2], yaw: r }; site.inside = true;
+  const dp = B.P([0, 0, d / 2 + 1.4]); site.door = { x: dp[0], z: dp[2], yaw: r };
 }
 function shopBuildingDrawn(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
@@ -792,7 +810,7 @@ function shopBuildingDrawn(B, s, rng, extras) {
   B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
   const para = type === 'flat' ? 0.6 : 0, winY = type === 'machiya' ? 1.45 : 0.9, winH = type === 'machiya' ? 1.0 : 1.3, signY = type === 'machiya' ? fh + 0.45 : 3.02;
   const tradeIdx = Math.floor(mulberry32(Math.floor(x * 131 + z * 71) | 0)() * SHOP_NAMES.length), interior = (SHOP_INTERIOR[tradeIdx] + 0.5) / 8;
-  const closed = rng() < 0.3, frameC = pick(rng, [[0.78, 0.8, 0.82], [0.3, 0.3, 0.32], [0.55, 0.42, 0.3]]);
+  const closed = rng() < 0.3; s.closed = closed; const frameC = pick(rng, [[0.78, 0.8, 0.82], [0.3, 0.3, 0.32], [0.55, 0.42, 0.3]]);
   const sf = { x0: -W / 2 + 0.35, x1: W / 2 - 0.35, y0: 0.12, y1: 2.75, d: 0.32 };
   const holes = [[sf], [], [], []], wins = [[], [], [], []];
   for (let f = 1; f < floors; f++) {
@@ -981,6 +999,9 @@ function konbini_build(B, s, rng, extras) {
   });
   for (let i = 0; i < 5; i++) inFrame(B, [-w / 2 + 2.5 + i * 1.3, 0, -d / 4], 0, () => acUnit(B, 0, H + 0.03, rng, { pipeTo: H + 0.4 }));
   if (dress) { const bwid = (gl.x1 - gl.x0) / 6; konbiniDress(B, { w, d, H, gl, sideWin, glassZ: d / 2 - gl.d + 0.04, dx: gl.x0 + 1.5 * bwid, bwid, bins }); }
+  { // the till: the shopkeeper behind the counter by the door (konbini.js), the customer at the door
+    const ix = w / 2 - 0.25, bwid = (gl.x1 - gl.x0) / 6, k = B.P([-ix + 1.05, 0.12, 2.75]), dp = B.P([gl.x0 + 1.5 * bwid, 0, d / 2 + 1.3]);
+    if (!COL_OFF.on) SHOP_SITES.push({ trade: 'konbini', closed: false, inside: true, keeper: dress ? { x: k[0], y: k[1], z: k[2], yaw: r + Math.PI / 2 } : null, door: { x: dp[0], z: dp[2], yaw: r } }); }
   lampPoints.push({ p: B.P([0, 2.6, d / 2 + 2]), s: 1.4 }, { p: B.P([-w / 3, 2.6, d / 2 + 2]), s: 1.2 }, { p: B.P([w / 3, 2.6, d / 2 + 2]), s: 1.2 });
   extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
 }

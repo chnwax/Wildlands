@@ -27,6 +27,7 @@ const TIPS = [
   ['[ ]', 'move the clock half an hour back or forward'],
   ['T', 'stop or restart time'],
   ['B', 'open the World Builder exactly where you are looking'],
+  ['E', 'buy at a shop counter or a vending machine · I or Tab for your bag'],
   ['1 – 5', 'change the graphics quality at any moment'],
   ['H', 'hide the clock for clean screenshots'],
   ['Shift', 'sprint · C to crouch · Space to jump'],

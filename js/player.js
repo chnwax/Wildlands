@@ -6,7 +6,7 @@ import { audio } from './audio.js';
 
 export const keys = {};
 export const player = { pos: new THREE.Vector3(), vy: 0, yaw: 0, pitch: 0, onGround: true, fly: false, swim: false, crouch: 0,
-  stepPhase: 0, land: 0, speed: 0, vel: new THREE.Vector3(), sens: 1 };
+  stepPhase: 0, land: 0, speed: 0, vel: new THREE.Vector3(), sens: 1, boost: 1 }; // (boost: a meal or a drink's quicker step, items.js)
 const EYE = 1.68;
 const _n = new THREE.Vector3(), fwd = new THREE.Vector3(), right = new THREE.Vector3(), tgt = new THREE.Vector3(), dir = new THREE.Vector3();
 
@@ -36,6 +36,7 @@ export function updatePlayer(world, dt) {
   player.crouch = lerp(player.crouch, crouch ? 1 : 0, 1 - Math.exp(-dt * 10));
   let speed = player.swim ? (sprint ? 3.2 : 2.0) : crouch ? 1.6 : sprint ? 8.2 : 4.1;
   if (!player.swim && depth > 0) speed *= lerp(1, 0.5, clamp(depth / 1.3, 0, 1));
+  if (!player.swim) speed *= player.boost;
   tgt.set(0, 0, 0).addScaledVector(fwd, iz * speed).addScaledVector(right, ix * speed);
   const accel = player.onGround || player.swim ? 10 : 2;
   player.vel.x = lerp(player.vel.x, tgt.x, 1 - Math.exp(-dt * accel));

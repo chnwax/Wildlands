@@ -21,6 +21,7 @@ import { farmstead } from './farmstead.js';
 import { dressTown } from './dress.js';
 import { loadPeople } from './crowd.js';
 import { buildNavGraph, collectPOIs, Pedestrians } from './pedestrians.js';
+import { buildShops } from './shops.js';
 import { setTownGlow } from './sky.js';
 import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signalMast, pedSignal, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin, canvasTex } from './townkit.js';
@@ -1915,7 +1916,10 @@ export async function build(progress, opts = {}) {
     const pois = collectPOIs(G, layer, [{ type: 'station', x: -2.5, z: -62.4, yaw: Math.PI }]);
     const carNear = (x, z, r) => traffic.movers.some(m => { const dx = x - m.wx, dz = z - m.wz; return dx * dx + dz * dz < r * r && m.v > 0.4 && dx * (m.hx || 0) + dz * (m.hz || 0) > -3; });
     const count = { low: 120, medium: 200, high: 280, ultra: 360, extreme: 440 }[Q.name] || 280;
-    people = new Pedestrians({ G, pois, people: await loadPeople(), groundAt: (x, z) => world.groundAt(x, z), pedSignal: g => signals.ped(g), carNear, railClosed: xingClosed, count });
+    // shops with their counters and shopkeepers, the vending machines (shops.js, items.js)
+    world.shops = buildShops({ layer });
+    people = new Pedestrians({ G, pois, people: await loadPeople(), groundAt: (x, z) => world.groundAt(x, z), pedSignal: g => signals.ped(g), carNear, railClosed: xingClosed, count, keepers: world.shops.keepers });
+    world.shops.onGreet = k => people.greet(k);
     console.info(`pedestrians: graph ${G.x.length} nodes, ${G.edges.length} edges, ${G.compSize.filter(n => n > 60).length} networks; ${pois.length} places (${Object.entries(people.byType).map(([k, v]) => k + ' ' + v.length).join(', ')}); ${count} people`);
   } catch (e) { console.warn('pedestrians failed', e); }
   people.update(0);

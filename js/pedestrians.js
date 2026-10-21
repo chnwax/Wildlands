@@ -234,6 +234,15 @@ export class Pedestrians {
         home: this.homes.length ? this.homes[Math.floor(rng() * this.homes.length)] : null, on: false, x: 0, z: 0, y: 0, yaw: 0, v: 0, lat: 0.3, latT: 0.3,
         route: null, ri: 0, poi: null, mode: 'off', t: 0, trips: 0, a: CLIP.idle, ta: rng(), b: CLIP.idle, tb: 0, w: 0, wt: 0, phase: rng(), lead: null, mate: null, far: 0, sitY: 0 });
     }
+    // the shopkeepers (shops.js): standing at their counters while the shop is open, idle, a wave for a customer
+    this.keepers = [];
+    for (const K of o.keepers || []) {
+      const pool = K.woman && women.length ? women : men, h = Math.abs(Math.floor(K.x * 7.3 + K.z * 11.7)), m = pool[h % pool.length], M = P[m];
+      const cols = M.id === 'man_suit' ? [-1, -1, crowdPack(HAIR[h % 6])] : [crowdPack(K.shirt), crowdPack(PANTS[h % PANTS.length]), crowdPack(HAIR[h % 6])];
+      const A = { i: this.agents.length, m, M, kind: 'keeper', cols, woman: M.id === 'casual' || M.id === 'formal', scale: 0.98, speed: 0, home: null, on: false, x: K.x, z: K.z, y: K.y, yaw: K.yaw, v: 0, lat: 0, latT: 0,
+        route: null, ri: 0, poi: null, mode: 'keeper', t: 0, trips: 0, a: CLIP.idle, ta: (h % 97) / 97, b: CLIP.idle, tb: 0, w: 1, wt: 0, phase: 0, lead: null, mate: null, far: 0, sitY: 0, K, greet: 0 };
+      this.agents.push(A); this.keepers.push(A);
+    }
     const cap = P.map(() => 0); for (const a of this.agents) cap[a.m]++;
     this.crowd = crowdMeshes(P, cap); this.meshes = this.crowd.meshes;
     this.grid = new Map(); this.queue = []; this.spawnAcc = 0; this.first = true;
@@ -313,7 +322,7 @@ export class Pedestrians {
     const G = this.G, px = cam.position.x, pz = cam.position.z, ag = this.agents;
     // how many should be out now, and new ones stepping out near the player
     const target = Math.round(ag.length * density(time.hour));
-    let on = 0; for (const A of ag) if (A.on) on++;
+    let on = 0; for (const A of ag) if (A.on && A.mode !== 'keeper') on++;
     if (this.first) { this.first = false; for (const A of ag) { if (on >= target) break; if (!A.on && A.mode === 'off' && this.spawn(A, px, pz, true)) on += A.mate ? 2 : 1; } }
     this.spawnAcc = Math.min(4, this.spawnAcc + dt * 3);
     while (on < target && this.spawnAcc >= 1) { this.spawnAcc--; const A = ag.find(b => !b.on && b.mode === 'off'); if (!A) break; if (this.spawn(A, px, pz, false)) on += A.mate ? 2 : 1; }
@@ -322,6 +331,7 @@ export class Pedestrians {
     for (const A of ag) if (A.on) { const k = (Math.floor(A.x / 3) + 2048) * 4096 + Math.floor(A.z / 3) + 2048; let L = grid.get(k); if (!L) grid.set(k, L = []); L.push(A); }
     this.plans = 0;
     for (const A of ag) {
+      if (A.mode === 'keeper') { A.on = A.K.open(); if (A.on && hyp(A.x - px, A.z - pz) < 300) this.keep(A, dt); continue; }
       if (!A.on) continue;
       const d = hyp(A.x - px, A.z - pz);
       // far away: every fourth frame; very far and done: home
@@ -333,6 +343,13 @@ export class Pedestrians {
     this.draw(cam);
   }
 
+  // a shopkeeper's frame: at the counter, now and then a look round, a wave (or a nod) for a customer
+  keep(A, dt) {
+    if (A.K.ground && !A.gy) { A.y = this.groundAt(A.x, A.z); A.gy = true; }
+    if (A.greet > 0) { A.greet -= dt; const talk = A.M.has('talk'); this.anim(A, talk ? CLIP.talk : CLIP.idle, dt, talk ? dt / A.M.dur('talk') : 0); return; }
+    this.anim(A, CLIP.idle, dt, 0);
+  }
+  greet(k) { const A = this.keepers[k]; if (A) A.greet = 2.2; }
   // one agent's frame
   step(A, dt, dist, px, pz, near) {
     const G = this.G;

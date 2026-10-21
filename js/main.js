@@ -11,6 +11,7 @@ import { perf, toggleOverlay } from './perf.js';
 import { colliderView } from './coldebug.js';
 import { mapFromURL, loadWorld, prepareWorld, renderWorld, setQuality as engineQuality } from './engine.js';
 import { title, cityOfMap } from './menu.js';
+import { boostNow } from './items.js';
 
 const direct = new URLSearchParams(location.search).has('map') ? mapFromURL() : null; // (index.html marks the same: boot-direct)
 let mapName = direct;
@@ -87,7 +88,9 @@ function step(dt, t) {
   if (time.running && started) time.hour = (time.hour + dt * time.speed) % 24;
   wind.update(dt, t, !!dbgState.still);
   perf.begin(P_PLAYER);
+  player.boost = boostNow();
   if (locked && started) updatePlayer(world, dt);
+  if (world.shops && started) world.shops.update(player, camera);
   if (!started && !dbgState.pause) player.yaw += dt * 0.02;
   updateCamera(world);
   if (colliderView.on) colliderView.update(player.pos, (x, z) => world.groundAt(x, z));
@@ -132,10 +135,10 @@ const enterGame = () => {
 };
 $('play').addEventListener('click', enterGame);
 $('toTitle').addEventListener('click', () => location.assign(location.pathname)); // (a fresh page: the title, no map loaded)
-renderer.domElement.addEventListener('click', () => { if (started && !locked) enterGame(); });
+renderer.domElement.addEventListener('click', () => { if (started && !locked) { if (world && world.shops && world.shops.isOpen()) world.shops.close(); enterGame(); } });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
-  $('menu').classList.toggle('hidden', locked);
+  $('menu').classList.toggle('hidden', locked || !!(world && world.shops && world.shops.isOpen())); // (a shop or the bag open: no pause menu over it)
   if (locked) { started = true; $('play').textContent = 'Resume'; for (const k in keys) keys[k] = false; }
 });
 // pointer lock refused (the browser wants another click): the pause menu offers the button again
@@ -149,6 +152,11 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'F3') { e.preventDefault(); toggleOverlay(); }
   if (e.code === 'F4' && world) { e.preventDefault(); toastMsg(colliderView.toggle(player.pos, (x, z) => world.groundAt(x, z)) ? 'Colliders shown' : 'Colliders hidden'); }
+  // the shop counter (E) and the bag (I / Tab): the cursor is freed while they are open; E, I, Tab or Esc closes them
+  const shops = world && world.shops, release = () => { for (const k in keys) keys[k] = false; if (document.pointerLockElement) document.exitPointerLock(); };
+  if (shops && shops.isOpen() && ['Escape', 'KeyE', 'KeyI', 'Tab'].includes(e.code)) { e.preventDefault(); shops.close(); enterGame(); return; }
+  if (shops && locked && e.code === 'KeyE' && shops.interact()) { e.preventDefault(); release(); return; }
+  if (shops && locked && (e.code === 'KeyI' || e.code === 'Tab')) { e.preventDefault(); if (shops.toggleBag()) release(); return; }
   if (!locked) return;
   if (e.code === 'KeyF') { player.fly = !player.fly; if (player.fly) player.pos.copy(camera.position); else player.vy = 0; toastMsg(player.fly ? 'Fly mode' : 'Walking'); }
   if (e.code === 'KeyT') { time.running = !time.running; toastMsg(time.running ? 'Time running' : 'Time paused'); }
