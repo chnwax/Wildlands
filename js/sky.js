@@ -12,20 +12,22 @@ const up = new THREE.Vector3(0, 1, 0);
 // zen/hor: sky gradient, glow: sun-side horizon glow, gnd: ground bounce / below-horizon, fog: distance haze,
 // sun: sunlight colour & intensity, cLit/cShade: cloud colours, glowAmt: strength of the sun glow, exp: exposure,
 // fogD / haze: base fog and distance haze (aerial perspective) multipliers — hazy dawn and golden hour, crisp midday
+// leaf: how far foliage keeps its own green in the coloured light of dawn and evening (trees.js leafShade): olive needles
+// under an orange sun and a pink sky turned brown and flat
 const KEYS = [
-  [0.0, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#05070f', fog: '#0b1231', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.12, fogD: 1.0, haze: 0.8 }],
-  [4.7, { zen: '#0f1c4a', hor: '#5a5596', glow: '#c4739e', gnd: '#171a36', fog: '#3d3f78', sun: '#ff9f66', sunI: 0, cLit: '#9a86c0', cShade: '#2e3066', glowAmt: 0.6, exp: 1.2, fogD: 1.25, haze: 1.1 }],
-  [5.9, { zen: '#3056a0', hor: '#ffb690', glow: '#ff7f62', gnd: '#4a3a55', fog: '#e0a3a0', sun: '#ff9f66', sunI: 1.5, cLit: '#ffc9a8', cShade: '#8272b0', glowAmt: 1.0, exp: 1.05, fogD: 1.55, haze: 1.35 }],
-  [7.2, { zen: '#3a8ae6', hor: '#d2ecff', glow: '#fff0c8', gnd: '#5d6b4a', fog: '#bfdcf6', sun: '#ffe6bd', sunI: 2.6, cLit: '#ffffff', cShade: '#a4b6de', glowAmt: 0.45, exp: 1.0, fogD: 1.3, haze: 1.15 }],
-  [9.4, { zen: '#2f7fe8', hor: '#c4e6ff', glow: '#fff6dc', gnd: '#60784a', fog: '#b8dcf8', sun: '#fff1da', sunI: 2.85, cLit: '#ffffff', cShade: '#a8badf', glowAmt: 0.35, exp: 1.0, fogD: 0.95, haze: 0.9 }],
-  [12.5, { zen: '#1e70e6', hor: '#aee0ff', glow: '#fffbe8', gnd: '#62804a', fog: '#aad6fb', sun: '#fff7e6', sunI: 3.0, cLit: '#ffffff', cShade: '#aebfe6', glowAmt: 0.3, exp: 1.0, fogD: 0.75, haze: 0.72 }],
-  [15.8, { zen: '#2874dc', hor: '#c2e4ff', glow: '#fff3d4', gnd: '#647a48', fog: '#b6dafa', sun: '#fff1d6', sunI: 2.9, cLit: '#ffffff', cShade: '#b0bee2', glowAmt: 0.4, exp: 1.0, fogD: 0.95, haze: 1.0 }],
-  [17.2, { zen: '#3b72cc', hor: '#ffe0a8', glow: '#ffb462', gnd: '#6e5c42', fog: '#f3cfa4', sun: '#ffc47a', sunI: 2.6, cLit: '#fff1d8', cShade: '#b4a4cc', glowAmt: 0.9, exp: 1.0, fogD: 1.15, haze: 1.2 }],
-  [17.95, { zen: '#354a9e', hor: '#ffa070', glow: '#ff6258', gnd: '#4e3a4c', fog: '#e6918a', sun: '#ff7e48', sunI: 1.8, cLit: '#ffb894', cShade: '#8f6eac', glowAmt: 1.2, exp: 1.05, fogD: 1.25, haze: 1.3 }],
-  [18.55, { zen: '#1b2663', hor: '#8e5d9e', glow: '#dc6a86', gnd: '#1d1b36', fog: '#4f3f78', sun: '#ff7e48', sunI: 0, cLit: '#c982a6', cShade: '#3c326e', glowAmt: 0.8, exp: 1.15, fogD: 1.05, haze: 1.05 }],
-  [19.4, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#05070f', fog: '#0b1231', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.12, fogD: 0.9, haze: 0.8 }],
+  [0.0, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#05070f', fog: '#0b1231', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.12, fogD: 1.0, haze: 0.8, leaf: 0 }],
+  [4.7, { zen: '#0f1c4a', hor: '#5a5596', glow: '#c4739e', gnd: '#171a36', fog: '#3d3f78', sun: '#ff9f66', sunI: 0, cLit: '#9a86c0', cShade: '#2e3066', glowAmt: 0.6, exp: 1.2, fogD: 1.25, haze: 1.1, leaf: 0.3 }],
+  [5.9, { zen: '#3056a0', hor: '#ffb690', glow: '#ff7f62', gnd: '#4a3a55', fog: '#e0a3a0', sun: '#ff9f66', sunI: 1.5, cLit: '#ffc9a8', cShade: '#8272b0', glowAmt: 1.0, exp: 1.05, fogD: 1.55, haze: 1.35, leaf: 0.7 }],
+  [7.2, { zen: '#3a8ae6', hor: '#d2ecff', glow: '#fff0c8', gnd: '#5d6b4a', fog: '#bfdcf6', sun: '#ffe6bd', sunI: 2.6, cLit: '#ffffff', cShade: '#a4b6de', glowAmt: 0.45, exp: 1.0, fogD: 1.3, haze: 1.15, leaf: 0.3 }],
+  [9.4, { zen: '#2f7fe8', hor: '#c4e6ff', glow: '#fff6dc', gnd: '#60784a', fog: '#b8dcf8', sun: '#fff1da', sunI: 2.85, cLit: '#ffffff', cShade: '#a8badf', glowAmt: 0.35, exp: 1.0, fogD: 0.95, haze: 0.9, leaf: 0 }],
+  [12.5, { zen: '#1e70e6', hor: '#aee0ff', glow: '#fffbe8', gnd: '#62804a', fog: '#aad6fb', sun: '#fff7e6', sunI: 3.0, cLit: '#ffffff', cShade: '#aebfe6', glowAmt: 0.3, exp: 1.0, fogD: 0.75, haze: 0.72, leaf: 0 }],
+  [15.8, { zen: '#2874dc', hor: '#c2e4ff', glow: '#fff3d4', gnd: '#647a48', fog: '#b6dafa', sun: '#fff1d6', sunI: 2.9, cLit: '#ffffff', cShade: '#b0bee2', glowAmt: 0.4, exp: 1.0, fogD: 0.95, haze: 1.0, leaf: 0 }],
+  [17.2, { zen: '#3b72cc', hor: '#ffe0a8', glow: '#ffb462', gnd: '#6e5c42', fog: '#f3cfa4', sun: '#ffc47a', sunI: 2.6, cLit: '#fff1d8', cShade: '#b4a4cc', glowAmt: 0.9, exp: 1.0, fogD: 1.15, haze: 1.2, leaf: 0.45 }],
+  [17.95, { zen: '#354a9e', hor: '#ffa070', glow: '#ff6258', gnd: '#4e3a4c', fog: '#e6918a', sun: '#ff7e48', sunI: 1.8, cLit: '#ffb894', cShade: '#8f6eac', glowAmt: 1.2, exp: 1.05, fogD: 1.25, haze: 1.3, leaf: 0.75 }],
+  [18.55, { zen: '#1b2663', hor: '#8e5d9e', glow: '#dc6a86', gnd: '#1d1b36', fog: '#4f3f78', sun: '#ff7e48', sunI: 0, cLit: '#c982a6', cShade: '#3c326e', glowAmt: 0.8, exp: 1.15, fogD: 1.05, haze: 1.05, leaf: 0.55 }],
+  [19.4, { zen: '#060b26', hor: '#1f2f63', glow: '#33488a', gnd: '#05070f', fog: '#0b1231', sun: '#ffe8c0', sunI: 0, cLit: '#56689e', cShade: '#161f44', glowAmt: 0.2, exp: 1.12, fogD: 0.9, haze: 0.8, leaf: 0 }],
 ];
-const COLS = ['zen', 'hor', 'glow', 'gnd', 'fog', 'sun', 'cLit', 'cShade'], NUMS = ['sunI', 'glowAmt', 'exp', 'fogD', 'haze'];
+const COLS = ['zen', 'hor', 'glow', 'gnd', 'fog', 'sun', 'cLit', 'cShade'], NUMS = ['sunI', 'glowAmt', 'exp', 'fogD', 'haze', 'leaf'];
 const PAL = KEYS.map(([h, k]) => { const o = { h }; for (const c of COLS) o[c] = new THREE.Color(k[c]); for (const n of NUMS) o[n] = k[n]; return o; });
 export const pal = {}; for (const c of COLS) pal[c] = new THREE.Color(); for (const n of NUMS) pal[n] = 0;
 function samplePalette(hour) {
@@ -524,6 +526,10 @@ let cacheFrame = -1;
 renderer.shadowMap.render = function (lights, scn, cam) {
   if (!cacheReady) return smRender.call(this, lights, scn, cam);
   if (!this.enabled || scn !== scene || !(this.autoUpdate || this.needsUpdate) || cacheFrame === csmFrame) return;
+  // at night the moon lights the land at a few percent of the day (about 1/255 of the picture): its shadows do not show,
+  // so the cascades are not redrawn while the light is that dim (some 3 ms a frame). The maps keep their last state; a
+  // cascade the camera or the light has moved from is redrawn as soon as the light is bright enough to show it.
+  if (sun.intensity < 0.1) return;
   cacheFrame = csmFrame;
   for (let i = 0; i < cascades.length; i++) updateCachedCascade(i);
   if (csmFrame % 300 === 0) evictStands();
@@ -576,6 +582,7 @@ export function updateSky(force) {
   S.uFogCol.value.set(p.fog.r, p.fog.g, p.fog.b);
   tmpC.copy(p.zen).lerp(p.hor, 0.55);
   S.uAmb.value.set(tmpC.r, tmpC.g, tmpC.b);
+  S.uLeafWB.value = p.leaf;
   const fs = fogU.fogSunDir.value; fs.x = sunDir.x; fs.y = sunDir.y; fs.z = sunDir.z;
   const fsc = fogU.fogSunColor.value, glow = p.glowAmt * 0.35 * (1 - night);
   fsc.x = p.glow.r * glow; fsc.y = p.glow.g * glow; fsc.z = p.glow.b * glow;

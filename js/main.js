@@ -1,6 +1,6 @@
 // Game boot, UI, player, audio and the main loop. The city is picked on the title screen (menu.js); ?map=town|nature
 // skips the title and loads that map at once. World loading and rendering are shared with the world editor (engine.js).
-import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, tick, wind } from './core.js';
+import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, tick, wind, skipStaticWalk } from './core.js';
 import { time, updateSky, env } from './sky.js';
 import { post } from './post.js';
 import { audio } from './audio.js';
@@ -186,6 +186,7 @@ async function main(hour = null) {
   $('tSlider').value = time.hour;
   updateCamera(world); camera.updateMatrixWorld();
   await prepareWorld(world, progress);
+  skipStaticWalk(scene);
   frame();
   document.documentElement.classList.add('ingame');
   if (direct) {

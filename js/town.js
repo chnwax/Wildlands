@@ -13,7 +13,7 @@ import { mansion, PALETTES } from './apartments.js';
 import { shrineCompound, sacredRope } from './shrine.js';
 import { stationForecourt } from './station.js';
 import { buildCityLights, enableCityLights, cityLightU } from './citylights.js';
-import { buildCrops, updateCrops } from './crops.js';
+import { buildCrops } from './crops.js';
 import { furnishYards } from './yards.js';
 import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutter.js';
 import { loadPacks, flushPacks, queuePack, packParts, packsReady, packProp } from './packs.js';
@@ -1807,7 +1807,7 @@ export async function build(progress, opts = {}) {
   const wind = windFarm((x, z) => hf.groundAt(x, z)); // (turbines on the far hills: scenery, not world objects)
   const layer = await finalizeWorld({ map: opts.map || 'town', editor: !!opts.editor, progress, areaOf: townArea, materialSets: { town: MT, landmark: landmarkMaterials() } });
   // ---------------------------------------------------------------- night lighting: every fixture lights its surroundings (citylights.js)
-  const cropInfo = buildCrops();
+  buildCrops(); // (instanced sets with levels of detail: drawn and culled with the other scatters)
   const cityLights = buildCityLights(layer.activeLamps());
   setTownGlow(-140, -5, 330, 0.035);
 
@@ -1827,7 +1827,7 @@ export async function build(progress, opts = {}) {
   const people = !SIM ? { update() {}, collide() {} } : pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 300, 21, { blocked: xingClosed, crowd });
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3(), _pl = { x: 0, y: 0, z: 0 };
-  const PW = { lights: perf.id('world: lights'), lod: perf.id('world: building LOD'), crops: perf.id('world: crops'), props: perf.id('world: props'), people: perf.id('world: pedestrians'),
+  const PW = { lights: perf.id('world: lights'), lod: perf.id('world: building LOD'), props: perf.id('world: props'), people: perf.id('world: pedestrians'),
     trains: perf.id('world: trains+xings'), traffic: perf.id('world: traffic'), signs: perf.id('world: sign LOD') };
   const world = {
     hf, grass, water, spawn, trains, traffic, crossings, sakura, lots, roadNet: RN, materials: MT, terrain: terrainGroup, shrineSpots,
@@ -1881,7 +1881,6 @@ export async function build(progress, opts = {}) {
       perf.begin(PW.lights); updateNight(); updateGlow(); perf.end(PW.lights);
       if (wind) wind.update(t);
       perf.begin(PW.lod); updateLod(cam); cullProps(cam); perf.end(PW.lod);
-      perf.begin(PW.crops); updateCrops(cam); perf.end(PW.crops);
       perf.begin(PW.props); landmarks.update(); parkBenches.update(); danchiBenches.update(); perf.end(PW.props);
       if (SIM) distCull(cam);
       if (!SIM) { fleet.commit(cam.position, cam); cityLightU.uCLI.value = smoothstep(0.2, 0.5, night.value); return; } // editor: static scenery only

@@ -2,7 +2,7 @@
 // planar-reflection water, conifer forests (trees.js). Maps configure these and add their own content.
 import { THREE, scene, renderer, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt, onResize, GLSL_WIND } from './core.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
-import { buildConiferForest, buildFarForest, firColor, coniferColor, broadColor } from './trees.js';
+import { buildConiferForest, buildFarForest, firColor, coniferColor, broadColor, leafShade, leafFog, LEAF_DECL } from './trees.js';
 import { perf } from './perf.js';
 import { post } from './post.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
@@ -348,6 +348,7 @@ export function terrainMaterial(hf, L, opt = {}) {
       uScales: { value: new THREE.Vector4(L.grass.s, L.forest.s, L.shore.s, L.urban.s) }, uRockS: { value: L.rock.s },
       uTintG: { value: tintV(L.grass.tint) }, uTintF: { value: tintV(L.forest.tint) }, uTintU: { value: tintV(L.urban.tint) }, uUrbanNorm: { value: L.urban.norm || 0 }, uTintS: { value: tintV(L.shore.tint) },
       uWaterLv: { value: opt.water ?? 0 }, uSnow: { value: opt.snow ?? 175 }, uShore: { value: opt.shore ?? 1.3 }, uFarTrees: terrainFarTrees, uGrassNear: grassU.uGrassNear, uGrassFar: grassU.uGrassFar, uGrassE: grassU.uGrassE,
+      uLeafWB: S.uLeafWB,
     }, paintU);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
@@ -575,7 +576,11 @@ export function terrainMaterial(hf, L, opt = {}) {
         vec3 splatN = nW;
       `)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = splatRough;')
-      .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(splatN, 0.0)).xyz);');
+      .replace('#include <normal_fragment_maps>', 'normal = normalize((viewMatrix * vec4(splatN, 0.0)).xyz);')
+      // the forest floor (needle litter, moss) in the evening light as the trees above it are (trees.js leafShade)
+      .replace('#include <common>', '#include <common>\n' + LEAF_DECL)
+      .replace('#include <aomap_fragment>', leafShade('wForest', false))
+      .replace('#include <fog_fragment>', leafFog('wForest'));
   };
   mat.customProgramCacheKey = () => (opt.lite ? 'terrainLite' : 'terrain') + (opt.riverBed ? '|bed' : '');
   // drawn after everything standing on it (core.js draw order) with a strict depth test: it loses exact ties, as it did
@@ -600,7 +605,9 @@ export function farForestAt(x, z, y, slope, water = 0, snow = 175) {
 export async function buildTerrainMeshes(hf, mat, { outer = true, farForest = true } = {}) {
   const { GRID, HN, CELL, HALF, H } = hf;
   const q = Q.name, steps = q === 'extreme' || q === 'ultra' ? [4, 16, 64, 256] : q === 'high' ? [8, 16, 64, 256] : [8, 32, 64, 256];
-  const CH = 64, NC = GRID / CH, n = CH + 1;
+  // (256 m chunks of the heightfield: 128 m ones were a hundred draws of the heavy ground shader in a town view, and the
+  // ground is drawn last with a strict depth test, so what a wider chunk draws off-screen costs only its vertices)
+  const CH = GRID % 128 ? 64 : 128, NC = GRID / CH, n = CH + 1;
   const idx = [];
   for (let b = 0; b < CH; b++) for (let a = 0; a < CH; a++) { const v = b * n + a; idx.push(v, v + n, v + 1, v + 1, v + n, v + n + 1); }
   const index = new THREE.Uint32BufferAttribute(idx, 1);

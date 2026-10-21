@@ -167,6 +167,7 @@ export const S = {
   uSunDir: { value: sunDir }, uSunCol: { value: new THREE.Vector3() }, uSunViewDir: { value: new THREE.Vector3() },
   uLightDir: { value: new THREE.Vector3(0, 1, 0) }, // sun by day, moon by night
   uAmb: { value: new THREE.Vector3() }, uFogCol: { value: new THREE.Vector3() },
+  uLeafWB: { value: 0 }, // how far foliage keeps its own green under a coloured low sun (sky.js palette 'leaf')
   uCam: { value: new THREE.Vector3() }, uPlayer: { value: new THREE.Vector3() },
   tNoise: { value: null },
   // the wind (see `wind` below): direction it blows toward, how far the air has travelled, the phase of its waves
@@ -580,8 +581,14 @@ export class Scatter {
     // (per variant: its items of the cell, so each set of meshes has its own capacity and bounds)
     const byV = idx => nv === 1 ? [idx] : Array.from({ length: nv }, (_, v) => idx.filter(i => this.pv[i] === v));
     this.fine.forEach((c, ci) => { for (const i of c.idx) this.fineOf[i] = ci; c.boxv = byV(c.idx).map((ix, v) => { if (!ix.length) return null; const b = this._box(0, ix, false, nv > 1 ? v : -1); b.tight = true; return b; }); c.box = c.boxv[0]; });
-    this.coarse.forEach((c, ci) => { for (const i of c.idx) this.coarseOf[i] = ci; const iv = byV(c.idx); c.boxes = lods.map((lod, l) => l === 0 ? null : iv.map((ix, v) => ix.length ? this._box(l, ix, false, nv > 1 ? v : -1) : null)); c.uniform = -3; c.ex = c.ez = 1e9; });
+    // a last level of cards (an impostor: two triangles an item) draws from cells of its own, 4 km wide: in the coarse
+    // cells it shared with a low-poly level before it, it was hundreds of draws of a few cards each
+    const L = lods.length - 1, lastTris = lods[L].parts.reduce((t, p) => t + (p.shadowOnly ? 0 : (p.geometry.index ? p.geometry.index.count : p.geometry.attributes.position.count) / 3), 0);
+    this.wl = L >= 2 && lastTris <= 16 ? L : -1;
+    this.coarse.forEach((c, ci) => { for (const i of c.idx) this.coarseOf[i] = ci; const iv = byV(c.idx); c.boxes = lods.map((lod, l) => l === 0 || l === this.wl ? null : iv.map((ix, v) => ix.length ? this._box(l, ix, false, nv > 1 ? v : -1) : null)); c.uniform = -3; c.ex = c.ez = 1e9; });
+    if (this.wl > 0) { this.wide = group(4096); this.wideOf = new Int32Array(N); this.wide.forEach((c, ci) => { for (const i of c.idx) this.wideOf[i] = ci; c.boxes = byV(c.idx).map((ix, v) => ix.length ? this._box(this.wl, ix, false, nv > 1 ? v : -1) : null); }); }
     this.boxes = []; for (const c of this.fine) for (const b of c.boxv) if (b) this.boxes.push(b); for (const c of this.coarse) for (const bv of c.boxes) if (bv) for (const b of bv) if (b) this.boxes.push(b);
+    if (this.wide) for (const c of this.wide) for (const b of c.boxes) if (b) this.boxes.push(b);
     this.D = new Float64Array(lods.length); this.Dkey = ''; this.primed = false;
     scatters.push(this);
   }
@@ -649,7 +656,7 @@ export class Scatter {
     return sphere;
   }
   _lodOf(d) { const D = this.D; for (let l = 0; l < D.length; l++) if (d < D[l]) return l; return -1; }
-  _boxOf(i, l) { return l === 0 ? this.fine[this.fineOf[i]].boxv[this.pv[i]] : this.coarse[this.coarseOf[i]].boxes[l][this.pv[i]]; }
+  _boxOf(i, l) { return l === 0 ? this.fine[this.fineOf[i]].boxv[this.pv[i]] : l === this.wl ? this.wide[this.wideOf[i]].boxes[this.pv[i]] : this.coarse[this.coarseOf[i]].boxes[l][this.pv[i]]; }
   update(x, z) {
     if (!this.multi) {
       for (const c of this.cells) {
@@ -717,10 +724,11 @@ export class Scatter {
 // adverts — are collected while the map is built and drawn as one instanced mesh per part, material and 512 m cell
 // (flushProps). Each placed prop keeps an id: props.items[id] = {kind, parts: [{mesh, instance}]} once flushed, with its
 // world matrix per part, so it can still be picked and edited (setPropMatrix).
-// Parts with a `near` distance (small things: a shop's stools, bowls, bottles, flower pots) are grouped in 128 m cells and
-// drawn only while the camera is within that distance of the cell (cullProps, every frame).
+// Parts with a `near` distance (small things: a shop's stools, bowls, bottles, flower pots) are grouped in 256 m cells and
+// drawn only while the camera is within that distance of the cell (cullProps, every frame). (128 m cells drew the town's
+// pack props in some 700 draws a view: a draw costs more than the few small props a wider cell draws past its distance)
 export const props = { groups: new Map(), items: [], flushed: false, near: [] };
-const PROP_CELL = 512, NEAR_CELL = 128;
+const PROP_CELL = 512, NEAR_CELL = 256;
 export function addProp(kind, parts) { // parts: [{geometry, material, matrix (world), castShadow?, receiveShadow?, near?}]
   const id = props.items.length, item = { id, kind, parts: [] };
   props.items.push(item);
@@ -833,10 +841,13 @@ function planar(g) {
   for (let i = 0; i < p.count; i++) if (Math.abs(_pn.dot(_pb.fromBufferAttribute(p, i)) - d) > eps) return false;
   return true;
 }
+// Glass that writes no depth (window panes, vending fronts, car windows: one even tint) looks the same in one pass too:
+// its back and front layers blend alike in either order. Two passes cost two program re-resolutions per draw (three
+// flips the material's side and flags it for an update), some 330 a frame in the town.
 export function singlePassFlat(root) {
   const users = new Map();
   root.traverse(o => { const m = o.material; if (!o.isMesh || !m || Array.isArray(m) || !m.transparent || m.side !== THREE.DoubleSide || m.forceSinglePass) return; if (!users.has(m)) users.set(m, []); users.get(m).push(o); });
-  for (const [m, list] of users) if (list.every(o => planar(o.geometry))) m.forceSinglePass = true;
+  for (const [m, list] of users) if (!m.depthWrite || list.every(o => planar(o.geometry))) m.forceSinglePass = true;
 }
 // Scenery transforms never change after the build: the scene's matrices are brought up to date once a frame (main.js)
 // instead of once per render call, and root-level scenery stops recomposing its matrix every frame. Objects that move
@@ -845,6 +856,12 @@ export function freezeStatic(root) {
   root.matrixWorldAutoUpdate = false;
   root.updateMatrixWorld(true);
   for (const o of root.children) if (o.matrixAutoUpdate && !o.userData.dynamic && !o.isLight && !o.isCamera && o.children.length === 0 && (o.isMesh || o.isPoints || o.isLine)) o.matrixAutoUpdate = false;
+}
+
+// The game never moves frozen scenery, so its leaves also leave the per-frame matrix walk (scene.updateMatrixWorld
+// visited all ~20k objects, ~1.5 ms a frame); the editor moves them and keeps the walk
+export function skipStaticWalk(root) {
+  for (const o of root.children) if (!o.matrixAutoUpdate && !o.userData.dynamic && o.children.length === 0 && (o.isMesh || o.isPoints || o.isLine)) o.matrixWorldAutoUpdate = false;
 }
 
 // materials objects switch to at runtime (flashing crossing lamps, train head/tail lights): never on any object while

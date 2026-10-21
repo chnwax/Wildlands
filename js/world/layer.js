@@ -763,12 +763,12 @@ export class WorldLayer {
     if (this.problems.length) for (const q of this.problems) (q.level === 'error' ? console.error : console.warn)('World data: ' + F.formatProblem(q));
   }
   // In the game (nothing is edited there): the edited objects' detached parts merged back into few draws. Their mesh parts
-  // by material, attribute layout and 128 m cell (detail parts keep their LOD distance, in one merged mesh per distance),
-  // their instanced parts (props, the copies of edited trees and bushes) by model, material and 128 m cell into one
-  // instanced mesh each. 250 edited objects then cost tens of draws instead of thousands. Loose meshes (signs, clocks,
+  // by material, attribute layout and 512 m cell (detail parts keep their LOD distance, in one merged mesh per distance
+  // and 128 m cell), their instanced parts (props, the copies of edited trees and bushes) by model, material, near
+  // distance and 512 m cell into one instanced mesh each (a small prop keeps its near distance: cullProps). 250 edited objects then cost tens of draws instead of thousands. Loose meshes (signs, clocks,
   // lamps that swap materials) and hidden parts are left as they are; colliders and lamps are untouched.
   bakeDetached() {
-    const meshG = new Map(), instG = new Map(), C = 128, _w = new THREE.Matrix4(), _i = new THREE.Matrix4(), _c = new THREE.Color(), _p = new THREE.Vector3();
+    const meshG = new Map(), instG = new Map(), C = 128, CW = 512, _w = new THREE.Matrix4(), _i = new THREE.Matrix4(), _c = new THREE.Color(), _p = new THREE.Vector3();
     let nIn = 0;
     for (const ent of this.ents.values()) {
       const det = ent.det; if (!det || !det.group.parent) continue;
@@ -778,14 +778,14 @@ export class WorldLayer {
         if (!m.visible || m.userData.partHidden || m.layers.mask === 0) { m.parent.remove(m); continue; } // (hidden in the edit: gone)
         const g = m.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
         _p.copy(g.boundingSphere.center).applyMatrix4(m.matrixWorld);
-        const cell = Math.floor(_p.x / C) + ',' + Math.floor(_p.z / C), flags = (m.castShadow ? 1 : 0) + (m.receiveShadow ? 2 : 0) + '|' + m.layers.mask + '|' + m.renderOrder;
+        const lod = m.userData.lodDist || 0, cs = m.isInstancedMesh || !lod ? CW : C, cell = Math.floor(_p.x / cs) + ',' + Math.floor(_p.z / cs), flags = (m.castShadow ? 1 : 0) + (m.receiveShadow ? 2 : 0) + '|' + m.layers.mask + '|' + m.renderOrder;
         if (m.isInstancedMesh) {
-          const key = g.uuid + '|' + m.material.uuid + '|' + flags + '|' + (m.customDepthMaterial ? m.customDepthMaterial.uuid : '') + '|' + cell;
+          const key = g.uuid + '|' + m.material.uuid + '|' + flags + '|' + (m.customDepthMaterial ? m.customDepthMaterial.uuid : '') + '|' + (m.userData.near || 0) + '|' + cell;
           let q = instG.get(key); if (!q) instG.set(key, q = { g, mat: m.material, src: m, mats: [], cols: m.instanceColor ? [] : null });
           for (let k = 0; k < m.count; k++) { m.getMatrixAt(k, _i); q.mats.push(_w.multiplyMatrices(m.matrixWorld, _i).clone());
             if (q.cols) { m.getColorAt(k, _c); q.cols.push(_c.clone()); } }
         } else {
-          const sig = Object.keys(g.attributes).sort().join(',') + '|' + (g.index ? 'i' : 'n'), lod = m.userData.lodDist || 0;
+          const sig = Object.keys(g.attributes).sort().join(',') + '|' + (g.index ? 'i' : 'n');
           const key = m.material.uuid + '|' + sig + '|' + flags + '|' + lod + '|' + cell;
           let q = meshG.get(key); if (!q) meshG.set(key, q = { mat: m.material, src: m, lod, geos: [] });
           q.geos.push(g.clone().applyMatrix4(m.matrixWorld));
@@ -808,6 +808,7 @@ export class WorldLayer {
       m.castShadow = q.src.castShadow; m.receiveShadow = q.src.receiveShadow; m.layers.mask = q.src.layers.mask; m.renderOrder = q.src.renderOrder;
       if (q.src.customDepthMaterial) m.customDepthMaterial = q.src.customDepthMaterial; m.userData.sways = q.src.userData.sways; m.userData.baked = true;
       m.matrixAutoUpdate = false; m.computeBoundingSphere(); scene.add(m); nOut++;
+      if (q.src.userData.near) { m.userData.near = q.src.userData.near; props.near.push(m); }
     }
     console.info(`world: ${nIn} parts of edited objects drawn as ${nOut}`);
   }

@@ -895,10 +895,34 @@ export function bambooGeo(lod = 0, seed = 9, edge = false) {
 
 // ---------------------------------------------------------------- materials
 // shared foliage shading: toon lighting comes from toon.js; here a soft sky-tinted rim and sunlight through the leaves
-function foliagePatch(m, key, amount, cards, mipCover = true) {
+// Dawn and evening: olive needles under an orange sun and a pink sky came out brown, and all one brown. Their albedo is
+// a yellow olive that reads green only in the blue light of the day sky; toward a low sun the light through the leaves
+// glowed rust on every crown alike, and the salmon haze over a far hillside added mud. So, by uLeafWB (sky.js palette
+// 'leaf', 0 by day): the sky's light keeps its brightness but takes the colour it has by day (shade sides blue-green),
+// the sun's share and the glow through the leaves turn gold-green rather than rust (the glow a little weaker), and the
+// haze over foliage leans to the lilac of the evening sky (toward the sun its in-scattered glow stays warm). A crown
+// keeps its green, its lit side warm and its shade side cool.
+// w: the share (a GLSL expression: 1.0 on foliage, the forest floor's weight on the ground); emis: the glow too
+export const leafShade = (w = '1.0', emis = true) => `
+  if (uLeafWB > 0.0) {
+    float lwK = uLeafWB * (${w});
+    vec3 lwL = vec3(0.2126, 0.7152, 0.0722), lwA = diffuseColor.rgb / max(dot(diffuseColor.rgb, lwL), 1e-4);
+    reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, dot(reflectedLight.indirectDiffuse, lwL) * lwA * vec3(0.65, 1.0, 1.7), lwK);
+    reflectedLight.directDiffuse = mix(reflectedLight.directDiffuse, dot(reflectedLight.directDiffuse, lwL) * lwA * vec3(1.1, 1.07, 0.45), lwK);
+    ${emis ? 'totalEmissiveRadiance = mix(totalEmissiveRadiance, dot(totalEmissiveRadiance, lwL) * lwA * vec3(0.64, 0.86, 0.34), lwK);' : ''}
+  }
+  #include <aomap_fragment>`;
+export const leafFog = (w = '1.0') => THREE.ShaderChunk.fog_fragment.replace('fogColor + fogSunColor * fSun',
+  `mix(fogColor, dot(fogColor, vec3(0.2126, 0.7152, 0.0722)) * vec3(0.95, 0.92, 1.3), uLeafWB * (${w}) * 0.75) + fogSunColor * fSun`);
+export const LEAF_DECL = 'uniform float uLeafWB;';
+// (the share of it per material set: cherry blossom keeps its pink in the evening light, the day sky's blue turned it violet)
+const LEAF_K = { sakura: 0 };
+// leafK: this material's share of leafShade / leafFog
+function foliagePatch(m, key, amount, cards, mipCover = true, leafK = 1) {
   m.defines = { CLOUD_SHADE_VARYING: '' };
   m.onBeforeCompile = sh => {
     sh.uniforms.uSunViewDir = S.uSunViewDir; sh.uniforms.uSunCol = S.uSunCol; sh.uniforms.uAmbC = S.uAmb;
+    sh.uniforms.uLeafWB = leafK === 1 ? S.uLeafWB : { get value() { return S.uLeafWB.value * leafK; } };
     let vs = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCloudLit;\n' + CLOUD_SHADE_GLSL);
     // mid / far LODs carry the trunk inside the foliage mesh (one draw instead of two): its vertices (aBark = 1) keep
     // their painted bark colour instead of the per-tree foliage tint
@@ -912,7 +936,9 @@ function foliagePatch(m, key, amount, cards, mipCover = true) {
           #endif
           vCloudLit = cloudShade((modelMatrix * cwp).xyz); }`);
     let fs = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uSunViewDir; uniform vec3 uSunCol; uniform vec3 uAmbC;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSunViewDir; uniform vec3 uSunCol; uniform vec3 uAmbC; ' + LEAF_DECL)
+      .replace('#include <aomap_fragment>', leafShade())
+      .replace('#include <fog_fragment>', leafFog())
       .replace('#include <emissivemap_fragment>', `
         vec3 vdir = normalize(-vViewPosition);
         float trl = pow(max(dot(vdir, uSunViewDir), 0.0), 4.0);
@@ -966,12 +992,12 @@ function materials(kind) {
   if (mats[kind]) return mats[kind];
   const D = MATS[kind] || MATS.leaf, sway = D.sway, M = {};
   if (!D.noSolid) {
-    M.solid = foliagePatch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, color: D.solidColor || 0xffffff }), 'toonSolid' + kind, sway, false);
+    M.solid = foliagePatch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, color: D.solidColor || 0xffffff }), 'toonSolid' + kind, sway, false, true, LEAF_K[kind] ?? 1);
     M.solidDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); windPatch(M.solidDepth, 'toonSolidDepth' + kind, sway);
   }
   if (D.tex) {
     const tex = D.tex === 'sakura' || D.tex === 'hydra' ? blossomTexture(D.tex) : leafTexture(D.tex);
-    M.cards = foliagePatch(new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, alphaTest: 0.5, alphaToCoverage: Q.msaa > 0, side: THREE.DoubleSide, roughness: 1, metalness: 0 }), 'toonCards' + kind, sway, true);
+    M.cards = foliagePatch(new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, alphaTest: 0.5, alphaToCoverage: Q.msaa > 0, side: THREE.DoubleSide, roughness: 1, metalness: 0 }), 'toonCards' + kind, sway, true, true, LEAF_K[kind] ?? 1);
     M.cardDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.5 }); windPatch(M.cardDepth, 'toonCardsDepth' + kind, sway);
   }
   if (D.bark) {
@@ -1006,7 +1032,7 @@ const SPECIES = {
   maple:   { mat: 'maple', n: 2, geo: (l, v) => mapleGeo(l, 31 + v * 23), trunk: 0.035, hiScale: 0.6 },
   willow:  { mat: 'willow', n: 1, geo: (l, v) => broadleafGeo(l, 37, 'willow'), trunk: 0.05 },
   sakura:  { mat: 'sakura', n: 2, geo: (l, v) => sakuraGeo(l, 13 + v * 19), trunk: 0.05, cardShadow: false, hiScale: 0.6 },
-  bamboo:  { mat: 'bamboo', n: 9, geo: (l, v) => bambooGeo(l, 9 + v * 4, v >= 6), trunk: 0.0065, farCards: true, hiScale: 0.6 }, // v 6-8: grove-rim culms
+  bamboo:  { mat: 'bamboo', n: 9, geo: (l, v) => bambooGeo(l, 9 + v * 4, v >= 6), trunk: 0.0065, farCards: true, hiScale: 0.25 }, // v 6-8: grove-rim culms. (Full detail — branches as tubes a centimetre thick, four sprays a node — to 130 m on Extreme: past that the branches are a tenth of a pixel and the middle level's fewer, larger sprays cover the same; at 312 m the near level was 2.6 M triangles over the town)
 };
 // painted bark colour of trunks merged into the foliage mesh (mid / far LODs)
 const BARK = { fir: '#524438', jpine: '#4b3c32', leaf: '#56483e', oak: '#544a42', birch: '#c9c6bf', zelkova: '#6a6158', maple: '#4c4541', willow: '#4a3f36', bamboo: '#869a4c', sakura: '#3e2e2e' };
@@ -1111,7 +1137,7 @@ function packTreeParts(id, h, sp, near) {
       if (cut) { m.alphaToCoverage = Q.msaa > 0; m.side = THREE.DoubleSide; }
       if (tone) m.color.multiplyScalar(tone[0]).lerp(new THREE.Color(...tone[1]), tone[2]);
       if (sp.mat === 'bush') m.color.multiplyScalar(0.62).lerp(new THREE.Color(0.42, 0.48, 0.3), 0.25); // (the shrubs' bright leaf texture under the foliage light read neon: toned to the hedges' green)
-      foliagePatch(m, 'packTree' + (cut ? 'c' : 's'), sway, cut); // (one program for every pack tree's leaves, one for the bark: the sway is a uniform)
+      foliagePatch(m, 'packTree' + (cut ? 'c' : 's'), sway, cut, true, LEAF_K[sp.mat] ?? 1); // (one program for every pack tree's leaves, one for the bark: the sway is a uniform)
       d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: cut ? m.map : null, alphaTest: cut ? m.alphaTest : 0 });
       windPatch(d, 'packTreeDepth' + (cut ? 'c' : 's'), sway);
       packTreeCache.set(mk, m); packTreeCache.set(mk + '|d', d);
@@ -1292,7 +1318,7 @@ function packImpostor(id, h, sp, twin = 0) {
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, S2 / 2, 0), Math.hypot(W, S2 / 2));
   const m = new THREE.MeshStandardMaterial({ map: albedo, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, metalness: 0, envMapIntensity: 0.4, color: new THREE.Color().setScalar(IMP_DIM[sp.mat] ?? 1.05) });
   m.alphaToCoverage = Q.msaa > 0; m.name = 'impostor:' + id; m.userData.bake = [albedo, rtN];
-  foliagePatch(m, 'impostor', 0, true, false); // (its own levels keep their coverage)
+  foliagePatch(m, 'impostor', 0, true, false, LEAF_K[sp.mat] ?? 1); // (its own levels keep their coverage)
   const fol = m.onBeforeCompile;
   m.onBeforeCompile = (sh, r) => {
     fol(sh, r);
@@ -1456,7 +1482,7 @@ function farCardMaterial(kind) {
   m.defines = { CLOUD_SHADE_VARYING: '' };
   const col0 = kind === 'fir' ? 0 : FAR_CARDS.fir;
   m.onBeforeCompile = sh => {
-    sh.uniforms.tFar = { value: farCardTexture() };
+    sh.uniforms.tFar = { value: farCardTexture() }; sh.uniforms.uLeafWB = S.uLeafWB;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vFarUv; varying float vCloudLit;\n' + CLOUD_SHADE_GLSL)
       .replace('#include <beginnormal_vertex>', `
@@ -1478,7 +1504,9 @@ function farCardMaterial(kind) {
       .replace('#include <project_vertex>', 'vec4 mvPosition = viewMatrix * vec4(fwp, 1.0); gl_Position = projectionMatrix * mvPosition;')
       .replace('#include <worldpos_vertex>', 'vec4 worldPosition = vec4(fwp, 1.0);');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tFar; varying vec2 vFarUv;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tFar; varying vec2 vFarUv; ' + LEAF_DECL)
+      .replace('#include <aomap_fragment>', leafShade())
+      .replace('#include <fog_fragment>', leafFog())
       .replace('#include <map_fragment>', `
         vec4 ftc = texture2D(tFar, vFarUv);
         vec2 ftdx = dFdx(vFarUv * vec2(1024.0, 256.0)), ftdy = dFdy(vFarUv * vec2(1024.0, 256.0));

@@ -102,11 +102,17 @@ export function buildRailway(ctx) {
       parts.push(tint(new THREE.BoxGeometry(0.19, 0.01, 0.17).translate(0, 0.085, rz), P));
       for (const e of [-1, 1]) { parts.push(tint(new THREE.BoxGeometry(0.08, 0.03, 0.045).translate(0, 0.1, rz + e * 0.088), K)); parts.push(tint(new THREE.BoxGeometry(0.03, 0.05, 0.03).translate(0, 0.095, rz + e * 0.11), K)); } }
     return mergeGeometries(parts); })();
+  // (in 128 m lengths of line, each culled to the view and by distance (distcull.js): as one set over the whole line,
+  // all of its 0.86 M triangles were drawn every frame wherever the camera looked)
   const sl = []; for (const tz of RAIL.z) for (let x = X0; x < X1; x += 0.62) sl.push([x, tz]);
-  const sleeper = new THREE.InstancedMesh(slGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }), sl.length);
+  const slMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }), SL_CH = 128, slChunks = new Map();
   const m4 = new THREE.Matrix4(), sc = new THREE.Color(), srng = mulberry32(606);
-  sl.forEach(([x, z], i) => { sleeper.setMatrixAt(i, m4.makeTranslation(x, y0 + 0.22, z)); const v = 0.86 + srng() * 0.2; sleeper.setColorAt(i, sc.setRGB(v, v * (0.98 + srng() * 0.03), v * 0.97)); });
-  sleeper.receiveShadow = true; sleeper.castShadow = false; sleeper.frustumCulled = false; scene.add(sleeper);
+  sl.forEach(([x, z]) => { const v = 0.86 + srng() * 0.2, k = Math.floor((x - X0) / SL_CH); if (!slChunks.has(k)) slChunks.set(k, []); slChunks.get(k).push([x, z, v, 0.98 + srng() * 0.03]); });
+  for (const list of slChunks.values()) {
+    const sleeper = new THREE.InstancedMesh(slGeo, slMat, list.length);
+    list.forEach(([x, z, v, g], i) => { sleeper.setMatrixAt(i, m4.makeTranslation(x, y0 + 0.22, z)); sleeper.setColorAt(i, sc.setRGB(v, v * g, v * 0.97)); });
+    sleeper.receiveShadow = true; sleeper.castShadow = false; sleeper.computeBoundingSphere(); scene.add(sleeper);
+  }
 
   // catenary: portal-frame masts every 50 m with contact + messenger wires
   const cw = [];

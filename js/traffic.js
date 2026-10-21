@@ -7,9 +7,7 @@ import { night, canvasTex, JP_FONT } from './townkit.js';
 import { addCatalog } from './world/catalog.js';
 
 // ---------------------------------------------------------------- geometry helpers
-// far level of detail (cars beyond Fleet.lodDist): the occupants and cabin with fewer segments on their rounds
-let LO = false;
-const sg = (n, min = 3) => LO ? Math.max(min, Math.round(n / 2)) : n;
+const sg = n => n; // segments of the cabin's and occupants' rounds (the far level draws neither: farGeo)
 const boxG = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 // geometry painted with one vertex colour (for the multi-coloured cabin and driver meshes)
 const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
@@ -311,14 +309,70 @@ const PART_MAT = { paint: paintMat, glass: glassMat, trim: trimMat, plate: plate
   cabin: cabinMat, occSkin: seatedMat(cabinMat, false), occCloth: seatedMat(clothMat, true), occHair: seatedMat(hairMat, true) };
 const CASTS = { paint: true, glass: true, tire: true };
 const TINTED = ['paint', 'plate', 'head', 'tail'];
-const OCCUPANT = new Set(OCC_KEYS);
+const OCCUPANT = new Set(OCC_KEYS), INST_ATTRS = ['seatCol', 'farPaint', 'farLamp']; // (per-car attributes: uploaded over the span written)
+// Far cars: the model's body in one draw. Its parts are merged with their colour, roughness, metalness and glow per
+// vertex; the paint is tinted per car (farPaint) and the lamps lit per car (farLamp: head, tail). The cabin and the
+// occupants are left out (unseen behind the tinted glass from that far), and the wheels are plain discs. Drawn as all
+// its parts, a far car was about 13 draws and 5,400-9,800 triangles, most of them smaller than a pixel: some 150 of
+// them in view in the town centre took 2.7 ms of GPU time a frame.
+const farMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0, envMapIntensity: 1 });
+farMat.name = 'car_far';
+farMat.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+    attribute vec2 farRM, farK, farLamp; attribute vec3 farEm, farPaint; varying vec2 vFarRM; varying vec3 vFarEm; varying float vFarLens;`)
+    .replace('#include <color_vertex>', `#include <color_vertex>
+    #ifdef USE_COLOR
+      vColor.rgb *= mix(vec3(1.0), farPaint, farK.x);
+    #endif
+    float fI = farK.y < 0.5 ? 1.0 : farK.y < 1.5 ? farLamp.x : farLamp.y;
+    vFarEm = farEm * fI; vFarRM = farRM; vFarLens = farK.y < 0.5 ? 1.0 : 1.0 - min(fI, 1.0) * 0.7;`);
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vFarRM; varying vec3 vFarEm; varying float vFarLens;')
+    .replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb *= vFarLens;')
+    .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vFarRM.x;')
+    .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vFarRM.y;')
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += vFarEm;');
+};
+farMat.customProgramCacheKey = () => 'carFar';
+const lin = c => [c.r, c.g, c.b];
+function farGeo(G) {
+  const T = G.T, P = [], N = [], C = [], RM = [], K = [], EM = [], I = [];
+  const add = (g, col, rough, metal, paint = 0, lamp = 0, em = [0, 0, 0]) => {
+    if (!g) return;
+    const p = g.attributes.position, n = g.attributes.normal, o = P.length / 3;
+    for (let i = 0; i < p.count; i++) { P.push(p.getX(i), p.getY(i), p.getZ(i)); N.push(n.getX(i), n.getY(i), n.getZ(i)); C.push(...col); RM.push(rough, metal); K.push(paint, lamp); EM.push(...em); }
+    if (g.index) for (let i = 0; i < g.index.count; i++) I.push(o + g.index.getX(i)); else for (let i = 0; i < p.count; i++) I.push(o + i);
+  };
+  const Pp = G.parts, gl = lin(glassMat.color).map(v => v * glassMat.opacity + 0.03 * (1 - glassMat.opacity)); // (the glass over a dark cabin)
+  add(Pp.paint, [1, 1, 1], paintMat.roughness, paintMat.metalness, 1);
+  add(Pp.glass, gl, 0.25, 0.25); // (opaque: a little rougher, so its reflection is about the near glass's at 74% opacity)
+  add(Pp.trim, lin(trimMat.color), trimMat.roughness, 0);
+  add(Pp.chrome, lin(chromeMat.color), chromeMat.roughness, chromeMat.metalness);
+  add(Pp.head, [0.46, 0.47, 0.5], 0.38, 0, 0, 1, lin(headMat.emissive));
+  add(Pp.tail, [0.36, 0.035, 0.03], 0.38, 0, 0, 2, lin(tailMat.emissive));
+  add(Pp.amber, lin(amberMat.color), amberMat.roughness, 0, 0, 0, lin(amberMat.emissive));
+  add(Pp.plate, [0.82, 0.83, 0.8], 0.35, 0);
+  add(Pp.livery, lin(liveryMat.color), liveryMat.roughness, 0);
+  // wheels: a tyre band and the rim's face on each side, where the near level's wheels stand
+  const wx = wheelX(T), tw = Math.max(0.12, T.r * 0.62);
+  for (const x of wx) for (const side of [-1, 1]) {
+    add(new THREE.CylinderGeometry(T.r, T.r, tw, 14, 1, true).rotateX(Math.PI / 2).translate(x, T.r, side * T.wz), lin(tireMat.color), tireMat.roughness, 0);
+    add(new THREE.CircleGeometry(T.r * 0.66, 10).translate(0, 0, tw / 2 + 0.002).rotateY(side > 0 ? 0 : Math.PI).translate(x, T.r, side * T.wz), lin(rimMat.color), rimMat.roughness, rimMat.metalness);
+    add(new THREE.RingGeometry(T.r * 0.66, T.r, 14, 1).translate(0, 0, tw / 2 + 0.001).rotateY(side > 0 ? 0 : Math.PI).translate(x, T.r, side * T.wz), lin(tireMat.color), tireMat.roughness, 0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.setAttribute('farRM', new THREE.Float32BufferAttribute(RM, 2));
+  g.setAttribute('farK', new THREE.Float32BufferAttribute(K, 2)); g.setAttribute('farEm', new THREE.Float32BufferAttribute(EM, 3));
+  g.setIndex(P.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(I, 1) : new THREE.Uint16BufferAttribute(I, 1)); g.computeBoundingSphere();
+  return g;
+}
 // Every car keeps a stable identity (fleet.cars[id]: type, index within its type, transform, colours). What is drawn is
 // derived from it each frame: per car type the near set — full detail within lodDist of the camera — and, beyond it,
-// the same car with fewer segments. The far cars are spread over the whole town, so they are drawn as two lists: the
-// cars inside the view, rebuilt every frame (the rest are never sent to the GPU), and every far car's shadow-casting
-// shell (body, glass, tyres) on a layer only the shadow passes draw. A car moves between near and far with a few metres
-// of hysteresis. In the near and shadow sets the moving cars occupy the first slots and the parked ones the rest, so the
-// per-frame upload is only the moving span; only the moving cars have drivers and passengers.
+// the far body (farGeo). The far cars are spread over the whole town, so they are drawn as two lists: the cars inside
+// the view, rebuilt every frame (the rest are never sent to the GPU), and every far car's shadow-casting shell (the far
+// body) on a layer only the shadow passes draw. A car moves between near and far with a few metres of hysteresis. In
+// the near and shadow sets the moving cars occupy the first slots and the parked ones the rest, so the per-frame upload
+// is only the moving span; only the moving cars have drivers and passengers.
 export class Fleet {
   constructor(specs) { // specs: [{type, color}]
     this.cars = []; this.types = {}; this.lodDist = 60;
@@ -326,7 +380,7 @@ export class Fleet {
     specs.forEach((sp, i) => { (byType[sp.type] ||= []).push(i); });
     for (const [type, idxs] of Object.entries(byType)) {
       const T = TYPES[type], n = idxs.length;
-      const G = buildType(T); LO = true; const F = buildType(T); LO = false;
+      const G = buildType(T), FG = farGeo(G);
       // kind 0: near set (all parts); 1: far shadow shells (shadow passes only, layer 7); 2: far cars in view (no shadow)
       const family = (geo, kind) => {
         const M = {};
@@ -352,7 +406,21 @@ export class Fleet {
         if (kind === 1) for (const im of list) { im.userData.shadowOnly = true; im.layers.set(7); }
         return { M, list, sphere, slots: [], nMove: 0, d0: Infinity, d1: -1 };
       };
-      const sets = [family(G, 0), family(F, 1)], view = family(F, 2);
+      // kind 1: far shadow shells, 2: far cars in view — the far body (farGeo) in one draw; the view also draws the
+      // contact shadows (the paint and lamp colours ride as per-car attributes of its own view of the geometry)
+      const farFamily = kind => {
+        const g = new THREE.BufferGeometry(); for (const a in FG.attributes) g.setAttribute(a, FG.attributes[a]); g.setIndex(FG.index); g.boundingSphere = FG.boundingSphere;
+        if (kind === 2) { g.setAttribute('farPaint', new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3)); g.setAttribute('farLamp', new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2)); }
+        const M = { far: new THREE.InstancedMesh(g, farMat, n) };
+        if (kind === 2) M.shadow = new THREE.InstancedMesh(G.parts.shadow, shadowMat, n);
+        for (const [key, im] of Object.entries(M)) {
+          im.count = 0; im.frustumCulled = false; im.castShadow = kind === 1; im.receiveShadow = key !== 'shadow';
+          im.userData.per = 1; im.userData.occupant = false; im.userData.dynamicCaster = true; scene.add(im);
+          if (kind === 1) { im.userData.shadowOnly = true; im.layers.set(7); }
+        }
+        return { M, list: Object.values(M), sphere: new THREE.Sphere(), slots: [], nMove: 0, d0: Infinity, d1: -1, far: true };
+      };
+      const sets = [family(G, 0), farFamily(1)], view = farFamily(2);
       this.types[type] = { T, sets, view, cars: [] };
       idxs.forEach((si, k) => {
         const sp = specs[si];
@@ -387,6 +455,13 @@ export class Fleet {
   // write one car into its slot of its set
   _write(set, car, s = car.slot) {
     const M = set.M, A = car.mat;
+    if (set.far) {
+      M.far.instanceMatrix.array.set(A, s * 16); if (M.shadow) M.shadow.instanceMatrix.array.set(A, s * 16);
+      const at = M.far.geometry.attributes;
+      if (at.farPaint) { at.farPaint.array.set(car.col.paint, s * 3); at.farLamp.array[s * 2] = car.head; at.farLamp.array[s * 2 + 1] = car.tail; }
+      if (s < set.d0) set.d0 = s; if (s > set.d1) set.d1 = s;
+      return;
+    }
     for (const key of BODY) if (M[key]) M[key].instanceMatrix.array.set(A, s * 16);
     for (const key of OCC_KEYS) {
       const im = M[key]; if (!im) continue;
@@ -450,7 +525,7 @@ export class Fleet {
           const per = im.userData.per, a = im.instanceMatrix, c = im.instanceColor;
           a.clearUpdateRanges(); a.addUpdateRange(set.d0 * per * 16, (set.d1 - set.d0 + 1) * per * 16); a.needsUpdate = true;
           if (c) { c.clearUpdateRanges(); c.addUpdateRange(set.d0 * 3, (set.d1 - set.d0 + 1) * 3); c.needsUpdate = true; }
-          const q = im.geometry.attributes.seatCol; if (q) { q.clearUpdateRanges(); q.addUpdateRange(set.d0 * 4, (set.d1 - set.d0 + 1) * 4); q.needsUpdate = true; }
+          for (const an of INST_ATTRS) { const q = im.geometry.attributes[an]; if (q) { q.clearUpdateRanges(); q.addUpdateRange(set.d0 * q.itemSize, (set.d1 - set.d0 + 1) * q.itemSize); q.needsUpdate = true; } }
         }
         set.d0 = Infinity; set.d1 = -1;
       }
@@ -469,7 +544,7 @@ export class Fleet {
         const per = im.userData.per, a = im.instanceMatrix, c = im.instanceColor;
         a.clearUpdateRanges(); a.addUpdateRange(0, k * per * 16); a.needsUpdate = true;
         if (c) { c.clearUpdateRanges(); c.addUpdateRange(0, k * 3); c.needsUpdate = true; }
-        const q = im.geometry.attributes.seatCol; if (q) { q.clearUpdateRanges(); q.addUpdateRange(0, k * 4); q.needsUpdate = true; }
+        for (const an of INST_ATTRS) { const q = im.geometry.attributes[an]; if (q) { q.clearUpdateRanges(); q.addUpdateRange(0, k * q.itemSize); q.needsUpdate = true; } }
       }
     }
   }

@@ -1,9 +1,11 @@
 // Field crops as real little plants instead of boxes. Each crop is a small mesh built from bent, curled leaf cards cut
 // out of a painted leaf atlas (broad veined leaf, long serrated daikon leaf, heart-shaped taro leaf, a cabbage-head
 // texture) plus stems, heads, roots and fruit, all in one material. Plants are registered during the town build
-// (cropSet.add) and drawn as instanced meshes grouped per crop and per 128 m chunk, so a field of a thousand plants is
-// a handful of draws; chunks further than ~320 m are skipped (the rows' low crop mass carries the colour out there).
-import { THREE, scene, mulberry32 } from './core.js';
+// (cropSet.add) and drawn as instanced sets per crop (Scatter): each plant in full within ~45 m (x the quality's detail
+// distance), then a plainer copy of it — leaves as flat cards, fruit and stems with fewer sides, a sixth of the
+// triangles — out to ~320 m, past which the rows' low crop mass carries the colour. (In full to 320 m, the fields and
+// gardens in view were some 3.5 M triangles.)
+import { THREE, Q, Scatter, mulberry32 } from './core.js';
 import { canvasTex } from './townkit.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -51,8 +53,12 @@ function atlas() {
 const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
 // a leaf card: base at the origin, growing along +z, tilted up by `lift` (radians from horizontal), bent (+ curls the
 // tip up, - droops it) and cupped across its width; uv into one atlas cell
+// LO: the far copy (flat two-triangle-wide leaves, fruit and stems with half the sides)
+let LO = false;
+const SPH = (r, w, h) => new THREE.SphereGeometry(r, LO ? Math.max(5, w >> 1) : w, LO ? Math.max(3, h >> 1) : h);
+const CYL = (a, b, h, s) => new THREE.CylinderGeometry(a, b, h, LO ? Math.max(3, s >> 1) : s);
 function leafCard(cell, len, wid, lift, bend = 0, cup = 0, col = [1, 1, 1]) {
-  const NU = 3, NV = 5, pos = [], uv = [], idx = [], [cx, cy] = ATLAS[cell];
+  const NU = LO ? 1 : 3, NV = LO ? 2 : 5, pos = [], uv = [], idx = [], [cx, cy] = ATLAS[cell];
   for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) {
     const u = i / NU - 0.5, v = j / NV, a = lift + bend * v;
     const along = v * len, y = Math.sin(lift) * along + bend * along * along * 0.8 + cup * (u * u) * wid, z = Math.cos(lift) * along;
@@ -70,79 +76,76 @@ const merge = parts => { const m = mergeGeometries(parts.map(p => { const q = p.
 const LEAF = [0.52, 0.78, 0.46], DARK = [0.36, 0.6, 0.36], BLUE = [0.5, 0.72, 0.6];
 
 const GEOS = {};
-function geo(type) {
-  if (GEOS[type]) return GEOS[type];
+function geo(type, lo = false) {
+  const key = type + (lo ? '|lo' : ''); if (GEOS[key]) return GEOS[key];
+  LO = lo;
   const r = mulberry32(type.length * 977 + type.charCodeAt(0)), P = [];
   if (type === 'cabbage') { // a round pale head in a ring of big blue-green wrapper leaves
-    P.push(solid(new THREE.SphereGeometry(0.13, 12, 9).scale(1, 0.85, 1).translate(0, 0.12, 0), [0.86, 0.95, 0.72]));
+    P.push(solid(SPH(0.13, 12, 9).scale(1, 0.85, 1).translate(0, 0.12, 0), [0.86, 0.95, 0.72]));
     for (let k = 0; k < 8; k++) P.push(place(leafCard('broad', 0.3 + r() * 0.06, 0.28, 0.35 + r() * 0.35, 0.6, 0.35, k % 2 ? LEAF : DARK), k / 8 * Math.PI * 2 + r() * 0.3, 0, 0.03));
     for (let k = 0; k < 4; k++) P.push(place(leafCard('broad', 0.18, 0.2, 1.1, -0.4, 0.5, [0.7, 0.86, 0.56]), k / 4 * Math.PI * 2 + 0.4, 0, 0.1));
   } else if (type === 'napa') { // tall barrel head of pale leaves, a few outer leaves leaning out
-    P.push(solid(new THREE.SphereGeometry(0.1, 10, 10).scale(1, 2.1, 1).translate(0, 0.2, 0), [0.9, 0.95, 0.7]));
+    P.push(solid(SPH(0.1, 10, 10).scale(1, 2.1, 1).translate(0, 0.2, 0), [0.9, 0.95, 0.7]));
     for (let k = 0; k < 5; k++) P.push(place(leafCard('broad', 0.4, 0.2, 1.35, -0.25, 0.8, [0.72, 0.9, 0.58]), k / 5 * Math.PI * 2 + 0.3, 0, 0.02));   // wrapped leaves, green tops
     for (let k = 0; k < 6; k++) P.push(place(leafCard('broad', 0.34, 0.26, 0.55 + r() * 0.3, -0.6, 0.4, k % 2 ? DARK : LEAF), k / 6 * Math.PI * 2, 0, 0.02)); // outer leaves
   } else if (type === 'daikon') { // a rosette of long serrated leaves arching out; the white shoulder of the root
-    P.push(solid(new THREE.CylinderGeometry(0.04, 0.045, 0.1, 10).translate(0, 0.02, 0), [0.96, 0.97, 0.92]));
+    P.push(solid(CYL(0.04, 0.045, 0.1, 10).translate(0, 0.02, 0), [0.96, 0.97, 0.92]));
     for (let k = 0; k < 9; k++) P.push(place(leafCard('long', 0.42 + r() * 0.1, 0.12, 0.9 + r() * 0.3, -0.9, 0.2, k % 2 ? DARK : LEAF), k / 9 * Math.PI * 2 + r() * 0.3, 0, 0.06));
   } else if (type === 'leek') { // blue-green hollow blades fanning from a white earthed-up shank
-    P.push(solid(new THREE.CylinderGeometry(0.02, 0.024, 0.18, 8).translate(0, 0.09, 0), [0.95, 0.96, 0.9]));
+    P.push(solid(CYL(0.02, 0.024, 0.18, 8).translate(0, 0.09, 0), [0.95, 0.96, 0.9]));
     for (let k = 0; k < 6; k++) { const L = 0.38 + r() * 0.16, a = (r() - 0.5) * 0.5, b = r() * Math.PI * 2;
-      P.push(solid(new THREE.CylinderGeometry(0.004, 0.011, L, 6).translate(0, L / 2, 0).rotateZ(a).rotateY(b).translate(0, 0.17, 0), k % 2 ? BLUE : [0.44, 0.64, 0.52])); }
+      P.push(solid(CYL(0.004, 0.011, L, 6).translate(0, L / 2, 0).rotateZ(a).rotateY(b).translate(0, 0.17, 0), k % 2 ? BLUE : [0.44, 0.64, 0.52])); }
   } else if (type === 'potato' || type === 'eggplant' || type === 'bush') { // leafy clump on a few stems (eggplant: purple fruit)
     const big = type === 'eggplant' ? 1.25 : 1, N = type === 'eggplant' ? 12 : 16;
     for (let k = 0; k < N; k++) { const b = r() * Math.PI * 2, h = 0.05 + r() * (type === 'eggplant' ? 0.45 : 0.3), d = 0.03 + r() * 0.12;
       P.push(place(leafCard('broad', 0.17 * big, 0.13 * big, 0.2 + r() * 0.6, -0.3, 0.3, r() < 0.5 ? DARK : LEAF), b, Math.cos(b) * d, h, Math.sin(b) * d)); }
-    for (let k = 0; k < 3; k++) P.push(solid(new THREE.CylinderGeometry(0.008, 0.01, 0.35, 5).translate(0, 0.17, 0).rotateZ((r() - 0.5) * 0.5).rotateY(r() * 6), [0.42, 0.56, 0.3]));
-    if (type === 'eggplant') for (let k = 0; k < 2; k++) P.push(solid(new THREE.SphereGeometry(0.035, 8, 6).scale(1, 2.2, 1).translate((r() - 0.5) * 0.2, 0.2 + r() * 0.15, (r() - 0.5) * 0.2), [0.3, 0.1, 0.34]));
+    for (let k = 0; k < 3; k++) P.push(solid(CYL(0.008, 0.01, 0.35, 5).translate(0, 0.17, 0).rotateZ((r() - 0.5) * 0.5).rotateY(r() * 6), [0.42, 0.56, 0.3]));
+    if (type === 'eggplant') for (let k = 0; k < 2; k++) P.push(solid(SPH(0.035, 8, 6).scale(1, 2.2, 1).translate((r() - 0.5) * 0.2, 0.2 + r() * 0.15, (r() - 0.5) * 0.2), [0.3, 0.1, 0.34]));
   } else if (type === 'greens' || type === 'seedling') { // low rosette (komatsuna, lettuce) or a transplant in the mulch
     const s = type === 'seedling' ? 0.5 : 1;
     for (let k = 0; k < 7; k++) P.push(place(leafCard('broad', 0.17 * s, 0.12 * s, 0.7 + r() * 0.4, -0.5, 0.3, k % 2 ? [0.6, 0.86, 0.5] : LEAF), k / 7 * Math.PI * 2 + r() * 0.4, 0, 0.01));
   } else if (type === 'flowerP' || type === 'flowerY') { // bedding plants: a leafy mound topped with flower heads
     const FC = type === 'flowerP' ? [[0.96, 0.5, 0.66], [0.98, 0.7, 0.8], [0.85, 0.3, 0.45]] : [[1, 0.86, 0.3], [1, 0.95, 0.6], [0.98, 0.6, 0.2]];
     for (let k = 0; k < 7; k++) P.push(place(leafCard('broad', 0.12, 0.09, 0.5 + r() * 0.4, -0.4, 0.3, k % 2 ? DARK : LEAF), k / 7 * Math.PI * 2, 0, 0.01));
-    for (let k = 0; k < 9; k++) P.push(solid(new THREE.SphereGeometry(0.03, 6, 5).scale(1, 0.6, 1).translate((r() - 0.5) * 0.2, 0.12 + r() * 0.06, (r() - 0.5) * 0.2), FC[k % 3]));
+    for (let k = 0; k < 9; k++) P.push(solid(SPH(0.03, 6, 5).scale(1, 0.6, 1).translate((r() - 0.5) * 0.2, 0.12 + r() * 0.06, (r() - 0.5) * 0.2), FC[k % 3]));
   } else if (type === 'taro') { // three stalks carrying big heart leaves
     for (let k = 0; k < 3; k++) { const b = k / 3 * Math.PI * 2 + r() * 0.5, L = 0.6 + r() * 0.3, tx = Math.cos(b) * 0.12, tz = Math.sin(b) * 0.12;
-      P.push(solid(new THREE.CylinderGeometry(0.01, 0.018, L, 6).translate(0, L / 2, 0).rotateZ(-0.2).rotateY(-b), [0.55, 0.66, 0.4]));
+      P.push(solid(CYL(0.01, 0.018, L, 6).translate(0, L / 2, 0).rotateZ(-0.2).rotateY(-b), [0.55, 0.66, 0.4]));
       P.push(place(leafCard('heart', 0.42, 0.38, -0.25, -0.3, 0.25, [0.46, 0.7, 0.44]), -b + Math.PI / 2, tx, L - 0.06, tz)); }
   } else if (type === 'tomato') { // a staked vine: leaflets up the stake, trusses of red and green fruit
-    P.push(solid(new THREE.CylinderGeometry(0.01, 0.012, 1.7, 5).translate(0, 0.85, 0), [0.6, 0.5, 0.36]));
+    P.push(solid(CYL(0.01, 0.012, 1.7, 5).translate(0, 0.85, 0), [0.6, 0.5, 0.36]));
     for (let k = 0; k < 14; k++) { const h = 0.15 + k * 0.1, b = r() * Math.PI * 2; P.push(place(leafCard('broad', 0.15, 0.1, 0.1 + r() * 0.4, -0.4, 0.2, r() < 0.5 ? DARK : LEAF), b, 0, h)); }
-    for (let k = 0; k < 5; k++) P.push(solid(new THREE.SphereGeometry(0.03, 8, 6).translate((r() - 0.5) * 0.12, 0.4 + r() * 0.8, (r() - 0.5) * 0.12), r() < 0.6 ? [0.9, 0.2, 0.12] : [0.5, 0.72, 0.3]));
+    for (let k = 0; k < 5; k++) P.push(solid(SPH(0.03, 8, 6).translate((r() - 0.5) * 0.12, 0.4 + r() * 0.8, (r() - 0.5) * 0.12), r() < 0.6 ? [0.9, 0.2, 0.12] : [0.5, 0.72, 0.3]));
   } else if (type === 'vine') { // cucumber / bean leaves climbing a net
     for (let k = 0; k < 10; k++) { const b = r() * Math.PI * 2; P.push(place(leafCard('broad', 0.14, 0.13, 1.2 + r() * 0.3, -0.2, 0.2, r() < 0.5 ? DARK : LEAF), b, (r() - 0.5) * 0.1, r() * 0.5, (r() - 0.5) * 0.1)); }
   }
-  GEOS[type] = merge(P);
-  return GEOS[type];
+  LO = false;
+  GEOS[key] = merge(P);
+  return GEOS[key];
 }
 
 // ---------------------------------------------------------------- registry + instancing
-const CH = 256, list = new Map();
+const list = new Map();
 export const cropSet = {
   // world position of the plant's base, heading, scale, tint (multiplies the plant's own colours); far: drawn within
   // this distance only — garden plants (yards.js) are small and many, in 48 m chunks drawn within 90 m
   add(type, x, y, z, yaw = 0, s = 1, tintC = null, far = 0) {
-    const ch = far ? 48 : CH, k = type + '|' + far + '|' + Math.floor(x / ch) + ',' + Math.floor(z / ch);
+    const k = type + '|' + far;
     let L = list.get(k); if (!L) list.set(k, L = { type, items: [], far });
-    L.items.push([x, y, z, yaw, s, tintC]);
+    L.items.push({ x, y, z, r: yaw, s, c: tintC ? new THREE.Color(tintC[0], tintC[1], tintC[2]) : null });
   },
 };
 let MAT = null;
-const chunks = [];
+const FAR = 320;
 export function buildCrops() {
   if (!MAT) MAT = new THREE.MeshStandardMaterial({ map: atlas(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.78 });
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color();
-  let n = 0;
+  let n = 0, draws = 0;
   for (const L of list.values()) {
-    const im = new THREE.InstancedMesh(geo(L.type), MAT, L.items.length); im.name = 'crop:' + L.type;
-    L.items.forEach(([x, y, z, yaw, s, t], i) => { im.setMatrixAt(i, m4.compose(v.set(x, y, z), q.setFromAxisAngle(up, yaw), sc.setScalar(s))); im.setColorAt(i, t ? col.setRGB(t[0], t[1], t[2]) : col.setRGB(1, 1, 1)); });
-    im.computeBoundingSphere(); im.castShadow = false; im.receiveShadow = true; im.userData.far = L.far;
-    scene.add(im); chunks.push(im); n += L.items.length;
+    const far = L.far ? Math.min(FAR, L.far) : FAR, near = () => Math.min(far, 45 * (Q.lodScale || 1));
+    const part = g => [{ geometry: g, material: MAT, tint: true, castShadow: false }];
+    new Scatter(L.items, [{ dist: near, parts: part(geo(L.type)) }, { dist: () => far, parts: part(geo(L.type, true)) }], L.far ? 48 : 64);
+    n += L.items.length; draws++;
   }
   list.clear();
-  return { plants: n, draws: chunks.length };
-}
-const _c = new THREE.Vector3();
-export function updateCrops(cam, far = 320) {
-  for (const im of chunks) { const b = im.boundingSphere; if (!b) continue; im.visible = _c.copy(b.center).distanceTo(cam.position) - b.radius < (im.userData.far ? Math.min(far, im.userData.far) : far); }
+  return { plants: n, sets: draws };
 }
