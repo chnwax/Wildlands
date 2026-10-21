@@ -1,6 +1,6 @@
 // Game boot, UI, player, audio and the main loop. The city is picked on the title screen (menu.js); ?map=town|nature
 // skips the title and loads that map at once. World loading and rendering are shared with the world editor (engine.js).
-import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, tick, wind, skipStaticWalk } from './core.js';
+import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, tick, wind, skipStaticWalk, renderScale } from './core.js';
 import { time, updateSky, env } from './sky.js';
 import { post } from './post.js';
 import { audio } from './audio.js';
@@ -67,7 +67,16 @@ manager.onProgress = (url, a, b) => { loadState.assets = a / b; showProgress(); 
 function setQuality(name) {
   if (!engineQuality(name, world)) return;
   $('qSel').value = name;
+  showScale();
   toastMsg('Quality: ' + name.toUpperCase());
+}
+// render scale: the preset's own or a fixed one (core.js renderScale); the window-resize path resizes every target
+const _rs = new THREE.Vector2();
+function showScale() { renderer.getDrawingBufferSize(_rs); $('rSelV').textContent = _rs.x + '×' + _rs.y; }
+function setScale(v) {
+  renderScale.value = v; try { localStorage.setItem('wl_scale', v ? String(v) : ''); } catch (e) {}
+  dispatchEvent(new Event('resize')); $('rSel').value = v ? String(v) : ''; showScale();
+  toastMsg('Render scale: ' + (v ? Math.round(v * 100) + '%' : 'preset'));
 }
 
 const P_PLAYER = perf.id('player/collision'), P_LIFE = perf.id('ambient life'), P_AUDIO = perf.id('audio');
@@ -168,6 +177,9 @@ setting('fSlider', 'wl_fov', 72, v => { camera.fov = v; camera.updateProjectionM
 setting('vSlider', 'wl_volume', 0.8, v => audio.setVolume(v), v => Math.round(v * 100) + '%');
 $('qSel').addEventListener('change', e => setQuality(e.target.value));
 $('qSel').value = Q.name;
+$('rSel').addEventListener('change', e => setScale(+e.target.value || 0));
+$('rSel').value = renderScale.value ? String(renderScale.value) : ''; showScale();
+addEventListener('resize', showScale);
 $('openBuilder').addEventListener('click', e => { e.stopPropagation(); openBuilderHere(); });
 
 // ---------------------------------------------------------------- boot

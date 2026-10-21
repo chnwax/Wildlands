@@ -86,7 +86,11 @@ QUALITY.ultra.grassR = [[44, 105], [90, 40], [320, 1.75], [1350, 0.07], [2300, 0
 QUALITY.extreme.grassR = [[50, 110], [115, 46], [460, 1.9], [1650, 0.085], [2900, 0.024]];
 export const MAX_GRASS = 1600000;
 // supersampling never goes past ~8.3 million pixels (4K), so a 4K screen on Extreme renders natively instead of at 6K
-export const pixelRatio = () => { const d = Math.min(devicePixelRatio, 2) * Q.pr, px = innerWidth * innerHeight; return Math.max(Math.min(d, Math.sqrt(8.3e6 / Math.max(px, 1))), Math.min(devicePixelRatio, 1)); };
+// render scale (Settings): 0 = the preset's own (Q.pr), else a fixed multiple of the screen's pixels — 1.5 supersamples,
+// 1 renders at the screen's own size (temporal AA smooths the edges; a fifth to a quarter faster where the GPU limits)
+export const renderScale = { value: 0 };
+try { const v = +localStorage.getItem('wl_scale'); if ([1, 1.25, 1.5].includes(v)) renderScale.value = v; } catch (e) {}
+export const pixelRatio = () => { const d = Math.min(devicePixelRatio, 2) * (renderScale.value || Q.pr), px = innerWidth * innerHeight; return Math.max(Math.min(d, Math.sqrt(8.3e6 / Math.max(px, 1))), Math.min(devicePixelRatio, 1)); };
 export const Q = { name: 'high' };
 {
   let s = 'high';
