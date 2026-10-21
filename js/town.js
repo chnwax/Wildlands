@@ -6,7 +6,7 @@ import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWate
 import { buildTrees, buildBushes, buildLogs, sakuraColor, bushColor, hydraColor, leafColor, packShrubLods, shrubTint } from './trees.js';
 import { plantForest, forestFloor, moistureField, makeTree, crownR } from './ecology.js';
 import { plantTown } from './towngreen.js';
-import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, pedestrians, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
+import { nobori, standBoard, postBox, busStop, garbagePoint, dryingRack, mailbox, crosswalk, playground, school, constructionSite, streetShrine, chainMaterial, tennisCourts } from './towndeco.js';
 import { GeoBuilder as LGeo, lantern, bench, flushLandmarks, landmarkMaterials } from './landmarks.js';
 import { house, shopBuilding, konbini, apartment, warehouse, carPark, allotment, greenhouse, field, inFrame, shedRoof, offsite } from './building.js';
 import { mansion, PALETTES } from './apartments.js';
@@ -19,7 +19,8 @@ import { loadClutter, clutterScatter, clutterQueue, queueClutter } from './clutt
 import { loadPacks, flushPacks, queuePack, packParts, packsReady, packProp } from './packs.js';
 import { farmstead } from './farmstead.js';
 import { dressTown } from './dress.js';
-import { loadCrowd } from './crowd.js';
+import { loadPeople } from './crowd.js';
+import { buildNavGraph, collectPOIs, Pedestrians } from './pedestrians.js';
 import { setTownGlow } from './sky.js';
 import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
   vendingMachine, stopMat, lampPoints, signalMast, pedSignal, signalLampMaterial, signMesh, JP_FONT, bicycles, clockPole, chochin, canvasTex } from './townkit.js';
@@ -624,6 +625,8 @@ export async function build(progress, opts = {}) {
     signals.state = g => { const G = grp(g), c = cyc(G); return G.ph === 0 ? (c < 16 ? 'g' : c < 19 ? 'y' : 'r') : (c >= 20 && c < 32 ? 'g' : c >= 32 && c < 35 ? 'y' : 'r'); };
     // cars already within braking distance run the amber; nobody enters on red
     signals.go = (g, d) => { const s = signals.state(g); return s === 'g' || s === 'y' && d < 7; };
+    // the green man for walkers parallel to group g's traffic: walk, then flashing (nobody starts across), then stop
+    signals.ped = g => { const G = grp(g), e = cyc(G) - (G.ph === 0 ? 0 : 20); return e >= 0 && e < 13 ? 'walk' : e >= 13 && e < 16 ? 'flash' : 'stop'; };
     signals.update = dt => {
       signals.t += dt; const blink = Math.floor(signals.t * 2) % 2;
       for (const g of signals.groups.keys()) { const s = signals.state(g); for (const k of ['g', 'y', 'r']) { const m = signals.mats[g + k]; if (m) m.emissiveIntensity = s === k ? m.userData.on : 0; } }
@@ -1811,20 +1814,10 @@ export async function build(progress, opts = {}) {
   const cityLights = buildCityLights(layer.activeLamps());
   setTownGlow(-140, -5, 330, 0.035);
 
-  // people on the streets: sidewalks of the main road, lane shoulders, the riverside walkways and the shrine approach
-  const walkPaths = [];
-  for (const R of ROADS) {
-    const pts = R.district ? R.pts : R.pts.map(([x, z]) => [clamp(x, -440, 440), clamp(z, -335, 335)]);
-    walkPaths.push({ pts, off: R.kind === 'path' ? 1.0 : R.w / 2 + (R.walk ? R.walk / 2 : 0.55), lift: null, w: R.id === 'A' ? 3 : 1 });
-  }
-  for (const sd of [-1, 1]) walkPaths.push({ pts: Array.from({ length: 67 }, (_, i) => { const z = lerp(-330, 330, i / 66); return [riverX(z) + sd * 16.1, z]; }), off: 0, lift: null });
-  for (const P of danchi.walkPaths) walkPaths.push(P);
-  // across the station forecourt: from the main road to the ticket hall, and over the crossing to the bus berths
-  walkPaths.push({ pts: [[-2.5, -30.2], [-2.5, -62.8]], off: 1.1, lift: null, w: 2 }, { pts: [[-1, -48.5], [12.7, -48.5], [12.7, -32]], off: 0.4, lift: null });
   // nobody steps onto a level crossing while its bells ring or its booms are down
   const xingClosed = (x0, z0, x1, z1) => Math.abs(z1 + 80) < 7.2 && Math.abs(z0 + 80) >= 7.2 - 1e-3 && crossings.some(c => (c.active || c.down > 0.01) && Math.abs(x1 - c.x) < c.roadW / 2 + 3);
-  let crowd = null; if (SIM) try { crowd = await loadCrowd(); } catch (e) { console.warn('crowd models failed, box figures instead', e); }
-  const people = !SIM ? { update() {}, collide() {} } : pedestrians(walkPaths.flatMap(P => Array(P.w || 1).fill(P)), (x, z) => world.groundAt(x, z), 300, 21, { blocked: xingClosed, crowd });
+  // people on foot (pedestrians.js): built once the world can answer heights, below
+  let people = { update() {}, collide() {} };
   const spawn = { x: 107.9, z: -42, yaw: 0.12, pitch: 0.04 }; // edge of road B, looking at the level crossing
   const _n = new THREE.Vector3(), _pl = { x: 0, y: 0, z: 0 };
   const PW = { lights: perf.id('world: lights'), lod: perf.id('world: building LOD'), props: perf.id('world: props'), people: perf.id('world: pedestrians'),
@@ -1884,7 +1877,7 @@ export async function build(progress, opts = {}) {
       perf.begin(PW.props); landmarks.update(); parkBenches.update(); danchiBenches.update(); perf.end(PW.props);
       if (SIM) distCull(cam);
       if (!SIM) { fleet.commit(cam.position, cam); cityLightU.uCLI.value = smoothstep(0.2, 0.5, night.value); return; } // editor: static scenery only
-      perf.begin(PW.people); people.update(dt); perf.end(PW.people);
+      perf.begin(PW.people); people.update(dt, cam); perf.end(PW.people);
       const pl = _pl; pl.x = cam.position.x; pl.y = cam.position.y - 1.6; pl.z = cam.position.z;
       perf.begin(PW.trains);
       for (const tr of trains) tr.update(dt, pl);
@@ -1910,6 +1903,21 @@ export async function build(progress, opts = {}) {
     if (signTick++ % 6 === 0) { const R = 190 * (Q.lodScale || 1), R2 = R * R, p = cam.position;
       for (const o of smallSigns) { const dx = o.position.x - p.x, dz = o.position.z - p.z; o.visible = dx * dx + dz * dz < R2; } }
     perf.end(PW.signs); };
+  if (SIM) try {
+    // the walks: every street's footways (from the road network), the riverside walks, the station forecourt, the estate
+    const chains = [];
+    for (const sd of [-1, 1]) chains.push({ pts: Array.from({ length: 67 }, (_, k) => { const z = lerp(-330, 330, k / 66); return [riverX(z) + sd * 16.1, z]; }), kind: 2, w: 2.6 });
+    for (const P of danchi.walkPaths) chains.push({ pts: P.pts, kind: 3, w: P.width || 1.8, door: !!P.door });
+    chains.push({ pts: [[-2.5, -30.2], [-2.5, -62.8]], kind: 2, w: 3 }, { pts: [[-1, -48.5], [12.7, -48.5], [12.7, -32]], kind: 2, w: 2.4 });
+    const walkable = (x, z, edge = false) => (edge || !RN.roadAt(x, z)) && world.groundAt(x, z) > RIVER_LV + 0.3;
+    const zebraSignal = zb => zb.I && isSignal(zb.I) ? sigKey(zb.I, zb.I.roads.find(r => r.id !== zb.id) || zb.I.roads[0]) : null;
+    const G = buildNavGraph({ RN, zebras, zebraSignal, walkable, chains });
+    const pois = collectPOIs(G, layer, [{ type: 'station', x: -2.5, z: -62.4, yaw: Math.PI }]);
+    const carNear = (x, z, r) => traffic.movers.some(m => { const dx = x - m.wx, dz = z - m.wz; return dx * dx + dz * dz < r * r && m.v > 0.4 && dx * (m.hx || 0) + dz * (m.hz || 0) > -3; });
+    const count = { low: 120, medium: 200, high: 280, ultra: 360, extreme: 440 }[Q.name] || 280;
+    people = new Pedestrians({ G, pois, people: await loadPeople(), groundAt: (x, z) => world.groundAt(x, z), pedSignal: g => signals.ped(g), carNear, railClosed: xingClosed, count });
+    console.info(`pedestrians: graph ${G.x.length} nodes, ${G.edges.length} edges, ${G.compSize.filter(n => n > 60).length} networks; ${pois.length} places (${Object.entries(people.byType).map(([k, v]) => k + ' ' + v.length).join(', ')}); ${count} people`);
+  } catch (e) { console.warn('pedestrians failed', e); }
   people.update(0);
   world.cityLights = Object.assign(cityLights, { materials: enableCityLights(scene) });
   world.layer = layer; layer.attach(world);

@@ -370,7 +370,7 @@ export async function buildDanchi(ctx) {
       occRect((g.ax + g.bx) / 2, (g.az + g.bz) / 2, w / 2 + 0.3, g.L / 2 + 0.3, Math.atan2(g.bx - g.ax, g.bz - g.az), 1, 1, rid);
       if (lamps) for (let t = 6; t < g.L - 2; t += 16) { const x = g.ax + g.ux * t + g.nx * (w / 2 + 0.6), z = g.az + g.uz * t + g.nz * (w / 2 + 0.6); if (clear(x, z, 0.3) && !poles.some(p => Math.hypot(p[0] - x, p[1] - z) < 8)) { const q = freeSpot(x, z, 0.35); if (q && Math.hypot(q[0] - x, q[1] - z) < 1.2) pathLamp(q[0], q[1]); } }
     }
-    out.walkPaths.push({ pts: pts.map(p => [p[0], p[1]]), off: 0, lift: null, w: g0w(w) });
+    out.walkPaths.push({ pts: pts.map(p => [p[0], p[1]]), off: 0, lift: null, w: g0w(w), width: w, door }); // (door: a building's own walk: one end at its door)
     return rid;
   };
   // a paved forecourt (an entrance's apron) on four world corners (C[0]-C[1] against the building), laid by the network

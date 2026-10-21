@@ -239,8 +239,8 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 	vec3 fDir = vFogDir / max( fDist, 1e-4 );
 	#ifdef FOG_EXP2
 		float fk = fogParams.y;
-		float fdy = clamp( fDir.y * fDist * fk, -8.0, 60.0 );
-		float fH = exp( - clamp( fk * fogParams.x, -8.0, 60.0 ) ) * ( abs( fdy ) > 1e-3 ? ( 1.0 - exp( - fdy ) ) / fdy : 1.0 );
+		float fogDy = clamp( fDir.y * fDist * fk, -8.0, 60.0 ); // (not fdy: flat-shaded materials declare that)
+		float fH = exp( - clamp( fk * fogParams.x, -8.0, 60.0 ) ) * ( abs( fogDy ) > 1e-3 ? ( 1.0 - exp( - fogDy ) ) / fogDy : 1.0 );
 		float fOD = fogDensity * fDist * fH;
 		if ( fogMist.x > 0.0 ) {
 			float mk = fogMist.y, mdy = clamp( fDir.y * fDist * mk, -8.0, 60.0 );

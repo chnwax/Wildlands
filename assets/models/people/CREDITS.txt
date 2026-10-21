@@ -1,3 +1,7 @@
-quaternius_man.glb    "Man" by Quaternius — https://poly.pizza/m/HMnuH5geEG — Public Domain (CC0)
-quaternius_woman.glb  "Animated Woman" by Quaternius — https://poly.pizza/m/9kF7eTDbhO — Public Domain (CC0)
-Walk and idle clips are baked to vertex-animation textures at load (js/crowd.js).
+people.json / people.bin   baked from AssetsToUse/Ludzie by tools/people-bake.mjs (positions per frame, js/crowd.js)
+  man_casual      "Man" (Male_Casual.fbx)                      Quaternius, via poly.pizza
+  man_shirt       "Man" (Male_Shirt.fbx, poly.pizza fjHyMd5Wxw) Quaternius, via poly.pizza
+  man_longsleeve  "Man in Long Sleeves" (Male_LongSleeve.fbx)  Quaternius, via poly.pizza
+  man_suit        "Man in Suit" (Male_Suit.fbx)                Quaternius, via poly.pizza
+  casual, formal  Casual.fbx, Formal.fbx                       via poly.pizza (user-supplied, AssetsToUse/Ludzie)
+The FBX sources are not in the repository (AssetsToUse is kept locally); rerun the bake after replacing them.

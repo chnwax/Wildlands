@@ -1,12 +1,10 @@
 // Town dressing for Sakuragawa: the things that make a street feel lived in. An elementary school with its sports
 // ground, a playground park, zebra crossings, shop banners and signboards, bus stops, post boxes, garbage points,
 // drying racks, mailboxes, rooftop tanks, and people walking the streets (instanced, animated in the vertex shader).
-import { THREE, scene, S, mulberry32, clamp, lerp, addBox, addCircle, addPlatform } from './core.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { THREE, scene, mulberry32, clamp, lerp, addBox, addCircle, addPlatform } from './core.js';
 import { canvasTex, signMesh, JP_FONT, lampPoints, materials, clockHead, floodMast } from './townkit.js';
 import { wallFill, reveals, windowUnit, inFrame } from './building.js';
 import { cropSet } from './crops.js';
-import { crowdMeshes } from './crowd.js';
 import { torii, shimenawa, toro, offeringBox } from './shrine.js';
 import { placeable, atXYZR, atObj, atLocal } from './world/capture.js';
 import { queueClutter } from './clutter.js';
@@ -722,128 +720,6 @@ function school_build(B, cx, y, cz, r, BW, BD, rng, sakura, bikes, extras) {
   for (let k = 0; k < 12; k++) { const p = B.P([-3.6 + k * 0.65, 0, 0]); bikes.push({ x: p[0], y, z: p[2], r: r + Math.PI / 2 + (rng() - 0.5) * 0.1 }); }
   B.F = F;
   return { field: { x: fx, z: fz, w: fw, d: fd } };
-}
-
-// ---------------------------------------------------------------- people walking the streets
-// A little anime figure (about 1.6 m) built from boxes; parts carry a limb id so the vertex shader can swing legs and
-// arms, and a palette slot so each instance gets its own shirt, trousers/skirt and hair colours.
-function personGeometry() {
-  const parts = [];
-  const add = (w, h, d, x, y, z, part, slot, ico = 0) => {
-    const g = ico ? new THREE.IcosahedronGeometry(ico, 1) : new THREE.BoxGeometry(w, h, d);
-    if (ico) g.scale(w, h, d);
-    g.translate(x, y, z);
-    const n = g.attributes.position.count;
-    g.setAttribute('aPart', new THREE.Float32BufferAttribute(new Float32Array(n).fill(part), 1));
-    g.setAttribute('aSlot', new THREE.Float32BufferAttribute(new Float32Array(n).fill(slot), 1));
-    g.deleteAttribute('uv');
-    parts.push(g.index ? g.toNonIndexed() : g);
-  };
-  add(0.33, 0.5, 0.2, 0, 1.08, 0, 0, 1);                 // torso
-  add(0.35, 0.18, 0.22, 0, 0.8, 0, 0, 2);                // hips / skirt
-  for (const s of [-1, 1]) {
-    add(0.12, 0.74, 0.13, s * 0.085, 0.43, 0, s < 0 ? 1 : 2, 2);   // legs
-    add(0.13, 0.08, 0.22, s * 0.085, 0.04, 0.03, s < 0 ? 1 : 2, 4); // shoes
-    add(0.085, 0.48, 0.09, s * 0.21, 1.07, 0, s < 0 ? 3 : 4, 1);    // arms
-    add(0.075, 0.09, 0.08, s * 0.21, 0.79, 0, s < 0 ? 3 : 4, 0);    // hands
-  }
-  add(0.08, 0.06, 0.08, 0, 1.36, 0, 0, 0);               // neck
-  add(1, 1.08, 1, 0, 1.5, 0.005, 0, 0, 0.125);           // head
-  add(1.06, 1.0, 1.1, 0, 1.54, -0.025, 0, 3, 0.132);     // hair cap
-  add(0.24, 0.26, 0.1, 0, 1.1, -0.14, 0, 5);              // backpack / bag
-  return mergeGeometries(parts);
-}
-const SHIRTS = [[0.97, 0.97, 0.95], [0.2, 0.26, 0.42], [0.98, 0.72, 0.76], [0.55, 0.74, 0.95], [0.98, 0.88, 0.45], [0.62, 0.82, 0.62], [0.9, 0.42, 0.36], [0.22, 0.22, 0.24], [0.8, 0.7, 0.92]];
-const PANTS = [[0.18, 0.22, 0.36], [0.3, 0.3, 0.32], [0.62, 0.55, 0.42], [0.14, 0.14, 0.16], [0.28, 0.36, 0.55], [0.55, 0.3, 0.3], [0.85, 0.82, 0.76]];
-const HAIR = [[0.08, 0.07, 0.07], [0.08, 0.07, 0.07], [0.22, 0.14, 0.1], [0.36, 0.22, 0.14], [0.6, 0.42, 0.26], [0.12, 0.1, 0.12]];
-const BAGS = [[0.2, 0.14, 0.1], [0.12, 0.14, 0.22], [0.75, 0.18, 0.16], [0.9, 0.62, 0.3]];
-
-// paths: [{ pts: [[x,z],...], off, lift(x,z) }]; people walk along a path at `off` metres to one side, turning at the ends
-export function pedestrians(paths, groundAt, count, seed = 21, { blocked = null, crowd = null } = {}) {
-  const rng = mulberry32(seed), geo = personGeometry();
-  const walkers = [];
-  const lens = paths.map(P => { let L = 0; const seg = []; for (let i = 0; i + 1 < P.pts.length; i++) { const l = Math.hypot(P.pts[i + 1][0] - P.pts[i][0], P.pts[i + 1][1] - P.pts[i][1]); seg.push(l); L += l; } P.seg = seg; P.L = L; return L; });
-  const total = lens.reduce((a, b) => a + b, 0);
-  const cols = new Float32Array(count * 12), ps = new Float32Array(count * 2);
-  for (let i = 0; i < count; i++) {
-    let u = rng() * total, pi = 0; while (pi < paths.length - 1 && u > lens[pi]) { u -= lens[pi]; pi++; }
-    const P = paths[pi], kid = rng() < 0.22, uniform = kid && rng() < 0.6;
-    const shirt = uniform ? [0.97, 0.97, 0.95] : pick(rng, SHIRTS), pants = uniform ? [0.16, 0.2, 0.36] : pick(rng, PANTS), hair = pick(rng, HAIR), bag = kid ? (rng() < 0.5 ? [0.2, 0.12, 0.1] : [0.75, 0.2, 0.18]) : pick(rng, BAGS);
-    cols.set([...shirt, ...pants, ...hair, ...bag], i * 12);
-    const speed = (kid ? 1.05 : 1.2) + rng() * 0.35, scale = kid ? 0.78 + rng() * 0.08 : 0.95 + rng() * 0.12;
-    ps[i * 2] = rng() * 6.28; ps[i * 2 + 1] = speed * 2.9 / scale;
-    walkers.push({ P, s: u, dir: rng() < 0.5 ? 1 : -1, side: rng() < 0.5 ? 1 : -1, speed, scale, pause: 0, x: 0, z: 0, model: rng() < 0.5 ? 0 : 1, colour: { shirt, pants, hair }, phase: rng() });
-  }
-  // rigged characters with baked animation (crowd.js) when they loaded; the box figures otherwise
-  const C = crowd ? crowdMeshes(crowd, walkers, walkers.map(w => w.colour)) : null;
-  // shirt, trousers, hair and bag colours: 12 floats per person, read as three vec4 views
-  const buf = new THREE.InstancedInterleavedBuffer(cols, 12, 1);
-  geo.setAttribute('iColA', new THREE.InterleavedBufferAttribute(buf, 4, 0));
-  geo.setAttribute('iColB', new THREE.InterleavedBufferAttribute(buf, 4, 4));
-  geo.setAttribute('iColC', new THREE.InterleavedBufferAttribute(buf, 4, 8));
-  geo.setAttribute('iWalk', new THREE.InstancedBufferAttribute(ps, 2));
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0 });
-  mat.onBeforeCompile = sh => {
-    sh.uniforms.uTime = S.uTime;
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>
-        attribute float aPart, aSlot; attribute vec4 iColA, iColB, iColC; attribute vec2 iWalk;
-        uniform float uTime; varying vec3 vPCol;
-        float pAng() { float ph = uTime * iWalk.y + iWalk.x, s = sin(ph) * 0.5;
-          return aPart < 0.5 ? 0.0 : aPart < 1.5 ? s : aPart < 2.5 ? -s : aPart < 3.5 ? -s * 0.8 : s * 0.8; }
-        vec3 pRot(vec3 p, float a, float py) { p.y -= py; p = vec3(p.x, p.y * cos(a) - p.z * sin(a), p.y * sin(a) + p.z * cos(a)); p.y += py; return p; }`)
-      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-        float pa = pAng(), piv = aPart < 2.5 ? 0.82 : 1.3;
-        objectNormal = pRot(objectNormal + vec3(0.0, piv, 0.0), pa, piv) - vec3(0.0, piv, 0.0);`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        transformed = pRot(transformed, pa, piv);
-        transformed.y += abs(sin(uTime * iWalk.y + iWalk.x)) * 0.035;
-        vec3 skin = vec3(1.0, 0.84, 0.72);
-        vPCol = aSlot < 0.5 ? skin : aSlot < 1.5 ? iColA.rgb : aSlot < 2.5 ? vec3(iColA.a, iColB.rg) : aSlot < 3.5 ? vec3(iColB.ba, iColC.r) : aSlot < 4.5 ? vec3(0.14, 0.13, 0.14) : iColC.gba;`);
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vPCol;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vPCol;');
-  };
-  mat.customProgramCacheKey = () => 'people';
-  const im = new THREE.InstancedMesh(geo, mat, count);
-  im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; im.userData.dynamicCaster = true;
-  if (!C) scene.add(im);
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3();
-  const at = (P, s, out) => { // point + direction along a polyline, into out [x, z, dx, dz]
-    s = clamp(s, 0, P.L);
-    for (let i = 0; i < P.seg.length; i++) {
-      if (s <= P.seg[i] || i === P.seg.length - 1) { const a = P.pts[i], b = P.pts[i + 1], t = P.seg[i] ? s / P.seg[i] : 0;
-        out[0] = lerp(a[0], b[0], t); out[1] = lerp(a[1], b[1], t); out[2] = (b[0] - a[0]) / (P.seg[i] || 1); out[3] = (b[1] - a[1]) / (P.seg[i] || 1); return out; }
-      s -= P.seg[i];
-    }
-    return out;
-  };
-  const _at = [0, 0, 0, 0];
-  const walkAttr = geo.attributes.iWalk, rate0 = Float32Array.from(ps.filter((_, k) => k % 2 === 1)), phase0 = Float32Array.from(ps.filter((_, k) => k % 2 === 0));
-  const update = (dt) => {
-    let animChanged = false;
-    for (let i = 0; i < walkers.length; i++) {
-      const w = walkers[i];
-      // walkers stop short of anything blocked ahead (a level crossing whose bells are ringing), stand still, and go on
-      // once it clears; someone already on the crossing keeps walking off it
-      let ns = w.s + w.dir * w.speed * dt;
-      if (ns < 0 || ns > w.P.L) { w.dir *= -1; ns = clamp(ns, 0, w.P.L); }
-      let wait = false;
-      if (blocked && dt > 0) { const A = at(w.P, ns + w.dir * 0.8, _at), oo = w.P.off * w.side; wait = blocked(w.x, w.z, A[0] - A[3] * oo, A[1] + A[2] * oo); }
-      if (!wait) w.s = ns;
-      if (wait !== !!w.waiting) { w.waiting = wait; ps[i * 2 + 1] = wait ? 0 : rate0[i]; ps[i * 2] = wait ? 0 : phase0[i]; animChanged = true; }
-      const A = at(w.P, w.s, _at), x = A[0], z = A[1], dx = A[2], dz = A[3], o = w.P.off * w.side;
-      w.x = x - dz * o; w.z = z + dx * o;
-      const y = w.y = groundAt(w.x, w.z) + (w.P.lift ? w.P.lift(w.x, w.z) : 0);
-      q.setFromAxisAngle(up, Math.atan2(dx * w.dir, dz * w.dir));
-      m4.compose(v.set(w.x, y, w.z), q, sc.setScalar(w.scale));
-      if (C) C.set(i, m4, w.phase, w.speed / (1.4 * w.scale), w.waiting ? 1 : 0); // one gait cycle (two steps) ≈ 1.4 m
-      else im.setMatrixAt(i, m4);
-    }
-    if (C) C.commit(); else { im.instanceMatrix.needsUpdate = true; if (animChanged) walkAttr.needsUpdate = true; }
-  };
-  return { mesh: C ? C.meshes[0] : im, walkers, update, collide(p) { for (const w of walkers) { const dx = p.x - w.x, dz = p.z - w.z, d2 = dx * dx + dz * dz; if (d2 < 0.36 && d2 > 1e-8 && (w.y === undefined || Math.abs(p.y - w.y) < 1.7)) {   // (only someone at the walker's own level: not under a gallery)
-       const d = Math.sqrt(d2); p.x = w.x + dx / d * 0.6; p.z = w.z + dz / d * 0.6; } } } };
 }
 
 // municipal tennis courts (市民テニスコート): two sand-filled artificial-grass courts inside a 4 m chain-link cage, nets on
