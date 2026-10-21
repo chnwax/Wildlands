@@ -422,18 +422,22 @@ export function buildCompound(tri, { x, y, z, r, ground = null }, kind = 'buildi
     if (Nl < 1e-9) continue;
     const ny = Ny / Nl, walk = ny > 0.6, ar = ex * fz - ez * fx;                               // (faces are wound outward: a top faces up)
     const i0 = Math.floor((Math.min(ax, bx, qx) - x0) / CC), i1 = Math.floor((Math.max(ax, bx, qx) - x0) / CC), j0 = Math.floor((Math.min(az, bz, qz) - z0) / CC), j1 = Math.floor((Math.max(az, bz, qz) - z0) / CC);
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const cx0 = x0 + i * CC, cz0 = z0 + j * CC, k = j * nx + i;
+    const T0 = walk ? null : [ax, ay, az, bx, by, bz, qx, qy, qz];
+    for (let j = j0; j <= j1; j++) {
+      const cz0 = z0 + j * CC;
+      // (a solid face is cut to the cell row once, then to each cell of the row)
+      let R = null; if (!walk) { R = clip(T0, 2, cz0, true); if (R.length) R = clip(R, 2, cz0 + CC, false); if (!R.length) continue; }
+      for (let i = i0; i <= i1; i++) {
+      const cx0 = x0 + i * CC, k = j * nx + i;
       if (walk) { // a top: its height over the cell's centre, if the centre is on it
         if (Math.abs(ar) < 1e-9) continue; const px = cx0 + CC / 2 - ax, pz = cz0 + CC / 2 - az, u = (px * fz - pz * fx) / ar, v = (ex * pz - ez * px) / ar;
         if (u >= -1e-4 && v >= -1e-4 && u + v <= 1 + 1e-4) push(k, 1, ay + ey * u + fy * v, 0, 0, 0, 0, 0);
         continue; }
-      let P = [ax, ay, az, bx, by, bz, qx, qy, qz];
-      P = clip(P, 0, cx0, true); if (!P.length) continue; P = clip(P, 0, cx0 + CC, false); if (!P.length) continue;
-      P = clip(P, 2, cz0, true); if (!P.length) continue; P = clip(P, 2, cz0 + CC, false); if (!P.length) continue;
+      let P = clip(R, 0, cx0, true); if (!P.length) continue; P = clip(P, 0, cx0 + CC, false); if (!P.length) continue;
       let ylo = 1e9, yhi = -1e9, mx0 = 1e9, mx1 = -1e9, mz0 = 1e9, mz1 = -1e9;
       for (let q = 0; q < P.length; q += 3) { ylo = Math.min(ylo, P[q + 1]); yhi = Math.max(yhi, P[q + 1]); mx0 = Math.min(mx0, P[q]); mx1 = Math.max(mx1, P[q]); mz0 = Math.min(mz0, P[q + 2]); mz1 = Math.max(mz1, P[q + 2]); }
       push(k, 0, ylo, yhi, mx0, mx1, mz0, mz1);
+      }
     }
   }
   // per cell: its tops (sorted, deduplicated) and its solid spans merged where they overlap in height

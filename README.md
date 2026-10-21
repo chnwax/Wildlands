@@ -27,6 +27,15 @@ development branch), `-ResetToken` forgets the saved token, `Play-Wildlands.bat 
 `Start.bat` (needs Python) serves the folder on `http://localhost:8765`; any static web server works
 (`python -m http.server 8765`). Browsers cannot run the game from `file://` because it uses ES modules.
 
+## Desktop app (Electron)
+
+`Wildlands-App.bat` (or `npm start`; needs Node.js 18+) opens the game in a window of its own instead of a browser
+tab. The first start installs the app runtime (Electron, about 100 MB, into `node_modules/`). The app serves the game
+with the same local server as the World Builder, so the title screen, the game and the editor all work in it, saving
+included; with `Editor.bat` already running it shares that server. The town's build and shader compilation no longer
+hold up the browser, and the compiled shaders are kept in the app's cache, so later starts are quicker.
+Keys: F11 full screen, F5 reload, F12 developer tools.
+
 ## Controls
 
 WASD to move, mouse to look, Shift to run, Space to jump, C to crouch, F to fly, `[` / `]` to change the time of day,

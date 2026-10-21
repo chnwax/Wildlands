@@ -77,10 +77,18 @@ export async function prepareWorld(world, progress = () => {}) {
   indexInstanced(scene); shareShadowDepth(scene); singlePassFlat(scene); ownInstanceGeometry(scene); freezeStatic(scene); prepareShadowCache(scene);
   progress('Compiling shaders', 1); await tick();
   // KHR_parallel_shader_compile: the GPU process compiles every program side by side instead of one blocking call each
-  await renderer.compileAsync(scene, camera);
+  await compileScene();
   await warmup(world);
 }
 
+// The scene's programs compiled for the target the scene is really drawn into (the scene pass's linear half-float
+// target, no tone mapping — the grade pass does that): compiled with no target set, every material got a second,
+// on-screen variant (sRGB output, tone-mapped) that is never drawn — 130 of the 330 programs, compiled for nothing
+async function compileScene() {
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(post.scenePass ? post.scenePass.rt : prev);
+  try { await renderer.compileAsync(scene, camera); } finally { renderer.setRenderTarget(prev); }
+}
 // ---------------------------------------------------------------- warm-up
 // Everything is drawn once, in every pass it can appear in, before the first real frame. compileAsync only prepares
 // what is visible from the spawn with the scene pass's settings; the rest (far LOD levels, detail that appears on
@@ -101,6 +109,10 @@ async function warmup(world) {
     const p = new THREE.Mesh(mesh.geometry, m); p.frustumCulled = false; p.castShadow = mesh.castShadow; p.receiveShadow = mesh.receiveShadow; p.layers.mask = mesh.layers.mask;
     scene.add(p); standIns.push(p);
   }
+  // everything that is about to be drawn compiled side by side first (KHR_parallel_shader_compile): the draw below then
+  // finds its programs ready instead of compiling each one in a blocking call — with a cold shader cache that was half
+  // a minute in which the page, and the browser's GPU process with every other tab, stood still
+  await compileScene();
   const pr = renderer.getPixelRatio();
   renderer.setPixelRatio(Math.max(0.1, 192 / innerWidth)); buildComposer();
   for (const l of scene.children) if (l.isDirectionalLight && l.castShadow) l.shadow.needsUpdate = true;

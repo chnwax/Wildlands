@@ -24,6 +24,7 @@ class GrowBuf {
   constructor(T = Float32Array, cap = 256) { this.T = T; this.a = new T(cap); this.length = 0; }
   grow(n) { if (this.length + n <= this.a.length) return; let c = this.a.length * 2; while (c < this.length + n) c *= 2; const b = new this.T(c); b.set(this.a.subarray(0, this.length)); this.a = b; }
   push(...v) { this.grow(v.length); for (let i = 0; i < v.length; i++) this.a[this.length++] = v[i]; return this.length; }
+  reserve(n) { this.grow(n); const o = this.length; this.length += n; return o; } // (n slots appended; their offset — write this.a after)
   zeros(n) { this.grow(n); this.a.fill(0, this.length, this.length + n); this.length += n; }
   view() { return this.a.slice(0, this.length); }
 }
@@ -36,32 +37,53 @@ export class GeoBuilder {
   P(l) { const F = this.F; return [F.x + l[0] * F.c + l[2] * F.s, F.y + l[1], F.z - l[0] * F.s + l[2] * F.c]; }
   N(n) { const F = this.F; return [n[0] * F.c + n[2] * F.s, n[1], -n[0] * F.s + n[2] * F.c]; }
   bucket(mat, x, z) {
-    const c = this.lod ? this.chunk / 2 : this.chunk, k = mat + '|' + this.lod + '|' + Math.floor(x / c) + ',' + Math.floor(z / c);
-    let b = this.parts.get(k); if (!b) { b = { mat, lod: this.lod, pos: new GrowBuf(), nor: new GrowBuf(), uv: new GrowBuf(), col: new GrowBuf(), idx: new GrowBuf(Uint32Array), extra: {}, mesh: null }; this.parts.set(k, b); }
+    const c = this.lod ? this.chunk / 2 : this.chunk, ix = Math.floor(x / c), iz = Math.floor(z / c), L = this._lb;
+    let b;
+    // (most primitives land in the bucket of the one before: the key string and the map lookup only when it changes)
+    if (L && L.mat === mat && L.lod === this.lod && L.ix === ix && L.iz === iz) b = L.b;
+    else {
+      const k = mat + '|' + this.lod + '|' + ix + ',' + iz;
+      b = this.parts.get(k); if (!b) { b = { mat, lod: this.lod, pos: new GrowBuf(), nor: new GrowBuf(), uv: new GrowBuf(), col: new GrowBuf(), idx: new GrowBuf(Uint32Array), extra: {}, nExtra: 0, mesh: null }; this.parts.set(k, b); }
+      this._lb = { mat, lod: this.lod, ix, iz, b };
+    }
     if (capHooks.bucket) capHooks.bucket(b); // (world objects: which object wrote which vertices, world/capture.js)
     return b;
   }
   // optional extra per-vertex attributes (opt.attr = { name: [v0, v1, v2(, v3)] }, each a 2-vector); other vertices get 0
   _extra(B, n, attr) {
+    if (!attr && !this.defAttr && !B.nExtra) return; // (the usual case: a bucket with no extra attributes)
     if (this.defAttr) { attr = Object.assign({}, attr); for (const k in this.defAttr) if (!(k in attr)) attr[k] = Array(n).fill(this.defAttr[k]); }
     const count = B.pos.length / 3 - n;           // vertices already in the bucket before this primitive
     for (const name in B.extra) if (!attr || !(name in attr)) B.extra[name].zeros(n * 2);
     if (attr) for (const name in attr) {
-      if (!B.extra[name]) { B.extra[name] = new GrowBuf(); B.extra[name].zeros(count * 2); }
+      if (!B.extra[name]) { B.extra[name] = new GrowBuf(); B.extra[name].zeros(count * 2); B.nExtra++; }
       for (const v of attr[name]) B.extra[name].push(v[0], v[1]);
     }
   }
   // a,b,c,d local corners, counter-clockwise seen from the front; uv in metres / opt.uv
+  // (written straight into the buffers, no temporary arrays: the town's few million quads made the vector helpers'
+  // allocations a good part of the build)
   quad(mat, a, b, c, d, opt = {}) {
-    const e1 = sub(b, a), e2 = sub(d, a), n = this.N(norm(cross(e1, e2)));
-    const s = opt.uv || 1, [u0, v0] = opt.uvo || [0, 0], lu = len(e1) / s, lv = len(e2) / s;
-    const uvs = opt.uvs || [[u0, v0], [u0 + lu, v0], [u0 + lu, v0 + lv], [u0, v0 + lv]];
-    const wa = this.P(a), B = this.bucket(mat, wa[0], wa[2]), base = B.pos.length / 3, col = opt.color || WHITE;
+    const F = this.F, fc = F.c, fs = F.s;
+    const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2], e2x = d[0] - a[0], e2y = d[1] - a[1], e2z = d[2] - a[2];
+    let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x; const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    const wnx = nx * fc + nz * fs, wnz = -nx * fs + nz * fc;
+    const B = this.bucket(mat, F.x + a[0] * fc + a[2] * fs, F.z - a[0] * fs + a[2] * fc), base = B.pos.length / 3, col = opt.color || WHITE, cols = opt.colors;
     const ns = opt.normals; // optional per-vertex normals (local frame) for smooth shading
-    for (const [i, p] of [a, b, c, d].entries()) { const w = this.P(p), nn = ns ? this.N(norm(ns[i])) : n, cc = opt.colors ? opt.colors[i] : col; // (opt.colors: per-vertex colours)
-      B.pos.push(w[0], w[1], w[2]); B.nor.push(nn[0], nn[1], nn[2]); B.uv.push(uvs[i][0], uvs[i][1]); B.col.push(cc[0], cc[1], cc[2]); }
+    let uvs = opt.uvs, u0 = 0, v0 = 0, lu = 0, lv = 0;
+    if (!uvs) { const s = opt.uv || 1; if (opt.uvo) { u0 = opt.uvo[0]; v0 = opt.uvo[1]; } lu = Math.hypot(e1x, e1y, e1z) / s; lv = Math.hypot(e2x, e2y, e2z) / s; }
+    const op = B.pos.reserve(12), on = B.nor.reserve(12), ou = B.uv.reserve(8), oc = B.col.reserve(12), P = B.pos.a, N = B.nor.a, U = B.uv.a, C = B.col.a;
+    for (let i = 0; i < 4; i++) {
+      const p = i === 0 ? a : i === 1 ? b : i === 2 ? c : d, k3 = i * 3;
+      P[op + k3] = F.x + p[0] * fc + p[2] * fs; P[op + k3 + 1] = F.y + p[1]; P[op + k3 + 2] = F.z - p[0] * fs + p[2] * fc;
+      if (ns) { const q = ns[i], l = Math.hypot(q[0], q[1], q[2]) || 1, qx = q[0] / l, qz = q[2] / l; N[on + k3] = qx * fc + qz * fs; N[on + k3 + 1] = q[1] / l; N[on + k3 + 2] = -qx * fs + qz * fc; }
+      else { N[on + k3] = wnx; N[on + k3 + 1] = ny; N[on + k3 + 2] = wnz; }
+      if (uvs) { U[ou + i * 2] = uvs[i][0]; U[ou + i * 2 + 1] = uvs[i][1]; }
+      else { U[ou + i * 2] = i === 1 || i === 2 ? u0 + lu : u0; U[ou + i * 2 + 1] = i >= 2 ? v0 + lv : v0; }
+      const cc = cols ? cols[i] : col; C[oc + k3] = cc[0]; C[oc + k3 + 1] = cc[1]; C[oc + k3 + 2] = cc[2]; // (opt.colors: per-vertex colours)
+    }
     this._extra(B, 4, opt.attr);
-    B.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    const oi = B.idx.reserve(6), I = B.idx.a; I[oi] = base; I[oi + 1] = base + 1; I[oi + 2] = base + 2; I[oi + 3] = base; I[oi + 4] = base + 2; I[oi + 5] = base + 3;
   }
   tri(mat, a, b, c, opt = {}) {
     const n = this.N(norm(cross(sub(b, a), sub(c, a)))), s = opt.uv || 1;
@@ -214,7 +236,7 @@ export class GeoBuilder {
       if (!keepArrays.on) { for (const k in g.attributes) g.attributes[k].onUpload(releaseArray); if (g.index) g.index.onUpload(releaseArray); }
       scene.add(m); meshes.push(m);
     }
-    this.parts.clear();
+    this.parts.clear(); this._lb = null;
     return meshes;
   }
 }

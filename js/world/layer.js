@@ -8,7 +8,7 @@
 //     hidden or deleted; new objects are built from a prefab or copied from another object. Colliders, light fixtures
 //     and loose meshes of an object follow it.
 // Unedited objects stay merged and instanced: the game draws exactly what it drew before, plus a group per edit.
-import { THREE, scene, scatters, props, setPropMatrix, colRemove, colInsert, allColliders, lampPoints, loadTex } from '../core.js';
+import { THREE, scene, scatters, props, setPropMatrix, colRemove, colInsert, allColliders, lampPoints, loadTex, tick } from '../core.js';
 import { buildCityLights } from '../citylights.js';
 import { CAP, owner as meshOwner } from './capture.js';
 import * as F from './format.js';
@@ -60,10 +60,10 @@ const SHARED_KEYS = ['color', 'roughness', 'metalness', 'emissive', 'emissiveInt
 export async function finalizeWorld(opts) {
   const L = new WorldLayer(opts);
   opts.progress && opts.progress('Reading world data', 0.9);
-  L.collect();
+  L.collect(); await tick(); // (yields between the steps: the loading screen keeps moving)
   await L.loadFiles();
   L.applyAll();
-  if (!opts.editor) L.bakeDetached();
+  if (!opts.editor) { await tick(); L.bakeDetached(); }
   return L;
 }
 
@@ -840,6 +840,8 @@ export class WorldLayer {
       for (const mi of order) {
         const m = this.buckets[mi], g = m && m.geometry, P = g && g.attributes.position && g.attributes.position.array, I = g && g.index && g.index.array;
         if (!P || !I) continue;
+        // (a merged mesh whose bounds stay over 2.5 m from the origin holds no triangle that could be it)
+        const bs = g.boundingSphere; if (bs && Math.hypot(bs.center.x - rec.origin[0], bs.center.z - rec.origin[2]) - bs.radius > 2.5) continue;
         const near = [];
         for (let t = 0; t < I.length / 3; t++) {
           // distance from the origin to the triangle's footprint (its corners can lie metres away on a long piece — a

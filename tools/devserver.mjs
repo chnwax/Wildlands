@@ -1,6 +1,7 @@
 // Wildlands development server: serves the game and the world editor, and lets the editor write the world's JSON files.
 //   npm run dev       game  http://localhost:5180/?map=town   editor  http://localhost:5180/editor.html?map=town
 //   npm run editor    the same server, and opens the editor in the browser
+// Also started inside the desktop app (electron/main.cjs: startServer).
 // API (used by js/editor/io.js; local only, bound to 127.0.0.1):
 //   GET  /api/ping                              -> { ok, root }
 //   PUT  /api/file?path=world/...               body: file text. Written atomically; JSON is parsed first and refused
@@ -18,7 +19,8 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WORLD = path.join(ROOT, 'world');
-const args = process.argv.slice(2);
+const MAIN = !!process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url); // (run as a program, not imported)
+const args = MAIN ? process.argv.slice(2) : [];
 const PORT = +(args.find(a => /^--port=/.test(a)) || '--port=5180').split('=')[1];
 const OPEN = args.find(a => /^--open/.test(a));
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -61,13 +63,15 @@ function emit(abs) {
   for (const c of clients) c.write(msg);
   log('changed', rel, h || '(deleted)');
 }
-if (fs.existsSync(WORLD)) fs.watch(WORLD, { recursive: true }, (ev, name) => {
-  if (!name || !/\.json$/.test(name)) return;
-  const abs = path.join(WORLD, name);
-  clearTimeout(pending.get(abs));
-  pending.set(abs, setTimeout(() => { pending.delete(abs); emit(abs); }, 120)); // editors save in several steps
-});
-setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 20000);
+function watchWorld() {
+  if (fs.existsSync(WORLD)) fs.watch(WORLD, { recursive: true }, (ev, name) => {
+    if (!name || !/\.json$/.test(name)) return;
+    const abs = path.join(WORLD, name);
+    clearTimeout(pending.get(abs));
+    pending.set(abs, setTimeout(() => { pending.delete(abs); emit(abs); }, 120)); // editors save in several steps
+  });
+  setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 20000).unref();
+}
 
 // ---------------------------------------------------------------- server
 const server = http.createServer(async (q, r) => {
@@ -124,7 +128,11 @@ const server = http.createServer(async (q, r) => {
     fs.stat(abs, (e, st) => {
       if (e || !st.isFile()) { r.writeHead(404, { 'Content-Type': 'text/plain' }); return r.end('not found: ' + p); }
       const ext = path.extname(abs).toLowerCase(), live = /\.(js|mjs|html|json|css|md)$/.test(ext);
-      r.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': live ? 'no-store' : 'max-age=86400' });
+      // (code and world files: asked for again on every load, but answered "not modified" while unchanged — the browser
+      // then keeps its compiled code cache for the scripts instead of parsing and compiling them anew)
+      const tag = `"${st.size.toString(36)}-${Math.round(st.mtimeMs * 1000).toString(36)}"`;
+      if (live && q.headers['if-none-match'] === tag) { r.writeHead(304, { ETag: tag, 'Cache-Control': 'no-cache' }); return r.end(); }
+      r.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': live ? 'no-cache' : 'max-age=86400', ...(live ? { ETag: tag } : {}) });
       fs.createReadStream(abs).pipe(r);
     });
   } catch (e) { log('error', e.message); send(r, 500, { ok: false, error: e.message }); }
@@ -134,12 +142,31 @@ function openBrowser() {
   if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', u], { detached: true, stdio: 'ignore' });
   else spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [u], { detached: true, stdio: 'ignore' });
 }
-// already running (another window): just open the editor there
-server.on('error', e => { if (e.code !== 'EADDRINUSE') throw e; log(`port ${PORT} is busy — the dev server is probably already running`); if (OPEN) openBrowser(); setTimeout(() => process.exit(0), 500); });
-server.listen(PORT, '127.0.0.1', () => {
-  log(`Wildlands dev server on http://localhost:${PORT}/`);
-  log(`  game    http://localhost:${PORT}/?map=town`);
-  log(`  editor  http://localhost:${PORT}/editor.html?map=town`);
-  if (OPEN) openBrowser();
-});
+if (MAIN) {
+  // already running (another window): just open the editor there
+  server.on('error', e => { if (e.code !== 'EADDRINUSE') throw e; log(`port ${PORT} is busy — the dev server is probably already running`); if (OPEN) openBrowser(); setTimeout(() => process.exit(0), 500); });
+  server.listen(PORT, '127.0.0.1', () => {
+    watchWorld();
+    log(`Wildlands dev server on http://localhost:${PORT}/`);
+    log(`  game    http://localhost:${PORT}/?map=town`);
+    log(`  editor  http://localhost:${PORT}/editor.html?map=town`);
+    if (OPEN) openBrowser();
+  });
+}
+// The desktop app's server (electron/main.cjs): on `port`, or any free one; resolves to the port it serves on. When the
+// port is taken by a Wildlands dev server already running (Editor.bat), resolves to that one instead, so the app and the
+// editor share it (and the game's settings, kept per address, stay where they were).
+export function startServer(port = PORT) {
+  return new Promise((resolve, reject) => {
+    const tryListen = p => {
+      server.once('error', async e => {
+        if (e.code !== 'EADDRINUSE') return reject(e);
+        try { const r = await fetch(`http://127.0.0.1:${p}/api/ping`); if (r.ok && (await r.json()).dev === true) return resolve(p); } catch (err) { /* (something else holds it) */ }
+        tryListen(0);
+      });
+      server.listen(p, '127.0.0.1', () => { watchWorld(); const a = server.address(); log(`Wildlands server on http://localhost:${a.port}/`); resolve(a.port); });
+    };
+    tryListen(port);
+  });
+}
 export { server, ROOT };

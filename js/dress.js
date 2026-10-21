@@ -30,6 +30,7 @@ export function dressTown(ctx) {
   const addDisc = (x, z, r) => { const i0 = Math.floor((x - r) / 4), i1 = Math.floor((x + r) / 4), j0 = Math.floor((z - r) / 4), j1 = Math.floor((z + r) / 4);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const k = key(i, j); if (!G.has(k)) G.set(k, []); G.get(k).push(x, z, r); } };
   for (const sc of scatters) {
+    if (!sc.meta) continue; // (the far forests' cards round the map: half a million items nowhere near anything dressed)
     const g = sc.lods && sc.lods[0] && sc.lods[0].parts[0] && sc.lods[0].parts[0].geometry; if (!g) continue;
     if (!g.boundingSphere) g.computeBoundingSphere();
     const bb = g.boundingBox || (g.computeBoundingBox(), g.boundingBox), base = Math.min(3, Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 0.5);

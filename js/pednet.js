@@ -522,9 +522,11 @@ export class PedNet {
   }
 
   // ---------------------------------------------------------------- validation
-  // ctx: { onBuilding(x, z): paving there stands on a building's ground floor, doors: [{ area, name }] }
+  // ctx: { onBuilding(x, z): paving there stands on a building's ground floor, doors: [{ area, name }], doorsOnly: only
+  // whether every door reaches a street (the router's question; the rest is the audit) }
   validate(ctx = {}) {
     const { nodes, edges, chains } = this, issues = [], f = v => v.toFixed(1), at = (x, z) => `(${f(x)}, ${f(z)})`, H = (x, z) => this.H(x, z);
+    if (!ctx.doorsOnly) {
     // dead ends: an end that is not on a street, an area or a path — a building's own walk may stop at its building
     for (const [ni, N] of nodes.entries()) { if (N.gone || N.e.length !== 1 || N.tag) continue;
       const C = chains[edges[N.e[0]].c]; if (C.door && ctx.onBuilding && ctx.onBuilding(N.x, N.z, 1.2)) continue;
@@ -565,6 +567,7 @@ export class PedNet {
         const g = hyp(H(x + 0.2, z) - H(x - 0.2, z), H(x, z + 0.2) - H(x, z - 0.2)) / 0.4; if (g > MAX_GRADE) { issues.push(`slope 1:${(1 / g).toFixed(0)} on ${what} at ${at(x, z)}`); return; } } };
     for (const J of this.junctions) steep(J.poly, 'a junction');
     for (const A of this.areas) if (A.draw) steep(A.poly, A.door !== null ? 'an apron' : 'a plaza');
+    }
     // every door reaches a street over the network
     if (ctx.doors) { const adj = new Map(), link = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); if (!adj.has(b)) adj.set(b, new Set()); adj.get(a).add(b); adj.get(b).add(a); };
       for (const e of edges) if (!e.dead) link('n' + e.a, 'n' + e.b);

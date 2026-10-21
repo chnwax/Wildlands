@@ -1111,9 +1111,9 @@ function packTreeParts(id, h, sp, near) {
       if (cut) { m.alphaToCoverage = Q.msaa > 0; m.side = THREE.DoubleSide; }
       if (tone) m.color.multiplyScalar(tone[0]).lerp(new THREE.Color(...tone[1]), tone[2]);
       if (sp.mat === 'bush') m.color.multiplyScalar(0.62).lerp(new THREE.Color(0.42, 0.48, 0.3), 0.25); // (the shrubs' bright leaf texture under the foliage light read neon: toned to the hedges' green)
-      foliagePatch(m, 'packTree' + sp.mat + (cut ? 'c' : 's') + p.material.name, sway, cut);
+      foliagePatch(m, 'packTree' + (cut ? 'c' : 's'), sway, cut); // (one program for every pack tree's leaves, one for the bark: the sway is a uniform)
       d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: cut ? m.map : null, alphaTest: cut ? m.alphaTest : 0 });
-      windPatch(d, 'packTreeDepth' + sp.mat + (cut ? 'c' : 's'), sway);
+      windPatch(d, 'packTreeDepth' + (cut ? 'c' : 's'), sway);
       packTreeCache.set(mk, m); packTreeCache.set(mk + '|d', d);
     }
     return { geometry: g, material: m, tint: 'pc', castShadow: true, depth: d, sway: true };

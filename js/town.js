@@ -895,7 +895,8 @@ export async function build(progress, opts = {}) {
   // ---------------------------------------------------------------- 桜川ニュータウン: the apartment district (danchi.js)
   // east of the river, beyond the paddy belt: its buildings, parking courts, courtyards, paths, park and sports ground
   const LBd = new LGeo(64), estateTrees = [], estateSak = [];
-  const danchi = buildDanchi({ B, Y0, gy: (x, z) => hf.groundAt(x, z), RN, riverX, occRect, extras, hf, bench, LB: LBd, busStop, garbagePoint, occAt: (x, z, r) => occRect(x, z, r, r, 0, 0, true) });
+  progress('Building the apartment estate', 0.45); await tick();
+  const danchi = await buildDanchi({ B, Y0, gy: (x, z) => hf.groundAt(x, z), RN, riverX, occRect, extras, hf, bench, LB: LBd, busStop, garbagePoint, occAt: (x, z, r) => occRect(x, z, r, r, 0, 0, true) });
   for (const sp of danchi.carSpots) carSpots.push(sp);
   for (const b of danchi.bikes) bikeList.push(b);
   for (const g of danchi.groves) BAMBOO_SITES.push({ ...g, H: [9, 13] });

@@ -47,7 +47,7 @@ export function danchiGround(x, z, h, Y0) {
 }
 
 // ---------------------------------------------------------------- building the district
-import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle, buildCompound, addCompound } from './core.js';
+import { THREE, scene, lerp, clamp, mulberry32, addBox, addCircle, buildCompound, addCompound, tick } from './core.js';
 import { lampPoints, signMesh, JP_FONT, GeoBuilder, storageShed, clockPole, vendingMachine, floodMast } from './townkit.js';
 import { walkupSlab, pointTower, mansion, centreBlock, cornerBlock, lowRise, PALETTES, envelope } from './apartments.js';
 import { buildParks, lakeDepth, FOUNTAIN } from './danchipark.js';
@@ -173,7 +173,8 @@ const PARKING = [
   ['DU', 350.75, -3, Math.PI / 2, 34, 2],                                                 // green belt west: the corner block and its walk-up
 ];
 
-export function buildDanchi(ctx) {
+// (async: it yields between its stages, so the loading screen keeps moving through the few seconds it takes)
+export async function buildDanchi(ctx) {
   const { B, Y0, gy, RN, extras, hf } = ctx, rng = mulberry32(19740), out = { trees: [], hedges: [], bushes: [], carSpots: [], bikes: [], walkPaths: [], lamps: [], benches: [], groves: [] };
   const P2 = (x, z) => [x, gy(x, z), z];
   const BUS = [[492, 194.8, Math.PI], [420, 205.2, 0]];                               // F's bus stops at the centre, both ways
@@ -253,12 +254,16 @@ export function buildDanchi(ctx) {
     return envelope(fam, o).map(([[a0, b0], [a1, b1]]) => { const cx = (a0 + a1) / 2, cz = (b0 + b1) / 2; return { x: x + cx * c + cz * sn, z: z - cx * sn + cz * c, hw: (a1 - a0) / 2, hd: (b1 - b0) / 2, r }; }); };
   const onStreet = (px, pz) => { if (RN.roadAt(px, pz) || RN.walkY(px, pz) !== null) return true;
     for (let a = 0; a < 6.28; a += 1.05) if (RN.roadAt(px + Math.cos(a) * CLR, pz + Math.sin(a) * CLR) || RN.walkY(px + Math.cos(a) * CLR, pz + Math.sin(a) * CLR) !== null) return true; return false; };
+  // (inRect for the envelopes tested again and again: their turn and reach worked out once, far ones passed over)
+  const inEnv = (px, pz, E, m) => { if (E.c === undefined) { E.c = Math.cos(E.r); E.s = Math.sin(E.r); E.R = Math.hypot(E.hw, E.hd); }
+    const dx = px - E.x, dz = pz - E.z, far = E.R + m * 1.4143; if (Math.abs(dx) > far || Math.abs(dz) > far) return false; // (the margin grows both half-sides: reach hypot(hw + m, hd + m) <= R + m√2)
+    return Math.abs(dx * E.c - dz * E.s) < E.hw + m && Math.abs(dx * E.s + dz * E.c) < E.hd + m; };
   const conflicts = (rects, street, first = false, sol = null, pending = null) => { const bad = [];
     if (sol) { const h = parkHit(sol.f, sol.x, sol.z, sol.r); if (h) { bad.push(h); if (first) return bad; } }
     for (const q of rects) { const c = Math.cos(q.r), sn = Math.sin(q.r), nu = Math.max(1, Math.ceil(q.hw * 2)), nv = Math.max(1, Math.ceil(q.hd * 2));
       for (let i = 0; i <= nu; i++) for (let j = 0; j <= nv; j++) { const u = -q.hw + 2 * q.hw * i / nu, v = -q.hd + 2 * q.hd * j / nv, px = q.x + u * c + v * sn, pz = q.z - u * sn + v * c;
-        if (!inDanchi(px, pz, 30) || (street && onStreet(px, pz)) || placed.some(P => P.some(E => inRect(px, pz, E.x, E.z, E.r, E.hw, E.hd, 1.0)))
-          || (pending && pending.some(P => P.some(E => inRect(px, pz, E.x, E.z, E.r, E.hw, E.hd, 1.0))))) { bad.push([px, pz]); if (first) return bad; } } }
+        if (!inDanchi(px, pz, 30) || (street && onStreet(px, pz)) || placed.some(P => P.some(E => inEnv(px, pz, E, 1.0)))
+          || (pending && pending.some(P => P.some(E => inEnv(px, pz, E, 1.0))))) { bad.push([px, pz]); if (first) return bad; } } }
     return bad; };
   // a building that does not fit at its planned spot is moved the smallest distance that makes its whole envelope fit,
   // keeping its design and orientation: rings of growing radius are searched in every direction, those leading straight
@@ -279,6 +284,7 @@ export function buildDanchi(ctx) {
   const blds = [];
   const fields = [];
   for (const [bi, [fam, x0, z0, r, o]] of BUILDINGS.entries()) {
+    if (bi % 6 === 5) await tick();
     const sf = solidField(fam, o), pending = BUILDINGS.slice(bi + 1).map(([f2, x2, z2, r2, o2]) => envWorld(f2, o2, x2, z2, r2));
     const at = fit(fam, o, x0, z0, r, sf, pending); if (!at) { console.warn("danchi: no room for", fam, x0, z0, JSON.stringify(conflicts(envWorld(fam, o, x0, z0, r), fam !== 'L', false, { f: sf, x: x0, z: z0, r }).slice(0, 8).map(p => p.map(v => +v.toFixed(1))))); continue; }
     const [x, z] = at; placed.push(envWorld(fam, o, x, z, r)); fields.push(sf);
@@ -303,6 +309,7 @@ export function buildDanchi(ctx) {
   }
   const clear = (x, z, m = 1.0) => !blds.some(b => b.boxes.some(q => inRect(x, z, q.x, q.z, q.r, q.hw, q.hd, m)));
 
+  await tick();
   // ---- paved paths. Every path, apron and plaza is registered with the district's pedestrian network (pednet.js),
   // which joins them into one graph — ends carried onto the path, footway or apron they reach, crossings given a node —
   // and lays all their paving and edging from it at the end, on one height field. Here a path is only booked: its
@@ -471,6 +478,7 @@ export function buildDanchi(ctx) {
     addBox(x, z, 3.2, 0.4, yaw);
   }
 
+  await tick();
   // ---- parking courts
   const visitorBays = [];
   for (const [id, ex1, ez1, yaw, len0, rows, visitors = 0] of PARKING) {
@@ -625,6 +633,7 @@ export function buildDanchi(ctx) {
     pave(x - L, z - L, x + L, z + L, (px, pz) => inRect(px, pz, x, z, yaw, L / 2 + 0.1, 1.3) ? 1 : 0);
   }); }
 
+  await tick();
   // ---- courtyards, each of its own kind
   // street furniture keeps off the walking surface: a bench whose footprint (with 0.35 m to spare) touches a path,
   // plaza, apron or footway backs away from it — along its own depth, away from the side it faces — until clear
@@ -1001,6 +1010,7 @@ export function buildDanchi(ctx) {
   pathLine([[520, 60.6], [520, 89.5], [498.2, 89.5]], 2.2);
   pathLine([[404.6, 232], [416, 232]], 2.2); pathLine([[450, 253.4], [450, 262], [452, 268]], 2.2); // (the second from the C4 park's court)
 
+  await tick();
   // ---- the buildings' own paving: an apron (forecourt) at every entrance, laid on the ground in front of its landing,
   // steps and ramp (which the router treats as walls); a walk along the front of the low-rise flats (their ground-floor
   // doors, round the gable to the foot of the outside stair); walks under the mid-rises' access corridors round the
@@ -1176,6 +1186,7 @@ export function buildDanchi(ctx) {
       for (let a = 0; a < 6.28 && !bad; a += 0.785) for (const r of [0.6, 1.2]) { const k = covI(e.x + Math.cos(a) * r, e.z + Math.sin(a) * r); if (k >= 0 && (COV[k] >= 0 || COV2[k] >= 0)) { bad = true; break; } }
       if (!bad && RN.cuts.some(c => c.id === n.R.id && c.side === side && sv > c.s0 - 1.5 && sv < c.s1 + 1.5)) bad = true;
       if (bad) continue; streetLamp(e.x, e.z, Math.atan2(-e.l[0] * side, -e.l[1] * side)); break; } }
+  await tick();
   // ---- the pedestrian network: joined, laid and checked (every door must reach a street; the generator is right when
   // the check reports nothing). Where a path climbs to a footway the lawn beside it is raised to meet it.
   const doorsOf = () => { const doors = [];
@@ -1185,7 +1196,7 @@ export function buildDanchi(ctx) {
     return doors; };
   // (a door the network leaves cut off from every street — its walk joined only to other walks that end nowhere — is
   // joined by the grid router from its apron to the nearest footway or path that is not a building's own; checked again)
-  for (let round = 0; round < 2; round++) { net.solve(); const un = []; net.validate({ onBuilding, doors: doorsOf(), unreached: un }); if (!un.length) break;
+  for (let round = 0; round < 2; round++) { net.solve(); const un = []; net.validate({ onBuilding, doors: doorsOf(), unreached: un, doorsOnly: true }); if (!un.length) break;
     for (const D of un) { const bb = D.area !== undefined ? net.areas[D.area].bb : null, x = bb ? (bb[0] + bb[2]) / 2 : D.x, z = bb ? (bb[1] + bb[3]) / 2 : D.z;
       // (first to any paving but its own apron — its own building's walk will do; then, if that led nowhere, to paving
       // that is no building's; from a side of the apron where open ground lies, the way starting in the apron)
@@ -1197,9 +1208,11 @@ export function buildDanchi(ctx) {
     const raiseQ = [];
     net.build(B, { cover: (x, z, rid, mine) => { if (RN.walkY(x, z) !== null || RN.roadAt(x, z)) return true; const k = covI(x, z); const other = id => id >= 0 && id !== rid && !(mine && mine.has(id)); return k >= 0 && (other(COV[k]) || other(COV2[k])); },
       raise: (x, z, y) => raiseQ.push([x, z, y]) });
-    const doors = doorsOf(), issues = net.validate({ onBuilding, doors });
+    // (the full audit — about a second of checks — in the World Builder, or with ?audit in the game's address)
+    const doors = doorsOf(), audit = typeof location !== 'undefined' && (/editor\.html/.test(location.pathname) || /[?&]audit\b/.test(location.search));
+    const issues = audit ? net.validate({ onBuilding, doors }) : [];
     out.pathAudit = issues; out.net = net; out.netCtx = { onBuilding, doors };
-    if (issues.length) console.warn(`danchi paths: ${issues.length} issue(s)\n` + issues.join('\n')); else console.info('danchi paths: one connected network, every door reached, no dead ends, gaps, steps, steep slopes or overlaps');
+    if (audit) { if (issues.length) console.warn(`danchi paths: ${issues.length} issue(s)\n` + issues.join('\n')); else console.info('danchi paths: one connected network, every door reached, no dead ends, gaps, steps, steep slopes or overlaps'); }
     // the lawn raised beside paths that climb to a footway: never under a street or a building
     const { HN, HALF, CELL, H } = hf; out.H0 = H.slice(); // (the ground as it was, for re-checking the network)
     for (const [x, z, y] of raiseQ) { const R = 2.4, i0 = Math.floor((x - R + HALF) / CELL), i1 = Math.ceil((x + R + HALF) / CELL), j0 = Math.floor((z - R + HALF) / CELL), j1 = Math.ceil((z + R + HALF) / CELL);

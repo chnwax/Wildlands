@@ -1565,9 +1565,10 @@ export function windPatch(mat, key, amount = 1) {
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     if (prev) prev(sh, r);
-    Object.assign(sh.uniforms, { uTime: S.uTime, uWind: S.uWind, uWindDir: S.uWindDir, uWindOff: S.uWindOff, uWindPhase: S.uWindPhase, tWindNoise: S.tNoise });
+    // (the sway amount a uniform: materials of one kind share one shader program whatever their species)
+    Object.assign(sh.uniforms, { uTime: S.uTime, uWind: S.uWind, uWindDir: S.uWindDir, uWindOff: S.uWindOff, uWindPhase: S.uWindPhase, tWindNoise: S.tNoise, uSway: { value: amount } });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind; uniform sampler2D tWindNoise;\n' + GLSL_WIND)
+      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind; uniform float uSway; uniform sampler2D tWindNoise;\n' + GLSL_WIND)
       .replace('#include <begin_vertex>', `vec3 transformed = vec3(position);
         #ifdef USE_INSTANCING
           vec3 wnP = instanceMatrix[3].xyz; mat3 wnM = mat3(instanceMatrix);
@@ -1579,7 +1580,7 @@ export function windPatch(mat, key, amount = 1) {
         wnL /= max(length(wnL), 1e-6);
         float wnPh = wnP.x * 0.071 + wnP.z * 0.053;
         float wnG = windAt(tWindNoise, wnP.xz), wnR = windRoll(wnP.xz, 0.11);
-        float wnS = max(position.y, 0.0); wnS *= wnS * ${amount.toFixed(3)};
+        float wnS = max(position.y, 0.0); wnS *= wnS * uSway;
         float wnA = wnG * ((0.35 + 0.65 * wnR) * 0.009 + sin(uTime * 0.9 + wnPh) * 0.004 + sin(uTime * 2.3 + wnPh * 1.7) * 0.0016);
         float wnC = wnG * (cos(uTime * 0.7 + wnPh * 1.3) * 0.0032 + sin(uTime * 3.1 + wnPh * 2.3) * 0.001);
         transformed.xz += (wnL * wnA + vec2(-wnL.y, wnL.x) * wnC) * wnS;`);
