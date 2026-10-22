@@ -1910,12 +1910,19 @@ export async function build(progress, opts = {}) {
     for (const sd of [-1, 1]) chains.push({ pts: Array.from({ length: 67 }, (_, k) => { const z = lerp(-330, 330, k / 66); return [riverX(z) + sd * 16.1, z]; }), kind: 2, w: 2.6 });
     for (const P of danchi.walkPaths) chains.push({ pts: P.pts, kind: 3, w: P.width || 1.8, door: !!P.door });
     chains.push({ pts: [[-2.5, -30.2], [-2.5, -62.8]], kind: 2, w: 3 }, { pts: [[-1, -48.5], [12.7, -48.5], [12.7, -32]], kind: 2, w: 2.4 });
-    const walkable = (x, z, edge = false) => (edge || !RN.roadAt(x, z)) && world.groundAt(x, z) > RIVER_LV + 0.3;
+    // (a person may stand anywhere but on asphalt — a carriageway, other than the lane or path whose own edge or line it
+    // is, or a junction's pad, filleted corners included — and out of the river)
+    const padGrid = new Map(), PC = 16, pk = (i, j) => (i + 4096) * 8192 + j + 4096;
+    for (const I of RN.inters) if (I.pad && I.pad.length > 2) { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const [px, pz] of I.pad) { x0 = Math.min(x0, px); x1 = Math.max(x1, px); z0 = Math.min(z0, pz); z1 = Math.max(z1, pz); }
+      for (let i = Math.floor(x0 / PC); i <= Math.floor(x1 / PC); i++) for (let j = Math.floor(z0 / PC); j <= Math.floor(z1 / PC); j++) { const k = pk(i, j); if (!padGrid.has(k)) padGrid.set(k, []); padGrid.get(k).push(I.pad); } }
+    const inPoly = (P, x, z) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, zi] = P[i], [xj, zj] = P[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; };
+    const onPad = (x, z) => { const L = padGrid.get(pk(Math.floor(x / PC), Math.floor(z / PC))); if (L) for (const P of L) if (inPoly(P, x, z)) return true; return false; };
+    const walkable = (x, z, own = null) => { const r = RN.roadAt(x, z); return (!r || r.n === own) && !onPad(x, z) && world.groundAt(x, z) > RIVER_LV + 0.3; };
     const zebraSignal = zb => zb.I && isSignal(zb.I) ? sigKey(zb.I, zb.I.roads.find(r => r.id !== zb.id) || zb.I.roads[0]) : null;
     const G = buildNavGraph({ RN, zebras, zebraSignal, walkable, chains });
     const pois = collectPOIs(G, layer, [{ type: 'station', x: -2.5, z: -62.4, yaw: Math.PI }]);
     const carNear = (x, z, r) => traffic.movers.some(m => { const dx = x - m.wx, dz = z - m.wz; return dx * dx + dz * dz < r * r && m.v > 0.4 && dx * (m.hx || 0) + dz * (m.hz || 0) > -3; });
-    const count = { low: 120, medium: 200, high: 280, ultra: 360, extreme: 440 }[Q.name] || 280;
+    const count = { low: 40, medium: 50, high: 60, ultra: 70, extreme: 80 }[Q.name] || 60; // (a small town: a few dozen out at once)
     // shops with their counters and shopkeepers, the vending machines (shops.js, items.js)
     world.shops = buildShops({ layer });
     people = new Pedestrians({ G, pois, people: await loadPeople(), groundAt: (x, z) => world.groundAt(x, z), pedSignal: g => signals.ped(g), carNear, railClosed: xingClosed, count, keepers: world.shops.keepers });

@@ -88,50 +88,53 @@ export class NavGraph {
 }
 
 // builds the graph. RN: the road network; zebras: [{id, s, band}] with sig(zb) the pedestrian signal group or null;
-// walkable(x, z, edge): a person may stand there (not in a carriageway — but on a lane's edge, edge true — not in the
-// river); chains: other walks [{pts, kind
-// (2 path | 3 estate), w, door}]
+// walkable(x, z, own): a person may stand there (not on asphalt — a carriageway other than own, the lane or path whose
+// edge or line it is, nor a junction's pad — not in the river); chains: other walks [{pts, kind (2 path | 3 estate), w,
+// door}]. Streets are crossed only at zebras, at a junction's mouths (a narrow street, where its corners end) and
+// between junctions on a quiet lane — never through a junction itself.
 export function buildNavGraph({ RN, zebras, zebraSignal, walkable, chains = [] }) {
   const G = new NavGraph(), clearLine = (x0, z0, x1, z1) => { const L = hyp(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(L / 0.4)); for (let i = 1; i < n; i++) { const t = i / n; if (!walkable(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t)) return false; } return true; };
   const sideOf = new Map(); // road id -> side -> [[s, node]]
   // footways (or shoulders) along every street; a path's own centreline
   for (const n of RN.net) {
     // (a lane without footways: along its very edge — the plots' walls and fences stand a step behind it)
-    const R = n.R, L = n.PL.len, path = R.kind === 'path', sides = path ? [0] : [-1, 1], off = path ? 0 : n.hw + (n.walk ? n.walk / 2 : 0.2), w = path ? R.w : n.walk ? n.walk : 0.9, edge = !path && !n.walk;
+    const R = n.R, L = n.PL.len, path = R.kind === 'path', sides = path ? [0] : [-1, 1], off = path ? 0 : n.hw + (n.walk ? n.walk / 2 : 0.2), w = path ? R.w : n.walk ? n.walk : 0.9, own = path || !n.walk ? n : null;
     const ss = []; for (let s = 0; s < L; s += 5) ss.push(s); ss.push(L);
     for (const zb of zebras) if (zb.id === R.id) ss.push(clamp(zb.s, 0, L));
+    // (a node just outside each of its junctions, where the corners end: a street's walk reaches the corner there, and a
+    // narrow street is crossed there)
+    const mouths = []; for (const a of n.arms || []) { const sm = a.s + a.dir * (a.L + 0.6); if (sm > 0.3 && sm < L - 0.3) { ss.push(sm); mouths.push([sm, a]); } }
     ss.sort((a, b) => a - b);
     const per = {};
     for (const side of sides) {
       let prev = -1; const list = []; per[side] = list;
       for (const s of ss) {
         const q = RN.sampleAt(n, s), lx = -q.d[1], lz = q.d[0], x = q.x + lx * side * off, z = q.z + lz * side * off;
-        if (!walkable(x, z, edge)) { prev = -1; continue; }
+        if (!walkable(x, z, own)) { prev = -1; continue; }
         const id = G.node(x, z, path ? 2 : 0, w, 0.6);
         if (prev >= 0 && hyp(G.x[prev] - x, G.z[prev] - z) < 9) G.link(prev, id);
         prev = id; list.push([s, id]);
       }
     }
     sideOf.set(R.id, per);
-    // a quiet lane may be crossed anywhere (every ~35 m) when no car comes
-    if ((R.kind === 'lane' || R.district) && !path && n.hw < 3.6) {
-      for (let s = 12; s < L - 12; s += 35) {
-        const a = nearestS(per[-1], s), b = nearestS(per[1], s); if (!a || !b || Math.abs(a[0] - s) > 4 || Math.abs(b[0] - s) > 4) continue;
-        const q = RN.sampleAt(n, s); G.link(a[1], b[1], 2, { x: q.x, z: q.z, road: R.id });
-      }
-    }
+    // a narrow street is crossed at its junctions' mouths (where there is no zebra) when no car comes; a quiet lane also
+    // between them (every ~35 m, well clear of any junction). Both ends at one place along it: straight across.
+    const across = (s, tol) => { const a = nearestS(per[-1], s), b = nearestS(per[1], s); if (!a || !b || Math.abs(a[0] - s) > tol || Math.abs(b[0] - s) > tol || Math.abs(a[0] - b[0]) > 1.5) return;
+      const q = RN.sampleAt(n, s); G.link(a[1], b[1], 2, { x: q.x, z: q.z, road: R.id }); };
+    if (!path && n.hw < 3.6) for (const [sm] of mouths) if (!zebras.some(zb => zb.id === R.id && Math.abs(zb.s - sm) < 10)) across(sm, 0.3);
+    if ((R.kind === 'lane' || R.district) && !path && n.hw < 3.6)
+      for (let s = 12; s < L - 12; s += 35) if (RN.clipDist(n, s) > 8 && !zebras.some(zb => zb.id === R.id && Math.abs(zb.s - s) < 10)) across(s, 3);
   }
   function nearestS(list, s) { let best = null; if (list) for (const e of list) if (!best || Math.abs(e[0] - s) < Math.abs(best[0] - s)) best = e; return best; }
   // the junctions' footway corners: the kerb's arc, moved in onto the footway (or the shoulder)
   for (const I of RN.inters) for (const cr of I.corners || []) {
     if (!cr.arc || cr.arc.length < 2) continue;
-    const w2 = cr.walk > 0 ? cr.walk / 2 : 0.2, edge = !(cr.walk > 0);
-    const pts = sgn => cr.arc.map(p => { const vx = p[0] - cr.O[0], vz = p[1] - cr.O[1], l = hyp(vx, vz) || 1, k = (l + sgn * w2) / l; return [cr.O[0] + vx * k, cr.O[1] + vz * k]; });
-    const A = pts(-1), B = pts(1), okA = A.filter(p => walkable(p[0], p[1], edge)).length, okB = B.filter(p => walkable(p[0], p[1], edge)).length, P = okA >= okB ? A : B;
-    if (Math.max(okA, okB) < P.length * 0.7) continue;
+    // (behind the kerb: toward the arc's centre, off the pad)
+    const w2 = cr.walk > 0 ? cr.walk / 2 : 0.2, P = cr.arc.map(p => { const vx = p[0] - cr.O[0], vz = p[1] - cr.O[1], l = hyp(vx, vz) || 1, k = (l - w2) / l; return [cr.O[0] + vx * k, cr.O[1] + vz * k]; });
+    if (P.filter(p => walkable(p[0], p[1])).length < P.length * 0.7) continue;
     let prev = -1;
-    for (let i = 0; i < P.length; i += Math.max(1, Math.floor(P.length / 5))) { const [x, z] = P[i]; if (!walkable(x, z, edge)) { prev = -1; continue; } const id = G.node(x, z, 1, cr.walk || 1.1, 0.6); if (prev >= 0) G.link(prev, id); prev = id; }
-    const [xe, ze] = P[P.length - 1]; if (walkable(xe, ze, edge)) { const id = G.node(xe, ze, 1, cr.walk || 1.1, 0.6); if (prev >= 0) G.link(prev, id); }
+    for (let i = 0; i < P.length; i += Math.max(1, Math.floor(P.length / 5))) { const [x, z] = P[i]; if (!walkable(x, z)) { prev = -1; continue; } const id = G.node(x, z, 1, cr.walk || 1.1, 0.6); if (prev >= 0) G.link(prev, id); prev = id; }
+    const [xe, ze] = P[P.length - 1]; if (walkable(xe, ze)) { const id = G.node(xe, ze, 1, cr.walk || 1.1, 0.6); if (prev >= 0) G.link(prev, id); }
   }
   // zebra crossings: the footway nodes either side of each, joined across
   for (const zb of zebras) {
@@ -167,7 +170,7 @@ export function buildNavGraph({ RN, zebras, zebraSignal, walkable, chains = [] }
     }
     if (best >= 0) G.link(u, best);
   }
-  G.components();
+  G.components(); G.clearLine = clearLine;
   // the doors at the ends of the estate's own walks (the end still loose: against its building)
   G.doors = [];
   for (const [a, b] of doorEnds) for (const e of [a, b]) if (G.adj[e].length <= 1 && G.compSize[G.comp[e]] > 40) G.doors.push(e);
@@ -179,7 +182,8 @@ export function buildNavGraph({ RN, zebras, zebraSignal, walkable, chains = [] }
 const POI_TYPES = { garden_gate: 'home', shop: 'shop', vending_machine: 'vend', bench: 'bench', bus_stop: 'bus', street_shrine: 'shrine', offering_box: 'shrine', post_box: 'post' };
 export function collectPOIs(G, layer, extra = []) {
   const out = [], m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(), main = c => G.compSize[c] > 60;
-  const access = (x, z, R = 30) => G.nearest(x, z, R, n => main(G.comp[n]));
+  // (its access: the nearest node reached without stepping onto a street, or the nearest at all)
+  const access = (x, z, R = 30) => { const n = G.nearest(x, z, R, n => main(G.comp[n]) && G.clearLine(x, z, G.x[n], G.z[n])); return n >= 0 ? n : G.nearest(x, z, R, n => main(G.comp[n])); };
   for (const ent of layer.ents.values()) {
     const type = POI_TYPES[ent.prefab]; if (!type) continue;
     const st = ent.state; if (st && (st.deleted || st.hidden)) continue;
@@ -283,7 +287,10 @@ export class Pedestrians {
   // a route from where A stands to poi (A* now: a handful a frame)
   plan(A, poi) {
     const G = this.G; if (!poi) return false;
-    const n0 = A.route && A.ri < A.route.length ? A.route[Math.max(0, A.ri - 1)] : G.nearest(A.x, A.z, 30, n => G.comp[n] === G.comp[poi.node]);
+    // (from the node walked from, or the nearest reached without stepping onto a street)
+    const same = n => G.comp[n] === G.comp[poi.node];
+    let n0 = A.route && A.ri < A.route.length ? A.route[Math.max(0, A.ri - 1)] : G.nearest(A.x, A.z, 30, n => same(n) && G.clearLine(A.x, A.z, G.x[n], G.z[n]));
+    if (n0 < 0) n0 = G.nearest(A.x, A.z, 30, same);
     if (n0 < 0 || G.comp[n0] !== G.comp[poi.node]) return false;
     const r = G.path(n0, poi.node); if (!r) return false;
     A.route = r; A.ri = r.length > 1 && hyp(G.x[r[0]] - A.x, G.z[r[0]] - A.z) < 2 ? 1 : 0; A.poi = poi; A.mode = 'walk';
@@ -363,9 +370,10 @@ export class Pedestrians {
       const n = A.route[A.ri], p = A.route[Math.max(0, A.ri - 1)], dx = G.x[n] - G.x[p], dz = G.z[n] - G.z[p], l = hyp(dx, dz) || 1;
       const room = Math.max(0, (Math.min(G.w[n], G.w[p]) / 2) - 0.45); A.lat += (clamp(A.latT, -room, room) - A.lat) * Math.min(1, dt * 1.5);
       tx = G.x[n] - dz / l * A.lat; tz = G.z[n] + dx / l * A.lat;
-      // about to cross: wait at the kerb for the green man, a gap in the traffic or the level crossing
+      // about to cross: wait at the kerb for the green man, a gap in the traffic or the level crossing (the moment the
+      // crossing is next — also when the kerb's node was passed rather than reached)
       const e = A.ri > 0 ? G.edge(p, n) : null;
-      if (e && e.kind && hyp(A.x - G.x[p], A.z - G.z[p]) < 1.6 && !A.crossing) {
+      if (e && e.kind && A.crossing !== e) {
         const wait = e.kind === 1 ? (e.data.sig ? this.pedSignal(e.data.sig) !== 'walk' : this.carNear(e.data.x, e.data.z, 16)) : this.carNear(e.data.x, e.data.z, 26);
         if (wait) { A.mode = 'wait'; A.v = 0; this.face(A, Math.atan2(G.x[n] - A.x, G.z[n] - A.z), dt); this.anim(A, CLIP.idle, dt, 0); if (A.mate) A.mate.waiting = true; return; }
         A.crossing = e;
