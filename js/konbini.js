@@ -9,7 +9,7 @@
 // Its own random stream: the town's draws stay as they were.
 import { THREE, scene, mulberry32, addProp } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { packParts, packProp } from './packs.js';
+import { packParts, packProp, packTris } from './packs.js';
 import { glowMats, lampPoints } from './townkit.js';
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0);
@@ -28,13 +28,15 @@ function materials() {
   return mats;
 }
 
-export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins }) {
+// door: the sliding doors' bay (x0, x1, its top): the glass is left out there; tris: the room's triangles (its floor, the
+// glass, the fittings) for the store's collider
+export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins, door = null, tris = null }) {
   const M = materials(), rng = mulberry32(4242), F = B.F;
   const place = (lx, ly, lz, dr, sc) => { const p = B.P([lx, ly, lz]); return _m.compose(_v.set(p[0], p[1], p[2]), _q.setFromAxisAngle(_y, F.r + dr), Array.isArray(sc) ? _s.set(sc[0], sc[1], sc[2]) : _s.setScalar(sc)); };
   const mesh = (geo, mat, lx, ly, lz, dr = 0) => { const o = new THREE.Mesh(geo, mat); place(lx, ly, lz, dr, 1).decompose(o.position, o.quaternion, o.scale); o.receiveShadow = false; o.castShadow = false; scene.add(o); return o; };
   // indoor models: lit as the room is (no shadows from the shell over them), none cast
   const inside = (id, lx, ly, lz, dr = 0, sc = 1) => { const P = packParts(id); if (!P) return null;
-    place(lx, ly, lz, dr, sc); return addProp('pack:' + id + ':in', P.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: false, receiveShadow: false }))); };
+    place(lx, ly, lz, dr, sc); if (tris && !/sticker|carton|bottle|fusebox_wall/.test(id)) packTris(id, _m, tris); return addProp('pack:' + id + ':in', P.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: false, receiveShadow: false }))); };
   const outside = (id, lx, ly, lz, dr = 0, sc = 1) => { const p = B.P([lx, ly, lz]); return packProp(id, p[0], p[1], p[2], F.r + dr, sc); };
 
   // ---- the room: an inside-out box (floor, ceiling, walls seen from within), clear glass in the front and side windows
@@ -42,7 +44,10 @@ export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins }
   const room = new THREE.BoxGeometry(2 * ix, Y1 - Y0, iz1 - iz0);
   const roomMats = [M.wall, M.wall, M.ceiling, M.floor, M.wall, M.wall].map(m => { const c = m.clone(); c.side = THREE.BackSide; c.emissiveIntensity = m.userData.glow; return c; });
   mesh(room, roomMats, 0, (Y0 + Y1) / 2, (iz0 + iz1) / 2).receiveShadow = true;
-  mesh(new THREE.PlaneGeometry(gl.x1 - gl.x0, gl.y1 - gl.y0), M.glass, (gl.x0 + gl.x1) / 2, (gl.y0 + gl.y1) / 2, glassZ);
+  // (the front glass: round the door's bay when the doors slide; in the collider as panes, with the room's floor)
+  const pane = (x0, x1, y0, y1) => { mesh(new THREE.PlaneGeometry(x1 - x0, y1 - y0), M.glass, (x0 + x1) / 2, (y0 + y1) / 2, glassZ); if (tris) { const a = B.P([x0, y0, glassZ]), b = B.P([x1, y0, glassZ]), c = B.P([x1, y1, glassZ]), e = B.P([x0, y1, glassZ]); tris.push(...a, ...b, ...c, ...a, ...c, ...e); } };
+  if (door) { pane(gl.x0, door[0], gl.y0, gl.y1); pane(door[1], gl.x1, gl.y0, gl.y1); pane(door[0], door[1], door[2], gl.y1); } else pane(gl.x0, gl.x1, gl.y0, gl.y1);
+  if (tris) { const a = B.P([-ix, Y0, iz0]), b = B.P([ix, Y0, iz0]), c = B.P([ix, Y0, iz1 + 0.3]), e = B.P([-ix, Y0, iz1 + 0.3]); tris.push(...a, ...e, ...c, ...a, ...c, ...b); }
   { const p = [w / 2 - sideWin.d + 0.04, (sideWin.y0 + sideWin.y1) / 2, -(sideWin.x0 + sideWin.x1) / 2];
     mesh(new THREE.PlaneGeometry(sideWin.x1 - sideWin.x0, sideWin.y1 - sideWin.y0), M.glass, p[0], p[1], p[2], Math.PI / 2); }
   // strip lights, and the light they give at night (citylights.js)
@@ -105,4 +110,21 @@ export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins }
   outside('jp_fusebox_large', 1.5, 0, -d / 2 - 0.26, Math.PI, 0.9);
   outside('jp_warning_panel_08', 1.5, 1.15, -d / 2 - 0.49, Math.PI, 1.2);          // (a high-voltage warning on it)
   outside('jp_warning_panel_02', bins[0] + 0.26, 1.6, glassZ + 0.012, 0, 1.1);   // (the recycling notice over the bins)
+}
+
+// the sliding doors (automatic: shops.js opens them as you come): two leaves of an aluminium frame round a glass pane,
+// each its own mesh, sliding apart along the front. dx: the bay's middle, bwid: its width, z: the leaves' line (frame).
+let alu = null;
+export function konbiniDoors(B, { dx, bwid, z, y0 = 0.14, h = 2.2 }) {
+  const M = materials(), doors = []; alu = alu || new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.35, metalness: 0.6, envMapIntensity: 0.6 });
+  const F = B.F, ax = Math.cos(F.r), az = -Math.sin(F.r), lw = bwid * 0.48;
+  for (const s2 of [-1, 1]) {
+    const geo = mergeGeometries([[0.05, h, -lw / 2 + 0.025, h / 2], [0.05, h, lw / 2 - 0.025, h / 2], [lw, 0.07, 0, 0.035], [lw, 0.05, 0, h - 0.025]].map(([bw, bh, x, y]) => new THREE.BoxGeometry(bw, bh, 0.04).translate(x, y, 0)));
+    const g = new THREE.Group(), fr = new THREE.Mesh(geo, alu), gp = new THREE.Mesh(new THREE.PlaneGeometry(lw - 0.08, h - 0.12), M.glass);
+    gp.position.set(0, h / 2 + 0.01, 0); fr.castShadow = true; g.add(fr, gp);
+    const p = B.P([dx + s2 * bwid * 0.25, y0, z]); g.position.set(p[0], p[1], p[2]); g.rotation.y = F.r; scene.add(g); g.updateMatrixWorld(true);
+    const bx = p[0], bz = p[2];
+    doors.push({ x: B.P([dx, 0, z])[0], z: B.P([dx, 0, z])[2], auto: true, move: t => { g.position.set(bx + s2 * ax * lw * 0.95 * t, p[1], bz + s2 * az * lw * 0.95 * t); g.updateMatrixWorld(true); }, show: v => { g.visible = v; } });
+  }
+  return doors;
 }

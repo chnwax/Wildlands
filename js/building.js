@@ -4,11 +4,13 @@
 // ground. Around them: foundations with vents, corner boards, band courses, and the service clutter of a lived-in
 // Japanese street (AC units with pipe ducts, meters, vent hoods, water heaters, nameplates, intercoms, gate pillars).
 // All of it goes through GeoBuilder frames; in a wall frame X runs along the wall, Y up, +Z out of the face (z = 0).
-import { THREE, scene, clamp, lerp, mulberry32, addCircle, COL_OFF } from './core.js';
+import { THREE, scene, clamp, lerp, mulberry32, addCircle, COL_OFF, buildCompound, addCompound, colInsert, colRemove } from './core.js';
 import { lampPoints, chochin, signMesh, shopSign, verticalSign, SHOP_NAMES, SHOP_INTERIOR, WALL_TINTS, GeoBuilder, glowMats } from './townkit.js';
 import { cropSet } from './crops.js';
 import { packsReady, queuePack, packProp, packParts, packKit, packKitHas, packPropMats } from './packs.js';
-import { konbiniDress } from './konbini.js';
+import { konbiniDress, konbiniDoors } from './konbini.js';
+import { packInterior, ENTERABLE, SPECS as INTERIOR_SPECS, SECTIONS } from './interiors.js';
+const KONBINI_SECTIONS = SECTIONS.konbini;
 import { placeable, atXYZR, atObj, atLocal, uncaptured } from './world/capture.js';
 
 const pick = (rng, a) => a[Math.floor(rng() * a.length)];
@@ -721,19 +723,23 @@ const tradeOf = s => Math.floor(mulberry32(Math.floor(s.x * 131 + s.z * 71) | 0)
 // each trade's candidate buildings (the shops of one trade differ from lot to lot); null: the drawn shop (flat-roofed,
 // 看板建築 or machiya) — a quarter of the other lots keep it, for a street that is not one catalogue repeated
 const H = PACK_SHOPS.house, RW = PACK_SHOPS.row;
-const TRADE_SHOPS = { 0: [PACK_SHOPS.ramen, H[4]], 3: [PACK_SHOPS.restaurant, H[4]], 8: [PACK_SHOPS.restaurant, H[0]], 12: [H[4], H[0], PACK_SHOPS.restaurant], 16: [H[4], PACK_SHOPS.restaurant, H[0]],
+// (the shops you can walk into take only buildings whose insides interiors.js knows: the liquor shop a row building
+// with room for shelves, the soba shop the eatery)
+const TRADE_SHOPS = { 0: [PACK_SHOPS.ramen, H[4]], 3: [PACK_SHOPS.restaurant, H[4]], 8: [RW[0], RW[2], H[3]], 12: [H[4], H[0], H[3]], 16: [H[4], PACK_SHOPS.restaurant, H[0]],
   7: [H[0], H[1], H[3]], 6: [H[0], H[3], H[1]], 11: [H[0], H[1], RW[2]], 14: [H[2]], 15: [H[1], RW[1]], 1: [RW[0], RW[2], H[3]], 10: [RW[0], H[3], H[1]],
   2: [RW[2], RW[1], H[3]], 5: [RW[2], H[3], RW[0]], 9: [RW[1], H[1], RW[2]], 13: [RW[2], RW[0], H[3]], 17: [RW[1], RW[2], H[1]], 4: [RW[1], H[3]] };
+TRADE_SHOPS[15] = [RW[1], H[3]];
 const lotHash = s => Math.abs(Math.floor(s.x * 3.7) * 7 + Math.floor(s.z * 2.3) * 13 + Math.floor(s.x * 0.37) * 31);
 function packShopModel(s) {
   if (KONBINI_LOTS.some(([kx, kz]) => Math.hypot(s.x - kx, s.z - kz) < 2)) return packsReady() && packParts(PACK_SHOPS.konbini[0]) ? PACK_SHOPS.konbini : null;
   const t = tradeOf(s), h = lotHash(s), list = TRADE_SHOPS[t] || [RW[1], H[3]];
-  if (![0, 3, 8, 12, 16, 14].includes(t) && h % 4 === 1) return null; // (the drawn shop here)
+  const enter = ENTERABLE.has(t);
+  if (!enter && ![0, 3, 8, 12, 16, 14].includes(t) && h % 4 === 1) return null; // (the drawn shop here; never for a shop you walk into)
   // (never the same building as a neighbour within 16 m: the next candidate, another shop house or row building, or the
   // drawn shop)
   const near = id => PLACED_SHOPS.some(q => q.id === id && Math.hypot(q.x - s.x, q.z - s.z) < 16);
   const cands = [...list.slice(h % list.length), ...list.slice(0, h % list.length), H[1], H[3], RW[1], RW[0], H[0]];
-  let P = cands.find(c => !near(c[0]) && !(c === PACK_SHOPS.ramen && s.d <= 6)) || null;
+  let P = cands.find(c => !near(c[0]) && !(c === PACK_SHOPS.ramen && s.d <= 6) && (!enter || INTERIOR_SPECS[c[0]])) || null;
   if (!P || !packsReady() || !packParts(P[0])) return null;
   PLACED_SHOPS.push({ id: P[0], x: s.x, z: s.z });
   return P;
@@ -774,16 +780,19 @@ function shopBuilding_build(B, s, rng, extras) {
 function packShopBuilding(B, s, [id, mw, mh, md], extras, site = {}) {
   const { x, y, z, r, w, d } = s, W = w - 0.1, t = tradeOf(s), own = mulberry32((Math.floor(x * 31) * 7919 + Math.floor(z * 17) * 104729) >>> 0);
   B.frame(x, y, z, r);
+  const mark = new Map(); for (const [k, b] of B.parts) mark.set(k, b.idx.length); // (a shop you walk into collides as what it is made of: from here)
   B.bbox('concrete', 0, -0.6, 0, W + 0.04, 0.62, d + 0.04, 0.01, { color: [0.62, 0.62, 0.6], skip: 'ny py' });
   const kb = id === PACK_SHOPS.konbini[0], su = clamp(W / mw, kb ? 0.8 : 1, 1.3), sx = clamp(W / (mw * su), 1, 1.2), BW = mw * su * sx, D = Math.min(md * su, d), zc = d / 2 - D / 2;
-  const tk = kb ? 0 : lotHash(s) % SHOP_TINTS.length, o = B.P([0, 0.02, zc]);
-  { const M = new THREE.Matrix4().compose(new THREE.Vector3(...o), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), B.F.r), new THREE.Vector3(su * sx, su, D / md));
-    packPropMats(id, M, m => tinted(m, tk)); }
+  const tk = kb ? 0 : lotHash(s) % SHOP_TINTS.length, o = B.P([0, 0.02, zc]), sy = kb ? Math.max(su, 1) : su; // (a konbini squeezed onto its lot keeps doors you walk through upright)
+  const M = new THREE.Matrix4().compose(new THREE.Vector3(...o), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), B.F.r), new THREE.Vector3(su * sx, sy, D / md));
+  // a shop you can walk into (interiors.js): its door leaves apart, furnished anew inside; the others as the model is
+  const IN = COL_OFF.on ? null : packInterior({ id, M, swap: m => tinted(m, tk), o, r: B.F.r, s: [su * sx, sy, D / md], site: Object.assign(site, { trade: site.trade ?? t }), y });
+  if (!IN) packPropMats(id, M, m => tinted(m, tk));
   // its dressing inside and out; on a shop that is not a konbini the kit's own name boards (another shop's name, a
   // konbini sign) give way to the trade's sign, hung where the kit's board was
   const src = 'anime_japan/' + id.slice(3), signs = [];
   const keep = t === 14 ? /flowerstore/ : null, skip = kb ? null : /signboard_wide|signboard_small|signboard_vertical|sign_3d_/;
-  packKit(src, o[0], o[1], o[2], B.F.r, [su * sx, su, D / md], su, { skip: skip && { test: q => skip.test(q) && !(keep && keep.test(q)) }, signs });
+  packKit(src, o[0], o[1], o[2], B.F.r, [su * sx, sy, D / md], su, { skip: skip && { test: q => skip.test(q) && !(keep && keep.test(q)) }, signs, where: IN && IN.kitWhere, onProp: IN && IN.kitProp });
   const main = signs.filter(q => /signboard_wide|sign_3d_konbini/.test(q.src)).sort((a, b) => b.w - a.w)[0];
   if (main) { const sg = shopSign(own, Math.min(main.w * 0.95, BW - 0.6), t); sg.position.copy(main.p); sg.position.y += main.h * 0.5; sg.rotation.y = r; sg.translateZ(0.09); scene.add(sg); }
   const vy = Math.min(4.2, mh * su - 2.6), vs = verticalSign(own, t);
@@ -792,10 +801,11 @@ function packShopBuilding(B, s, [id, mw, mh, md], extras, site = {}) {
   if (own() < 0.7 && !packKitHas(src, /board_/)) { const bx = (own() < 0.5 ? -1 : 1) * Math.min(BW / 2 - 0.6, 1.6), bid = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' }[t] || 'jp_board_foldable_0' + (1 + Math.floor(own() * 3));
     if (framePack(B, bid, bx, 0.12, d / 2 + 0.55, (own() - 0.5) * 0.6, 0.95) !== null) { const p = B.P([bx, 0, d / 2 + 0.55]); addCircle(p[0], p[2], 0.3); } }
   lampPoints.push({ p: B.P([0, 2.9, d / 2 + 0.8]), s: 0.8 });
-  extras.push({ t: 'box', p: B.P([0, 0, zc]), hx: BW / 2, hz: D / 2, r });
+  if (!IN) extras.push({ t: 'box', p: B.P([0, 0, zc]), hx: BW / 2, hz: D / 2, r });
   const [kx, kz] = KEEPER_AT[id] || [0, md / 2 - 2.2], kp = B.P([kx * su * sx, 0.06, zc + kz * D / md]);
-  site.keeper = { x: kp[0], y: kp[1], z: kp[2], yaw: r }; site.inside = true;
+  site.keeper = { x: kp[0], y: kp[1], z: kp[2], yaw: r }; site.inside = true; site.model = id; site.frame = { o, r: B.F.r, s: [su * sx, sy, D / md] };
   const dp = B.P([0, 0, d / 2 + 1.4]); site.door = { x: dp[0], z: dp[2], yaw: r };
+  if (IN) IN.finish(B, mark);
 }
 function shopBuildingDrawn(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
@@ -953,6 +963,7 @@ function shopBuildingDrawn(B, s, rng, extras) {
 function konbini_build(B, s, rng, extras) {
   const { x, y, z, r, w, d } = s;
   B.frame(x, y, z, r);
+  const mark = new Map(); for (const [k, b] of B.parts) mark.set(k, b.idx.length); // (it collides as what it is made of: from here)
   const H = 4.2, gl = { x0: -w / 2 + 0.5, x1: w / 2 - 0.5, y0: 0.12, y1: 2.95, d: 0.22 };
   const sideWin = { x0: d / 2 - 4.5, x1: d / 2 - 0.6, y0: 0.12, y1: 2.95, d: 0.22 };
   const back = [{ x0: -w / 2 + 1.5, x1: -w / 2 + 2.4, y0: 0.1, y1: 2.2, d: 0.12 }, { x0: w / 2 - 4.2, x1: w / 2 - 2.0, y0: 0.1, y1: 2.6, d: 0.12 }];
@@ -973,7 +984,7 @@ function konbini_build(B, s, rng, extras) {
   };
   inFrame(B, [0, 0, d / 2], 0, () => {
     const doorBay = 1, n = 6, bwid = (gl.x1 - gl.x0) / n, zb = glaze(gl, n, doorBay), dx = gl.x0 + (doorBay + 0.5) * bwid;
-    for (const s2 of [-1, 1]) B.bbox('alu', dx + s2 * bwid * 0.25, 0.14, zb + 0.09, bwid * 0.48, 2.2, 0.04, 0.006, { color: [0.82, 0.84, 0.86], skip: 'pz nz' }); // sliding door leaves (frames)
+    if (!dress) for (const s2 of [-1, 1]) B.bbox('alu', dx + s2 * bwid * 0.25, 0.14, zb + 0.09, bwid * 0.48, 2.2, 0.04, 0.006, { color: [0.82, 0.84, 0.86], skip: 'pz nz' }); // sliding door leaves (frames; with the shop floor: leaves that slide, below)
     B.bbox('plastic', dx, 2.5, 0.08, 0.35, 0.1, 0.12, 0.01, { color: [0.2, 0.2, 0.22] }); // door sensor
     B.bbox('plastic', dx, 0, 1.0, bwid + 0.4, 0.015, 1.3, 0.004, { color: [0.3, 0.32, 0.34] }); // entrance mat
     // bins station and a smoking stand by the door
@@ -998,12 +1009,26 @@ function konbini_build(B, s, rng, extras) {
     meterBox(B, -w / 2 + 3.2, 1.45, 'power');
   });
   for (let i = 0; i < 5; i++) inFrame(B, [-w / 2 + 2.5 + i * 1.3, 0, -d / 4], 0, () => acUnit(B, 0, H + 0.03, rng, { pipeTo: H + 0.4 }));
-  if (dress) { const bwid = (gl.x1 - gl.x0) / 6; konbiniDress(B, { w, d, H, gl, sideWin, glassZ: d / 2 - gl.d + 0.04, dx: gl.x0 + 1.5 * bwid, bwid, bins }); }
+  // with its shop floor it is a shop you walk into: the doors slide, the glass round them, the racks and counter collide
+  const enter = dress && !COL_OFF.on, tris = enter ? [] : null, bwid0 = (gl.x1 - gl.x0) / 6, dx0 = gl.x0 + 1.5 * bwid0;
+  if (dress) konbiniDress(B, { w, d, H, gl, sideWin, glassZ: d / 2 - gl.d + 0.04, dx: dx0, bwid: bwid0, bins, door: enter ? [dx0 - bwid0 / 2, dx0 + bwid0 / 2, 2.35] : null, tris });
   { // the till: the shopkeeper behind the counter by the door (konbini.js), the customer at the door
     const ix = w / 2 - 0.25, bwid = (gl.x1 - gl.x0) / 6, k = B.P([-ix + 1.05, 0.12, 2.75]), dp = B.P([gl.x0 + 1.5 * bwid, 0, d / 2 + 1.3]);
-    if (!COL_OFF.on) SHOP_SITES.push({ trade: 'konbini', closed: false, inside: true, keeper: dress ? { x: k[0], y: k[1], z: k[2], yaw: r + Math.PI / 2 } : null, door: { x: dp[0], z: dp[2], yaw: r } }); }
+    const site = { trade: 'konbini', closed: false, inside: true, keeper: dress ? { x: k[0], y: k[1], z: k[2], yaw: r + Math.PI / 2 } : null, door: { x: dp[0], z: dp[2], yaw: r } };
+    if (enter) {
+      const doors = konbiniDoors(B, { dx: dx0, bwid: bwid0, z: d / 2 - 0.09 }), ix2 = w / 2 - 0.25, iz0 = -d / 2 + 0.25, iz1 = d / 2 - gl.d - 0.02;
+      for (const [kk, b] of B.parts) { const P2 = b.pos.a, I = b.idx.a; for (let i = mark.get(kk) || 0; i < b.idx.length; i++) { const v = I[i] * 3; tris.push(P2[v], P2[v + 1], P2[v + 2]); } }
+      site.collider = addCompound(buildCompound(new Float32Array(tris), { x, y, z, r, ground: () => y }));
+      const W = (lx, lz) => { const p = B.P([lx, 0, lz]); return [p[0], p[2]]; }, bc = W(0, (iz0 + iz1) / 2), di = W(dx0, iz1 - 0.8);
+      Object.assign(site, { enter: true, doors, box: { x: bc[0], z: bc[1], r, hx: ix2, hz: (iz1 - iz0) / 2 + 0.2 }, inDoor: di, bins: bins.map(bx2 => W(bx2, d / 2 + 0.45)) });
+      const S = KONBINI_SECTIONS, spot = (kind, sec, lx, lz, rr, tlx = lx, tlz = lz) => { const p = W(lx, lz), t = W(tlx, tlz); return { kind, ...(sec || {}), x: p[0], z: p[1], r: rr, tx: t[0], tz: t[1] }; };
+      site.spots = [spot('shelf', S[0], 0, iz0 + 1.5, 2.6, 0, iz0 + 0.4), spot('shelf', S[2], ix2 - 1.5, 1.4, 2.2, ix2 - 0.4, 1.4), spot('shelf', S[1], 3.0, -2.07, 2.2, 3.0, -2.6), spot('shelf', S[1], -1.2, -2.07, 2.0, -1.2, -2.6), spot('shelf', S[3], 3.0, 0.37, 2.0, 3.0, -0.2), spot('till', null, -ix2 + 3.1, 2.75, 1.8, -ix2 + 1.05, 2.75)];
+      const bl = doors[0]; let on = false; const a = W(dx0 - bwid0 / 2, d / 2 - 0.09), b2 = W(dx0 + bwid0 / 2, d / 2 - 0.09), cc = { t: 1, x: (a[0] + b2[0]) / 2, z: (a[1] + b2[1]) / 2, hx: bwid0 / 2 + 0.05, hz: 0.12, c: Math.cos(r), s: Math.sin(r), y0: -1e9, y1: 1e9 };
+      bl.block = v => { if (!!v === on) return; on = !!v; if (on) colInsert(cc); else colRemove(cc); };
+    }
+    if (!COL_OFF.on) SHOP_SITES.push(site); }
   lampPoints.push({ p: B.P([0, 2.6, d / 2 + 2]), s: 1.4 }, { p: B.P([-w / 3, 2.6, d / 2 + 2]), s: 1.2 }, { p: B.P([w / 3, 2.6, d / 2 + 2]), s: 1.2 });
-  extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
+  if (!enter) extras.push({ t: 'box', p: B.P([0, 0, 0]), hx: w / 2, hz: d / 2, r });
 }
 
 // ---------------------------------------------------------------- apartment block (mansion)

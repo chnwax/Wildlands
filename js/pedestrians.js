@@ -247,6 +247,17 @@ export class Pedestrians {
         route: null, ri: 0, poi: null, mode: 'keeper', t: 0, trips: 0, a: CLIP.idle, ta: (h % 97) / 97, b: CLIP.idle, tb: 0, w: 1, wt: 0, phase: 0, lead: null, mate: null, far: 0, sitY: 0, K, greet: 0 };
       this.agents.push(A); this.keepers.push(A);
     }
+    // customers in the eateries and cafés: one to a seat, sitting while the shop is open — at some seats, more at meal
+    // times (which ones changes every twenty minutes)
+    this.patrons = [];
+    (o.patrons || []).forEach((S, k) => {
+      const h = Math.abs(Math.floor(S.x * 13.1 + S.z * 7.7)) + k, woman = women.length && h % 5 < 2, pool = woman ? women : men, m = pool[h % pool.length], M = P[m];
+      if (!M.has('sit')) return;
+      const cols = M.id === 'man_suit' ? [-1, -1, crowdPack(HAIR[h % 6])] : [crowdPack(SHIRTS[h % SHIRTS.length]), crowdPack(PANTS[(h >> 2) % PANTS.length]), crowdPack(HAIR[(h >> 3) % 6])];
+      const A = { i: this.agents.length, m, M, kind: 'patron', cols, woman, scale: 0.95 + (h % 7) * 0.012, speed: 0, home: null, on: false, x: S.x, z: S.z, y: S.floor, yaw: S.yaw, v: 0, lat: 0, latT: 0,
+        route: null, ri: 0, poi: null, mode: 'patron', t: 0, trips: 0, a: CLIP.sit, ta: (h % 89) / 89, b: CLIP.sit, tb: 0, w: 0, wt: 0, phase: 0, lead: null, mate: null, far: 0, sitY: 0, S, k };
+      this.agents.push(A); this.patrons.push(A);
+    });
     const cap = P.map(() => 0); for (const a of this.agents) cap[a.m]++;
     this.crowd = crowdMeshes(P, cap); this.meshes = this.crowd.meshes;
     this.grid = new Map(); this.queue = []; this.spawnAcc = 0; this.first = true;
@@ -329,7 +340,7 @@ export class Pedestrians {
     const G = this.G, px = cam.position.x, pz = cam.position.z, ag = this.agents;
     // how many should be out now, and new ones stepping out near the player
     const target = Math.round(ag.length * density(time.hour));
-    let on = 0; for (const A of ag) if (A.on && A.mode !== 'keeper') on++;
+    let on = 0; for (const A of ag) if (A.on && A.mode !== 'keeper' && A.mode !== 'patron') on++;
     if (this.first) { this.first = false; for (const A of ag) { if (on >= target) break; if (!A.on && A.mode === 'off' && this.spawn(A, px, pz, true)) on += A.mate ? 2 : 1; } }
     this.spawnAcc = Math.min(4, this.spawnAcc + dt * 3);
     while (on < target && this.spawnAcc >= 1) { this.spawnAcc--; const A = ag.find(b => !b.on && b.mode === 'off'); if (!A) break; if (this.spawn(A, px, pz, false)) on += A.mate ? 2 : 1; }
@@ -339,6 +350,7 @@ export class Pedestrians {
     this.plans = 0;
     for (const A of ag) {
       if (A.mode === 'keeper') { A.on = A.K.open(); if (A.on && hyp(A.x - px, A.z - pz) < 300) this.keep(A, dt); continue; }
+      if (A.mode === 'patron') { A.on = this.seated(A) && hyp(A.x - px, A.z - pz) < 120; if (A.on) this.patron(A, dt); continue; }
       if (!A.on) continue;
       const d = hyp(A.x - px, A.z - pz);
       // far away: every fourth frame; very far and done: home
@@ -357,11 +369,24 @@ export class Pedestrians {
     this.anim(A, CLIP.idle, dt, 0);
   }
   greet(k) { const A = this.keepers[k]; if (A) A.greet = 2.2; }
+  // a seat taken now: the shop open, and this seat among those taken this third of an hour (busier at lunch and dinner)
+  seated(A) {
+    if (!A.S.open()) return false; const h = time.hour, blk = Math.floor(h * 3), busy = (h > 11.5 && h < 14) || (h > 18 && h < 21) ? 0.55 : 0.28;
+    const v = Math.sin(A.k * 12.9898 + blk * 78.233) * 43758.5453; return v - Math.floor(v) < busy;
+  }
+  // sitting at a counter or a table: the seated pose on the seat (as on a bench)
+  patron(A, dt) {
+    const M = A.M, seat = M.seat || [0.34, -0.21], S = A.S, fx = Math.sin(S.yaw), fz = Math.cos(S.yaw);
+    A.x = S.x - fx * seat[1]; A.z = S.z - fz * seat[1]; A.yaw = S.yaw; A.y = S.floor;
+    A.sitY = (S.y - seat[0] - S.floor) * 0.65;
+    A.t += dt; this.pose(A, CLIP.sit, 0.5 + 0.5 * Math.sin((A.t + A.k) * 0.25));
+  }
   // one agent's frame
   step(A, dt, dist, px, pz, near) {
     const G = this.G;
     if (A.mode === 'follow') return this.follow(A, dt, near);
     if (A.mode === 'act') return this.activity(A, dt, near);
+    if (A.mode === 'enter') return this.enter(A, dt, near);
     if (!A.route) { this.despawn(A); return; }
     // the point being walked to: the next node, held to the left of the walk; then the place itself
     let tx, tz, last = A.ri >= A.route.length;
@@ -435,7 +460,7 @@ export class Pedestrians {
     A.trips++; A.v = 0; A.route = null; A.mode = 'act'; A.act = P.type; A.t = 0;
     switch (P.type) {
       case 'home': case 'station': this.despawn(A); return; // indoors / onto a train
-      case 'shop': A.dur = 0; this.despawn(A); return; // (into the shop)
+      case 'shop': if (P.inDoor && A.mate === null) { A.mode = 'enter'; A.t = 0; return; } A.dur = 0; this.despawn(A); return; // (into the shop: through its door where it has one)
       case 'vend': case 'post': if (P.busy && P.busy !== A && P.busy.on && P.busy.poi === P) { A.dur = 3 + r * 3; A.act = 'look'; break; } P.busy = A; A.dur = P.type === 'post' ? 3 : 5 + r * 5; break; // (someone at the machine already: a look, then on)
       case 'bench': if (P.busy || !A.M.has('sit')) { A.dur = 3; A.act = 'look'; break; } P.busy = A; A.seat = P; A.dur = 25 + r * 70; break;
       case 'bus': A.dur = 40 + r * 120; break;
@@ -465,6 +490,13 @@ export class Pedestrians {
     else this.anim(A, CLIP.idle, dt, 0);
     if (A.act === 'bus' && A.t > A.dur) { this.despawn(A); return; } // (the bus came)
     if (A.t > A.dur) this.leave(A);
+  }
+  // in through the shop's door, and gone (indoors)
+  enter(A, dt, near) {
+    const [tx, tz] = A.poi.inDoor, dx = tx - A.x, dz = tz - A.z, d = hyp(dx, dz); A.t += dt;
+    if (d < 0.5 || A.t > 6 || !near) { this.despawn(A); return; }
+    const sp = Math.min(A.speed, d * 2); A.x += dx / d * sp * dt; A.z += dz / d * sp * dt; A.v = sp; this.unstick(A);
+    this.face(A, Math.atan2(dx, dz), dt); A.y = this.groundAt(A.x, A.z); this.anim(A, CLIP.walk, dt, sp * dt / (A.M.stride('walk') * A.scale));
   }
   leave(A) { if (A.poi && A.poi.busy === A) A.poi.busy = 0; A.mode = 'walk'; const g = this.nextGoal(A, A.x, A.z); if (!g || !this.plan(A, g)) this.despawn(A); }
   // a mate walks beside (or just behind, where the walk is narrow) and stops with the leader, facing them

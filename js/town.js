@@ -21,6 +21,7 @@ import { farmstead } from './farmstead.js';
 import { dressTown } from './dress.js';
 import { loadPeople } from './crowd.js';
 import { buildNavGraph, collectPOIs, Pedestrians } from './pedestrians.js';
+import { flushInteriors } from './interiors.js';
 import { buildShops } from './shops.js';
 import { setTownGlow } from './sky.js';
 import { keepArrays, GeoBuilder, materials, night, updateNight, updateGlow, updateLod, utilityPole, wires, wireMat, curveMirror, roadSign,
@@ -1627,6 +1628,7 @@ export async function build(progress, opts = {}) {
   progress('Merging geometry', 0.82); await tick();
   for (const m of B.flush(MT, { paint: false, stopLegend: false, cycleLegend: false, tactileL: false, tactileD: false, manhole: false, glassLit: false, glass: true, window: false, shopWindow: false, paddyWater: false, pondWater: false, fountainWater: false, waterFlow: false, waterFoam: false, turf: false, net: false, lamp: false, chain: false, poly: false }))
     if (m.material === MT.pondWater || m.material === MT.fountainWater) { m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld), box = bb.clone().expandByScalar(0.5); box.level = bb.max.y; water.userData.regions.push(box); water.userData.watchVisibility(m); }
+  flushInteriors(); // (the shops' furnishings: interiors.js)
   Bx.flush(MT, { paint: false, tactileL: false, tactileD: false, glassLit: false, window: false, shopWindow: false, lamp: false, poly: false });
   const landmarks = flushLandmarks(LB), parkBenches = flushLandmarks(LBg), danchiBenches = flushLandmarks(LBd);
 
@@ -1925,7 +1927,9 @@ export async function build(progress, opts = {}) {
     const count = { low: 40, medium: 50, high: 60, ultra: 70, extreme: 80 }[Q.name] || 60; // (a small town: a few dozen out at once)
     // shops with their counters and shopkeepers, the vending machines (shops.js, items.js)
     world.shops = buildShops({ layer });
-    people = new Pedestrians({ G, pois, people: await loadPeople(), groundAt: (x, z) => world.groundAt(x, z), pedSignal: g => signals.ped(g), carNear, railClosed: xingClosed, count, keepers: world.shops.keepers });
+    // (a shop you can walk into: its customers come to its door and go in, out of sight)
+    for (const P of pois) if (P.type === 'shop') { const c = world.shops.shops.find(c => c.site.enter && Math.hypot(c.site.door.x - P.x, c.site.door.z - P.z) < 9); if (c) { P.x = c.site.door.x; P.z = c.site.door.z; P.inDoor = c.site.inDoor; } }
+    people = new Pedestrians({ G, pois, people: await loadPeople(), groundAt: (x, z) => world.groundAt(x, z), pedSignal: g => signals.ped(g), carNear, railClosed: xingClosed, count, keepers: world.shops.keepers, patrons: world.shops.patrons });
     world.shops.onGreet = k => people.greet(k);
     console.info(`pedestrians: graph ${G.x.length} nodes, ${G.edges.length} edges, ${G.compSize.filter(n => n > 60).length} networks; ${pois.length} places (${Object.entries(people.byType).map(([k, v]) => k + ' ' + v.length).join(', ')}); ${count} people`);
   } catch (e) { console.warn('pedestrians failed', e); }

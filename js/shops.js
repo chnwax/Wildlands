@@ -1,133 +1,133 @@
-// Buying things: the shops' counters with their shopkeepers, the vending machines, and the two panels — the counter (E,
-// where you can be served) and your bag (I or Tab: what you carry, eat or drink; the wallet; the boost you are on).
-// Shops and their shopkeepers come from the town build (building.js SHOP_SITES): the konbini, the ramen shop, the soba
-// and sushi counters, the izakaya, the café, the bakery, the sweet shop, the pharmacy and the liquor shop — each with its
-// menu and its hours (items.js); a shop that is closed has nobody at the counter. Vending machines are the world's
-// vending_machine objects and sell drinks at any hour.
+// Shops in the world: where you are served and what you can reach — the shopkeepers' counters inside the shops (or at
+// the door of a shop without a way in), a konbini's and a pharmacy's shelves and their till, vending machines and the
+// recycling boxes beside them, the parks' litter bins — the prompt for what is in front of you (E), the doors that slide
+// open as you come, and the shop's bell. The panels themselves are shopui.js; what is sold and carried, items.js.
+// Shops and their insides come from the town build (building.js SHOP_SITES; interiors.js furnishes them): each knows its
+// trade, its menu and hours (items.js MENUS), where its shopkeeper stands, its counter, shelves, till and bins, its
+// floor (a box: inside or not) and its doors. A shop that is closed has nobody at the counter and its door shut.
 import { THREE } from './core.js';
 import { time } from './sky.js';
 import { SHOP_NAMES } from './townkit.js';
 import { SHOP_SITES } from './building.js';
-import { ITEMS, MENUS, openAt, inv, buy, use, drop, yen, onInventory, boostLeft, slotsUsed, BAG, effectOf } from './items.js';
+import { ITEMS, MENUS, openAt, unpaid, unpaidTotal, empties, binEmpties, yen } from './items.js';
+import { shopUI } from './shopui.js';
+import { interiorSigns } from './interiors.js';
+import { toastMsg } from './ui.js';
 
-const css = `
-#wlPrompt { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); padding: 8px 14px; border-radius: 6px; background: rgba(9,12,14,.66);
-  color: var(--fg); font-size: 13px; letter-spacing: .06em; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 7; backdrop-filter: blur(4px); white-space: nowrap; }
-#wlPrompt b { color: var(--accent); margin-right: 6px; } #wlPrompt .shut { color: #e2a092; }
-#wlWallet { margin-top: 4px; font-size: 13px; color: var(--fg); letter-spacing: .08em; } #wlWallet .bst { color: var(--accent); margin-left: 8px; font-size: 12px; }
-.wlPanel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, 92vw); max-height: 82vh; overflow: auto; z-index: 20;
-  background: rgba(10,13,15,.9); border: 1px solid rgba(242,239,230,.18); border-radius: 10px; padding: 18px 20px 14px; color: var(--fg); backdrop-filter: blur(8px);
-  box-shadow: 0 20px 60px rgba(0,0,0,.5); display: none; font-size: 13px; }
-.wlPanel.on { display: block; }
-.wlPanel h3 { margin: 0; font-weight: 400; font-size: 18px; letter-spacing: .14em; } .wlPanel .wlSub { color: var(--dim); font-size: 12px; letter-spacing: .1em; margin: 2px 0 12px; }
-.wlPanel .wlTop { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; } .wlPanel .cash { color: var(--accent); font-size: 15px; letter-spacing: .06em; }
-.wlRow { display: grid; grid-template-columns: 34px 1fr auto auto; align-items: center; gap: 10px; padding: 7px 4px; border-top: 1px solid rgba(242,239,230,.08); }
-.wlRow .ic { font-size: 22px; text-align: center; } .wlRow .nm small { display: block; color: var(--dim); font-size: 11px; letter-spacing: .06em; } .wlRow .pr { color: var(--fg); letter-spacing: .04em; }
-.wlBtn { all: unset; cursor: pointer; padding: 5px 12px; border-radius: 5px; border: 1px solid rgba(217,181,106,.55); color: var(--fg); font-size: 12px; letter-spacing: .08em; text-align: center; }
-.wlBtn:hover, .wlBtn:focus-visible { background: rgba(217,181,106,.18); border-color: var(--accent); } .wlBtn[disabled] { opacity: .35; pointer-events: none; }
-.wlGrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 6px 0 10px; }
-.wlSlot { position: relative; aspect-ratio: 1; border-radius: 8px; background: rgba(242,239,230,.05); border: 1px solid rgba(242,239,230,.1); display: grid; place-items: center; font-size: 28px; cursor: pointer; }
-.wlSlot:hover { border-color: var(--accent); background: rgba(217,181,106,.1); } .wlSlot .n { position: absolute; right: 5px; bottom: 3px; font-size: 11px; color: var(--fg); }
-.wlSlot.empty { cursor: default; } .wlSlot.empty:hover { border-color: rgba(242,239,230,.1); background: rgba(242,239,230,.05); }
-.wlInfo { min-height: 38px; color: var(--dim); font-size: 12px; letter-spacing: .04em; } .wlInfo b { color: var(--fg); font-weight: 500; }
-.wlHint { color: var(--dim); font-size: 11px; letter-spacing: .1em; margin-top: 10px; text-align: right; }
-`;
+const hhmm = h => String(Math.floor(h) % 24).padStart(2, '0') + ':00';
+// (a point in a site's floor box)
+const inBox = (b, x, z, pad = 0) => { if (!b) return false; const dx = x - b.x, dz = z - b.z, lx = dx * Math.cos(b.r) - dz * Math.sin(b.r), lz = dx * Math.sin(b.r) + dz * Math.cos(b.r); return Math.abs(lx) < b.hx + pad && Math.abs(lz) < b.hz + pad; };
 
 export function buildShops({ layer }) {
-  if (!document.getElementById('wlShopCss')) { const st = document.createElement('style'); st.id = 'wlShopCss'; st.textContent = css; document.head.append(st); }
-  const el = (tag, attrs = {}, parent = document.body) => { const e = document.createElement(tag); Object.assign(e, attrs); parent.append(e); return e; };
-  const prompt = el('div', { id: 'wlPrompt' }), wallet = el('div', { id: 'wlWallet' }, document.getElementById('hud') || document.body);
-  const shopP = el('div', { className: 'wlPanel', id: 'wlShop' }), bagP = el('div', { className: 'wlPanel', id: 'wlBag' });
-
-  // ---- places to be served: the shops with a menu, and every vending machine
-  const counters = [];
+  // ---- what can be used: shops (their counter, shelves, till), vending machines, bins
+  const shops = [], spots = [];
   for (const s of SHOP_SITES) {
     const menu = MENUS[s.trade]; if (!menu || s.closed || !s.door) continue;
     const nm = s.trade === 'konbini' ? ['コンビニ', 'Sunny Mart'] : SHOP_NAMES[s.trade];
-    counters.push({ kind: 'shop', menu, site: s, x: s.door.x, z: s.door.z, r: 2.6, title: s.trade === 'konbini' ? 'Sunny Mart' : nm[1], jp: s.trade === 'konbini' ? 'コンビニ' : nm[0], label: menu.label });
+    const c = { site: s, menu, trade: s.trade, title: s.trade === 'konbini' ? 'Sunny Mart' : nm[1], jp: s.trade === 'konbini' ? 'コンビニ' : nm[0], label: menu.label, open: () => openAt(menu, time.hour) };
+    shops.push(c);
+    if (s.spots && s.spots.length) for (const p of s.spots) spots.push({ ...p, shop: c });
+    else spots.push({ kind: 'counter', x: s.door.x, z: s.door.z, r: 2.6, shop: c }); // (served at the door)
   }
-  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), bins = [];
   for (const ent of layer.ents.values()) {
-    if (ent.prefab !== 'vending_machine') continue; const st = ent.state; if (st && (st.deleted || st.hidden)) continue;
+    if (ent.prefab !== 'vending_machine' && ent.prefab !== 'litter_bin') continue; const st = ent.state; if (st && (st.deleted || st.hidden)) continue;
     layer.matrixOf(ent, m).decompose(p, q, sc);
-    counters.push({ kind: 'vend', menu: MENUS.vending, x: p.x, z: p.z, r: 1.7, title: 'Vending machine', jp: '自動販売機', label: 'Drinks' });
+    if (ent.prefab === 'vending_machine') spots.push({ kind: 'vend', x: p.x, z: p.z, r: 1.7, shop: { menu: MENUS.vending, title: 'Vending machine', jp: '自動販売機', label: 'Drinks', open: () => true } });
+    else spots.push({ kind: 'bin', x: p.x, z: p.z, r: 1.6 });
+    bins.push([p.x, p.z]);
   }
+  for (const c of shops) for (const b of c.site.bins || []) bins.push(b);
   // the shopkeepers (pedestrians.js draws them): who stands where, dressed for the trade, there while the shop is open
-  const APRON = { konbini: [0.2, 0.42, 0.72], 0: [0.12, 0.12, 0.14], 3: [0.18, 0.16, 0.2], 12: [0.2, 0.24, 0.3], 16: [0.95, 0.95, 0.93], 7: [0.35, 0.25, 0.18], 11: [0.92, 0.88, 0.8], 6: [0.5, 0.2, 0.22], 1: [0.95, 0.96, 0.98], 8: [0.25, 0.3, 0.45] };
+  const APRON = { konbini: [0.2, 0.42, 0.72], 0: [0.12, 0.12, 0.14], 3: [0.18, 0.16, 0.2], 12: [0.2, 0.24, 0.3], 16: [0.95, 0.95, 0.93], 7: [0.35, 0.25, 0.18], 11: [0.92, 0.88, 0.8], 6: [0.5, 0.2, 0.22], 1: [0.95, 0.96, 0.98], 8: [0.25, 0.3, 0.45], 15: [0.3, 0.42, 0.3] };
   const WOMEN = new Set([7, 11, 6, 1]), keepers = [];
-  for (const c of counters) {
-    const s = c.site; if (!s || !s.keeper) continue; const t = s.trade, h = Math.abs(Math.floor(s.keeper.x * 7 + s.keeper.z * 13));
-    keepers.push({ x: s.keeper.x, y: s.keeper.y, z: s.keeper.z, yaw: s.keeper.yaw, woman: WOMEN.has(t) || (t === 'konbini' && h % 2 === 0), shirt: APRON[t] || [0.3, 0.3, 0.32], open: () => openAt(c.menu, time.hour), counter: c, ground: !s.inside });
+  for (const c of shops) {
+    const s = c.site; if (!s.keeper) continue; const t = s.trade, h = Math.abs(Math.floor(s.keeper.x * 7 + s.keeper.z * 13));
+    keepers.push({ x: s.keeper.x, y: s.keeper.y, z: s.keeper.z, yaw: s.keeper.yaw, woman: WOMEN.has(t) || (t === 'konbini' && h % 2 === 0), shirt: APRON[t] || [0.3, 0.3, 0.32], open: c.open, counter: c, ground: !s.inside });
     c.keeper = keepers.length - 1;
   }
+  // patrons: people at the counters and tables of the eateries while they are open (pedestrians.js seats them)
+  const patrons = [];
+  for (const c of shops) for (const st of c.site.seats || []) patrons.push({ ...st, open: c.open, shop: c });
 
   // ---- the panels
-  let open = null, onGreet = null;
-  const hhmm = h => String(Math.floor(h) % 24).padStart(2, '0') + ':00';
-  const row = (parent, it, btn, fn, ok = true) => {
-    const r = el('div', { className: 'wlRow' }, parent);
-    el('div', { className: 'ic', textContent: it.icon }, r);
-    const nm = el('div', { className: 'nm', textContent: it.name }, r); el('small', { textContent: it.jp + ' · ' + effectOf(it).name.toLowerCase() + (it.here ? ' · eaten here' : '') }, nm);
-    el('div', { className: 'pr', textContent: yen(it.price) }, r);
-    const b = el('button', { className: 'wlBtn', textContent: btn }, r); b.disabled = !ok; b.addEventListener('click', e => { e.stopPropagation(); fn(); });
-  };
-  function drawShop() {
-    const c = open.counter; shopP.innerHTML = '';
-    const top = el('div', { className: 'wlTop' }, shopP); el('h3', { textContent: c.title }, top); el('div', { className: 'cash', textContent: yen(inv.yen) }, top);
-    el('div', { className: 'wlSub', textContent: c.jp + ' · ' + c.label + (c.menu.greet ? '  —  「' + c.menu.greet + '」' : '') }, shopP);
-    for (const id of c.menu.items) { const it = ITEMS[id]; row(shopP, it, it.here ? 'Eat' : 'Buy', () => { if (buy(id)) drawShop(); }, inv.yen >= it.price); }
-    el('div', { className: 'wlHint', textContent: 'bag: ' + slotsUsed() + ' / ' + BAG.SLOTS + '   ·   E / Esc — leave' }, shopP);
-  }
-  function drawBag() {
-    bagP.innerHTML = '';
-    const top = el('div', { className: 'wlTop' }, bagP); el('h3', { textContent: 'Bag' }, top); el('div', { className: 'cash', textContent: yen(inv.yen) }, top);
-    const left = boostLeft(); el('div', { className: 'wlSub', textContent: left > 0 ? inv.boost.icon + ' ' + inv.boost.name + ' — ' + Math.ceil(left / 60) + ' min left (quicker on your feet)' : 'Nothing eaten lately' }, bagP);
-    const grid = el('div', { className: 'wlGrid' }, bagP), stacks = [];
-    for (const [id, n] of Object.entries(inv.items)) for (let k = n; k > 0; k -= BAG.STACK) stacks.push([id, Math.min(k, BAG.STACK)]);
-    const info = el('div', { className: 'wlInfo' }, bagP);
-    for (let i = 0; i < BAG.SLOTS; i++) {
-      const s = stacks[i], slot = el('div', { className: 'wlSlot' + (s ? '' : ' empty') }, grid);
-      if (!s) continue; const it = ITEMS[s[0]];
-      slot.textContent = it.icon; el('span', { className: 'n', textContent: s[1] > 1 ? s[1] : '' }, slot);
-      slot.title = it.name;
-      slot.addEventListener('mouseenter', () => { info.innerHTML = `<b>${it.name}</b> ${it.jp} — ${effectOf(it).name.toLowerCase()} (${Math.round(effectOf(it).fx * 100)}% quicker for ${Math.round(effectOf(it).t / 60)} min). Click: ${it.kind === 'drink' || it.kind === 'coffee' ? 'drink' : 'eat'} · right-click: throw away`; });
-      slot.addEventListener('click', () => { use(s[0]); drawBag(); });
-      slot.addEventListener('contextmenu', e => { e.preventDefault(); drop(s[0]); drawBag(); });
-    }
-    if (!stacks.length) info.textContent = 'Empty. Konbini, shops and vending machines sell food and drinks.';
-    el('div', { className: 'wlHint', textContent: stacks.length + ' / ' + BAG.SLOTS + ' slots   ·   I / Tab / Esc — close' }, bagP);
-  }
-  const showWallet = () => { const left = boostLeft(); wallet.innerHTML = yen(inv.yen) + (left > 0 ? `<span class="bst">${inv.boost.icon} ${inv.boost.name}</span>` : ''); };
-  onInventory(() => { showWallet(); if (open && open.kind === 'bag') drawBag(); });
-  showWallet();
+  let player = null, onGreet = null, here = null, unpaidAt = null, near = null;
+  const binNear = () => !!player && bins.some(([x, z]) => Math.hypot(x - player.pos.x, z - player.pos.z) < 3.2);
+  const shelfNear = () => !!near && near.kind === 'shelf';
+  const ui = shopUI({ binNear, shelfNear, onPaid: c => { if (onGreet && c.keeper !== undefined) onGreet(c.keeper); }, onBought: c => { if (onGreet && c.keeper !== undefined) onGreet(c.keeper); } });
 
-  // ---- who is in reach: the nearest counter the player faces, within its reach
-  let near = null;
+  // ---- doors: each leaf slides open when you come close to an open shop, and shuts behind you
+  const doors = []; for (const c of shops) for (const d of c.site.doors || []) doors.push({ ...d, shop: c, t: 0 });
+  let audio = null;
+  function chime() { // a konbini's door chime: a few soft sine notes
+    try { audio = audio || new AudioContext(); const t0 = audio.currentTime;
+      [[659, 0], [523, 0.22], [587, 0.44], [784, 0.66]].forEach(([f, dt]) => { const o = audio.createOscillator(), g = audio.createGain(); o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0, t0 + dt); g.gain.linearRampToValueAtTime(0.06, t0 + dt + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.6); o.connect(g).connect(audio.destination); o.start(t0 + dt); o.stop(t0 + dt + 0.7); });
+    } catch (e) {} }
+  function doorsStep(dt, px, pz) {
+    for (const d of doors) {
+      const dist = Math.hypot(px - d.x, pz - d.z), vis = dist < 160; if (vis !== d.vis) { d.vis = vis; if (d.show) d.show(vis); } // (far away: not drawn)
+      const want = d.shop.open() && dist < (d.auto ? 2.4 : 1.9) ? 1 : 0;
+      if (want && d.t === 0 && d.auto && d.shop.trade === 'konbini') chime();
+      const t = Math.max(0, Math.min(1, d.t + (want ? 1 : -1) * dt / (d.auto ? 0.45 : 0.6)));
+      if (t !== d.t) { d.t = t; d.move(t * t * (3 - 2 * t)); }
+      if (d.block) d.block(d.shop.open() ? 0 : 1);
+    }
+  }
+
+  // ---- who is in reach: the nearest thing the player faces
   const fwd = new THREE.Vector3();
-  function update(player, cam) {
-    near = null;
-    if (open) { prompt.style.opacity = 0; return; }
+  function update(pl, cam, dt = 0.016) {
+    player = pl; near = null;
+    const px = pl.pos.x, pz = pl.pos.z;
+    doorsStep(dt, px, pz); interiorSigns(px, pz);
+    here = shops.find(c => inBox(c.site.box, px, pz)) || null;
+    // taken from the shelves and not paid: the shop's door does not let you out
+    if (unpaidAt && unpaid().length && !inBox(unpaidAt.site.box, px, pz, 0.25)) {
+      const b = unpaidAt.site.box, back = unpaidAt.site.inDoor; if (back) { pl.pos.x = back[0]; pl.pos.z = back[1]; }
+      toastMsg('「お客様、お会計がまだです！」 — pay at the till first (' + yen(unpaidTotal()) + ')');
+    }
+    if (!unpaid().length) unpaidAt = null;
+    if (ui.isOpen()) { ui.prompt(null); return; }
     cam.getWorldDirection(fwd);
     let bd = Infinity;
-    for (const c of counters) {
-      const dx = c.x - player.pos.x, dz = c.z - player.pos.z, d = Math.hypot(dx, dz); if (d > c.r || d >= bd) continue;
-      if (d > 0.6 && (dx * fwd.x + dz * fwd.z) / d < 0.35) continue; // (facing it)
-      bd = d; near = c;
+    for (const s of spots) {
+      const dx = s.x - px, dz = s.z - pz, d = Math.hypot(dx, dz); if (d > s.r || d >= bd) continue;
+      if (s.shop && s.shop.site && s.shop.site.box && !!inBox(s.shop.site.box, px, pz, 0.4) !== !s.outside) continue; // (a shop's own things from inside it)
+      const tx = (s.tx ?? s.x) - px, tz = (s.tz ?? s.z) - pz, td = Math.hypot(tx, tz); if (td > 0.6 && (tx * fwd.x + tz * fwd.z) / td < 0.3) continue; // (facing it: the counter, the shelf)
+      if (s.kind === 'bin' && !empties().length) continue;
+      bd = d; near = s;
     }
-    if (near) {
-      const ok = openAt(near.menu, time.hour);
-      prompt.innerHTML = ok ? `<b>E</b>${near.title} <span style="opacity:.6">${near.jp} · ${near.label}</span>` : `<span class="shut">${near.title} — closed, opens ${hhmm(near.menu.hours[0])}</span>`;
-      prompt.style.opacity = 1;
-    } else prompt.style.opacity = 0;
-    if (!(Math.floor(performance.now() / 1000) % 5)) showWallet(); // (the boost wears off)
+    if (!near) { ui.prompt(null); return; }
+    const c = near.shop, ok = !c || c.open();
+    let html;
+    if (!ok) html = `<span class="shut">${c.title} — closed, opens ${hhmm(c.menu.hours[0])}</span>`;
+    else if (near.kind === 'counter') html = `<b>E</b><span>${c.menu.serve === 'shelves' ? 'Shop' : 'Order'} — ${c.title}</span><span class="jp">${c.jp} · ${c.label}</span>`;
+    else if (near.kind === 'shelf') html = `<b>E</b><span>${near.name}</span><span class="jp">${near.jp}</span>`;
+    else if (near.kind === 'till') { const n = unpaid().length; html = `<b>E</b><span>${n ? 'Pay — ' + yen(unpaidTotal()) : 'Till'}</span><span class="jp">レジ</span>`; }
+    else if (near.kind === 'vend') html = `<b>E</b><span>Vending machine</span><span class="jp">自動販売機${empties().length ? ' · recycling box' : ''}</span>`;
+    else if (near.kind === 'bin') html = `<b>E</b><span>Throw away ${empties().length} empt${empties().length > 1 ? 'ies' : 'y'}</span><span class="jp">ゴミ箱</span>`;
+    ui.prompt(html);
   }
+  const STYLE = { board: 'board', card: 'card', case: 'case', tag: 'tag' };
   return {
-    counters, keepers, update,
+    shops, spots, keepers, patrons, update, ui,
     set onGreet(f) { onGreet = f; },
-    isOpen: () => !!open,
-    // E: be served where you stand (true: a panel opened)
-    interact() { if (!near || !openAt(near.menu, time.hour)) return false; open = { kind: 'shop', counter: near }; drawShop(); shopP.classList.add('on'); if (onGreet && near.keeper !== undefined) onGreet(near.keeper); return true; },
-    toggleBag() { if (open && open.kind === 'bag') { this.close(); return false; } if (open) this.close(); open = { kind: 'bag' }; drawBag(); bagP.classList.add('on'); return true; },
-    close() { open = null; shopP.classList.remove('on'); bagP.classList.remove('on'); },
+    isOpen: () => ui.isOpen(),
+    get inside() { return here; },
+    // E: use what is in front of you (true: a panel opened)
+    interact() {
+      if (!near) return false; const c = near.shop;
+      if (c && !c.open()) return false;
+      if (near.kind === 'bin') { const n = binEmpties(); if (n) toastMsg(n + ' empt' + (n > 1 ? 'ies' : 'y') + ' into the bin'); return false; }
+      if (near.kind === 'vend') { ui.show('vend', c); return true; }
+      if (near.kind === 'shelf') { unpaidAt = c; ui.show('shelf', { ...near, menu: c.menu }); return true; }
+      if (near.kind === 'till') { ui.show('till', c); if (onGreet && c.keeper !== undefined) onGreet(c.keeper); return true; }
+      // a counter: the trade's menu (a shop of shelves served at its door: its goods in a case)
+      ui.show(c.menu.serve === 'shelves' ? 'case' : STYLE[c.menu.style] || 'card', c);
+      if (onGreet && c.keeper !== undefined) onGreet(c.keeper);
+      return true;
+    },
+    toggleBag() { if (ui.kind() === 'bag') { ui.close(); return false; } ui.show('bag'); return true; },
+    close() { ui.close(); },
   };
 }

@@ -90,7 +90,7 @@ function step(dt, t) {
   perf.begin(P_PLAYER);
   player.boost = boostNow();
   if (locked && started) updatePlayer(world, dt);
-  if (world.shops && started) world.shops.update(player, camera);
+  if (world.shops && started) world.shops.update(player, camera, dt);
   if (!started && !dbgState.pause) player.yaw += dt * 0.02;
   updateCamera(world);
   if (colliderView.on) colliderView.update(player.pos, (x, z) => world.groundAt(x, z));

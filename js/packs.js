@@ -118,17 +118,20 @@ export function packProp(id, x, y, z, r = 0, s = 1, tilt = null) {
 // r, scaled s ([sx, sy, sz]); each prop goes where the kit puts it in the building's frame, turned with it, at su x its
 // own size (a stretched shop front does not stretch its stools). Returns how many were placed (0: no kit).
 const _kr = new THREE.Matrix4(), _kb = new THREE.Matrix4(), _kq = new THREE.Quaternion(), _ky = new THREE.Quaternion(), _kY = new THREE.Vector3(0, 1, 0);
-// opt.skip: props left out (a shop's own sign goes where the kit's stood: their world positions and widths in opt.signs)
+// opt.skip: props left out (a shop's own sign goes where the kit's stood: their world positions and widths in opt.signs);
+// opt.where(src, x, y, z): also left out when true (x, y, z: where the kit puts it in the building's own units — a shop
+// furnished anew leaves out the kit's things inside); opt.onProp(src, matrix): each placed (a collider made of them)
 export function packKit(src, x, y, z, r, s, su = 1, opt = {}) {
   const K = packs && packs.kits[src]; if (!K || CAP.scratch) return 0;
   _kb.compose(_p.set(x, y, z), _ky.setFromAxisAngle(_kY, r), _s.set(s[0], s[1], s[2]));
   let n = 0;
   for (const p of K.props) { const m = packs.models[p.src]; if (!m) continue;
-    _kr.fromArray(p.m).decompose(_p, _kq, _s); _p.applyMatrix4(_kb); _kq.premultiply(_ky); _s.multiplyScalar(su);
+    _kr.fromArray(p.m).decompose(_p, _kq, _s); if (opt.where && opt.where(p.src, _p.x, _p.y, _p.z)) continue; _p.applyMatrix4(_kb); _kq.premultiply(_ky); _s.multiplyScalar(su);
     if (opt.skip && opt.skip.test(p.src)) { if (opt.signs) opt.signs.push({ p: _p.clone(), w: m.dims[0] * _s.x, h: m.dims[1] * _s.y, src: p.src }); continue; }
     _m.compose(_p, _kq, _s);
     const big = Math.max(...m.dims) * su; // (small things drawn near only, and only the larger ones cast shadows)
     addProp('pack:' + p.src, m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _m, castShadow: q.castShadow !== false && m.dims[1] * su > 1.0, near: big < 1.6 ? 70 : 170 }))); n++;
+    if (opt.onProp) opt.onProp(p.src, _m);
     if (/shelves_store$/.test(p.src)) stockShelf(_sh.copy(_m), x * 7 + z * 13 + n); }
   return n;
 }
@@ -141,7 +144,7 @@ export function packPropMats(id, M, swap) {
 // on the top shelf. Shelf heights and length as measured on the pack's rack (model units).
 const _sh = new THREE.Matrix4(), _sl = new THREE.Matrix4(), _sm2 = new THREE.Matrix4();
 const SHELF_Y = [0.14, 0.58, 1.02, 1.46, 2.0], GOODS = ['anime_japan/bottle_drink_01', 'anime_japan/bottle_drink_02', 'anime_japan/bottle_drink_03', 'anime_japan/bottle_drink_04'];
-function stockShelf(M, seed) {
+export function stockShelf(M, seed) {
   const h = k => { const v = Math.sin((seed + k) * 12.9898) * 43758.5453; return v - Math.floor(v); };
   let k = 0;
   SHELF_Y.forEach((y, li) => {
@@ -156,6 +159,14 @@ function stockShelf(M, seed) {
 function put(M, m, id, u, y, v, r, sc) {
   _sl.compose(_p.set(u, y, v), _q.setFromAxisAngle(_kY, r), _s.setScalar(sc)); _sm2.multiplyMatrices(M, _sl);
   addProp('pack:' + id + ':shelf', m.parts.map(q => ({ geometry: q.geometry, material: q.material, matrix: _sm2, castShadow: false, near: 45 })));
+}
+// a model's triangles placed by matrix M, appended to out (flat x, y, z per vertex: a compound collider's input)
+const _tv = new THREE.Vector3();
+export function packTris(id, M, out, skipMat = null) {
+  const m = packs && packs.models[id]; if (!m) return out;
+  for (const q of m.parts) { if (skipMat && skipMat(q.material)) continue; const g = q.geometry, pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count;
+    for (let i = 0; i < n; i++) { _tv.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(M); out.push(_tv.x, _tv.y, _tv.z); } }
+  return out;
 }
 export const packKitHas = (src, re) => !!(packs && packs.kits[src] && packs.kits[src].props.some(p => re.test(p.src)));
 // items [{ x, y, z, r, s?, sx?, sy?, sz?, c? }] of one model -> an instanced world object (prefab = the model id)
