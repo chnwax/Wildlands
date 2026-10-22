@@ -26,12 +26,19 @@ uniform highp sampler2D uCLamp; uniform sampler2D uCLDen; uniform vec2 uCLGrid, 
 `;
 THREE.ShaderChunk.lights_fragment_begin += /* glsl */`
 #if defined( CITY_LIGHTS ) && defined( RE_Direct )
-if ( uCLI > 0.0 ) {
+#ifdef CL_INDOOR
+float clOn = 0.55 + 0.45 * uCLI; // (a room's lamps are on by day too — the shop is open — the daylight doing part of the work)
+#else
+float clOn = uCLI;
+#endif
+if ( clOn > 0.0 ) {
 	vec3 clWP = ( geometryPosition - viewMatrix[ 3 ].xyz ) * mat3( viewMatrix ); // view -> world
-	float clFade = uCLI * smoothstep( uCLFar.y, uCLFar.x, length( vViewPosition ) );
+	float clFade = clOn * smoothstep( uCLFar.y, uCLFar.x, length( vViewPosition ) );
 	// light pollution / bounce: a faint warm fill where lamps are dense, mostly from above; zero out in the country
 	float clDen = texture( uCLDen, ( clWP.xz - uCLDenT.xy ) * uCLDenT.zw ).r;
+	#ifndef CL_INDOOR
 	reflectedLight.indirectDiffuse += uCLI * clDen * uCLAmb * ( 0.55 + 0.45 * ( geometryNormal * mat3( viewMatrix ) ).y ) * BRDF_Lambert( material.diffuseColor );
+	#endif
 	ivec2 clC = ivec2( floor( ( clWP.xz - uCLGrid ) / ${CELL.toFixed(1)} ) );
 	if ( clFade > 0.0 && clC.x >= 0 && clC.y >= 0 && clC.x < int( uCLDim.x ) && clC.y < int( uCLDim.y ) ) {
 		vec4 clA = texelFetch( uCLamp, ivec2( clC.x * 2, clC.y + uCLRow ), 0 ), clB = texelFetch( uCLamp, ivec2( clC.x * 2 + 1, clC.y + uCLRow ), 0 );
@@ -42,6 +49,9 @@ if ( uCLI > 0.0 ) {
 			if ( li < 0.0 ) break;
 			ivec2 lt = ivec2( int( mod( li, ${LW.toFixed(1)} ) ) * 2, int( li / ${LW.toFixed(1)} ) );
 			vec4 lp = texelFetch( uCLamp, lt, 0 ), lc = texelFetch( uCLamp, lt + ivec2( 1, 0 ), 0 );
+			#ifdef CL_INDOOR
+			if ( lc.w < 0.5 ) continue; // (a room lit by its own lamps only: the street's do not shine through walls and ceilings)
+			#endif
 			vec3 lv = lp.xyz - clWP; float d2 = dot( lv, lv ), r2 = lp.w * lp.w;
 			float w = saturate( 1.0 - d2 * d2 / ( r2 * r2 ) ); w *= w; // three's punctual window: reaches zero at the radius, smoothly
 			if ( w <= 0.0 ) continue;
@@ -57,16 +67,18 @@ if ( uCLI > 0.0 ) {
 `;
 
 const WARM = [1.0, 0.85, 0.66];
-// lamps: [{ p: [x, y, z], s: strength, c?: [r, g, b] }]
+// lamps: [{ p: [x, y, z], s: strength, c?: [r, g, b], r?: radius, i?: intensity, in?: a room's own lamp }] — a room's lamps
+// reach only across the room (r) at the brightness of an indoor fitting (i), not a street lamp's 25 m pool; they keep
+// their place in every cell's short list, and the room's own surfaces (CL_INDOOR) take no other light
 export function buildCityLights(lamps) {
   const n = lamps.length, rows = Math.max(1, Math.ceil(n / LW));
   const LT = new Float32Array(LW * 2 * rows * 4);
   let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
   const L = lamps.map((l, i) => {
-    const s = l.s, R = 10 + 18 * Math.sqrt(s), I = 55 * s, c = l.c || WARM, o = ((i % LW) * 2 + Math.floor(i / LW) * LW * 2) * 4;
-    LT.set([l.p[0], l.p[1], l.p[2], R, c[0] * I, c[1] * I, c[2] * I, 0], o);
+    const s = l.s, R = l.r ?? 10 + 18 * Math.sqrt(s), I = l.i ?? 55 * s, c = l.c || WARM, o = ((i % LW) * 2 + Math.floor(i / LW) * LW * 2) * 4;
+    LT.set([l.p[0], l.p[1], l.p[2], R, c[0] * I, c[1] * I, c[2] * I, l.in ? 1 : 0], o);
     x0 = Math.min(x0, l.p[0] - R); z0 = Math.min(z0, l.p[2] - R); x1 = Math.max(x1, l.p[0] + R); z1 = Math.max(z1, l.p[2] + R);
-    return { x: l.p[0], y: l.p[1], z: l.p[2], R, I, i };
+    return { x: l.p[0], y: l.p[1], z: l.p[2], R, I, i, pri: l.in ? 40 : 1 };
   });
   if (!n) { x0 = z0 = 0; x1 = z1 = CELL; }
   x0 = Math.floor(x0 / CELL) * CELL; z0 = Math.floor(z0 / CELL) * CELL;
@@ -78,7 +90,7 @@ export function buildCityLights(lamps) {
       const ax = x0 + cx * CELL, az = z0 + cz * CELL, dx = Math.max(ax - l.x, 0, l.x - ax - CELL), dz = Math.max(az - l.z, 0, l.z - az - CELL);
       const d2 = dx * dx + dz * dz; // horizontal reach decides membership
       if (d2 >= l.R * l.R) continue;
-      const w = (1 - (d2 / (l.R * l.R)) ** 2) ** 2, imp = l.I * w / (d2 + 4);
+      const w = (1 - (d2 / (l.R * l.R)) ** 2) ** 2, imp = l.I * l.pri * w / (d2 + 4);
       lists[cz * GX + cx].push([imp, l.i]);
     }
   }

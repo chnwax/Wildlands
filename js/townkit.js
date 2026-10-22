@@ -37,7 +37,7 @@ export class GeoBuilder {
   P(l) { const F = this.F; return [F.x + l[0] * F.c + l[2] * F.s, F.y + l[1], F.z - l[0] * F.s + l[2] * F.c]; }
   N(n) { const F = this.F; return [n[0] * F.c + n[2] * F.s, n[1], -n[0] * F.s + n[2] * F.c]; }
   bucket(mat, x, z) {
-    const c = this.lod ? this.chunk / 2 : this.chunk, ix = Math.floor(x / c), iz = Math.floor(z / c), L = this._lb;
+    const c = this.lod >= 3 ? this.chunk / 4 : this.lod ? this.chunk / 2 : this.chunk, ix = Math.floor(x / c), iz = Math.floor(z / c), L = this._lb;
     let b;
     // (most primitives land in the bucket of the one before: the key string and the map lookup only when it changes)
     if (L && L.mat === mat && L.lod === this.lod && L.ix === ix && L.iz === iz) b = L.b;
@@ -243,7 +243,7 @@ export class GeoBuilder {
 
 // detail levels: fine parts (frames, sills, gutters, railings, AC units) and micro details (meters, vents, grates, bolts)
 // are batched into their own smaller chunks and drawn only within these distances (scaled by the quality preset)
-const LOD_DIST = [Infinity, 220, 90];
+const LOD_DIST = [Infinity, 220, 90, 38]; // (3: the goods on a shop's shelves — interiors.js)
 export const lodMeshes = [];
 const _lc = new THREE.Vector3();
 export function updateLod(cam) {

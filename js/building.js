@@ -800,7 +800,7 @@ function packShopBuilding(B, s, [id, mw, mh, md], extras, site = {}) {
     for (const yy of [vy + 0.1, vy + 1.9]) B.bbox('steel', BW / 2 - 0.35, yy, d / 2 + 0.22, 0.05, 0.05, 0.45, 0.008, { color: [0.3, 0.3, 0.32] }); }
   if (own() < 0.7 && !packKitHas(src, /board_/)) { const bx = (own() < 0.5 ? -1 : 1) * Math.min(BW / 2 - 0.6, 1.6), bid = { 0: 'jp_board_digital_01', 16: 'jp_board_digital_02' }[t] || 'jp_board_foldable_0' + (1 + Math.floor(own() * 3));
     if (framePack(B, bid, bx, 0.12, d / 2 + 0.55, (own() - 0.5) * 0.6, 0.95) !== null) { const p = B.P([bx, 0, d / 2 + 0.55]); addCircle(p[0], p[2], 0.3); } }
-  lampPoints.push({ p: B.P([0, 2.9, d / 2 + 0.8]), s: 0.8 });
+  lampPoints.push(IN ? { p: B.P([0, 2.9, d / 2 + 0.8]), s: 0.1, r: 7, i: 7 } : { p: B.P([0, 2.9, d / 2 + 0.8]), s: 0.8 }); // (a shop lit inside: a softer light over its door)
   if (!IN) extras.push({ t: 'box', p: B.P([0, 0, zc]), hx: BW / 2, hz: D / 2, r });
   const [kx, kz] = KEEPER_AT[id] || [0, md / 2 - 2.2], kp = B.P([kx * su * sx, 0.06, zc + kz * D / md]);
   site.keeper = { x: kp[0], y: kp[1], z: kp[2], yaw: r }; site.inside = true; site.model = id; site.frame = { o, r: B.F.r, s: [su * sx, sy, D / md] };

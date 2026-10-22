@@ -10,7 +10,8 @@
 import { THREE, scene, mulberry32, addProp } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { packParts, packProp, packTris } from './packs.js';
-import { glowMats, lampPoints } from './townkit.js';
+import { glowMats, lampPoints, signMesh } from './townkit.js';
+import { roomTexture } from './interiors.js';
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0);
 let mats = null;
@@ -20,8 +21,9 @@ function materials() {
   const lit = (color, glow) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 0.6, emissive: color, emissiveIntensity: 0 }); m.userData.glow = glow; return m; };
   mats = {
     glass: new THREE.MeshStandardMaterial({ color: 0xe6eef2, transparent: true, opacity: 0.12, roughness: 0.03, metalness: 0.2, envMapIntensity: 1.6, depthWrite: false }),
-    wall: lit(0xe2e3de, 0.3), floor: lit(0xb9bdb8, 0.22), ceiling: lit(0xf4f4f0, 0.45),
-    strip: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+    // (a faint glow of their own; the room's lamps light it — citylights.js: a room's lamps reach the room only)
+    wall: lit(0xe2e3de, 0.06), floor: lit(0xb9bdb8, 0.04), ceiling: lit(0xf4f4f0, 0.1),
+    strip: new THREE.MeshBasicMaterial({ color: 0xd8d8d0 }), // (bright, not blinding: below the bloom threshold)
     goods: (() => { const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, emissive: 0xffffff, emissiveIntensity: 0 }); m.userData.glow = 0.05; glowMats.push(m); return m; })(),
   };
   mats.glass.name = 'konbini_glass'; mats.wall.name = 'konbini_wall'; mats.floor.name = 'konbini_floor'; mats.ceiling.name = 'konbini_ceiling'; mats.strip.name = 'konbini_strip'; mats.goods.name = 'konbini_goods';
@@ -43,7 +45,15 @@ export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins, 
   const ix = w / 2 - 0.25, iz0 = -d / 2 + 0.25, iz1 = glassZ - 0.06, Y0 = 0.12, Y1 = 3.0;
   const room = new THREE.BoxGeometry(2 * ix, Y1 - Y0, iz1 - iz0);
   const roomMats = [M.wall, M.wall, M.ceiling, M.floor, M.wall, M.wall].map(m => { const c = m.clone(); c.side = THREE.BackSide; c.emissiveIntensity = m.userData.glow; return c; });
+  roomMats[3].map = roomTexture('vinyl', 2 * ix / 1.0, (iz1 - iz0) / 1.0); roomMats[3].color.set(0xffffff); // (vinyl tiles underfoot)
   mesh(room, roomMats, 0, (Y0 + Y1) / 2, (iz0 + iz1) / 2).receiveShadow = true;
+  // the chain's colours round the walls over the racks, aisle signs over the gondolas, posters
+  { const g = new THREE.MeshStandardMaterial({ color: 0x0a8a4b, roughness: 0.6 }), b = new THREE.MeshStandardMaterial({ color: 0x1f5fb4, roughness: 0.6 });
+    for (const [mat, yy, hh] of [[g, 2.78, 0.12], [b, 2.66, 0.05]]) { mesh(new THREE.BoxGeometry(2 * ix, hh, 0.02), mat, 0, yy, iz0 + 0.012); for (const e of [-1, 1]) mesh(new THREE.BoxGeometry(0.02, hh, iz1 - iz0), mat, e * (ix - 0.012), yy, (iz0 + iz1) / 2); } }
+  const sign = (w2, h2, draw, lx, ly, lz, dr) => { const s = signMesh(w2, h2, draw, 0.15, 128, { back: 'both' }); const p = B.P([lx, ly, lz]); s.position.set(p[0], p[1], p[2]); s.rotation.y = F.r + dr; s.updateMatrixWorld(); scene.add(s); return s; };
+  const aisle = (jp, en, bg) => (g2, W2, H2) => { g2.fillStyle = bg; g2.fillRect(0, 0, W2, H2); g2.fillStyle = '#fff'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.font = `bold ${H2 * 0.5}px "Yu Gothic UI", "Meiryo", sans-serif`; g2.fillText(jp, W2 / 2, H2 * 0.42); g2.font = `${H2 * 0.2}px "Yu Gothic UI", sans-serif`; g2.fillText(en, W2 / 2, H2 * 0.82); };
+  [['お菓子', 'SNACKS', '#d0521e', -3.3], ['日用品', 'DAILY GOODS', '#1f5fb4', -0.85], ['カップ麺', 'NOODLES', '#0a8a4b', 1.6]].forEach(([jp, en, bg, gz]) => sign(1.1, 0.28, aisle(jp, en, bg), 1.0, 2.55, gz, 0));
+  sign(1.3, 0.3, aisle('飲料', 'DRINKS', '#0a8a4b'), 0, 2.45, iz0 + 1.1, 0);
   // (the front glass: round the door's bay when the doors slide; in the collider as panes, with the room's floor)
   const pane = (x0, x1, y0, y1) => { mesh(new THREE.PlaneGeometry(x1 - x0, y1 - y0), M.glass, (x0 + x1) / 2, (y0 + y1) / 2, glassZ); if (tris) { const a = B.P([x0, y0, glassZ]), b = B.P([x1, y0, glassZ]), c = B.P([x1, y1, glassZ]), e = B.P([x0, y1, glassZ]); tris.push(...a, ...b, ...c, ...a, ...c, ...e); } };
   if (door) { pane(gl.x0, door[0], gl.y0, gl.y1); pane(door[1], gl.x1, gl.y0, gl.y1); pane(door[0], door[1], door[2], gl.y1); } else pane(gl.x0, gl.x1, gl.y0, gl.y1);
@@ -54,7 +64,7 @@ export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins, 
   const strips = [];
   for (const sz of [-4.2, -1.6, 1.0, 3.6]) strips.push(new THREE.BoxGeometry(2 * ix - 3, 0.05, 0.22).translate(0.5, Y1 - 0.03, sz));
   mesh(mergeGeometries(strips), M.strip, 0, 0, 0);
-  for (const [lx, lz] of [[-5, -2.5], [4, -2.5], [-5, 2.5], [4, 2.5]]) lampPoints.push({ p: B.P([lx, 2.7, lz]), s: 0.9 });
+  for (const [lx, lz] of [[-6, -3.2], [0, -3.2], [6, -3.2], [-6, 1.2], [0, 1.2], [6, 1.2]]) lampPoints.push({ p: B.P([lx, 2.7, lz]), s: 0.1, r: 5.2, i: 12, c: [0.92, 0.96, 1.0], in: true });
 
   // ---- drinks along the back wall, goods down the side: tall racks stocked shelf by shelf
   const LEVELS = [0.12, 0.56, 1.0, 1.44, 1.98], BOTTLES = ['jp_bottle_drink_01', 'jp_bottle_drink_02', 'jp_bottle_drink_03', 'jp_bottle_drink_04'];
@@ -90,6 +100,15 @@ export function konbiniDress(B, { w, d, H, gl, sideWin, glassZ, dx, bwid, bins, 
   // ---- counter by the door, cigarette shelves behind it, register; a cash machine; magazine racks along the glass
   inside('jp_counter_shop', -ix + 1.9, Y0, 2.75, Math.PI / 2);
   for (let i = 0; i < 3; i++) inside('jp_shelf_wooden', -ix + 0.33, Y0, 1.0 + i * 1.22, Math.PI / 2);
+  // (behind the clerk: the shelves full — cigarettes, sweets, daily things; on the counter the hot-snack warmer, the
+  // steamer and the coffee machine)
+  { const packs = [], COLS2 = [0xf2f2f2, 0x2a4fa8, 0xc8322a, 0xe8b830, 0x303034, 0x3d8fd6, 0xf07fb0];
+    for (let i = 0; i < 3; i++) for (const ly of [0.44, 0.92, 1.38, 1.86]) for (let u = -0.55; u < 0.55;) { const bw = 0.06 + rng() * 0.08, bh = 0.08 + rng() * (ly > 1.5 ? 0.1 : 0.2), c = new THREE.Color(COLS2[Math.floor(rng() * COLS2.length)]);
+      const g = new THREE.BoxGeometry(0.2, bh, bw * 0.9).translate(-ix + 0.38, Y0 + ly + 0.01 + bh / 2, 1.0 + i * 1.22 + u + bw / 2); const n = g.attributes.position.count, col = new Float32Array(n * 3); for (let k = 0; k < n; k++) c.toArray(col, k * 3); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.deleteAttribute('uv'); packs.push(g); u += bw; }
+    mesh(mergeGeometries(packs), M.goods, 0, 0, 0);
+    const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.35, metalness: 0.5 }), warm = new THREE.MeshStandardMaterial({ color: 0xffd9a0, emissive: 0xffb050, emissiveIntensity: 0.5 }), dark = new THREE.MeshStandardMaterial({ color: 0x1e1f22, roughness: 0.4 });
+    mesh(new THREE.BoxGeometry(0.42, 0.42, 0.6), steel, -ix + 1.75, Y0 + 1.33, 1.1); mesh(new THREE.BoxGeometry(0.36, 0.06, 0.52), warm, -ix + 1.75, Y0 + 1.5, 1.1);
+    mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.36, 16), steel, -ix + 1.75, Y0 + 1.3, 1.75); mesh(new THREE.BoxGeometry(0.42, 0.62, 0.42), dark, -ix + 1.75, Y0 + 1.43, 4.6); }
   inside('jp_fusebox_wall_09', -ix + 1.9, Y0 + 1.12, 1.6, Math.PI / 2, 1.1);           // (the till)
   inside('jp_fusebox_large', dx + bwid * 0.75, Y0, iz1 - 0.35, Math.PI, [0.85, 0.95, 0.9]); // (the cash machine / copier)
   inside('jp_sticker_atm', dx + bwid * 0.75, Y0 + 1.2, iz1 - 0.35 - 0.22, Math.PI, 1.2);
