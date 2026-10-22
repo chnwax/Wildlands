@@ -164,6 +164,7 @@ addEventListener('keydown', e => {
   if (e.code === 'BracketRight') { time.hour = (time.hour + 0.5) % 24; updateSky(true); }
   if (e.code === 'KeyH') { hudOn = !hudOn; $('hud').style.display = hudOn ? '' : 'none'; $('credit').style.display = hudOn ? '' : 'none'; }
   if (e.code === 'KeyM') audio.toggleMute();
+  if (e.code === 'KeyG' && world && world.home) { const p = world.home.spawnAt; player.fly = false; player.vy = 0; player.pos.set(p[0], world.groundAt(p[0], p[2]), p[2]); player.yaw = world.home.site.r; toastMsg('Home — さくら農園'); }
   if (e.code === 'KeyB') { e.preventDefault(); openBuilderHere(); }
   if (e.code.startsWith('Digit')) setQuality(['low', 'medium', 'high', 'ultra', 'extreme'][+e.code.slice(5) - 1]);
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();

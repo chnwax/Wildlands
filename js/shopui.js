@@ -7,6 +7,7 @@
 //  - the till: what you carry unpaid on a thermal receipt, a bag offered, the change counted out
 //  - a vending machine: its window of dummy cans over lit buttons, the coin display, the slot the can drops into, and
 //    the recycling box beside it
+//  - your farm (home.js): a rack of seed packets by the plot you sow, and the farm's cork board of plots and upgrades
 // The HUD keeps the purse and a small pair of hands (fingers in use) under the clock.
 import { ITEMS, MENUS, inv, yen, effectOf, isDrink, onInventory, handsFit, fingersOf, fingersUsed, bagsOf, sizeOf, cellsFree, whereIs,
   toHands, toBag, use, discard, buy, take, putBack, unpaid, unpaidTotal, payAll, binEmpties, empties, boostLeft, canCarry, why } from './items.js';
@@ -22,6 +23,38 @@ const css = `
 .wlP button { all: unset; cursor: pointer; box-sizing: border-box; }
 .wlP .key { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid currentColor; border-radius: 4px; font-size: 10px; line-height: 16px; text-align: center; opacity: .8; margin: 0 2px; }
 .wlP .hint { font-size: 11px; letter-spacing: .04em; opacity: .7; margin-top: 10px; text-align: center; }
+
+/* ---- the seed rack: paper packets on a wooden stand */
+.wlP.seeds { width: min(900px, 96vw); padding: 18px 22px 14px; border-radius: 6px; background: linear-gradient(180deg, #6a4a30, #4e3522); box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 0 0 3px #3a2618; color: #f6ead2; }
+.wlP.seeds header h2 { margin: 0; font: 600 26px var(--mincho); letter-spacing: .16em; } .wlP.seeds header .en { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; opacity: .75; padding-bottom: 3px; }
+.wlP.seeds .pk { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 12px; padding: 14px 10px 16px; background: repeating-linear-gradient(180deg, transparent 0 196px, #3a2618 196px 204px); }
+.wlP.seeds .pkt { position: relative; cursor: pointer; padding: 26px 8px 8px; border-radius: 2px 2px 4px 4px; background: linear-gradient(180deg, #fbf6e8, #efe4c8); color: var(--ink); text-align: center; box-shadow: 0 6px 12px rgba(0,0,0,.35); transition: transform .1s; }
+.wlP.seeds .pkt:hover { transform: translateY(-3px) rotate(-.6deg); }
+.wlP.seeds .pkt::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 18px; background: var(--band); border-radius: 2px 2px 0 0; }
+.wlP.seeds .pkt::after { content: ''; position: absolute; left: 0; right: 0; top: 18px; height: 3px; background: repeating-linear-gradient(90deg, rgba(0,0,0,.25) 0 3px, transparent 3px 6px); }
+.wlP.seeds .pkt .jpn { position: absolute; top: 1px; left: 0; right: 0; font: 600 12px var(--mincho); letter-spacing: .2em; color: #fff; }
+.wlP.seeds .pkt svg { width: 74px; height: 74px; display: block; margin: 2px auto 2px; }
+.wlP.seeds .pkt b { display: block; font-size: 14px; } .wlP.seeds .pkt small { display: block; font-size: 11px; color: var(--ink2); }
+.wlP.seeds .pkt i { position: absolute; right: -6px; bottom: -8px; font: 700 13px "Segoe UI"; font-style: normal; background: #fff3a8; color: #3a2a10; padding: 2px 7px; border-radius: 2px; transform: rotate(4deg); box-shadow: 0 2px 4px rgba(0,0,0,.3); }
+.wlP.seeds .pkt.dis { opacity: .45; cursor: default; } .wlP.seeds .pkt.dis:hover { transform: none; }
+.wlP.seeds .wlBar, .wlP.farm .wlBar { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; } .wlP.seeds .wlBar .purse, .wlP.farm .wlBar .purse { margin: 0; font-size: 15px; }
+/* ---- the farm's cork board */
+.wlP.farm { width: min(860px, 96vw); padding: 20px 24px 14px; border-radius: 6px; border: 12px solid #5a3a22; color: var(--ink);
+  background: radial-gradient(circle at 30% 40%, rgba(80,50,20,.25) 0 1px, transparent 1.5px) 0 0 / 6px 7px, radial-gradient(circle at 70% 20%, rgba(255,240,200,.18) 0 1px, transparent 1.5px) 0 0 / 9px 5px, #b98a58; box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 0 18px rgba(0,0,0,.35); }
+.wlP.farm .top { display: flex; gap: 18px; align-items: stretch; }
+.wlP.farm .note { position: relative; background: #fbf7ea; padding: 14px 16px 12px; box-shadow: 0 5px 10px rgba(0,0,0,.3); }
+.wlP.farm .note::before { content: ''; position: absolute; top: -6px; left: 50%; width: 13px; height: 13px; margin-left: -6px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ff8a7a, #b8322a 60%, #6a1a14); box-shadow: 1px 2px 2px rgba(0,0,0,.45); }
+.wlP.farm .title { transform: rotate(-1.2deg); min-width: 240px; } .wlP.farm .title h2 { margin: 0; font: 700 30px var(--mincho); letter-spacing: .14em; } .wlP.farm .title .en { font-size: 11px; letter-spacing: .32em; color: var(--ink2); }
+.wlP.farm .stats { flex: 1; transform: rotate(.8deg); display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; align-content: center; background: repeating-linear-gradient(180deg, #fbf7ea 0 22px, #d9e3ef 22px 23px); }
+.wlP.farm .stats div { display: flex; justify-content: space-between; font-size: 13px; } .wlP.farm .stats b { font-size: 15px; }
+.wlP.farm .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 18px; }
+.wlP.farm .act { cursor: pointer; text-align: center; transition: transform .1s; } .wlP.farm .act:nth-child(2) { transform: rotate(-1deg); } .wlP.farm .act:nth-child(3) { transform: rotate(1.3deg); }
+.wlP.farm .act:hover { transform: translateY(-3px); }
+.wlP.farm .act h4 { margin: 2px 0; font: 600 17px var(--mincho); letter-spacing: .08em; } .wlP.farm .act small { display: block; color: var(--ink2); font-size: 11px; min-height: 30px; }
+.wlP.farm .act .pr { display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 3px; background: #24344d; color: #fff; font-weight: 700; }
+.wlP.farm .act.dis { opacity: .55; cursor: default; } .wlP.farm .act.done { cursor: default; } .wlP.farm .act.done .pr { background: #8a8a80; }
+.wlP.farm .act .stamp { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; border: 2.5px solid var(--shu); border-radius: 50%; color: var(--shu); font: 700 20px/36px var(--mincho); transform: rotate(-14deg); opacity: .85; }
+.wlP.farm .hint { color: #3a2614; opacity: .85; }
 
 /* ---- washi: the belongings sheet */
 .wlP.bag { width: min(980px, 96vw); padding: 22px 26px 16px; border-radius: 3px;
@@ -392,8 +425,32 @@ export function shopUI(opts = {}) {
     rc.onclick = () => { const k = binEmpties(); if (k) toastMsg(k + ' empt' + (k > 1 ? 'ies' : 'y') + ' into the recycling box'); render(); };
     el('div', { class: 'hint' }, panel, `${c.jp} · press a lit button · the recycling box takes empty cans and bottles · <span class="key">E</span> / <span class="key">Esc</span>`);
   }
+  // ---- your farm (home.js): the seed rack, the farm board
+  const BAND = { lettuce: '#5f9a36', cabbage: '#7aa84e', sunflower: '#e2a414', tomato: '#c8321e', strawberry: '#d0284a', corn: '#d9a11e', pumpkin: '#d86a12', watermelon: '#2f6a2a' };
+  function drawSeeds(c) {
+    panel.className = 'wlP seeds on'; panel.innerHTML = '';
+    el('header', {}, panel, `<h2>${c.jp} · 種苗</h2><span class="en">${c.title} — sow a plot</span>`);
+    const G = el('div', { class: 'pk' }, panel), k = c.sprinkler ? 1.5 : 1;
+    for (const s of c.seeds) { const ok = inv.yen >= s.price, h = Math.round(s.hours / k * 10) / 10;
+      const p = el('div', { class: 'pkt' + (ok ? '' : ' dis'), style: `--band:${BAND[s.crop] || '#5f9a36'}`, title: ok ? s.name : 'Not enough money' }, G, `<span class="jpn">${s.jp}</span>${iconSVG(s)}<b>${s.name}</b><small>ripe in ${h} h · sells ${yen(s.sell)}</small><i>${s.price}円</i>`);
+      p.onclick = () => { if (!ok) return; if (c.pick(s.crop)) { open = null; panel.className = 'wlP'; } }; }
+    bar(panel, `Click a packet to sow it${c.sprinkler ? ' · the sprinkler: everything grows 1.5× as fast' : ''} — the hours are the game's (a night's sleep in your bed). <span class="key">E</span> / <span class="key">Esc</span>`);
+  }
+  function drawFarm(c0) {
+    const c = c0.refresh ? c0.refresh() : c0;
+    panel.className = 'wlP farm on'; panel.innerHTML = '';
+    const top = el('div', { class: 'top' }, panel);
+    el('div', { class: 'note title' }, top, `<h2>${c.title}</h2><div class="en">${c.sub}</div>`);
+    el('div', { class: 'note stats' }, top, c.stats.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join(''));
+    const A = el('div', { class: 'acts' }, panel);
+    for (const a of c.acts) { const ok = !a.done && inv.yen >= a.price;
+      const n = el('div', { class: 'note act' + (a.done ? ' done' : ok ? '' : ' dis') }, A, `<h4>${a.label}</h4><div class="jp" style="font-size:12px">${a.jp}</div><small>${a.note}</small><span class="pr">${a.done ? 'bought' : yen(a.price)}</span>${a.done ? '<div class="stamp">済</div>' : ''}`);
+      n.onclick = () => { if (!ok) { if (!a.done) toastMsg('Not enough money'); return; } a.run(); render(); }; }
+    bar(panel, 'Plots are sown and harvested at the plot itself (E). Harvests go into the shipping box: paid at once. <span class="key">E</span> / <span class="key">Esc</span>');
+  }
   function render() {
     if (!open) return;
+    if (open.kind === 'seeds') return drawSeeds(open.c); if (open.kind === 'farm') return drawFarm(open.c);
     if (open.kind === 'bag') drawBag(); else if (open.kind === 'board') drawBoard(open.c); else if (open.kind === 'card') drawCard(open.c); else if (open.kind === 'case' || open.kind === 'tag') drawCase(open.c);
     else if (open.kind === 'shelf') drawShelf(open.c); else if (open.kind === 'till') drawTill(open.c); else if (open.kind === 'vend') drawVend(open.c);
   }

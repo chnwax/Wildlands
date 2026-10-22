@@ -95,12 +95,14 @@ export function buildShops({ layer }) {
       if (s.shop && s.shop.site && s.shop.site.box && !!inBox(s.shop.site.box, px, pz, 0.4) !== !s.outside) continue; // (a shop's own things from inside it)
       const tx = (s.tx ?? s.x) - px, tz = (s.tz ?? s.z) - pz, td = Math.hypot(tx, tz); if (td > 0.6 && (tx * fwd.x + tz * fwd.z) / td < 0.3) continue; // (facing it: the counter, the shelf)
       if (s.kind === 'bin' && !empties().length) continue;
+      if (s.kind === 'custom' && !s.prompt()) continue;
       bd = d; near = s;
     }
     if (!near) { ui.prompt(null); return; }
     const c = near.shop, ok = !c || c.open();
     let html;
-    if (!ok) html = `<span class="shut">${c.title} — closed, opens ${hhmm(c.menu.hours[0])}</span>`;
+    if (near.kind === 'custom') html = near.prompt();
+    else if (!ok) html = `<span class="shut">${c.title} — closed, opens ${hhmm(c.menu.hours[0])}</span>`;
     else if (near.kind === 'counter') html = `<b>E</b><span>${c.menu.serve === 'shelves' ? 'Shop' : 'Order'} — ${c.title}</span><span class="jp">${c.jp} · ${c.label}</span>`;
     else if (near.kind === 'shelf') html = `<b>E</b><span>${near.name}</span><span class="jp">${near.jp}</span>`;
     else if (near.kind === 'till') { const n = unpaid().length; html = `<b>E</b><span>${n ? 'Pay — ' + yen(unpaidTotal()) : 'Till'}</span><span class="jp">レジ</span>`; }
@@ -111,12 +113,16 @@ export function buildShops({ layer }) {
   const STYLE = { board: 'board', card: 'card', case: 'case', tag: 'tag' };
   return {
     shops, spots, keepers, patrons, update, ui,
+    // other things used with E (home.js: doors, the bed, the farm's plots and board): { kind: 'custom', x, z, r, tx?, tz?,
+    // prompt() -> html (or null: not offered now), use() -> true when a panel opened }
+    addSpots(list) { for (const s of list) spots.push(s); },
     set onGreet(f) { onGreet = f; },
     isOpen: () => ui.isOpen(),
     get inside() { return here; },
     // E: use what is in front of you (true: a panel opened)
     interact() {
       if (!near) return false; const c = near.shop;
+      if (near.kind === 'custom') return !!near.use();
       if (c && !c.open()) return false;
       if (near.kind === 'bin') { const n = binEmpties(); if (n) toastMsg(n + ' empt' + (n > 1 ? 'ies' : 'y') + ' into the bin'); return false; }
       if (near.kind === 'vend') { ui.show('vend', c); return true; }

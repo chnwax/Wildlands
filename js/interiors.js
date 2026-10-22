@@ -100,6 +100,9 @@ function builder() {
   for (const [k, f] of Object.entries(TEX)) MT[k] = std({ map: tex(f), roughness: /wood|boards/.test(k) ? 0.62 : /vinyl|tile|kitchen/.test(k) ? 0.38 : 0.85 }, 'tex' + k);
   return IB;
 }
+// the rooms' builder and materials for builders outside this module (the player's house: home.js): its GeoBuilder
+// (flushed with the shops' fittings), the indoor materials, and indoor() to make any material one of the rooms'
+export function interiorKit() { builder(); return { IB, MT, indoor }; }
 // a floor or wall pattern of the rooms (vinyl tiles, planks …) repeated rx x ry times — for builders outside this module
 export function roomTexture(kind, rx = 1, ry = 1) { const t = tex(TEX[kind]); t.repeat.set(rx, ry); return t; }
 // the furnishings' meshes, once every shop is built (town.js)

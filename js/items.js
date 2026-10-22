@@ -178,6 +178,9 @@ export function toBag(k, bagK, x, y, rot) {
 // the worn bag taken off (into the hands, if they can hold it: four fingers) or put on
 export function wear(k) { const w = whereIs(k); if (!w || !ITEMS[w.e.id].wear || inv.worn) return false; takeOut(k); inv.worn = { ...w.e, items: w.e.items || [] }; changed(); return true; }
 
+// ---- money earned and spent elsewhere (the farm: home.js)
+export function earn(n) { inv.yen += Math.round(n); changed(); }
+export function spend(n) { if (inv.yen < n) { toastMsg('Not enough money'); return false; } inv.yen -= Math.round(n); changed(); return true; }
 // ---- shopping
 // buy one at a counter or a machine: eaten at once when served here, otherwise put away (a bag first); false if not
 export function buy(id) {
