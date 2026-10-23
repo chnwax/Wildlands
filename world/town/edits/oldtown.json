@@ -65,6 +65,17 @@
       "origin": [-350.86, 5.961, -270.642]
     },
     {
+      "id": "house_new_001",
+      "name": "Wood (part of House 90 · oldtown)",
+      "prefab": "house",
+      "source": "house_oldtown_090",
+      "part": "wood#0",
+      "position": [-146.32, 5.919, -113.53],
+      "rotation": [0, -3.19, 0],
+      "scale": [1, 1, 1],
+      "tags": ["building", "oldtown"]
+    },
+    {
       "id": "house_oldtown_050",
       "position": [-392.358, 5.946, 231.998],
       "rotation": [0, 179.67, 0],

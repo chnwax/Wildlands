@@ -227,6 +227,13 @@
       "origin": [-126.015, 6.069, 108.906]
     },
     {
+      "id": "house_midtown_199",
+      "slots": {
+        "wood#0": { "hidden": true }
+      },
+      "origin": [28.616, 5.984, -164.586]
+    },
+    {
       "id": "house_midtown_203",
       "slots": {
         "wood": { "offset": [-2.0165, -11.4296, 0.0158], "rotate": [0, 0, -90], "scale": [2.7231, 0.7467, 1] }

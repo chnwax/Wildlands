@@ -204,6 +204,14 @@
       "origin": [87.089, 5.994, 23.936]
     },
     {
+      "id": "konbini_station_001",
+      "slots": {
+        "concrete#5": { "offset": [0, 0, 0.0153] },
+        "stucco#0.4": { "offset": [0, 0.0003, 0] }
+      },
+      "origin": [134, 6, 7]
+    },
+    {
       "id": "mailbox_station_001",
       "position": [-113.812, 6.035, -56.919],
       "origin": [-114.268, 6.035, -56.919]
