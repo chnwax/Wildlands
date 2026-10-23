@@ -72,7 +72,6 @@ h_refrigirator.glb  Refrigirator — CreativeTrio — https://poly.pizza/m/G2vcj
 h_stove.glb  Stove — CreativeTrio — https://poly.pizza/m/EwEDIUf1hQ (CC0 1.0)
 i_night_stand_2.glb  Night Stand — Quaternius — https://poly.pizza/m/08S1j15Jcx (CC0 1.0)
 i_light_ceiling_2.glb  Light Ceiling — Quaternius — https://poly.pizza/m/ToOLJDO5FI (CC0 1.0)
-i_light_stand.glb  Light Stand — Quaternius — https://poly.pizza/m/9L6lLUl9sD (CC0 1.0)
 i_houseplant_4.glb  Houseplant — Quaternius — https://poly.pizza/m/f6GPjbEgg0 (CC0 1.0)
 i_houseplant_6.glb  Houseplant — Quaternius — https://poly.pizza/m/IBLX2Jz90O (CC0 1.0)
 i_table_round_small.glb  Table Round Small — Quaternius — https://poly.pizza/m/oEArSZykyi (CC0 1.0)
