@@ -1526,7 +1526,16 @@ export async function build(progress, opts = {}) {
   // the farmsteads behind the north-row plots (farmstead.js), laid out last so that nothing planted before them moves
   // (every later draw of the town's generators, and so the World Builder ids, stay as they were): they keep off the
   // woods, the bamboo, every tree and every forest-floor piece already standing there
-  let homeBlocked = () => false;
+  // (the home's place keeps off every tree, bush and log of the map, the bamboo, the groves and the woods)
+  let homeBlocked;
+  { const near = new Map();
+    for (const t of [...wild, ...saplings, ...trees, ...sakura, ...bushes, ...floor.logs || []]) { const reach = t.kind ? Math.max(2, crownR(t) + 1) : 1.6, R = Math.ceil(reach / 4);
+      for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) { const k = (Math.floor(t.x / 4) + i) + ',' + (Math.floor(t.z / 4) + j); if (!near.has(k)) near.set(k, []); near.get(k).push({ x: t.x, z: t.z, reach }); } }
+    homeBlocked = (bx, bz) => {
+      if (BAMBOO_SITES.some(g => Math.hypot(bx - g.x, bz - g.z) < g.R * 1.35 + 2) || green.groves.some(g => Math.hypot(bx - g.x, bz - g.z) < g.R + 3)) return true;
+      if (FOREST[hf.idx(bx, bz)] > 0.2) return true;
+      for (const t of near.get(Math.floor(bx / 4) + ',' + Math.floor(bz / 4)) || []) if (Math.hypot(bx - t.x, bz - t.z) < t.reach) return true;
+      return false; }; }
   if (farmCtx) {
     const near = new Map();
     for (const t of [...wild, ...saplings, ...trees, ...sakura, ...bushes, ...floor.logs || []]) { if (t.z < 280) continue; // (a tree keeps its whole crown clear)
@@ -1538,12 +1547,11 @@ export async function build(progress, opts = {}) {
       for (const t of near.get(Math.floor(bx / 4) + ',' + Math.floor(bz / 4)) || []) if (Math.hypot(bx - t.x, bz - t.z) < t.reach) return true;
       return false;
     };
-    homeBlocked = blocked;
     for (const f of farmCtx.FARMS) farmstead({ hf, occRect, gy: (x, z) => hf.groundAt(x, z), RN, footpath: farmCtx.footpath, blocked },
       { plots: f.plots, dir: farmCtx.dir, seed: f.seed, trees: f.trees, extras: f.extras, stand: (f.stand || []).map(([sx, sz]) => [sx, sz, Math.PI]) });
   }
   // your house and your farm (home.js): on the meadow behind the farmsteads, laid out after them (nothing moves)
-  const homeSite = /[?&]nohome/.test(location.search) ? null : await buildHome({ B, hf, occRect, gy: (x, z) => hf.groundAt(x, z), RN, blocked: homeBlocked, footpath: farmCtx && farmCtx.footpath }).catch(e => { console.warn('home failed', e); return null; });
+  const homeSite = /[?&]nohome/.test(location.search) ? null : await buildHome({ B, hf, occRect, gy: (x, z) => hf.groundAt(x, z), RN, blocked: homeBlocked, paddy: inPaddyZone, footpath: farmCtx && farmCtx.footpath }).catch(e => { console.warn('home failed', e); return null; });
   let home = null;
   hf.paintCanopy([...trees, ...sakura]);
   hf.uploadHeight(); hf.uploadMasks();
@@ -1934,7 +1942,7 @@ export async function build(progress, opts = {}) {
     const count = { low: 40, medium: 50, high: 60, ultra: 70, extreme: 80 }[Q.name] || 60; // (a small town: a few dozen out at once)
     // shops with their counters and shopkeepers, the vending machines (shops.js, items.js)
     world.shops = buildShops({ layer });
-    if (homeSite) { home = homeRuntime(homeSite, world.shops.ui); world.shops.addSpots(home.spots); world.home = homeSite; }
+    if (homeSite) { home = homeRuntime(homeSite, world.shops.ui); world.shops.addSpots(home.spots); world.home = homeSite; world.farm = home; }
     // (a shop you can walk into: its customers come to its door and go in, out of sight)
     for (const P of pois) if (P.type === 'shop') { const c = world.shops.shops.find(c => c.site.enter && Math.hypot(c.site.door.x - P.x, c.site.door.z - P.z) < 9); if (c) { P.x = c.site.door.x; P.z = c.site.door.z; P.inDoor = c.site.inDoor; } }
     people = new Pedestrians({ G, pois, people: await loadPeople(), groundAt: (x, z) => world.groundAt(x, z), pedSignal: g => signals.ped(g), carNear, railClosed: xingClosed, count, keepers: world.shops.keepers, patrons: world.shops.patrons });

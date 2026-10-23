@@ -718,6 +718,48 @@
      "kind": "lod",
      "category": "scenery",
      "src": "polygon_farm/prop_windfarm_01"
+    },
+    {
+     "id": "farm_scarecrow",
+     "kind": "prop",
+     "category": "farm",
+     "src": "polygon_farm/prop_scarecrow_01"
+    },
+    {
+     "id": "farm_tractor_old",
+     "kind": "lod",
+     "category": "farm",
+     "src": "polygon_farm/veh_tractorold_01"
+    },
+    {
+     "id": "farm_hay_bale_square",
+     "kind": "prop",
+     "category": "farm",
+     "src": "polygon_farm/prop_hay_bale_square_01"
+    },
+    {
+     "id": "farm_fence_round",
+     "kind": "prop",
+     "category": "farm",
+     "src": "polygon_farm/prop_fence_wood_round_01"
+    },
+    {
+     "id": "farm_fence_round_pole",
+     "kind": "prop",
+     "category": "farm",
+     "src": "polygon_farm/prop_fence_wood_round_pole_01"
+    },
+    {
+     "id": "farm_fence_gate",
+     "kind": "lod",
+     "category": "farm",
+     "src": "polygon_farm/prop_fence_wood_gate_01"
+    },
+    {
+     "id": "farm_weathervane",
+     "kind": "prop",
+     "category": "farm",
+     "src": "polygon_farm/prop_weathervane_01"
     }
    ]
   },
@@ -1883,6 +1925,48 @@
      "kind": "lod",
      "category": "rail",
      "src": "anime_japan/train_japan_01"
+    },
+    {
+     "id": "jp_house_01",
+     "kind": "lod",
+     "category": "home",
+     "src": "anime_japan/house_residential_building_01"
+    },
+    {
+     "id": "jp_house_annex",
+     "kind": "lod",
+     "category": "home",
+     "src": "anime_japan/house_residential_attachment_01"
+    },
+    {
+     "id": "jp_walls_poarch_01",
+     "kind": "lod",
+     "category": "home",
+     "src": "anime_japan/walls_poarch_01"
+    },
+    {
+     "id": "jp_entrance_fence_02",
+     "kind": "lod",
+     "category": "home",
+     "src": "anime_japan/entrance_fence_02"
+    },
+    {
+     "id": "jp_entrance_edge",
+     "kind": "prop",
+     "category": "home",
+     "src": "anime_japan/entrance_edge"
+    },
+    {
+     "id": "jp_book_shelf_01",
+     "kind": "prop",
+     "category": "home",
+     "src": "anime_japan/book_shelf_01"
+    },
+    {
+     "id": "jp_book_shelf_02",
+     "kind": "prop",
+     "category": "home",
+     "src": "anime_japan/book_shelf_02"
     }
    ]
   },

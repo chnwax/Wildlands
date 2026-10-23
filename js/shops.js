@@ -95,6 +95,7 @@ export function buildShops({ layer }) {
       if (s.shop && s.shop.site && s.shop.site.box && !!inBox(s.shop.site.box, px, pz, 0.4) !== !s.outside) continue; // (a shop's own things from inside it)
       const tx = (s.tx ?? s.x) - px, tz = (s.tz ?? s.z) - pz, td = Math.hypot(tx, tz); if (td > 0.6 && (tx * fwd.x + tz * fwd.z) / td < 0.3) continue; // (facing it: the counter, the shelf)
       if (s.kind === 'bin' && !empties().length) continue;
+      if (s.ylo !== undefined && (pl.pos.y < s.ylo || pl.pos.y > s.yhi)) continue; // (a spot on one floor of a house)
       if (s.kind === 'custom' && !s.prompt()) continue;
       bd = d; near = s;
     }

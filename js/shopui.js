@@ -25,9 +25,9 @@ const css = `
 .wlP .hint { font-size: 11px; letter-spacing: .04em; opacity: .7; margin-top: 10px; text-align: center; }
 
 /* ---- the seed rack: paper packets on a wooden stand */
-.wlP.seeds { width: min(900px, 96vw); padding: 18px 22px 14px; border-radius: 6px; background: linear-gradient(180deg, #6a4a30, #4e3522); box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 0 0 3px #3a2618; color: #f6ead2; }
+.wlP.seeds { width: min(1040px, 96vw); padding: 18px 22px 14px; border-radius: 6px; background: linear-gradient(180deg, #6a4a30, #4e3522); box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 0 0 3px #3a2618; color: #f6ead2; }
 .wlP.seeds header h2 { margin: 0; font: 600 26px var(--mincho); letter-spacing: .16em; } .wlP.seeds header .en { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; opacity: .75; padding-bottom: 3px; }
-.wlP.seeds .pk { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 12px; padding: 14px 10px 16px; background: repeating-linear-gradient(180deg, transparent 0 196px, #3a2618 196px 204px); }
+.wlP.seeds .pk { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px 12px; padding: 14px 10px 16px; background: repeating-linear-gradient(180deg, transparent 0 196px, #3a2618 196px 204px); }
 .wlP.seeds .pkt { position: relative; cursor: pointer; padding: 26px 8px 8px; border-radius: 2px 2px 4px 4px; background: linear-gradient(180deg, #fbf6e8, #efe4c8); color: var(--ink); text-align: center; box-shadow: 0 6px 12px rgba(0,0,0,.35); transition: transform .1s; }
 .wlP.seeds .pkt:hover { transform: translateY(-3px) rotate(-.6deg); }
 .wlP.seeds .pkt::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 18px; background: var(--band); border-radius: 2px 2px 0 0; }
@@ -426,7 +426,7 @@ export function shopUI(opts = {}) {
     el('div', { class: 'hint' }, panel, `${c.jp} · press a lit button · the recycling box takes empty cans and bottles · <span class="key">E</span> / <span class="key">Esc</span>`);
   }
   // ---- your farm (home.js): the seed rack, the farm board
-  const BAND = { lettuce: '#5f9a36', cabbage: '#7aa84e', sunflower: '#e2a414', tomato: '#c8321e', strawberry: '#d0284a', corn: '#d9a11e', pumpkin: '#d86a12', watermelon: '#2f6a2a' };
+  const BAND = { lettuce: '#5f9a36', cabbage: '#7aa84e', sunflower: '#e2a414', potato: '#a07a45', tomato: '#c8321e', bean: '#4f8a2e', strawberry: '#d0284a', corn: '#d9a11e', pumpkin: '#d86a12', watermelon: '#2f6a2a' };
   function drawSeeds(c) {
     panel.className = 'wlP seeds on'; panel.innerHTML = '';
     el('header', {}, panel, `<h2>${c.jp} · 種苗</h2><span class="en">${c.title} — sow a plot</span>`);
@@ -434,7 +434,7 @@ export function shopUI(opts = {}) {
     for (const s of c.seeds) { const ok = inv.yen >= s.price, h = Math.round(s.hours / k * 10) / 10;
       const p = el('div', { class: 'pkt' + (ok ? '' : ' dis'), style: `--band:${BAND[s.crop] || '#5f9a36'}`, title: ok ? s.name : 'Not enough money' }, G, `<span class="jpn">${s.jp}</span>${iconSVG(s)}<b>${s.name}</b><small>ripe in ${h} h · sells ${yen(s.sell)}</small><i>${s.price}円</i>`);
       p.onclick = () => { if (!ok) return; if (c.pick(s.crop)) { open = null; panel.className = 'wlP'; } }; }
-    bar(panel, `Click a packet to sow it${c.sprinkler ? ' · the sprinkler: everything grows 1.5× as fast' : ''} — the hours are the game's (a night's sleep in your bed). <span class="key">E</span> / <span class="key">Esc</span>`);
+    bar(panel, `Click a packet to sow it${c.sprinkler ? ' · the sprinklers: the field grows 1.5× as fast' : ''} — the hours are the game's (a night's sleep in your bed). <span class="key">E</span> / <span class="key">Esc</span>`);
   }
   function drawFarm(c0) {
     const c = c0.refresh ? c0.refresh() : c0;
