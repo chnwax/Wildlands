@@ -18,6 +18,7 @@ let mapName = direct;
 document.body.prepend(renderer.domElement);
 
 let world = null, life = null, started = false, locked = false, hudOn = true;
+let car = null; // (maps with a car to drive: car.js; while it is driven it takes the keys, the mouse and the camera)
 // ---------------------------------------------------------------- game -> World Builder, at this exact view (B)
 // The view travels in the editor's URL — exact metres and radians, taken from the rendered camera whatever mode the
 // player is in (walking, flying, third person) — so nothing has to be copied by hand and nothing can overwrite it
@@ -80,6 +81,7 @@ function setScale(v) {
   toastMsg('Render scale: ' + (v ? Math.round(v * 100) + '%' : 'preset'));
 }
 
+const _dir = new THREE.Vector3();
 const P_PLAYER = perf.id('player/collision'), P_LIFE = perf.id('ambient life'), P_AUDIO = perf.id('audio');
 const audioState = { wind: 0, day: 0, night: 0, fly: false, under: false };
 function step(dt, t) {
@@ -89,10 +91,15 @@ function step(dt, t) {
   wind.update(dt, t, !!dbgState.still);
   perf.begin(P_PLAYER);
   player.boost = boostNow();
-  if (locked && started) updatePlayer(world, dt);
+  const driving = car && car.driving;
+  if (car) { car.inputOn = locked && started; car.control(driving && locked && started ? keys : null, dt); car.update(dt); }
+  if (locked && started && !driving) updatePlayer(world, dt);
   if (world.shops && started) world.shops.update(player, camera, dt);
-  if (!started && !dbgState.pause) player.yaw += dt * 0.02;
-  updateCamera(world);
+  if (!started && !dbgState.pause && !driving) player.yaw += dt * 0.02;
+  if (driving) { // (the walker rides along: the grass, the ambience and the audio follow the car)
+    car.applyCamera(camera, dt); player.pos.set(car.st.pos.x, world.groundAt(car.st.pos.x, car.st.pos.z), car.st.pos.z);
+    const d = camera.getWorldDirection(_dir); player.yaw = Math.atan2(-d.x, -d.z);
+  } else updateCamera(world);
   if (colliderView.on) colliderView.update(player.pos, (x, z) => world.groundAt(x, z));
   perf.end(P_PLAYER);
   S.uPlayer.value.copy(player.pos);
@@ -145,6 +152,7 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('pointerlockerror', () => { if (world && !locked) $('menu').classList.remove('hidden'); });
 document.addEventListener('mousemove', e => {
   if (!locked) return;
+  if (car && car.driving) { car.lookMouse(e.movementX * player.sens, e.movementY * player.sens); return; }
   player.yaw -= e.movementX * 0.0022 * player.sens;
   player.pitch = clamp(player.pitch - e.movementY * 0.0022 * player.sens, -1.5, 1.5);
 });
@@ -158,6 +166,15 @@ addEventListener('keydown', e => {
   if (shops && locked && e.code === 'KeyE' && shops.interact()) { e.preventDefault(); release(); return; }
   if (shops && locked && (e.code === 'KeyI' || e.code === 'Tab')) { e.preventDefault(); if (shops.toggleBag()) release(); return; }
   if (!locked) return;
+  // the car: in and out (V), its views (C), back on its wheels (R), the gearbox's mode (X)
+  if (car && e.code === 'KeyV') {
+    if (car.driving && car.st.vel.length() > 3) { toastMsg('Stop the car to get out'); return; }
+    if (car.driving) { const p = car.leave(); player.fly = false; player.vy = 0; player.pos.set(p.x, world.groundAt(p.x, p.z), p.z); player.pitch = -0.1; camera.near = 0.2; camera.fov = +$('fSlider').value || 72; camera.updateProjectionMatrix(); toastMsg('On foot — V by the car to get in'); }
+    else if (car.near(player.pos)) { car.enter(); toastMsg('At the wheel'); } else toastMsg('Walk up to the car to get in');
+    return;
+  }
+  if (car && car.driving) { if (e.code === 'KeyC') car.cycleView(); if (e.code === 'KeyR') car.reset(); if (e.code === 'KeyX') car.toggleAuto(); }
+  if (e.code === 'KeyF' && car && car.driving) return;
   if (e.code === 'KeyF') { player.fly = !player.fly; if (player.fly) player.pos.copy(camera.position); else player.vy = 0; toastMsg(player.fly ? 'Fly mode' : 'Walking'); }
   if (e.code === 'KeyT') { time.running = !time.running; toastMsg(time.running ? 'Time running' : 'Time paused'); }
   if (e.code === 'BracketLeft') { time.hour = (time.hour + 23.5) % 24; updateSky(true); }
@@ -200,6 +217,11 @@ async function main(hour = null) {
   $('menuCity').textContent = city.name.toUpperCase();
   $('mapTitle').innerHTML = (city.kanji ? `<span class="k">${city.kanji}</span> · ` : '') + 'free roam';
   life = buildLife(world, world.meta.life || {});
+  if (world.meta.vehicle) { // (the car's models live in Modeleaut/ beside the game; without them the stage is walked)
+    progress('Bringing the car', 0.96);
+    try { car = await (await import('./car.js')).createCar(world, world.carSpawn || world.spawn); world.vehicle = car; }
+    catch (e) { console.warn('car: ' + (e && e.message || e)); car = null; setTimeout(() => toastMsg('Car models not found (Modeleaut/) — on foot'), 3000); }
+  }
   player.pos.set(world.spawn.x, world.groundAt(world.spawn.x, world.spawn.z), world.spawn.z);
   player.yaw = world.spawn.yaw; player.pitch = world.spawn.pitch ?? -0.03;
   if (hour !== null) time.hour = hour;
@@ -217,7 +239,7 @@ async function main(hour = null) {
   if (world.layer) world.layer.showProblems();
   let manualT = 0;
   window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
-    step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys, builderQuery,
+    car, step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys, builderQuery,
     // automated play-testing: act as if the pointer were locked, so keys (keys.KeyW = true ...) drive the walker
     autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); if (on && $('loading')) $('loading').remove(); } }; // console debugging hook
   if (new URLSearchParams(location.search).has('autoplay')) window.__wl.autoplay();
