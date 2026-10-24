@@ -329,7 +329,7 @@ export async function createCar(world, spawn) {
   // (in the wheel's plane: up, and to the driver's left; a hand's place on the rim is an angle from the top toward the left)
   const upw = UP.clone().projectOnPlane(steerAxis).normalize(), leftw = new THREE.Vector3().crossVectors(upw, steerAxis).normalize();
   const rimRad = (th, out) => out.copy(upw).multiplyScalar(Math.cos(th)).addScaledVector(leftw, Math.sin(th));
-  const TH0 = { L: Math.PI / 2 + 0.08, R: -(Math.PI / 2 + 0.08) }, thumbSign = {}; // (home: a quarter to three, a touch below the middle)
+  const TH0 = { L: Math.PI / 2 - 0.15, R: -(Math.PI / 2 - 0.15) }, thumbSign = {}; // (home: a quarter to three, a touch above the middle)
   for (const sd of ['L', 'R']) thumbSign[sd] = Math.sign(new THREE.Vector3().crossVectors(steerAxis, rimRad(TH0[sd], new THREE.Vector3())).dot(upw)) || 1;
   // where each hand can hold the rim (its reach: the wheel turns no further than the hands holding it can take it) and
   // past where it lets go for a new hold (toward the top the arm runs out of length: past ~1 o'clock for the right hand,
@@ -407,10 +407,15 @@ export async function createCar(world, spawn) {
     const tgt = want * lock, back = Math.abs(tgt) < Math.abs(rot) && tgt * rot >= 0, wmax = (back ? Math.min(WHEEL_BACK, 6 + st.vel.length() * 0.6) : WHEEL_W) * dt; // (unwinding: the faster the car goes, the harder the castor pulls the wheel back)
     const nrot = clamp(tgt, rot - wmax, rot + wmax), dir = Math.abs(tgt - nrot) > 0.02 ? Math.sign(tgt - nrot) : Math.sign(nrot - rot); rot = nrot;
     for (const side of ['L', 'R']) { const h = hs[side]; h.slide *= Math.exp(-dt * 8); if (!grips(side)) continue; const [a, b] = RANGE[side]; // (past its reach the hand stays, the rim slides through it)
-      const d0 = rot - st.steer * lock; if (Math.abs(d0) > WHEEL_W * dt) { h.phi -= d0 - clamp(d0, -WHEEL_W * dt, WHEEL_W * dt); h.slide = 1; } // (unwinding faster than a hand: it slides through)
+      const d0 = rot - st.steer * lock, th0 = h.phi + rot - d0; // (the hand's place before this step)
+      if (back && Math.abs(d0) > 1e-4) { // (unwinding by itself: the hands, holding loosely, make their way back home and the rim slides through them)
+        const follow = th0 + d0, home = th0 + clamp(TH0[side] - th0, -WHEEL_W * dt, WHEEL_W * dt), toward = (TH0[side] - th0) * d0 > 0 && Math.abs(d0) <= Math.abs(TH0[side] - th0);
+        const th = toward && Math.abs(d0) <= WHEEL_W * dt ? follow : home; h.phi = th - rot; if (th !== follow) h.slide = 1; }
+      else if (Math.abs(d0) > WHEEL_W * dt) { h.phi -= d0 - clamp(d0, -WHEEL_W * dt, WHEEL_W * dt); h.slide = 1; } // (turned faster than a hand: it slides through)
       const th2 = h.phi + rot; if (th2 < a || th2 > b) { h.phi = clamp(th2, a, b) - rot; h.slide = 1; } }
     hs.still = Math.abs(tgt - rot) < 0.02 && Math.abs(nrot - st.steer * lock) < 0.002 ? hs.still + dt : 0;
     if (dt > 0) hs.w += (Math.abs(nrot - st.steer * lock) / dt - hs.w) * Math.min(1, dt * 20); // (how fast it is being turned)
+    hs.calm = hs.w < 1.5 && Math.abs(rot) < 1.2 ? (hs.calm || 0) + dt : 0;
     const left = side => { const th = hs[side].phi + rot, [a, b] = RANGE[side]; return dir > 0 ? b - th : dir < 0 ? th - a : Infinity; }; // (how much further a hand can take it)
     // a new hold: one hand at a time, while the other holds — or, the other away, when this one has run out of reach
     for (const side of ['L', 'R']) { const h = hs[side], o = side === 'L' ? 'R' : 'L'; if (!grips(side)) continue;
@@ -419,7 +424,7 @@ export async function createCar(world, spawn) {
       // (turned fast, the one nearer the end of its reach goes early, while the other can still take the wheel on through
       // its flight — so the wheel need not wait for it)
       const early = other && dir !== 0 && hs.w > 2 && left(side) < hs.w * FLY * 1.3 && left(side) <= left(o) && left(o) >= hs.w * FLY && Math.abs(th - TH0[side] + dir * AHEAD) > 0.4;
-      const go = (out !== 0 && dir !== -out && (other || (hs[o].fly === 0 && stuck))) || early, home = !go && other && hs.still > 0.5 && Math.abs(th - TH0[side]) > 0.35;
+      const go = (out !== 0 && dir !== -out && (other || (hs[o].fly === 0 && stuck))) || early, home = !go && other && (hs.still > 0.5 || hs.calm > 0.7) && Math.abs(th - TH0[side]) > 0.3; // (back home once the wheel is held still or only nudged)
       if (!go && !home) continue;
       h.to = go && dir ? clamp(TH0[side] - dir * AHEAD, ra + 0.05, rb - 0.05) : TH0[side];
       if (rig) rimPose(side, th, h.from); h.fly = 1; hs.still = 0; break; }
@@ -918,9 +923,29 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
 
 // the car's sound: synthesised in an audio worklet (js/carAudio.worklet.js — the engine, anti-lag, the turbo, the
 // gearbox's whine, the road, the wind, the knocks); here it is told the car's state each frame, and its events
+// The gear lever and the handbrake are recordings when they are there (Modeleaut/sounds/, beside the game like the car:
+// gears.mp3 — a lever worked through its gears, its knocks cut out below; handbrake.mp3 — its last pull), else the
+// worklet's own knocks.
+const CLIPS = {
+  in: [[1.09, 0.32], [3.71, 0.3], [5.25, 0.3], [7.57, 0.32], [11.99, 0.36], [16.47, 0.3], [20.81, 0.32], [25.85, 0.3], [28.77, 0.32], [32.03, 0.34], [41.43, 0.3], [43.49, 0.36], [47.47, 0.3], [50.63, 0.3]], // (a gear going in)
+  out: [[8.71, 0.22], [9.33, 0.18], [17.49, 0.18], [18.75, 0.2], [25.13, 0.24], [36.21, 0.22]], // (the lever leaving its slot: the quiet ones)
+  hb: [[5.16, 0.9]], // (the handbrake: the pull at the end of the recording)
+};
 function engineSound(car) {
-  let node = null, loading = false, rough = 0, hbOn = false;
-  const init = () => { const ctx = audio.ctx; if (!ctx || !audio.master || loading || !ctx.audioWorklet) return; loading = true;
+  let node = null, loading = false, rough = 0, hbOn = false, rec = null;
+  const loadClips = ctx => Promise.all(['gears', 'handbrake'].map(f => fetch('Modeleaut/sounds/' + f + '.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => ctx.decodeAudioData(b))))
+    .then(([gears, hb]) => { // (each knock's loudness evened out: its peak brought to one level)
+      const peakOf = (buf, [t, d]) => { let p = 1e-4; const a = buf.getChannelData(0), i0 = Math.floor(t * buf.sampleRate), i1 = Math.min(a.length, i0 + Math.floor(d * buf.sampleRate)); for (let i = i0; i < i1; i++) p = Math.max(p, Math.abs(a[i])); return p; };
+      rec = { gears, hb, in: CLIPS.in.map(c => [...c, 1 / peakOf(gears, c)]), out: CLIPS.out.map(c => [...c, 1 / peakOf(gears, c)]), hbc: CLIPS.hb.map(c => [...c, 1 / peakOf(hb, c)]) }; })
+    .catch(() => { rec = null; });
+  const play = (buf, [t, d, norm], level, rate = 1) => { const ctx = audio.ctx, src = ctx.createBufferSource(), g = ctx.createGain(), now = ctx.currentTime, L = d / rate;
+    src.buffer = buf; src.playbackRate.value = rate; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(level * norm, now + 0.004); g.gain.setValueAtTime(level * norm, now + L - 0.04); g.gain.linearRampToValueAtTime(0, now + L);
+    src.connect(g).connect(audio.master); src.start(now, t, d); src.stop(now + L + 0.02); };
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const knock = (ev, on) => { if (!audio.ctx || !rec) return false; const r = 0.96 + Math.random() * 0.08, out = car.driving && car.view === 0 ? 1 : 0.6;
+    if (ev === 'gear') play(rec.gears, pick(rec.in), 0.42 * out, r); else if (ev === 'lever') play(rec.gears, pick(rec.out), 0.16 * out, r); else if (ev === 'hb') { if (!on) return true; play(rec.hb, rec.hbc[0], 0.45 * out, r); } else return false;
+    return true; };
+  const init = () => { const ctx = audio.ctx; if (!ctx || !audio.master || loading || !ctx.audioWorklet) return; loading = true; loadClips(ctx);
     fetch('js/carAudio.worklet.js').then(r => r.text()).then(src => ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })))).then(() => { node = new AudioWorkletNode(ctx, 'rally-car', { numberOfInputs: 0, outputChannelCount: [2] }); node.connect(audio.master); })
       .catch(e => console.warn('car audio: ' + (e && e.message || e))); };
   const send = o => { if (node) node.port.postMessage(o); };
@@ -930,15 +955,15 @@ function engineSound(car) {
       for (const w of car.wheels) { wsum += Math.abs(w.w); if (!w.contact) continue; nC++; if (w.surf === 'asphalt' || w.surf === 'concrete') tm++; else gr++; jolt += Math.max(0, w.cv - 0.3); }
       rough = rough * 0.9 + Math.min(1, jolt * 0.4) * 0.1;
       if (jolt > 0.9 && sp > 2) send({ ev: 'bump', k: Math.min(1.5, jolt * 0.35) });
-      const hb = st.hand > 0.5 && car.driving; if (hb !== hbOn) { hbOn = hb; send({ ev: 'hb', on: hb }); }
+      const hb = st.hand > 0.5 && car.driving; if (hb !== hbOn) { hbOn = hb; if (!knock('hb', hb)) send({ ev: 'hb', on: hb }); }
       // (heard from where the camera is: in the cockpit, or outside — fading with the distance when you walk away)
       const cam = audio.lp, d = Math.hypot(cam.x - st.pos.x, cam.y - st.pos.y, cam.z - st.pos.z), cockpit = car.driving && car.view === 0;
       send({ rpm: st.rpm, thr: car.driving ? st.throttle : 0, load: car.driving ? st.throttle : 0, speed: sp, wheel: wsum / 4, slip: clamp((st.slipMax - 0.9) / 1.5, 0, 1),
         gravel: nC ? gr / nC : 0, tarmac: nC ? tm / nC : 0, rough, cut: st.shiftT > 0 || A.gMove ? 1 : 0, limiter: SPEC.engine.limiter, cockpit: cockpit ? 1 : 0, on: 1, gear: st.gear,
         vol: car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1) }); },
-    event(ev, k) { send({ ev, k }); },
-    click() { send({ ev: 'gear' }); },
-    get node() { return node; },
+    event(ev, k) { if (!knock(ev)) send({ ev, k }); },
+    click() { if (!knock('gear')) send({ ev: 'gear' }); },
+    get node() { return node; }, get clips() { return !!rec; },
   };
 }
 
