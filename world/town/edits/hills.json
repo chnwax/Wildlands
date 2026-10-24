@@ -1,0 +1,152 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "edits",
+  "map": "town",
+  "area": "hills",
+  "objects": [
+    {
+      "id": "detail_m73_t9202",
+      "deleted": true,
+      "origin": [128.92, 8.52, -374.4]
+    },
+    {
+      "id": "detail_m75_t34779",
+      "deleted": true,
+      "origin": [128.92, 8.56, -374.4]
+    },
+    {
+      "id": "detail_m76_t42363",
+      "deleted": true,
+      "origin": [129.3, 5.88, -374.4]
+    },
+    {
+      "id": "detail_m76_t42407",
+      "deleted": true,
+      "origin": [129.1, 8.8, -374.4]
+    },
+    {
+      "id": "detail_m779_t176",
+      "position": [122.8, 5.881, -398.012],
+      "deleted": true,
+      "origin": [122.8, 5.881, -398]
+    },
+    {
+      "id": "detail_m779_t220",
+      "deleted": true,
+      "origin": [122.6, 8.801, -398]
+    },
+    {
+      "id": "detail_m779_t232",
+      "deleted": true,
+      "origin": [127.4, 5.88, -385.5]
+    },
+    {
+      "id": "detail_m779_t276",
+      "deleted": true,
+      "origin": [127.2, 8.8, -385.5]
+    },
+    {
+      "id": "detail_m780_t0",
+      "deleted": true,
+      "origin": [122.42, 8.561, -398]
+    },
+    {
+      "id": "detail_m780_t20",
+      "deleted": true,
+      "origin": [127.02, 8.56, -385.5]
+    },
+    {
+      "id": "detail_m781_t0",
+      "slots": {
+        "lamp#0": { "hidden": true }
+      },
+      "origin": [122.42, 8.521, -398]
+    },
+    {
+      "id": "detail_m781_t16",
+      "deleted": true,
+      "origin": [127.02, 8.52, -385.5]
+    },
+    {
+      "id": "park_lamp_new_001",
+      "name": "Park lamp",
+      "prefab": "park_lamp",
+      "position": [121.937, 6.092, -408.807],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "metal"
+    },
+    {
+      "id": "park_lamp_new_002",
+      "name": "Park lamp",
+      "prefab": "park_lamp",
+      "position": [121.678, 6.079, -392.579],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "metal"
+    },
+    {
+      "id": "park_lamp_new_003",
+      "name": "Park lamp",
+      "prefab": "park_lamp",
+      "position": [121.641, 6.077, -387.402],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "metal"
+    },
+    {
+      "id": "park_lamp_new_004",
+      "name": "Park lamp",
+      "prefab": "park_lamp",
+      "position": [129.446, 6.088, -409.276],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "metal"
+    },
+    {
+      "id": "park_lamp_new_005",
+      "name": "Park lamp",
+      "prefab": "park_lamp",
+      "position": [129.507, 6.08, -396.769],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "metal"
+    },
+    {
+      "id": "park_lamp_new_006",
+      "name": "Park lamp",
+      "prefab": "park_lamp",
+      "position": [129.814, 6.08, -386.95],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "metal"
+    },
+    {
+      "id": "street_lamp_new_001",
+      "name": "Street lamp",
+      "prefab": "street_lamp",
+      "position": [112.863, 6.034, -392.245],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "material": "steel"
+    },
+    {
+      "id": "street_lamp_new_002",
+      "name": "Street lamp",
+      "prefab": "street_lamp",
+      "position": [107.732, 6.056, -371.96],
+      "rotation": [0, 82.27, 0],
+      "scale": [1, 1, 1],
+      "material": "steel"
+    },
+    {
+      "id": "street_lamp_new_003",
+      "name": "Street lamp",
+      "prefab": "street_lamp",
+      "position": [107.881, 6.044, -353.2],
+      "rotation": [0, 83.48, 0],
+      "scale": [1, 1, 1],
+      "material": "steel"
+    }
+  ]
+}
