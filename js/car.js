@@ -370,10 +370,22 @@ export async function createCar(world, spawn) {
     out.q.slerpQuaternions(from.q, to.q, m); return bump(k0, 0.16, 0.84); };
   const awayRim = (p, out) => out.subVectors(p, steerHub).projectOnPlane(steerAxis).normalize().addScaledVector(steerAxis, -0.9).normalize().multiplyScalar(0.06); // (out from the rim and toward the driver)
   const PH = pose(), aw = new THREE.Vector3();
-  // a hand on the rim, holding, sliding, or on its way back to its home hold
+  // a hand taking a new hold on the rim, moved as a hand is: the fingers let go first and the hand lifts off, then it goes
+  // with a speed that swells and dies away (a minimum-jerk profile — no constant speed, no sudden start or stop) on a
+  // low arc, turned to the new hold before it gets there, the fingers half open on the way and closing round the rim
+  // as it arrives. Its time and its arc are its own (longer for a longer way, a little different each time)
+  const mj = t => t * t * t * (10 - 15 * t + 6 * t * t);
+  const regrip = (h, to, k, away, out) => { const u = mj(clamp((k - 0.07) / 0.86, 0, 1));
+    out.p.lerpVectors(h.from.p, to.p, u);
+    const ra = tv.subVectors(h.from.p, steerHub).projectOnPlane(steerAxis).length(), rb = tw.subVectors(to.p, steerHub).projectOnPlane(steerAxis).length(); // (along the rim's curve, not across its chord)
+    tv.subVectors(out.p, steerHub).projectOnPlane(steerAxis); const r = tv.length(), want = lerp(ra, rb, u); if (r > 1e-4 && r < want) out.p.addScaledVector(tv, (want - r) / r);
+    out.p.addScaledVector(away, h.arc / 0.06 * Math.sin(Math.PI * mj(clamp((k - 0.03) / 0.9, 0, 1)))); // (the lift: as smooth as the way, a touch ahead of it)
+    out.q.slerpQuaternions(h.from.q, to.q, mj(clamp((k - 0.05) / 0.8, 0, 1)));
+    return k < 0.12 ? 0.75 * sm(k / 0.12) : k < 0.62 ? 0.75 - 0.15 * sm((k - 0.12) / 0.5) : 0.6 * (1 - sm(clamp((k - 0.62) / 0.33, 0, 1))); };
+  // a hand on the rim, holding, sliding, or on its way to a new hold
   const onRim = (side, rot, out) => {
     const h = hs[side];
-    if (h.fly > 0) { rimPose(side, h.to, PH); awayRim(aw.addVectors(h.from.p, PH.p).multiplyScalar(0.5), aw); return travel(h.from, PH, 1 - h.fly, aw, out, true); }
+    if (h.fly > 0) { rimPose(side, h.to, PH); awayRim(aw.addVectors(h.from.p, PH.p).multiplyScalar(0.5), aw); return regrip(h, PH, 1 - h.fly, aw, out); }
     return rimPose(side, h.phi + rot, out), h.slide * 0.3; // (a hold the rim slides through: the fingers a little loose)
   };
   // the steering wheel and the hands: turned, it goes as fast as hands can turn it (WHEEL_W), and the hands holding it go
@@ -402,7 +414,7 @@ export async function createCar(world, spawn) {
     else if (!A.gMove) slotOf(A.slot, A.knob);
     for (const side of ['L', 'R']) { const h = hs[side];
       if (side === 'R' && (A.reach > 0 || A.at)) { h.fly = 0; h.phi = TH0.R - rot; continue; } // (on its errand: it comes back to its home hold)
-      if (h.fly > 0) { h.fly -= dt / FLY; if (h.fly <= 0) { h.fly = 0; h.phi = h.to - rot; } } }
+      if (h.fly > 0) { h.fly -= dt / (h.dur || FLY); if (h.fly <= 0) { h.fly = 0; h.phi = h.to - rot; h.jit = (Math.random() - 0.5) * 0.24; } } }
     const grips = side => hs[side].fly === 0 && !(side === 'R' && (A.reach > 0 || A.at));
     const tgt = want * lock, back = Math.abs(tgt) < Math.abs(rot) && tgt * rot >= 0, wmax = (back ? Math.min(WHEEL_BACK, 6 + st.vel.length() * 0.6) : WHEEL_W) * dt; // (unwinding: the faster the car goes, the harder the castor pulls the wheel back)
     const nrot = clamp(tgt, rot - wmax, rot + wmax), dir = Math.abs(tgt - nrot) > 0.02 ? Math.sign(tgt - nrot) : Math.sign(nrot - rot); rot = nrot;
@@ -419,15 +431,17 @@ export async function createCar(world, spawn) {
     const left = side => { const th = hs[side].phi + rot, [a, b] = RANGE[side]; return dir > 0 ? b - th : dir < 0 ? th - a : Infinity; }; // (how much further a hand can take it)
     // a new hold: one hand at a time, while the other holds — or, the other away, when this one has run out of reach
     for (const side of ['L', 'R']) { const h = hs[side], o = side === 'L' ? 'R' : 'L'; if (!grips(side)) continue;
-      const th = h.phi + rot, [ra, rb] = REGRIP[side], [a, b] = RANGE[side], out = th > rb ? 1 : th < ra ? -1 : 0;
+      const th = h.phi + rot, [ra, rb] = REGRIP[side], [a, b] = RANGE[side], jt = h.jit || 0, out = th > rb + jt ? 1 : th < ra + jt ? -1 : 0; // (where a hand lets go: a little different each time)
       const other = grips(o), stuck = (dir > 0 && th > b - 0.01) || (dir < 0 && th < a + 0.01);
       // (turned fast, the one nearer the end of its reach goes early, while the other can still take the wheel on through
       // its flight — so the wheel need not wait for it)
       const early = other && dir !== 0 && hs.w > 2 && left(side) < hs.w * FLY * 1.3 && left(side) <= left(o) && left(o) >= hs.w * FLY && Math.abs(th - TH0[side] + dir * AHEAD) > 0.4;
       const go = (out !== 0 && dir !== -out && (other || (hs[o].fly === 0 && stuck))) || early, home = !go && other && (hs.still > 0.5 || hs.calm > 0.7) && Math.abs(th - TH0[side]) > 0.3; // (back home once the wheel is held still or only nudged)
       if (!go && !home) continue;
-      h.to = go && dir ? clamp(TH0[side] - dir * AHEAD, ra + 0.05, rb - 0.05) : TH0[side];
-      if (rig) rimPose(side, th, h.from); h.fly = 1; hs.still = 0; break; }
+      h.to = (go && dir ? clamp(TH0[side] - dir * AHEAD, ra + 0.05, rb - 0.05) : TH0[side]) + (Math.random() - 0.5) * 0.12; // (and where it takes the rim again)
+      let dist = 0.12; if (rig) { rimPose(side, th, h.from); rimPose(side, h.to, PH); dist = h.from.p.distanceTo(PH.p); }
+      h.dur = clamp(0.16 + 0.55 * dist, 0.2, 0.46) * (0.9 + Math.random() * 0.2) * (go ? 1 : 1.25); // (a longer way takes longer; a hand going home at ease, longer still)
+      h.arc = clamp(0.3 * dist, 0.022, 0.07) * (0.8 + Math.random() * 0.4); h.fly = 1; hs.still = 0; break; }
     return rot / lock; };
   const awayHb = new THREE.Vector3(), awayR = new THREE.Vector3(), awayKnob = new THREE.Vector3(), RF = pose(), hbMid = steerAxis.clone().multiplyScalar(-0.13).addScaledVector(UP, 0.03);
   function animate(dt) {
