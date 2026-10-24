@@ -203,6 +203,7 @@ function setting(id, key, def, apply, fmt) {
 }
 setting('sSlider', 'wl_sens', 1, v => player.sens = v, v => v.toFixed(2));
 setting('fSlider', 'wl_fov', 72, v => { camera.fov = v; camera.updateProjectionMatrix(); }, v => v + '°');
+const carFov = { v: 75 }; setting('cfSlider', 'wl_carfov', 75, v => { carFov.v = v; if (car) car.fov = v; }, v => v + '°'); // (the car's cameras: cockpit, bonnet, chase)
 setting('vSlider', 'wl_volume', 0.8, v => audio.setVolume(v), v => Math.round(v * 100) + '%');
 $('qSel').addEventListener('change', e => setQuality(e.target.value));
 $('qSel').value = Q.name;
@@ -222,7 +223,7 @@ async function main(hour = null) {
   life = buildLife(world, world.meta.life || {});
   if (world.meta.vehicle) { // (the car's models live in Modeleaut/ beside the game; without them the stage is walked)
     progress('Bringing the car', 0.96);
-    try { car = await (await import('./car.js')).createCar(world, world.carSpawn || world.spawn); world.vehicle = car; }
+    try { car = await (await import('./car.js')).createCar(world, world.carSpawn || world.spawn); world.vehicle = car; car.fov = carFov.v; }
     catch (e) { console.warn('car: ' + (e && e.message || e)); car = null; setTimeout(() => toastMsg('Car models not found (Modeleaut/) — on foot'), 3000); }
   }
   player.pos.set(world.spawn.x, world.groundAt(world.spawn.x, world.spawn.z), world.spawn.z);

@@ -140,7 +140,7 @@ export async function createCar(world, spawn) {
     steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, gear: 2, rpm: SPEC.engine.idle, shiftT: 0, auto: true, revT: 0, locked: false,
     accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
   const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC,
-    look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0 }, anim: { hb: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
+    look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0, t: 0, bump: 0, kick: new THREE.Vector3() }, fov: 75, anim: { hb: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
   car.gearLever = GL;
   // (a box for the walker to bump into while the car stands; out of the car's own way)
   const col = { t: 1, x: 0, z: 0, hx: 0.95, hz: 2.05, c: 1, s: 0, y0: -1e9, y1: 1e9 }; let colIn = false;
@@ -313,7 +313,7 @@ export async function createCar(world, spawn) {
   // (in the wheel's plane: up, and to the driver's left; a hand's place on the rim is an angle from the top toward the left)
   const upw = UP.clone().projectOnPlane(steerAxis).normalize(), leftw = new THREE.Vector3().crossVectors(upw, steerAxis).normalize();
   const rimRad = (th, out) => out.copy(upw).multiplyScalar(Math.cos(th)).addScaledVector(leftw, Math.sin(th));
-  const TH0 = { L: Math.PI / 2 - 0.22, R: -(Math.PI / 2 - 0.22) }, thumbSign = {}; // (home: a quarter to three, a little high)
+  const TH0 = { L: Math.PI / 2 + 0.08, R: -(Math.PI / 2 + 0.08) }, thumbSign = {}; // (home: a quarter to three, a touch below the middle)
   for (const sd of ['L', 'R']) thumbSign[sd] = Math.sign(new THREE.Vector3().crossVectors(steerAxis, rimRad(TH0[sd], new THREE.Vector3())).dot(upw)) || 1;
   // where each hand can hold the rim (its reach: the wheel turns no further than the hands holding it can take it) and
   // past where it lets go for a new hold (toward the top the arm runs out of length: past ~1 o'clock for the right hand,
@@ -336,7 +336,7 @@ export async function createCar(world, spawn) {
   const bc = new THREE.Vector3(), bt = new THREE.Vector3(), b1 = new THREE.Vector3(), b2 = new THREE.Vector3();
   const rimBar = { tube: rimTube, dist: p => { bv.subVectors(p, steerHub); const a = bv.dot(steerAxis); bv.addScaledVector(steerAxis, -a); return Math.hypot(bv.length() - steerR, a); },
     near: (p, oc, od) => { bv.subVectors(p, steerHub).projectOnPlane(steerAxis).normalize(); oc.copy(steerHub).addScaledVector(bv, steerR); od.crossVectors(steerAxis, bv); } };
-  if (rig) rig.rimBar = rimBar;
+  if (rig) { rig.rimBar = rimBar; rimBar.thumb = rig.thumbRim; }
   const knobBar = { tube: GL.R, dist: p => { bw.subVectors(kTop, kBot); const t = clamp(bv.subVectors(p, kBot).dot(bw) / bw.lengthSq(), 0, 1); return bv.copy(kBot).addScaledVector(bw, t).distanceTo(p); },
     near: (p, oc, od) => { od.subVectors(kTop, kBot); const t = clamp(bv.subVectors(p, kBot).dot(od) / od.lengthSq(), 0, 1); oc.copy(kBot).addScaledVector(od, t); od.normalize(); } };
   const hbBar = { tube: HB_R, dist: p => { bw.subVectors(hbTop, hbBase); const t = clamp(bv.subVectors(p, hbBase).dot(bw) / bw.lengthSq(), 0, 1); return bv.copy(hbBase).addScaledVector(bw, t).distanceTo(p); },
@@ -378,7 +378,7 @@ export async function createCar(world, spawn) {
     // moves); the gear is in as the knob comes into its slot
     if (A.at === 'gear' && A.reach >= 1) {
       if (!A.gMove && A.gq !== null) { if (A.gq !== A.slot) { slotOf(A.slot, gsA); slotOf(A.gq, gsB); gp[0] = [gsA[0], gsA[1]]; gp[1] = [gsA[0], 0]; gp[2] = [gsB[0], 0]; gp[3] = [gsB[0], gsB[1]];
-          A.gLen = Math.abs(gsA[1]) + Math.abs(gsA[0] - gsB[0]) + Math.abs(gsB[1]); A.gFrom = A.slot; A.gTo = A.gq; A.gMove = 1e-4; st.gear = 1; } A.gq = null; }
+          A.gLen = Math.abs(gsA[1]) + Math.abs(gsA[0] - gsB[0]) + Math.abs(gsB[1]); A.gFrom = A.slot; A.gTo = A.gq; A.gMove = 1e-4; st.gear = 1; sound.event('lever'); } A.gq = null; }
       if (A.gMove) { const dur = 0.05 + A.gLen / 1.1; A.gMove = Math.min(1, A.gMove + dt / dur); st.shiftT = Math.max(st.shiftT, (1 - A.gMove) * dur + 0.03); gateAt(sm(A.gMove), A.knob);
         if (A.gMove >= 1) { A.gMove = 0; A.slot = A.gTo; st.gear = A.gTo; slotOf(A.slot, A.knob); A.linger = 0.2; sound.click(A.gTo > A.gFrom ? 1 : -1); } }
       else if (A.linger > 0) A.linger = Math.max(0, A.linger - dt); }
@@ -488,27 +488,39 @@ export async function createCar(world, spawn) {
       want.y = Math.max(want.y, world.groundAt(want.x, want.z) + 0.6);
       car.chasePos = car.chasePos ? car.chasePos.lerp(want, 1 - Math.exp(-dt * 10)) : want.clone();
       cam.position.copy(car.chasePos); cam.up.set(0, 1, 0); cam.lookAt(tgt); setLens(cam, 0.15, 64); return; }
-    // the head on a spring, pushed by the car's acceleration (local: x left, y up, z forward)
-    const a = st.accLocal, Hd = car.head;
-    const target = _a.set(clamp(-a.x * 0.0042, -0.07, 0.07), clamp(-a.y * 0.0018, -0.03, 0.03), clamp(-a.z * 0.0038, -0.06, 0.06));
-    Hd.v.addScaledVector(_b.subVectors(target, Hd.p), 140 * dt); Hd.v.multiplyScalar(Math.exp(-17 * dt)); Hd.p.addScaledVector(Hd.v, dt);
-    const rollT = clamp(a.x * 0.0055, -0.06, 0.06); Hd.rv += (rollT - Hd.r) * 100 * dt; Hd.rv *= Math.exp(-15 * dt); Hd.r += Hd.rv * dt;
-    eyeB.copy(car.view === 2 ? bonnet : eye); if (car.view === 0) eyeB.add(Hd.p);
+    // the head on a spring, pushed by the car's acceleration (local: x left, y up, z forward), a little loose so it
+    // sways and settles; jolted by the suspension hitting bumps and landings; shaken finely by the gravel at speed and
+    // by the engine
+    const a = st.accLocal, Hd = car.head, sp = Math.hypot(st.velLocal.x, st.velLocal.z); Hd.t += dt;
+    const target = _a.set(clamp(-a.x * 0.0068, -0.11, 0.11), clamp(-a.y * 0.003, -0.05, 0.05), clamp(-a.z * 0.006, -0.09, 0.09));
+    Hd.v.addScaledVector(_b.subVectors(target, Hd.p), 115 * dt); Hd.v.multiplyScalar(Math.exp(-11 * dt));
+    let jolt = 0; for (const w of wheels) jolt += w.contact ? Math.max(0, w.cv - 0.35) : 0; // (the suspension compressing faster than a road's give: a bump)
+    if (jolt > 0) { Hd.v.y -= Math.min(jolt, 6) * 0.05; Hd.v.x += (Math.random() - 0.5) * Math.min(jolt, 6) * 0.04; Hd.bump = Math.min(1, Hd.bump + jolt * 0.15); }
+    Hd.bump *= Math.exp(-dt * 6); Hd.p.addScaledVector(Hd.v, dt);
+    const rollT = clamp(a.x * 0.0085, -0.1, 0.1); Hd.rv += (rollT - Hd.r) * 85 * dt; Hd.rv *= Math.exp(-11 * dt); Hd.r += Hd.rv * dt;
+    const t = Hd.t, rough = (st.slipMax > 0.3 ? 1.4 : 1) * clamp(sp / 30, 0, 1.3) * (wheels.some(w => w.contact && w.surf !== 'asphalt' && w.surf !== 'concrete') ? 1 : 0.35);
+    const n3 = (f, o) => Math.sin(t * f + o) * 0.5 + Math.sin(t * f * 2.31 + o * 1.7) * 0.3 + Math.sin(t * f * 4.73 + o * 0.6) * 0.2;
+    const eng = clamp((st.rpm - 800) / 7400, 0, 1), buzz = 0.00025 * (0.6 + eng) * (car.driving ? 1 : 0);
+    Hd.kick.set(n3(31, 0.3) * (0.0011 * rough + buzz), n3(27, 1.9) * (0.0016 * rough + buzz) - Hd.bump * 0.004 * n3(17, 4.1), n3(23, 3.3) * 0.0006 * rough);
+    eyeB.copy(car.view === 2 ? bonnet : eye); if (car.view === 0) eyeB.add(Hd.p).add(Hd.kick);
     eyeB.sub(cgV).applyQuaternion(st.q).add(st.pos);
     // (a glance toward the corner as you steer and as the car slides)
-    const apex = car.view === 0 ? clamp((st.steer * 0.2 + Math.atan2(st.velLocal.x, Math.max(5, Math.abs(st.velLocal.z))) * 0.3) * clamp(Math.abs(st.velLocal.z) / 8, 0, 1), -0.42, 0.42) : 0;
+    const apex = car.view === 0 ? clamp((st.steer * 0.28 + Math.atan2(st.velLocal.x, Math.max(5, Math.abs(st.velLocal.z))) * 0.38) * clamp(Math.abs(st.velLocal.z) / 8, 0, 1), -0.5, 0.5) : 0;
     car.apex = car.apex === undefined ? apex : lerp(car.apex, apex, 1 - Math.exp(-dt * 5));
-    qLook.setFromEuler(_e.set(Lk.pitch - 0.07, Math.PI + Lk.yaw + car.apex, car.view === 0 ? Hd.r : 0, 'YXZ'));
-    // (the car's pitch and roll followed mostly: a head keeps a little of the horizon)
-    level.setFromUnitVectors(_v.set(0, 1, 0).applyQuaternion(st.q), UP); qH.identity().slerp(level, car.view === 0 ? 0.25 : 0.1).multiply(st.q);
-    cam.position.copy(eyeB); cam.quaternion.copy(qH).multiply(qLook); setLens(cam, 0.035, car.view === 0 ? 58 : 62);
+    const cab = car.view === 0, sh = cab ? 3.5 : 1.5; // (the eyes shaken a touch in their turn, not only moved)
+    qLook.setFromEuler(_e.set(Lk.pitch - 0.07 + Hd.kick.y * sh, Math.PI + Lk.yaw + car.apex + Hd.kick.x * sh, cab ? Hd.r + Hd.kick.z * sh * 2 : 0, 'YXZ'));
+    // (the car's pitch and roll followed mostly: a head keeps only a little of the horizon)
+    level.setFromUnitVectors(_v.set(0, 1, 0).applyQuaternion(st.q), UP); qH.identity().slerp(level, cab ? 0.12 : 0.1).multiply(st.q);
+    // (the lens: the field of view set by the player, a little wider with the speed)
+    car.fovK = lerp(car.fovK || 0, clamp((sp - 8) / 40, 0, 1), 1 - Math.exp(-dt * 2));
+    cam.position.copy(eyeB); cam.quaternion.copy(qH).multiply(qLook); setLens(cam, 0.035, Math.round((car.fov + (cab ? 0 : 4) + car.fovK * 8) * 4) / 4);
   };
   const setLens = (cam, near, fov) => { if (cam.near !== near || cam.fov !== fov) { cam.near = near; cam.fov = fov; cam.updateProjectionMatrix(); } };
   car.leave = () => { car.driving = false; const side = _v.set(1.7, 0, -0.1).applyQuaternion(st.q).add(st.pos); return { x: side.x, z: side.z }; };
   car.enter = () => { car.driving = true; car.look.yaw = 0; car.look.pitch = 0; };
   car.near = p => Math.hypot(p.x - st.pos.x, p.z - st.pos.z) < 4;
 
-  const sound = engineSound(car), hud = carHud(car);
+  const sound = car.sound = engineSound(car), hud = carHud(car);
   car.update(0);
   return car;
 }
@@ -775,17 +787,18 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       M1.multiply(M2.compose(ch[j].position, qf, ch[j].scale)); tp[j].setFromMatrixPosition(M1); }
     M1.multiply(M2.compose(ch[3].position, ch[3].quaternion, ch[3].scale)); tp[3].setFromMatrixPosition(M1);
     ts[0].lerpVectors(tp[0], tp[1], 0.5); ts[1].copy(tp[1]); ts[2].lerpVectors(tp[1], tp[2], 0.5); ts[3].copy(tp[2]); ts[4].lerpVectors(tp[2], tp[3], 0.5); ts[5].copy(tp[3]).addScaledVector(ts[0].subVectors(tp[3], tp[2]).normalize(), TIP); ts[0].lerpVectors(tp[0], tp[1], 0.5); return ts; };
-  const T_R = [FRT[0], FRT[1], FRT[1], FRT[2], FRT[2], FRT[2]], T_W = [0, 12, 40, 40, 40, 40], T_LIM = [[-0.6, 1.0], [-0.6, 1.0], [-0.3, 1.2]], tc = [0, 0, 0];
+  const T_R = [FRT[0], FRT[1] + 0.003, FRT[1] + 0.002, FRT[2], FRT[2], FRT[2]], T_W = [0, 12, 40, 40, 40, 40], T_LIM = [[-0.6, 1.0], [-0.6, 1.0], [-0.3, 1.2]], tc = [0, 0, 0];
   // how badly the thumb lies along the bar: entering it costs much, standing off it a little; a pull toward the rest pose
   // (and where a driver keeps it: on the bar's back, the side toward the wrist, never round the fingers' side, its tip
   // over the bar's inner half and laid along the bar toward the thumb's end — up the rim — not hooked across it)
   const tN = V(), tF = V(), tT = V(), tq = V();
   const thumbCost = (sd, a, bar) => { const q = thumbFK(sd, a); let c = 0;
     tN.copy(sd.N0).applyQuaternion(sd.Rh); tF.copy(sd.F0).applyQuaternion(sd.Rh); tT.copy(sd.T0).applyQuaternion(sd.Rh);
-    bar.near(q[5], bc, bd); const past = tq.subVectors(q[5], bc).dot(tN); if (past < rig.thPast) c += 3000 * (rig.thPast - past) * (rig.thPast - past);
-    if (bd.dot(tT) < 0) bd.negate(); const along = tq.subVectors(q[5], q[1]).dot(bd); if (along < rig.thAlong) c += rig.thK * (rig.thAlong - along) * (rig.thAlong - along);
+    const tp = bar.thumb || rig.thumbBar; // (per bar: on the rim hooked round its inner side, on a lever wrapped round it)
+    bar.near(q[5], bc, bd); const past = tq.subVectors(q[5], bc).dot(tN); if (past < tp.past) c += 3000 * (tp.past - past) * (tp.past - past);
+    if (tp.K) { if (bd.dot(tT) < 0) bd.negate(); const along = tq.subVectors(q[5], q[1]).dot(bd); if (along < tp.along) c += tp.K * (tp.along - along) * (tp.along - along); }
     bar.near(q[3], bc, bd); const front = tq.subVectors(q[3], bc).dot(tF); if (front > 0) c += 3000 * front * front;
-    for (let i = 0; i < 6; i++) { const dd = bar.dist(q[i]) - bar.tube - T_R[i]; c += dd < 0 ? 20000 * dd * dd : rig.thC * T_W[i] * dd * dd; }
+    for (let i = 0; i < 6; i++) { const dd = bar.dist(q[i]) - bar.tube - T_R[i]; c += dd < 0 ? 200000 * dd * dd : rig.thC * T_W[i] * dd * dd; }
     for (let j = 0; j < 3; j++) c += 0.0005 * (a[j] - CURL[0][j]) * (a[j] - CURL[0][j]); return c; };
   const SEEDS = [[0.3, 0.25, 0.4], [0.6, 0.6, 0.8], [0.1, 0.7, 0.9], [0.8, 0.2, 0.6], [-0.2, 0.5, 1.0]];
   const thumbFresh = (sd, a, bar) => { let best = Infinity; const b = [0, 0, 0], keep = [0, 0, 0];
@@ -819,7 +832,7 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
     const x = clamp((phi - SLANTS[0]) / (SLANTS[1] - SLANTS[0]), 0, SLANTS.length - 1.001), i = Math.floor(x), t = x - i;
     return outG.copy(C[i].G).lerp(C[i + 1].G, t); };
   const rig = {
-    S, ext: 0.12, twist: 0.85, frame: 0, gap: 0.0005, thumbFK: (...x) => thumbFK(...x), thumbCost: (...x) => thumbCost(...x), clearance: (...x) => clearance(...x), rimBar: null, thPast: 0, thAlong: 0.08, thK: 30000, thC: 300, lay: (...x) => lay(...x),
+    S, ext: 0.12, twist: 0.85, frame: 0, gap: 0.0005, thumbFK: (...x) => thumbFK(...x), thumbCost: (...x) => thumbCost(...x), clearance: (...x) => clearance(...x), rimBar: null, thumbBar: { past: 0.008, along: 0, K: 0 }, thumbRim: { past: 0.006, along: 0, K: 0 }, thC: 300, lay: (...x) => lay(...x),
     // work out the grips for the bars this car has (their radii)
     prepare(tubes) { for (const tube of tubes) { const key = tube.toFixed(4); S.L.cal[key] = SLANTS.map(phi => calibrate(S.L, tube, phi));
       S.R.cal[key] = S.L.cal[key].map(c => ({ ...c, G: S.R.F0.clone().multiplyScalar(c.df).addScaledVector(S.R.N0, c.dn) })); } }, // (the hands are each other's mirror image: worked out once)
@@ -868,7 +881,7 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       // the fingers: laid round the bar, or easing to their rest curl
       const k = 1 - Math.exp(-dt * 22), tmp = [0, 0, 0];
       for (let fi = 0; fi < 5; fi++) { const a = sd.ang[fi];
-        if (bar) { if (fi) { if (lay(sd, fi, Wr, sd.Rh, bar, tmp).worst < -0.0003) unstick(sd, fi, Wr, bar, tmp); } else { tmp[0] = sd.tg[0]; tmp[1] = sd.tg[1]; tmp[2] = sd.tg[2]; const tc0 = thumbSearch(sd, tmp, bar, ++sd.tf % 8 === 1 ? [0.3, 0.12, 0.05, 0.02, 0.008] : open > 0 ? [0.12, 0.04, 0.015, 0.006] : [0.04, 0.015, 0.006]); if (tc0 > 0.05 || sd.tf % 24 === 5) { const b2 = [0, 0, 0]; if (thumbFresh(sd, b2, bar) < tc0 * 0.8) { tmp[0] = b2[0]; tmp[1] = b2[1]; tmp[2] = b2[2]; } } sd.tg[0] = tmp[0]; sd.tg[1] = tmp[1]; sd.tg[2] = tmp[2]; }
+        if (bar) { if (fi) { if (lay(sd, fi, Wr, sd.Rh, bar, tmp).worst < -0.001) unstick(sd, fi, Wr, bar, tmp); } else { tmp[0] = sd.tg[0]; tmp[1] = sd.tg[1]; tmp[2] = sd.tg[2]; const tc0 = thumbSearch(sd, tmp, bar, ++sd.tf % 8 === 1 ? [0.3, 0.12, 0.05, 0.02, 0.008] : open > 0 ? [0.12, 0.04, 0.015, 0.006] : [0.04, 0.015, 0.006]); if (tc0 > 0.05 || sd.tf % 24 === 5) { const b2 = [0, 0, 0]; if (thumbFresh(sd, b2, bar) < tc0 * 0.8) { tmp[0] = b2[0]; tmp[1] = b2[1]; tmp[2] = b2[2]; } } sd.tg[0] = tmp[0]; sd.tg[1] = tmp[1]; sd.tg[2] = tmp[2]; }
           if (!fi) for (let j = 0; j < 3; j++) a[j] = tmp[j]; // (the thumb keeps itself off the bar as the hand moves: searched each frame)
           else { // (a finger: from laid round the bar toward open by "open", but only as far as it stays clear of the bar — a hand
             // coming in or letting go never drags a finger through it)
@@ -883,25 +896,29 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
   return rig;
 }
 
+// the car's sound: synthesised in an audio worklet (js/carAudio.worklet.js — the engine, anti-lag, the turbo, the
+// gearbox's whine, the road, the wind, the knocks); here it is told the car's state each frame, and its events
 function engineSound(car) {
-  let ready = false, o1, o2, ws, f1, g1, nz, fN, gN;
-  const init = () => { const ctx = audio.ctx; if (!ctx || !audio.master) return false;
-    o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o2 = ctx.createOscillator(); o2.type = 'square';
-    ws = ctx.createWaveShaper(); const cv = new Float32Array(256); for (let i = 0; i < 256; i++) cv[i] = Math.tanh((i / 128 - 1) * 2.4); ws.curve = cv;
-    f1 = ctx.createBiquadFilter(); f1.type = 'lowpass'; f1.Q.value = 2.5; g1 = ctx.createGain(); g1.gain.value = 0;
-    const m2 = ctx.createGain(); m2.gain.value = 0.5; o1.connect(ws); o2.connect(m2).connect(ws); ws.connect(f1).connect(g1).connect(audio.master); o1.start(); o2.start();
-    const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    nz = ctx.createBufferSource(); nz.buffer = buf; nz.loop = true; fN = ctx.createBiquadFilter(); fN.type = 'bandpass'; fN.frequency.value = 900; fN.Q.value = 0.6; gN = ctx.createGain(); gN.gain.value = 0; nz.connect(fN).connect(gN).connect(audio.master); nz.start();
-    return true; };
+  let node = null, loading = false, rough = 0, hbOn = false;
+  const init = () => { const ctx = audio.ctx; if (!ctx || !audio.master || loading || !ctx.audioWorklet) return; loading = true;
+    fetch('js/carAudio.worklet.js').then(r => r.text()).then(src => ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })))).then(() => { node = new AudioWorkletNode(ctx, 'rally-car', { numberOfInputs: 0, outputChannelCount: [2] }); node.connect(audio.master); })
+      .catch(e => console.warn('car audio: ' + (e && e.message || e))); };
+  const send = o => { if (node) node.port.postMessage(o); };
   return {
-    update() { if (!ready) { ready = init(); if (!ready) return; }
-      const st = car.st, t = audio.ctx.currentTime, f = st.rpm / 60 * 2;
-      o1.frequency.setTargetAtTime(f, t, 0.015); o2.frequency.setTargetAtTime(f * 0.5, t, 0.015);
-      f1.frequency.setTargetAtTime(420 + 2400 * st.throttle + st.rpm * 0.28, t, 0.03);
-      g1.gain.setTargetAtTime(car.driving ? (0.03 + 0.085 * st.throttle) * (st.shiftT > 0 ? 0.3 : 1) : 0.012, t, 0.025);
-      const sp = st.vel.length(), on = car.wheels.filter(w => w.contact).length / 4;
-      gN.gain.setTargetAtTime(Math.min(0.15, sp / 30 * 0.06 + st.slipMax * 0.035) * on, t, 0.05); fN.frequency.setTargetAtTime(500 + sp * 28, t, 0.1); },
-    click(d) { const ctx = audio.ctx; if (!ctx || !audio.master) return; const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime; o.type = 'square'; o.frequency.value = d > 0 ? 150 : 120; g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06); o.connect(g).connect(audio.master); o.start(t); o.stop(t + 0.07); },
+    update() { if (!node) { init(); return; }
+      const st = car.st, A = car.anim, sp = st.vel.length(); let gr = 0, tm = 0, nC = 0, wsum = 0, jolt = 0;
+      for (const w of car.wheels) { wsum += Math.abs(w.w); if (!w.contact) continue; nC++; if (w.surf === 'asphalt' || w.surf === 'concrete') tm++; else gr++; jolt += Math.max(0, w.cv - 0.3); }
+      rough = rough * 0.9 + Math.min(1, jolt * 0.4) * 0.1;
+      if (jolt > 0.9 && sp > 2) send({ ev: 'bump', k: Math.min(1.5, jolt * 0.35) });
+      const hb = st.hand > 0.5 && car.driving; if (hb !== hbOn) { hbOn = hb; send({ ev: 'hb', on: hb }); }
+      // (heard from where the camera is: in the cockpit, or outside — fading with the distance when you walk away)
+      const cam = audio.lp, d = Math.hypot(cam.x - st.pos.x, cam.y - st.pos.y, cam.z - st.pos.z), cockpit = car.driving && car.view === 0;
+      send({ rpm: st.rpm, thr: car.driving ? st.throttle : 0, load: car.driving ? st.throttle : 0, speed: sp, wheel: wsum / 4, slip: clamp((st.slipMax - 0.9) / 1.5, 0, 1),
+        gravel: nC ? gr / nC : 0, tarmac: nC ? tm / nC : 0, rough, cut: st.shiftT > 0 || A.gMove ? 1 : 0, limiter: SPEC.engine.limiter, cockpit: cockpit ? 1 : 0, on: 1, gear: st.gear,
+        vol: car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1) }); },
+    event(ev, k) { send({ ev, k }); },
+    click() { send({ ev: 'gear' }); },
+    get node() { return node; },
   };
 }
 
