@@ -110,11 +110,12 @@ class RallyCar extends AudioWorkletProcessor {
       // ---- the road
       const v = s.speed, vk = Math.min(1.4, v / 30);
       const nz1 = this.nz(), nz2 = this.nz();
-      let road = this.roll.run(nz1) * (0.05 * s.gravel + 0.012 * s.tarmac) * vk * (1 + 1.6 * s.slip) + this.roll2.run(nz2) * 0.05 * vk * (s.gravel + 0.4 * s.slip);
+      const gk = p.gravelRec ? 0.35 : 1; // (the recorded gravel carries the hiss when it plays)
+      let road = this.roll.run(nz1) * (0.05 * s.gravel * gk + 0.012 * s.tarmac) * vk * (1 + 1.6 * s.slip) + this.roll2.run(nz2) * 0.05 * vk * (s.gravel * gk + 0.4 * s.slip);
       road += this.rumble2.run(this.rumble.run(this.nz(), kOf(90, sr)), kOf(60, sr)) * (0.9 + 2.5 * s.rough) * vk * (0.4 + 0.6 * s.cockpit);
       // stones: flung against the floor and the arches — each a burst of noise (no pitch of its own) through the struck
       // panel's broad resonance, at random
-      const rate = v * (1.6 * s.gravel + 0.1) * (1 + 2 * s.slip);
+      const rate = v * (1.6 * s.gravel + 0.1) * (1 + 2 * s.slip) * (p.gravelRec ? 0.3 : 1); // (fewer when the recorded gravel plays)
       if (this.rnd() < rate * dt) { const st = this.stones.find(q => q.a < 0.002); if (st) { st.a = (0.15 + this.rnd() * this.rnd() * 1.1) * (0.6 + 0.6 * s.cockpit); st.d = Math.exp(-dt / (0.0006 + this.rnd() * 0.0018)); st.pan = this.nz() * 0.85; st.mix = this.rnd(); } }
       let eL = 0, eR = 0, aL = 0, aR = 0; for (const st of this.stones) if (st.a > 0.002) { const x = this.nz() * st.a, l = (1 - st.pan) * 0.5, r = (1 + st.pan) * 0.5; eL += x * l * st.mix; eR += x * r * st.mix; aL += x * l * (1 - st.mix); aR += x * r * (1 - st.mix); st.a *= st.d; }
       const stL = (this.panL.run(eL) * 1.6 + this.archL.run(aL) * 1.4 + eL * 0.15) * 0.22, stR = (this.panR.run(eR) * 1.6 + this.archR.run(aR) * 1.4 + eR * 0.15) * 0.22;

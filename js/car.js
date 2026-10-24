@@ -776,13 +776,14 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       for (let k = 0; k < 3; k++) {
         cross(jp.copy(p0).addScaledVector(fx, px).addScaledVector(fy, py), bar, kc); // (a rim curves: the bar taken afresh nearest this joint)
         const vx = kc[0] - px, vy = kc[1] - py, base = dir + D.rb[k], vs = exact ? D.sk[k] : D.skE[k];
-        let mx = boneMax(vs, vx, vy, bar.tube, rig.gap, base, lim[k][0], exact ? 2 : 1); if (mx !== null) mx = Math.min(mx, cap[k]);
+        const gk = rig.gapK[k]; // (each bone's own press into the bar: the fingertips' pads give most, so the tips curl round it)
+        let mx = boneMax(vs, vx, vy, bar.tube, gk, base, lim[k][0], exact ? 2 : 1); if (mx !== null) mx = Math.min(mx, cap[k]);
         // (the section's ellipse is an estimate, true where the bar crosses the finger's plane squarely: checked against
         // the bar itself, and fitted afresh where it was off)
-        if (exact && (mx === null || boneGap(vs, px, py, base + mx, bar) < rig.gap - 0.0007)) mx = boneFit(vs, px, py, base, lim[k][0], mx === null ? cap[k] : mx, bar, rig.gap + 0.0002);
+        if (exact && (mx === null || boneGap(vs, px, py, base + mx, bar) < gk - 0.0007)) mx = boneFit(vs, px, py, base, lim[k][0], mx === null ? cap[k] : mx, bar, gk + 0.0002);
         const bb = mx === null ? lim[k][0] : mx;
         a[k] = bb; dir = base + bb;
-        const gap = exact ? boneGap(vs, px, py, dir, bar) : boneGap0(vs, vx, vy, bar.tube, dir); worst = Math.min(worst, gap);
+        const gap = exact ? boneGap(vs, px, py, dir, bar) : boneGap0(vs, vx, vy, bar.tube, dir); worst = Math.min(worst, gap - gk); // (worst: past each bone's own press)
         if (mx === null && gap < -0.001 && k > 0 && bad < 0) bad = k;
         px += Math.cos(dir) * D.L[k]; py += Math.sin(dir) * D.L[k]; const an = Math.atan2(py - cy, px - cx); if (gap < 0.004) wrap += Math.atan2(Math.sin(an - ang), Math.cos(an - ang)); ang = an; } // (round the bar, the bending way, signed — counted only for a bone lying on it)
       if (bad < 0) break;
@@ -810,7 +811,7 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       M1.multiply(M2.compose(ch[j].position, qf, ch[j].scale)); tp[j].setFromMatrixPosition(M1); }
     M1.multiply(M2.compose(ch[3].position, ch[3].quaternion, ch[3].scale)); tp[3].setFromMatrixPosition(M1);
     ts[0].lerpVectors(tp[0], tp[1], 0.5); ts[1].copy(tp[1]); ts[2].lerpVectors(tp[1], tp[2], 0.5); ts[3].copy(tp[2]); ts[4].lerpVectors(tp[2], tp[3], 0.5); ts[5].copy(tp[3]).addScaledVector(ts[0].subVectors(tp[3], tp[2]).normalize(), TIP); ts[0].lerpVectors(tp[0], tp[1], 0.5); return ts; };
-  const T_RELAX = [0.6, 0.45, 0.75]; const T_R = [FRT[0], FRT[1] + 0.003, FRT[1] + 0.002, FRT[2], FRT[2], FRT[2]], T_W = [0, 12, 40, 40, 40, 40], T_LIM = [[-0.6, 1.35], [-0.6, 1.1], [-0.3, 1.3]], tc = [0, 0, 0];
+  const T_RELAX = [0.3, 0.5, 0.6]; const T_R = [FRT[0], FRT[1] + 0.003, FRT[1] + 0.002, FRT[2], FRT[2], FRT[2]], T_W = [0, 12, 40, 40, 40, 40], T_LIM = [[-0.6, 1.35], [-0.6, 1.1], [-0.3, 1.3]], tc = [0, 0, 0];
   // how badly the thumb lies along the bar: entering it costs much, standing off it a little; a pull toward the rest pose
   // (and where a driver keeps it: on the bar's back, the side toward the wrist, never round the fingers' side, its tip
   // over the bar's inner half and laid along the bar toward the thumb's end — up the rim — not hooked across it)
@@ -823,14 +824,14 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
     if (a[2] < tp.bend) c += 5 * (tp.bend - a[2]) * (tp.bend - a[2]); // (a thumb round a bar is bent at its joints, never held out straight)
     bar.near(q[3], bc, bd); const front = tq.subVectors(q[3], bc).dot(tF); if (front > 0) c += 3000 * front * front;
     for (let i = 0; i < 6; i++) { const dd = bar.dist(q[i]) - bar.tube - T_R[i]; c += dd < 0 ? 200000 * dd * dd : rig.thC * T_W[i] * dd * dd; }
-    for (let j = 0; j < 3; j++) c += 0.0005 * (a[j] - CURL[0][j]) * (a[j] - CURL[0][j]); return c; };
+    for (let j = 0; j < 3; j++) c += tp.w * (a[j] - tp.pref[j]) * (a[j] - tp.pref[j]); return c; }; // (one way of holding it, preferred: the search does not wander between ways)
   const SEEDS = [[0.3, 0.25, 0.4], [0.6, 0.6, 0.8], [0.1, 0.7, 0.9], [0.8, 0.2, 0.6], [-0.2, 0.5, 1.0]];
   const thumbFresh = (sd, a, bar) => { let best = Infinity; const b = [0, 0, 0], keep = [0, 0, 0];
-    for (const s0 of SEEDS) { b[0] = s0[0]; b[1] = s0[1]; b[2] = s0[2]; const c = thumbSearch(sd, b, bar, [0.25, 0.1, 0.04, 0.015]); if (c < best) { best = c; keep[0] = b[0]; keep[1] = b[1]; keep[2] = b[2]; } }
+    const lm = (bar.thumb || rig.thumbBar).lim || T_LIM; for (const s0 of SEEDS) { for (let j = 0; j < 3; j++) b[j] = clamp(s0[j], lm[j][0], lm[j][1]); const c = thumbSearch(sd, b, bar, [0.25, 0.1, 0.04, 0.015]); if (c < best) { best = c; keep[0] = b[0]; keep[1] = b[1]; keep[2] = b[2]; } }
     a[0] = keep[0]; a[1] = keep[1]; a[2] = keep[2]; return best; };
   const thumbSearch = (sd, a, bar, steps) => { let best = thumbCost(sd, a, bar);
     for (const step of steps) for (let it = 0; it < 4; it++) { let moved = false;
-      for (let j = 0; j < 3; j++) for (const sg of [1, -1]) { tc[0] = a[0]; tc[1] = a[1]; tc[2] = a[2]; tc[j] = clamp(a[j] + sg * step, T_LIM[j][0], T_LIM[j][1]);
+      for (let j = 0; j < 3; j++) for (const sg of [1, -1]) { tc[0] = a[0]; tc[1] = a[1]; tc[2] = a[2]; const lm = (bar.thumb || rig.thumbBar).lim || T_LIM; tc[j] = clamp(a[j] + sg * step, lm[j][0], lm[j][1]);
         const c = thumbCost(sd, tc, bar); if (c < best) { best = c; a[0] = tc[0]; a[1] = tc[1]; a[2] = tc[2]; moved = true; } }
       if (!moved) break; }
     return best; };
@@ -856,8 +857,10 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
     const x = clamp((phi - SLANTS[0]) / (SLANTS[1] - SLANTS[0]), 0, SLANTS.length - 1.001), i = Math.floor(x), t = x - i;
     return outG.copy(C[i].G).lerp(C[i + 1].G, t); };
   const rig = {
-    S, ext: 0.12, twist: 0.85, frame: 0, gap: -0.0004, // (the finger pads pressed a little into the rim: a grip, not a touch)
-    thumbFK: (...x) => thumbFK(...x), thumbCost: (...x) => thumbCost(...x), clearance: (...x) => clearance(...x), rimBar: null, thumbBar: { past: 0.008, along: 0, K: 0, bend: 0.7 }, thumbRim: { past: 0.006, along: 0, K: 0, bend: 0.65 }, thC: 300, lay: (...x) => lay(...x),
+    S, ext: 0.12, twist: 0.85, frame: 0, gap: -0.0004, gapK: [-0.0003, -0.0006, -0.0012], // (the finger pads pressed a little into the bar: a grip, not a touch — the fingertips most)
+    thumbFK: (...x) => thumbFK(...x), thumbCost: (...x) => thumbCost(...x), clearance: (...x) => clearance(...x), rimBar: null, thumbBar: { past: 0.008, along: 0, K: 0, bend: 0.7, pref: [1.0, 0.6, 0.8], w: 0.08 },
+    thumbRim: { past: 0.006, along: 0.03, K: 5000, bend: 0.35, pref: [0.2, 0.5, 0.5], w: 0.2, lim: [[-0.15, 0.6], [0.25, 0.8], [0.3, 0.95]] }, thC: 300, lay: (...x) => lay(...x),
+    // (above: each bar's one way of holding the thumb — on the rim hooked over its inner side toward the hub, on a lever wrapped round it — and the range it may move in about it, so it never flips to another)
     // work out the grips for the bars this car has (their radii)
     prepare(tubes) { for (const tube of tubes) { const key = tube.toFixed(4); S.L.cal[key] = SLANTS.map(phi => calibrate(S.L, tube, phi));
       S.R.cal[key] = S.L.cal[key].map(c => ({ ...c, G: S.R.F0.clone().multiplyScalar(c.df).addScaledVector(S.R.N0, c.dn) })); } }, // (the hands are each other's mirror image: worked out once)
@@ -906,8 +909,8 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       // the fingers: laid round the bar, or easing to their rest curl
       const k = 1 - Math.exp(-dt * 22), tmp = [0, 0, 0];
       for (let fi = 0; fi < 5; fi++) { const a = sd.ang[fi];
-        if (bar) { if (fi) { if (lay(sd, fi, Wr, sd.Rh, bar, tmp).worst < rig.gap - 0.0011) unstick(sd, fi, Wr, bar, tmp); } else { tmp[0] = sd.tg[0]; tmp[1] = sd.tg[1]; tmp[2] = sd.tg[2]; const tc0 = thumbSearch(sd, tmp, bar, ++sd.tf % 8 === 1 ? [0.3, 0.12, 0.05, 0.02, 0.008] : open > 0 ? [0.12, 0.04, 0.015, 0.006] : [0.04, 0.015, 0.006]); if (tc0 > 0.05 || sd.tf % 24 === 5) { const b2 = [0, 0, 0]; if (thumbFresh(sd, b2, bar) < tc0 * 0.8) { tmp[0] = b2[0]; tmp[1] = b2[1]; tmp[2] = b2[2]; } } sd.tg[0] = tmp[0]; sd.tg[1] = tmp[1]; sd.tg[2] = tmp[2]; }
-          if (!fi) { const kr = smoothstep(0.15, 0.6, open); for (let j = 0; j < 3; j++) a[j] = tmp[j] + (T_RELAX[j] - tmp[j]) * kr; } // (the thumb keeps itself off the bar as the hand moves: searched each frame; a hand off the bar holds it relaxed and bent)
+        if (bar) { if (fi) { if (lay(sd, fi, Wr, sd.Rh, bar, tmp).worst < -0.0011) unstick(sd, fi, Wr, bar, tmp); } else { tmp[0] = sd.tg[0]; tmp[1] = sd.tg[1]; tmp[2] = sd.tg[2]; const tc0 = thumbSearch(sd, tmp, bar, ++sd.tf % 8 === 1 ? [0.3, 0.12, 0.05, 0.02, 0.008] : open > 0 ? [0.12, 0.04, 0.015, 0.006] : [0.04, 0.015, 0.006]); sd.tcAvg = sd.tcAvg === undefined ? tc0 : sd.tcAvg + (tc0 - sd.tcAvg) * 0.05; if (tc0 > 2.5 * sd.tcAvg + 0.3) { /* (a fresh search only when this way of holding it has gone bad) */ const b2 = [0, 0, 0]; if (thumbFresh(sd, b2, bar) < tc0 * 0.8) { tmp[0] = b2[0]; tmp[1] = b2[1]; tmp[2] = b2[2]; } } sd.tg[0] = tmp[0]; sd.tg[1] = tmp[1]; sd.tg[2] = tmp[2]; }
+          if (!fi) { const kr = smoothstep(0.5, 0.9, open), cT = thumbCost(sd, tmp, bar), tr = [0, 0, 0]; for (let j = 0; j < 3; j++) tr[j] = tmp[j] + (T_RELAX[j] - tmp[j]) * kr; const tgt = kr > 0 && thumbCost(sd, tr, bar) > cT + 0.3 ? tmp : tr, mv = bar.thumb && open < 0.05 ? dt * (thumbCost(sd, a, bar) > cT + 0.3 ? 30 : 5) : 9; /* (paced only while it holds the rim) */ for (let j = 0; j < 3; j++) a[j] += clamp(tgt[j] - a[j], -mv, mv); } // (and it moves at a thumb's pace, never in a jump — quicker only to get out of the bar's way) // (the thumb keeps itself off the bar as the hand moves: searched each frame; a hand off the bar holds it relaxed and bent)
           else { // (a finger: from laid round the bar toward open by "open", but only as far as it stays clear of the bar — a hand
             // coming in or letting go never drags a finger through it)
             const c2 = [0, 0, 0], of = fi === 1 || fi === 2 ? Math.max(open, 0.85 * flick) : open; let sOk = 0; // (a flick: the index and middle finger lift off for the paddle)
@@ -923,9 +926,9 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
 
 // the car's sound: synthesised in an audio worklet (js/carAudio.worklet.js — the engine, anti-lag, the turbo, the
 // gearbox's whine, the road, the wind, the knocks); here it is told the car's state each frame, and its events
-// The gear lever and the handbrake are recordings when they are there (Modeleaut/sounds/, beside the game like the car:
-// gears.mp3 — a lever worked through its gears, its knocks cut out below; handbrake.mp3 — its last pull), else the
-// worklet's own knocks.
+// The gear lever, the handbrake and the gravel under the tyres are recordings when they are there (Modeleaut/sounds/,
+// beside the game like the car: gears.mp3 — a lever worked through its gears, its knocks cut out below; handbrake.mp3 —
+// its last pull; gravel.mp3 — tyres on gravel, looped), else the worklet's own.
 const CLIPS = {
   in: [[1.09, 0.32], [3.71, 0.3], [5.25, 0.3], [7.57, 0.32], [11.99, 0.36], [16.47, 0.3], [20.81, 0.32], [25.85, 0.3], [28.77, 0.32], [32.03, 0.34], [41.43, 0.3], [43.49, 0.36], [47.47, 0.3], [50.63, 0.3]], // (a gear going in)
   out: [[8.71, 0.22], [9.33, 0.18], [17.49, 0.18], [18.75, 0.2], [25.13, 0.24], [36.21, 0.22]], // (the lever leaving its slot: the quiet ones)
@@ -933,8 +936,16 @@ const CLIPS = {
 };
 function engineSound(car) {
   let node = null, loading = false, rough = 0, hbOn = false, rec = null;
-  const loadClips = ctx => Promise.all(['gears', 'handbrake'].map(f => fetch('Modeleaut/sounds/' + f + '.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => ctx.decodeAudioData(b))))
-    .then(([gears, hb]) => { // (each knock's loudness evened out: its peak brought to one level)
+  let grv = null; // (the gravel loop: { src, gain, lp })
+  const startGravel = (ctx, buf) => { // (the steady part of the recording, its end crossfaded into its start so the loop has no seam)
+    const sr = buf.sampleRate, a = Math.floor(1.2 * sr), b = Math.floor(9.4 * sr), X = Math.floor(0.35 * sr), n = b - a - X, out = ctx.createBuffer(buf.numberOfChannels, n, sr);
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) { const src = buf.getChannelData(ch), dst = out.getChannelData(ch); let rms = 0;
+      for (let i = 0; i < n; i++) { let v = src[a + i]; if (i < X) { const t = i / X; v = v * Math.sqrt(t) + src[a + n + i] * Math.sqrt(1 - t); } dst[i] = v; rms += v * v; }
+      rms = Math.sqrt(rms / n); for (let i = 0; i < n; i++) dst[i] *= 0.1 / Math.max(rms, 1e-4); } // (to a set loudness)
+    const src = ctx.createBufferSource(), gain = ctx.createGain(), lp = ctx.createBiquadFilter(); src.buffer = out; src.loop = true; gain.gain.value = 0; lp.type = 'lowpass'; lp.frequency.value = 8000;
+    src.connect(lp).connect(gain).connect(audio.master); src.start(); grv = { src, gain, lp }; };
+  const loadClips = ctx => Promise.all(['gears', 'handbrake', 'gravel'].map(f => fetch('Modeleaut/sounds/' + f + '.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => ctx.decodeAudioData(b)).catch(() => null)))
+    .then(([gears, hb, gravel]) => { if (gravel) startGravel(ctx, gravel); if (!gears || !hb) return; // (each knock's loudness evened out: its peak brought to one level)
       const peakOf = (buf, [t, d]) => { let p = 1e-4; const a = buf.getChannelData(0), i0 = Math.floor(t * buf.sampleRate), i1 = Math.min(a.length, i0 + Math.floor(d * buf.sampleRate)); for (let i = i0; i < i1; i++) p = Math.max(p, Math.abs(a[i])); return p; };
       rec = { gears, hb, in: CLIPS.in.map(c => [...c, 1 / peakOf(gears, c)]), out: CLIPS.out.map(c => [...c, 1 / peakOf(gears, c)]), hbc: CLIPS.hb.map(c => [...c, 1 / peakOf(hb, c)]) }; })
     .catch(() => { rec = null; });
@@ -958,12 +969,16 @@ function engineSound(car) {
       const hb = st.hand > 0.5 && car.driving; if (hb !== hbOn) { hbOn = hb; if (!knock('hb', hb)) send({ ev: 'hb', on: hb }); }
       // (heard from where the camera is: in the cockpit, or outside — fading with the distance when you walk away)
       const cam = audio.lp, d = Math.hypot(cam.x - st.pos.x, cam.y - st.pos.y, cam.z - st.pos.z), cockpit = car.driving && car.view === 0;
-      send({ rpm: st.rpm, thr: car.driving ? st.throttle : 0, load: car.driving ? st.throttle : 0, speed: sp, wheel: wsum / 4, slip: clamp((st.slipMax - 0.9) / 1.5, 0, 1),
+      const slipK = clamp((st.slipMax - 0.9) / 1.5, 0, 1);
+      if (grv) { const t = audio.ctx.currentTime, on = nC ? (gr / nC) : 0, v = clamp(sp / 22, 0, 1.3); // (the gravel: louder and a touch higher the faster, more in a slide; duller from inside)
+        grv.gain.gain.setTargetAtTime(on * Math.pow(v, 0.9) * (0.75 + 0.6 * slipK) * (cockpit ? 0.55 : 0.8) * (car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1)), t, 0.06);
+        grv.src.playbackRate.setTargetAtTime(0.82 + 0.3 * Math.min(1, v), t, 0.1); grv.lp.frequency.setTargetAtTime(cockpit ? 3200 : 9000, t, 0.1); }
+      send({ gravelRec: grv ? 1 : 0, rpm: st.rpm, thr: car.driving ? st.throttle : 0, load: car.driving ? st.throttle : 0, speed: sp, wheel: wsum / 4, slip: clamp((st.slipMax - 0.9) / 1.5, 0, 1),
         gravel: nC ? gr / nC : 0, tarmac: nC ? tm / nC : 0, rough, cut: st.shiftT > 0 || A.gMove ? 1 : 0, limiter: SPEC.engine.limiter, cockpit: cockpit ? 1 : 0, on: 1, gear: st.gear,
         vol: car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1) }); },
     event(ev, k) { if (!knock(ev)) send({ ev, k }); },
     click() { if (!knock('gear')) send({ ev: 'gear' }); },
-    get node() { return node; }, get clips() { return !!rec; },
+    get node() { return node; }, get clips() { return !!rec; }, get gravel() { return !!grv; },
   };
 }
 
