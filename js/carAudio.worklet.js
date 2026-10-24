@@ -9,9 +9,12 @@
 //  - The turbo: boost that builds with load and revs after a lag; its whistle rises with it, an intake hiss with it.
 //  - The straight-cut gearbox and the differentials whine: tones at the gear teeth's meshing rates (the gearbox's with
 //    the engine, the diffs' with the wheels), loudest under load.
-//  - The road: gravel under the tyres (a rolling hiss, and stones flung against the floor and the wheel arches: short
-//    pings, more the faster, more still in a slide), the body's rumble over rough ground, tyre squeal on tarmac, the wind.
-//  - Events: the suspension hitting a bump, the gear lever's clunk and click, the hydraulic handbrake.
+//  - The road: gravel under the tyres (a rolling hiss, and stones flung against the floor and the wheel arches: each a
+//    burst of noise — a hard, toneless tick — through the floor pan's and the arch liners' own broad resonances, more
+//    the faster, more still in a slide), the body's rumble over rough ground, tyre squeal on tarmac, the wind.
+//  - Knocks (the suspension hitting a bump, the gear lever, the hydraulic handbrake): an impact — a short burst of noise
+//    — ringing the struck part's few inharmonic modes (steel rings long and bright, a body panel dull and short), with
+//    the thud it sends through the car.
 // In the cockpit the engine is heard through the bulkhead (duller), the whine and the stones loud; outside, the exhaust.
 const TAU = Math.PI * 2;
 class Reso { // a two-pole resonator
@@ -24,7 +27,7 @@ class Pipe { // a delay line ringing at its length, the open end inverting the w
   constructor(n, fb) { this.b = new Float32Array(n + 2); this.n = n; this.i = 0; this.fb = fb; this.lp = 0; }
   run(x) { const o = this.b[this.i]; this.lp += (o - this.lp) * 0.45; const y = x + this.fb * this.lp; this.b[this.i] = y; this.i = (this.i + 1) % this.n; return y; }
 }
-const kOf = (fc, sr) => 1 - Math.exp(-TAU * fc / sr);
+const kOf = (fc, sr) => 1 - Math.exp(-TAU * fc / sr), smoothstep01 = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
 
 class RallyCar extends AudioWorkletProcessor {
   constructor() {
@@ -43,17 +46,21 @@ class RallyCar extends AudioWorkletProcessor {
     this.wph1 = 0; this.wph2 = 0; this.wph3 = 0; this.whineLP = new LP();
     this.roll = new Reso(1400, 1600, sr); this.roll2 = new Reso(380, 300, sr); this.rumble = new LP(); this.rumble2 = new LP(); this.windLP = new LP(); this.windLP2 = new LP();
     this.squealPh = 0; this.sq = new LP();
-    this.stones = []; for (let i = 0; i < 16; i++) this.stones.push({ a: 0, ph: 0, f: 0, d: 0, pan: 0 });
-    this.evs = []; // one-off sounds: { t, len, kind, a }
+    this.stones = []; for (let i = 0; i < 12; i++) this.stones.push({ a: 0, d: 0, pan: 0, mix: 0 });
+    this.panL = new Reso(2300, 1700, sr); this.panR = new Reso(2300, 1700, sr); this.archL = new Reso(850, 900, sr); this.archR = new Reso(850, 900, sr); // (the floor pan, the arch liners)
+    this.evs = []; // knocks: { t, len, a, exc, res: [[Reso, gain]], thud }
     this.n1 = 0; this.n2 = 0; this.seed = 12345;
   }
   rnd() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
   nz() { return this.rnd() * 2 - 1; }
-  event(d) { // one-off sounds
-    if (d.ev === 'bump') this.evs.push({ t: 0, len: 0.22, kind: 0, a: Math.min(1.5, d.k || 1), f: 50 + this.rnd() * 25, ph: 0 });
-    else if (d.ev === 'gear') this.evs.push({ t: 0, len: 0.09, kind: 1, a: 1, f: 170 + this.rnd() * 40, ph: 0 });
-    else if (d.ev === 'lever') this.evs.push({ t: 0, len: 0.03, kind: 2, a: 0.6, f: 2400, ph: 0 });
-    else if (d.ev === 'hb') this.evs.push({ t: 0, len: 0.12, kind: 3, a: d.on ? 1 : 0.6, f: 900, ph: 0 });
+  // a knock: an impact (noise, exc s long) ringing modes [Hz, bandwidth Hz, gain], and the thud through the car
+  knock(a, exc, modes, thud, len) { const sr = this.sr, v = 0.92 + this.rnd() * 0.16;
+    this.evs.push({ t: 0, len, a, exc, res: modes.map(([f, bw, g]) => [new Reso(f * v, bw, sr), g]), thud, lp: new LP(), lp2: new LP() }); }
+  event(d) {
+    if (d.ev === 'bump') { const k = Math.min(1.5, d.k || 1) * 0.6; this.knock(k, 0.012, [[95, 60, 3.0], [240, 160, 1.6], [620, 500, 0.9], [1500, 1200, 0.35]], 0.9 * k, 0.28); } // (the body over a bump: a dull, heavy thud, a panel's rattle)
+    else if (d.ev === 'gear') this.knock(1, 0.0016, [[690, 35, 1.6], [1730, 60, 1.1], [2960, 90, 0.8], [4150, 140, 0.5], [180, 90, 1.0]], 0.35, 0.12); // (the dogs going in: steel on steel)
+    else if (d.ev === 'lever') this.knock(0.45, 0.012, [[1300, 900, 0.9], [2600, 1500, 0.6], [520, 300, 0.5]], 0.05, 0.05); // (the lever leaving its slot: a short, gritty scrape)
+    else if (d.ev === 'hb') this.knock(d.on ? 1 : 0.55, 0.003, [[430, 70, 1.6], [1150, 140, 1.1], [2350, 220, 0.6], [120, 80, 0.8]], d.on ? 0.45 : 0.2, 0.14); // (the handbrake lever against its stop, the hydraulics taking up)
   }
   process(_, outputs) {
     const out = outputs[0], L = out[0], R = out[1] || out[0], n = L.length, sr = this.sr, p = this.p, s = this.s, dt = 1 / sr;
@@ -105,10 +112,12 @@ class RallyCar extends AudioWorkletProcessor {
       const nz1 = this.nz(), nz2 = this.nz();
       let road = this.roll.run(nz1) * (0.05 * s.gravel + 0.012 * s.tarmac) * vk * (1 + 1.6 * s.slip) + this.roll2.run(nz2) * 0.05 * vk * (s.gravel + 0.4 * s.slip);
       road += this.rumble2.run(this.rumble.run(this.nz(), kOf(90, sr)), kOf(60, sr)) * (0.9 + 2.5 * s.rough) * vk * (0.4 + 0.6 * s.cockpit);
-      // stones: flung against the floor and the arches — a short ring each, at random
-      const rate = v * (2.2 * s.gravel + 0.15) * (1 + 2.5 * s.slip);
-      if (this.rnd() < rate * dt) { const st = this.stones.find(q => q.a < 0.002); if (st) { st.a = (0.2 + this.rnd() * this.rnd() * 1.2) * (0.6 + 0.6 * s.cockpit); st.f = 1300 + this.rnd() * 4200; st.d = Math.exp(-dt / (0.002 + this.rnd() * 0.009)); st.ph = 0; st.pan = this.nz() * 0.8; } }
-      let stL = 0, stR = 0; for (const st of this.stones) if (st.a > 0.002) { st.ph += st.f * dt; const y = Math.sin(TAU * st.ph) * st.a * 0.06; stL += y * (1 - st.pan) * 0.5; stR += y * (1 + st.pan) * 0.5; st.a *= st.d; }
+      // stones: flung against the floor and the arches — each a burst of noise (no pitch of its own) through the struck
+      // panel's broad resonance, at random
+      const rate = v * (1.6 * s.gravel + 0.1) * (1 + 2 * s.slip);
+      if (this.rnd() < rate * dt) { const st = this.stones.find(q => q.a < 0.002); if (st) { st.a = (0.15 + this.rnd() * this.rnd() * 1.1) * (0.6 + 0.6 * s.cockpit); st.d = Math.exp(-dt / (0.0006 + this.rnd() * 0.0018)); st.pan = this.nz() * 0.85; st.mix = this.rnd(); } }
+      let eL = 0, eR = 0, aL = 0, aR = 0; for (const st of this.stones) if (st.a > 0.002) { const x = this.nz() * st.a, l = (1 - st.pan) * 0.5, r = (1 + st.pan) * 0.5; eL += x * l * st.mix; eR += x * r * st.mix; aL += x * l * (1 - st.mix); aR += x * r * (1 - st.mix); st.a *= st.d; }
+      const stL = (this.panL.run(eL) * 1.6 + this.archL.run(aL) * 1.4 + eL * 0.15) * 0.22, stR = (this.panR.run(eR) * 1.6 + this.archR.run(aR) * 1.4 + eR * 0.15) * 0.22;
       // tyre squeal on tarmac when sliding
       this.squealPh += (950 + 140 * Math.sin(this.squealPh * 0.004)) * dt; const sq = this.sq.run(Math.max(0, s.slip - 0.25) * s.tarmac, kOf(8, sr));
       road += Math.sin(TAU * this.squealPh) * sq * 0.05;
@@ -117,12 +126,9 @@ class RallyCar extends AudioWorkletProcessor {
       // ---- one-off sounds
       let evo = 0;
       for (let k = this.evs.length - 1; k >= 0; k--) { const e = this.evs[k]; e.t += dt; if (e.t > e.len) { this.evs.splice(k, 1); continue; }
-        const x = e.t / e.len, env = Math.exp(-e.t / (e.len * 0.28)); e.ph += e.f * dt;
-        if (e.kind === 0) evo += (Math.sin(TAU * e.ph) * 0.9 + this.nz() * 0.35 * Math.exp(-e.t / 0.03)) * env * e.a * 0.32; // (a bump: the body's thud, a rattle)
-        else if (e.kind === 1) evo += (Math.sin(TAU * e.ph) * 0.7 + this.nz() * (x < 0.06 ? 1 : 0.2)) * env * 0.16; // (the gear going in: a clunk and a click)
-        else if (e.kind === 2) evo += this.nz() * env * 0.05; // (the lever leaving its slot)
-        else evo += (this.nz() * 0.6 + Math.sin(TAU * e.ph) * 0.4) * env * e.a * 0.12; // (the hydraulic handbrake)
-      }
+        const x = this.nz() * e.a * Math.exp(-e.t / e.exc) * (e.t < e.exc * 4 ? 1 : 0); let y = 0; for (const [rs, g] of e.res) y += rs.run(x) * g;
+        const th = e.lp2.run(e.lp.run(x * 6, 0.004), 0.004) * e.thud; // (the thud: what reaches the seat through the floor)
+        evo += (y * 0.5 + th) * (1 - smoothstep01(e.t / e.len)); }
       // ---- mixed: the exhaust a touch to the back, the stones round the car
       const eng = (ex + als) * (0.8 - 0.25 * s.cockpit) + turbo, mid = eng + whine + road + wind * 0.6 + evo;
       let l = mid + stL, r = mid + stR;

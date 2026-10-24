@@ -240,7 +240,7 @@ export async function createCar(world, spawn) {
         wf.copy(fwd).applyAxisAngle(up, steerA); wf.addScaledVector(_n, -_n.dot(wf)).normalize(); wl.crossVectors(_n, wf);
         r.subVectors(w.cp, st.pos); vp.crossVectors(st.ang, r).add(st.vel);
         const vx = vp.dot(wf), vy = vp.dot(wl); w.vx = vx;
-        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) * (w.front ? 1 : 1 - 0.4 * clamp(st.hand, 0, 1)); // (the handbrake: the rear lets go readily)
+        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) * (w.front ? 1 : 1 - 0.2 * clamp(st.hand, 0, 1)); // (the handbrake: the rear lets go readily)
         const Fz = Math.max(0, w.fs); w.Fz = Fz;
         const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 0.95));
         w.slip = tyre(S, mu, Fz, kappa / S.kp, sa, F2); fx = F2[0]; let fy = F2[1];
@@ -265,7 +265,7 @@ export async function createCar(world, spawn) {
     // geometry, as fast as the grip allows), and a slide pulled back past a body slip — eased off for the handbrake, so
     // it still swings the tail round
     { const vL = st.vel.dot(fwd), sideV = _v.crossVectors(up, fwd), vLat = st.vel.dot(sideV), spd = Math.abs(vL), on = clamp((spd - 3) / 6, 0, 1) * (wheels.filter(w => w.contact).length >= 3 ? 1 : 0);
-      if (on > 0) { hbT = st.hand > 0.3 ? 1.3 : Math.max(0, hbT - h); const free = 1 - smoothstep(0, 0.6, hbT); // (the handbrake: no help while it swings the car round, then it comes back)
+      if (on > 0) { hbT = st.hand > 0.3 ? 1.3 : Math.max(0, hbT - h); const free = 1 - 0.6 * smoothstep(0, 0.6, hbT); // (the handbrake: less help while it swings the car round, so it does not spin it)
         const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
         const lim = 11 / Math.max(spd, 1), want = clamp(vL * Math.tan(d) / wb, -lim, lim), beta = Math.atan2(vLat, spd);
         let ty = -(yawNow - want) * ASSIST.yaw * free; if (Math.abs(beta) > ASSIST.beta) ty += Math.sign(beta) * (Math.abs(beta) - ASSIST.beta) * ASSIST.k * free;
@@ -774,7 +774,7 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
         let mx = boneMax(vs, vx, vy, bar.tube, rig.gap, base, lim[k][0], exact ? 2 : 1); if (mx !== null) mx = Math.min(mx, cap[k]);
         // (the section's ellipse is an estimate, true where the bar crosses the finger's plane squarely: checked against
         // the bar itself, and fitted afresh where it was off)
-        if (exact && (mx === null || boneGap(vs, px, py, base + mx, bar) < rig.gap - 0.0007)) mx = boneFit(vs, px, py, base, lim[k][0], mx === null ? cap[k] : mx, bar, rig.gap * 0.5);
+        if (exact && (mx === null || boneGap(vs, px, py, base + mx, bar) < rig.gap - 0.0007)) mx = boneFit(vs, px, py, base, lim[k][0], mx === null ? cap[k] : mx, bar, rig.gap + 0.0002);
         const bb = mx === null ? lim[k][0] : mx;
         a[k] = bb; dir = base + bb;
         const gap = exact ? boneGap(vs, px, py, dir, bar) : boneGap0(vs, vx, vy, bar.tube, dir); worst = Math.min(worst, gap);
@@ -784,12 +784,12 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       cap[bad - 1] = Math.max(lim[bad - 1][0], a[bad - 1] - 0.12);
     }
     return { wrap, worst }; };
-  // a finger lay could not fit round the bar (the hand passing at a slant, a rim curving away): of a grid of bends, the
-  // one nearest the laid one that keeps clear of the bar, else the one keeping furthest from it
+  // a finger lay could not fit round the bar (the hand passing at a slant, a rim curving away): of a grid of bends, of
+  // those that keep clear of the bar the one lying closest to it (and nearest the laid one), else the one keeping furthest
   const unstick = (sd, fi, W, bar, a) => { const lim = BEND[1], b = [0, 0, 0], best = [0, 0, 0]; let bc2 = -Infinity, bd2 = Infinity, ok = false;
-    for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) { b[0] = lim[0][0] + (lim[0][1] - lim[0][0]) * i / 8; b[1] = lim[1][0] + (lim[1][1] - lim[1][0]) * j / 8; b[2] = clamp(b[1] * CURL[fi][2] / CURL[fi][1], lim[2][0], lim[2][1]);
+    for (let i = 0; i < 13; i++) for (let j = 0; j < 13; j++) { b[0] = lim[0][0] + (lim[0][1] - lim[0][0]) * i / 12; b[1] = lim[1][0] + (lim[1][1] - lim[1][0]) * j / 12; b[2] = clamp(b[1] * CURL[fi][2] / CURL[fi][1], lim[2][0], lim[2][1]);
       const cl = clearance(sd, fi, W, sd.Rh, bar, b), dd = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2;
-      if (cl >= 0 ? (!ok || dd < bd2) : (!ok && cl > bc2)) { ok = ok || cl >= 0; bc2 = cl; bd2 = dd; best[0] = b[0]; best[1] = b[1]; best[2] = b[2]; } }
+      const sc = cl >= 0 ? cl * 400 + dd : 0; if (cl >= 0 ? (!ok || sc < bd2) : (!ok && cl > bc2)) { ok = ok || cl >= 0; bc2 = cl; bd2 = sc; best[0] = b[0]; best[1] = b[1]; best[2] = b[2]; } }
     a[0] = best[0]; a[1] = best[1]; a[2] = best[2]; };
   // how near a finger with bends a comes to entering the bar (m, < 0: inside), by the same model as lay
   const clearance = (sd, fi, W, Rh, bar, a) => { const D = sd.fd[fi];
@@ -805,7 +805,7 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       M1.multiply(M2.compose(ch[j].position, qf, ch[j].scale)); tp[j].setFromMatrixPosition(M1); }
     M1.multiply(M2.compose(ch[3].position, ch[3].quaternion, ch[3].scale)); tp[3].setFromMatrixPosition(M1);
     ts[0].lerpVectors(tp[0], tp[1], 0.5); ts[1].copy(tp[1]); ts[2].lerpVectors(tp[1], tp[2], 0.5); ts[3].copy(tp[2]); ts[4].lerpVectors(tp[2], tp[3], 0.5); ts[5].copy(tp[3]).addScaledVector(ts[0].subVectors(tp[3], tp[2]).normalize(), TIP); ts[0].lerpVectors(tp[0], tp[1], 0.5); return ts; };
-  const T_R = [FRT[0], FRT[1] + 0.003, FRT[1] + 0.002, FRT[2], FRT[2], FRT[2]], T_W = [0, 12, 40, 40, 40, 40], T_LIM = [[-0.6, 1.0], [-0.6, 1.0], [-0.3, 1.2]], tc = [0, 0, 0];
+  const T_RELAX = [0.6, 0.45, 0.75]; const T_R = [FRT[0], FRT[1] + 0.003, FRT[1] + 0.002, FRT[2], FRT[2], FRT[2]], T_W = [0, 12, 40, 40, 40, 40], T_LIM = [[-0.6, 1.35], [-0.6, 1.1], [-0.3, 1.3]], tc = [0, 0, 0];
   // how badly the thumb lies along the bar: entering it costs much, standing off it a little; a pull toward the rest pose
   // (and where a driver keeps it: on the bar's back, the side toward the wrist, never round the fingers' side, its tip
   // over the bar's inner half and laid along the bar toward the thumb's end — up the rim — not hooked across it)
@@ -815,6 +815,7 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
     const tp = bar.thumb || rig.thumbBar; // (per bar: on the rim hooked round its inner side, on a lever wrapped round it)
     bar.near(q[5], bc, bd); const past = tq.subVectors(q[5], bc).dot(tN); if (past < tp.past) c += 3000 * (tp.past - past) * (tp.past - past);
     if (tp.K) { if (bd.dot(tT) < 0) bd.negate(); const along = tq.subVectors(q[5], q[1]).dot(bd); if (along < tp.along) c += tp.K * (tp.along - along) * (tp.along - along); }
+    if (a[2] < tp.bend) c += 5 * (tp.bend - a[2]) * (tp.bend - a[2]); // (a thumb round a bar is bent at its joints, never held out straight)
     bar.near(q[3], bc, bd); const front = tq.subVectors(q[3], bc).dot(tF); if (front > 0) c += 3000 * front * front;
     for (let i = 0; i < 6; i++) { const dd = bar.dist(q[i]) - bar.tube - T_R[i]; c += dd < 0 ? 200000 * dd * dd : rig.thC * T_W[i] * dd * dd; }
     for (let j = 0; j < 3; j++) c += 0.0005 * (a[j] - CURL[0][j]) * (a[j] - CURL[0][j]); return c; };
@@ -850,7 +851,8 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
     const x = clamp((phi - SLANTS[0]) / (SLANTS[1] - SLANTS[0]), 0, SLANTS.length - 1.001), i = Math.floor(x), t = x - i;
     return outG.copy(C[i].G).lerp(C[i + 1].G, t); };
   const rig = {
-    S, ext: 0.12, twist: 0.85, frame: 0, gap: 0.0005, thumbFK: (...x) => thumbFK(...x), thumbCost: (...x) => thumbCost(...x), clearance: (...x) => clearance(...x), rimBar: null, thumbBar: { past: 0.008, along: 0, K: 0 }, thumbRim: { past: 0.006, along: 0, K: 0 }, thC: 300, lay: (...x) => lay(...x),
+    S, ext: 0.12, twist: 0.85, frame: 0, gap: -0.0004, // (the finger pads pressed a little into the rim: a grip, not a touch)
+    thumbFK: (...x) => thumbFK(...x), thumbCost: (...x) => thumbCost(...x), clearance: (...x) => clearance(...x), rimBar: null, thumbBar: { past: 0.008, along: 0, K: 0, bend: 0.7 }, thumbRim: { past: 0.006, along: 0, K: 0, bend: 0.65 }, thC: 300, lay: (...x) => lay(...x),
     // work out the grips for the bars this car has (their radii)
     prepare(tubes) { for (const tube of tubes) { const key = tube.toFixed(4); S.L.cal[key] = SLANTS.map(phi => calibrate(S.L, tube, phi));
       S.R.cal[key] = S.L.cal[key].map(c => ({ ...c, G: S.R.F0.clone().multiplyScalar(c.df).addScaledVector(S.R.N0, c.dn) })); } }, // (the hands are each other's mirror image: worked out once)
@@ -899,8 +901,8 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       // the fingers: laid round the bar, or easing to their rest curl
       const k = 1 - Math.exp(-dt * 22), tmp = [0, 0, 0];
       for (let fi = 0; fi < 5; fi++) { const a = sd.ang[fi];
-        if (bar) { if (fi) { if (lay(sd, fi, Wr, sd.Rh, bar, tmp).worst < -0.001) unstick(sd, fi, Wr, bar, tmp); } else { tmp[0] = sd.tg[0]; tmp[1] = sd.tg[1]; tmp[2] = sd.tg[2]; const tc0 = thumbSearch(sd, tmp, bar, ++sd.tf % 8 === 1 ? [0.3, 0.12, 0.05, 0.02, 0.008] : open > 0 ? [0.12, 0.04, 0.015, 0.006] : [0.04, 0.015, 0.006]); if (tc0 > 0.05 || sd.tf % 24 === 5) { const b2 = [0, 0, 0]; if (thumbFresh(sd, b2, bar) < tc0 * 0.8) { tmp[0] = b2[0]; tmp[1] = b2[1]; tmp[2] = b2[2]; } } sd.tg[0] = tmp[0]; sd.tg[1] = tmp[1]; sd.tg[2] = tmp[2]; }
-          if (!fi) for (let j = 0; j < 3; j++) a[j] = tmp[j]; // (the thumb keeps itself off the bar as the hand moves: searched each frame)
+        if (bar) { if (fi) { if (lay(sd, fi, Wr, sd.Rh, bar, tmp).worst < rig.gap - 0.0011) unstick(sd, fi, Wr, bar, tmp); } else { tmp[0] = sd.tg[0]; tmp[1] = sd.tg[1]; tmp[2] = sd.tg[2]; const tc0 = thumbSearch(sd, tmp, bar, ++sd.tf % 8 === 1 ? [0.3, 0.12, 0.05, 0.02, 0.008] : open > 0 ? [0.12, 0.04, 0.015, 0.006] : [0.04, 0.015, 0.006]); if (tc0 > 0.05 || sd.tf % 24 === 5) { const b2 = [0, 0, 0]; if (thumbFresh(sd, b2, bar) < tc0 * 0.8) { tmp[0] = b2[0]; tmp[1] = b2[1]; tmp[2] = b2[2]; } } sd.tg[0] = tmp[0]; sd.tg[1] = tmp[1]; sd.tg[2] = tmp[2]; }
+          if (!fi) { const kr = smoothstep(0.15, 0.6, open); for (let j = 0; j < 3; j++) a[j] = tmp[j] + (T_RELAX[j] - tmp[j]) * kr; } // (the thumb keeps itself off the bar as the hand moves: searched each frame; a hand off the bar holds it relaxed and bent)
           else { // (a finger: from laid round the bar toward open by "open", but only as far as it stays clear of the bar — a hand
             // coming in or letting go never drags a finger through it)
             const c2 = [0, 0, 0], of = fi === 1 || fi === 2 ? Math.max(open, 0.85 * flick) : open; let sOk = 0; // (a flick: the index and middle finger lift off for the paddle)
