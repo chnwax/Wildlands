@@ -38,8 +38,10 @@ const SPEC = {
   brake: { front: 1650, rear: 720, hand: 3200 }, lsd: 300, center: 420,
   aero: { cda: 0.78, cla: 1.1, front: 0.45 }, crr: 0.016, rollCentre: 0.12,
 };
-const SURF = { gravel: { mu: 0.92, kp: 0.14, ap: 0.2, slide: 0.86 }, grass: { mu: 0.68, kp: 0.16, ap: 0.24, slide: 0.84 }, forest: { mu: 0.66, kp: 0.16, ap: 0.24, slide: 0.84 },
-  asphalt: { mu: 1.15, kp: 0.09, ap: 0.14, slide: 0.9 }, concrete: { mu: 1.1, kp: 0.09, ap: 0.14, slide: 0.9 } };
+// (tuned to drive well rather than to the letter: grippy, quick to answer the wheel, and holding on in a slide)
+const SURF = { gravel: { mu: 1.28, kp: 0.12, ap: 0.13, slide: 0.94 }, grass: { mu: 1.0, kp: 0.14, ap: 0.15, slide: 0.93 }, forest: { mu: 0.98, kp: 0.14, ap: 0.15, slide: 0.93 },
+  asphalt: { mu: 1.45, kp: 0.09, ap: 0.11, slide: 0.95 }, concrete: { mu: 1.4, kp: 0.09, ap: 0.11, slide: 0.95 } };
+const ASSIST = { yaw: 2.6, beta: 0.38, k: 9 }; // (the stability help: how fast the yaw is brought to the steered one, past what body slip it pulls the car straight, how hard)
 const pac = s => Math.sin(1.3 * Math.atan(2.64 * s)); // (1 at s = 1)
 const torqueAt = rpm => { const C = SPEC.engine.curve; for (let i = 0; i + 1 < C.length; i++) if (rpm <= C[i + 1][0]) return lerp(C[i][1], C[i + 1][1], (rpm - C[i][0]) / (C[i + 1][0] - C[i][0])); return C[C.length - 1][1]; };
 // the tyre: normalised slips (sk = κ/κpeak, sa = tan α/tan αpeak) on one curve, the force split along them
@@ -196,6 +198,7 @@ export async function createCar(world, spawn) {
   const addForce = (f, at) => { F.add(f); T.add(_t.subVectors(at, st.pos).cross(f)); };
   const ground = (x, z) => world.groundAt(x, z) + (world.bumpAt ? world.bumpAt(x, z) : 0);
   const up = new THREE.Vector3(), fwd = new THREE.Vector3(), down = new THREE.Vector3(), anchor = new THREE.Vector3(), wf = new THREE.Vector3(), wl = new THREE.Vector3(), r = new THREE.Vector3(), vp = new THREE.Vector3(), fv = new THREE.Vector3(), pr = { x: 0, y: 0, z: 0 };
+  let hbT = 0;
   function stepPhys(h) {
     const { susp } = SPEC, q = st.q;
     F.set(0, -m * G, 0); T.set(0, 0, 0);
@@ -237,9 +240,9 @@ export async function createCar(world, spawn) {
         wf.copy(fwd).applyAxisAngle(up, steerA); wf.addScaledVector(_n, -_n.dot(wf)).normalize(); wl.crossVectors(_n, wf);
         r.subVectors(w.cp, st.pos); vp.crossVectors(st.ang, r).add(st.vel);
         const vx = vp.dot(wf), vy = vp.dot(wl); w.vx = vx;
-        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1);
+        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) * (w.front ? 1 : 1 - 0.4 * clamp(st.hand, 0, 1)); // (the handbrake: the rear lets go readily)
         const Fz = Math.max(0, w.fs); w.Fz = Fz;
-        const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 1.12));
+        const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 0.95));
         w.slip = tyre(S, mu, Fz, kappa / S.kp, sa, F2); fx = F2[0]; let fy = F2[1];
         if (st.assist && bt > 0 && vx > 2) bt *= clamp(1 - (-kappa / S.kp - 0.9) * 1.6, 0.25, 1);
         tyre(S, mu, Fz, (kappa + 0.002) / S.kp, sa, F3); dfdw = (F3[0] - fx) / 0.002 * w.R / den;
@@ -258,6 +261,15 @@ export async function createCar(world, spawn) {
     const vF = st.vel.dot(fwd), sp = st.vel.length();
     if (sp > 0.1) { addForce(_v.copy(st.vel).multiplyScalar(-0.5 * 1.225 * SPEC.aero.cda * sp), st.pos);
       const dfz = 0.5 * 1.225 * SPEC.aero.cla * vF * vF; addForce(_v.copy(down).multiplyScalar(dfz * SPEC.aero.front), _w.copy(fwd).multiplyScalar(1.25).add(st.pos)); addForce(_v.copy(down).multiplyScalar(dfz * (1 - SPEC.aero.front)), _w.copy(fwd).multiplyScalar(-1.25).add(st.pos)); }
+    // ---- the stability help (an arcade car's): the yaw drawn toward the one the steering asks for (the wheels' own
+    // geometry, as fast as the grip allows), and a slide pulled back past a body slip — eased off for the handbrake, so
+    // it still swings the tail round
+    { const vL = st.vel.dot(fwd), sideV = _v.crossVectors(up, fwd), vLat = st.vel.dot(sideV), spd = Math.abs(vL), on = clamp((spd - 3) / 6, 0, 1) * (wheels.filter(w => w.contact).length >= 3 ? 1 : 0);
+      if (on > 0) { hbT = st.hand > 0.3 ? 1.3 : Math.max(0, hbT - h); const free = 1 - smoothstep(0, 0.6, hbT); // (the handbrake: no help while it swings the car round, then it comes back)
+        const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
+        const lim = 11 / Math.max(spd, 1), want = clamp(vL * Math.tan(d) / wb, -lim, lim), beta = Math.atan2(vLat, spd);
+        let ty = -(yawNow - want) * ASSIST.yaw * free; if (Math.abs(beta) > ASSIST.beta) ty += Math.sign(beta) * (Math.abs(beta) - ASSIST.beta) * ASSIST.k * free;
+        T.addScaledVector(up, ty * Ib.y * on); } }
     // ---- the body against the ground (its corners, its roof) and against the world (its sides)
     for (const [bx, by, bz] of CORNERS) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos), d = world.groundAt(p.x, p.z) - p.y; if (d <= 0) continue;
       r.subVectors(p, st.pos); vp.crossVectors(st.ang, r).add(st.vel); const fn = Math.max(0, 250000 * d - 9000 * vp.y), l = Math.hypot(vp.x, vp.z);
@@ -279,20 +291,24 @@ export async function createCar(world, spawn) {
     // (at rest with nothing pressed, the last creep taken out)
     if (st.vel.lengthSq() < 0.01 && st.ang.lengthSq() < 0.004 && st.throttle < 0.02 && wheels.every(w => w.contact)) { st.vel.multiplyScalar(0.98); st.ang.multiplyScalar(0.98); }
   }
-  // the automatic: up near the limiter, down as the revs fall away
-  function autoBox() {
-    if (!st.auto || st.gear < 2 || st.shiftT > 0 || car.anim.gq !== null || car.anim.gMove) return;
-    car._auto = true;
-    if (st.rpm > 7650 && st.gear < SPEC.gears.length - 1 && st.locked && st.throttle > 0.2) car.shift(1);
-    else if (st.gear > 2) { const rv = Math.abs(st.velLocal.z) / wheels[0].R * SPEC.gears[st.gear] * SPEC.final * 60 / (2 * Math.PI), lower = rv * SPEC.gears[st.gear - 1] / SPEC.gears[st.gear];
-      if (rv < (st.brake > 0.2 ? 4700 : 3400) && lower < SPEC.engine.limiter - 700) car.shift(-1); }
+  // the automatic: up as the car's own speed takes the revs near the limiter (not the revs of wheels spinning at a
+  // launch — that only had it hunting between first and second), down as they fall away; never twice within a moment
+  let autoT = 0;
+  function autoBox(dt) {
+    autoT += dt;
+    if (!st.auto || st.gear < 2 || st.shiftT > 0 || car.anim.gq !== null || car.anim.gMove || autoT < 0.9) return;
+    const rvAt = g => Math.abs(st.velLocal.z) / wheels[0].R * SPEC.gears[g] * SPEC.final * 60 / (2 * Math.PI), rv = rvAt(st.gear);
+    car._auto = true; const g0 = st.gear;
+    if (rv > 7350 && st.gear < SPEC.gears.length - 1 && st.throttle > 0.2) car.shift(1);
+    else if (st.gear > 2 && rv < (st.brake > 0.2 ? 4700 : 3400) && rvAt(st.gear - 1) < SPEC.engine.limiter - 700) car.shift(-1);
+    if (car.anim.gq !== null && car.anim.gq !== g0) autoT = 0;
     car._auto = false;
   }
   let acc = 0;
   car.update = dt => {
     acc += Math.min(dt, 0.05); let n = 0; const h = 1 / 480;
     while (acc >= h && n < 30) { stepPhys(h); acc -= h; n++; }
-    autoBox();
+    autoBox(dt);
     const inv = _m.makeRotationFromQuaternion(st.q).invert(); st.velLocal.copy(st.vel).applyMatrix4(inv); st.angLocalY = _w.copy(st.ang).applyMatrix4(inv).y;
     if (dt > 0) { const a = _v.subVectors(st.vel, st.lastVel).multiplyScalar(1 / dt).applyMatrix4(inv); st.accLocal.lerp(a, 1 - Math.exp(-dt * 7)); }
     st.lastVel.copy(st.vel);
@@ -318,9 +334,9 @@ export async function createCar(world, spawn) {
   // where each hand can hold the rim (its reach: the wheel turns no further than the hands holding it can take it) and
   // past where it lets go for a new hold (toward the top the arm runs out of length: past ~1 o'clock for the right hand,
   // ~11 for the left); a new hold is taken back toward home, further back the faster the wheel is being turned
-  const RANGE = { L: [0.6, 2.5], R: [-2.5, -0.6] }, REGRIP = { L: [0.75, 2.3], R: [-2.3, -0.75] }, FLY = 0.18, WHEEL_W = 8, AHEAD = 0.5;
+  const RANGE = { L: [0.6, 2.5], R: [-2.5, -0.6] }, REGRIP = { L: [0.75, 2.3], R: [-2.3, -0.75] }, FLY = 0.18, WHEEL_W = 14, WHEEL_BACK = 18, AHEAD = 0.5; // (rad/s: turned by the hands; unwinding by itself)
   const pose = () => ({ p: new THREE.Vector3(), q: new THREE.Quaternion() });
-  const hs = { L: { phi: TH0.L, fly: 0, to: TH0.L, from: pose() }, R: { phi: TH0.R, fly: 0, to: TH0.R, from: pose() }, still: 0, w: 0 }; car.handState = hs; car.handLimits = { RANGE, REGRIP };
+  const hs = { L: { phi: TH0.L, fly: 0, to: TH0.L, from: pose(), slide: 0 }, R: { phi: TH0.R, fly: 0, to: TH0.R, from: pose(), slide: 0 }, still: 0, w: 0 }; car.handState = hs; car.handLimits = { RANGE, REGRIP };
   const rad = new THREE.Vector3(), gC = new THREE.Vector3(), gA = new THREE.Vector3(), gS = new THREE.Vector3();
   const rimPose = (side, th, out) => { rimRad(th, rad); gC.copy(steerHub).addScaledVector(rad, steerR); gA.crossVectors(steerAxis, rad).multiplyScalar(thumbSign[side]); return rig.target(side, gC, gA, rimTube, out, side === 'L' ? poleL : poleR); };
   // the gear knob: the lever's top, a short bar the hand closes round, thumb up
@@ -358,12 +374,13 @@ export async function createCar(world, spawn) {
   const onRim = (side, rot, out) => {
     const h = hs[side];
     if (h.fly > 0) { rimPose(side, h.to, PH); awayRim(aw.addVectors(h.from.p, PH.p).multiplyScalar(0.5), aw); return travel(h.from, PH, 1 - h.fly, aw, out, true); }
-    return rimPose(side, h.phi + rot, out), 0;
+    return rimPose(side, h.phi + rot, out), h.slide * 0.3; // (a hold the rim slides through: the fingers a little loose)
   };
-  // the steering wheel turns only as the hands turn it: the hands holding it move with the rim (it never slides through
-  // them), it turns no faster than they can (WHEEL_W) and no further than the holding hands reach; one lets go and takes a
-  // new hold while the other holds (the wheel waits for it if the holding one has run out of reach). Asked for a steer,
-  // gives the steer the hands make. The right hand's errands are timed here too.
+  // the steering wheel and the hands: turned, it goes as fast as hands can turn it (WHEEL_W), and the hands holding it go
+  // with the rim; let go of, it unwinds by itself, faster (the castor turns the wheels back to the straight), sliding
+  // through hands that hold it loosely. A hand at the end of its reach lets the rim slide through it rather than stop it,
+  // and one at a time they let go and take a new hold. Asked for a steer, gives the steer the wheel makes. The right
+  // hand's errands are timed here too.
   const gp = [[0, 0], [0, 0], [0, 0], [0, 0]], gsA = [0, 0], gsB = [0, 0];
   const gateAt = (u, out) => { let L = u * car.anim.gLen; for (let i = 0; i < 3; i++) { const a = gp[i], b = gp[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L <= l || i === 2) { const t = l > 1e-6 ? clamp(L / l, 0, 1) : 1; out[0] = lerp(a[0], b[0], t); out[1] = lerp(a[1], b[1], t); return out; } L -= l; } return out; };
   car.handsSteer = (want, dt) => { const A = car.anim, lock = SPEC.steerLock; let rot = st.steer * lock;
@@ -387,10 +404,11 @@ export async function createCar(world, spawn) {
       if (side === 'R' && (A.reach > 0 || A.at)) { h.fly = 0; h.phi = TH0.R - rot; continue; } // (on its errand: it comes back to its home hold)
       if (h.fly > 0) { h.fly -= dt / FLY; if (h.fly <= 0) { h.fly = 0; h.phi = h.to - rot; } } }
     const grips = side => hs[side].fly === 0 && !(side === 'R' && (A.reach > 0 || A.at));
-    const tgt = want * lock; let lo = rot - WHEEL_W * dt, hi = rot + WHEEL_W * dt;
-    if (!grips('L') && !grips('R')) lo = hi = rot; // (no hand on it: it stays where it is)
-    for (const side of ['L', 'R']) if (grips(side)) { const h = hs[side], [a, b] = RANGE[side]; lo = Math.max(lo, Math.min(a - h.phi, rot)); hi = Math.min(hi, Math.max(b - h.phi, rot)); }
-    const nrot = clamp(tgt, lo, Math.max(lo, hi)), dir = Math.abs(tgt - nrot) > 0.02 ? Math.sign(tgt - nrot) : Math.sign(nrot - rot); rot = nrot;
+    const tgt = want * lock, back = Math.abs(tgt) < Math.abs(rot) && tgt * rot >= 0, wmax = (back ? Math.min(WHEEL_BACK, 6 + st.vel.length() * 0.6) : WHEEL_W) * dt; // (unwinding: the faster the car goes, the harder the castor pulls the wheel back)
+    const nrot = clamp(tgt, rot - wmax, rot + wmax), dir = Math.abs(tgt - nrot) > 0.02 ? Math.sign(tgt - nrot) : Math.sign(nrot - rot); rot = nrot;
+    for (const side of ['L', 'R']) { const h = hs[side]; h.slide *= Math.exp(-dt * 8); if (!grips(side)) continue; const [a, b] = RANGE[side]; // (past its reach the hand stays, the rim slides through it)
+      const d0 = rot - st.steer * lock; if (Math.abs(d0) > WHEEL_W * dt) { h.phi -= d0 - clamp(d0, -WHEEL_W * dt, WHEEL_W * dt); h.slide = 1; } // (unwinding faster than a hand: it slides through)
+      const th2 = h.phi + rot; if (th2 < a || th2 > b) { h.phi = clamp(th2, a, b) - rot; h.slide = 1; } }
     hs.still = Math.abs(tgt - rot) < 0.02 && Math.abs(nrot - st.steer * lock) < 0.002 ? hs.still + dt : 0;
     if (dt > 0) hs.w += (Math.abs(nrot - st.steer * lock) / dt - hs.w) * Math.min(1, dt * 20); // (how fast it is being turned)
     const left = side => { const th = hs[side].phi + rot, [a, b] = RANGE[side]; return dir > 0 ? b - th : dir < 0 ? th - a : Infinity; }; // (how much further a hand can take it)
