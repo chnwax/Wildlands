@@ -111,6 +111,8 @@ function step(dt, t) {
     const wl = world.waterAt(camera.position.x, camera.position.z);
     under = camera.position.y < wl - 0.05 && world.groundAt(camera.position.x, camera.position.z) < wl;
     post.grade.uniforms.uTime.value = t; post.grade.uniforms.uUnder.value = under ? 1 : 0;
+    const cockpit = driving && car.view === 0; // (in the cockpit: its dark trim not tinted blue, and the eye opened to the cabin's light — the windows read brighter)
+    post.grade.uniforms.uLift.value.set(...(cockpit ? [0.006, 0.0065, 0.008] : [0.012, 0.016, 0.035])); if (cockpit) post.exposure.value *= 1.6;
     perf.begin(P_AUDIO);
     ambTimer -= dt;
     if (ambTimer < 0) { ambTimer = 0.4; amb = world.ambience(player.pos.x, player.pos.z); }

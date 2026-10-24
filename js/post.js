@@ -301,10 +301,10 @@ class DepthGTAOPass extends GTAOPass {
 }
 
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uUnder: { value: 0 }, uTexel: { value: new THREE.Vector2(1e-3, 1e-3) }, uSharp: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uUnder: { value: 0 }, uTexel: { value: new THREE.Vector2(1e-3, 1e-3) }, uSharp: { value: 0 }, uLift: { value: new THREE.Vector3(0.012, 0.016, 0.035) } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse; uniform float uTime, uUnder, uSharp; uniform vec2 uTexel; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uTime, uUnder, uSharp; uniform vec2 uTexel; uniform vec3 uLift; varying vec2 vUv;
     void main(){
       vec2 uv = vUv;
       if (uUnder > 0.5) uv += vec2(sin(uv.y * 24.0 + uTime * 2.0), cos(uv.x * 20.0 + uTime * 1.7)) * 0.003;
@@ -316,11 +316,12 @@ const GradeShader = {
         vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0)), wt = -amp * uSharp;
         c.rgb = clamp((c.rgb + (n + s + e + w) * wt) / (1.0 + 4.0 * wt), 0.0, 1.0);
       }
-      // anime grade: vivid but soft — saturation up, a gentle S-curve, lifted cool shadows, warm highlights
+      // anime grade: vivid but soft — saturation up, a gentle S-curve, lifted cool shadows (uLift: out in the open; a
+      // cabin's own dark trim is lifted barely, and grey), warm highlights
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb = mix(vec3(l), c.rgb, 1.16);
       c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), 0.12);
-      c.rgb += vec3(0.012, 0.016, 0.035) * (1.0 - l);
+      c.rgb += uLift * (1.0 - l);
       c.rgb *= mix(vec3(1.0), vec3(1.03, 1.01, 0.97), smoothstep(0.5, 1.0, l));
       if (uUnder > 0.5) c.rgb = mix(c.rgb, vec3(0.05, 0.35, 0.42), 0.5) * vec3(0.7, 1.0, 1.05);
       vec2 d = vUv - 0.5; c.rgb *= 1.0 - dot(d, d) * 0.32;

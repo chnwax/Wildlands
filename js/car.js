@@ -1,27 +1,28 @@
 // A car you drive: the WRC Hyundai i20 (2017) — an Assetto Corsa export, its wheels (WHEEL_xx), brake calipers
-// (SUSP_xx), steering wheel (STEER_HR), shift paddle and hydraulic handbrake their own nodes, rigged here — under a
+// (SUSP_xx), steering wheel (STEER_HR) and hydraulic handbrake their own nodes, rigged here (its sequential paddle
+// swapped for an H-gate gear lever on the tunnel) — under a
 // small real-time vehicle simulation, stepped at 480 Hz:
 //  - a rigid body (mass, inertia) on four ray-cast wheels: springs, bump and rebound damping, bump stops, anti-roll bars;
 //    the ground's own roughness (corrugations, potholes) felt through them
 //  - tyres: longitudinal slip and slip angle combined on a friction ellipse through a Pacejka-like curve (a peak, then a
 //    sliding plateau), grip by surface (gravel, loose edges, grass); each wheel's spin integrated implicitly in the
 //    tyre's own stiffness, so a free wheel on a stiff tyre stays stable
-//  - an engine with a torque curve, idle, a rev limiter and engine braking; a six-speed sequential gearbox (automatic, or
-//    manual as soon as you shift yourself) with an ignition cut while it shifts; an automatic clutch for pulling away
+//  - an engine with a torque curve, idle, a rev limiter and engine braking; a six-speed H-gate gearbox (automatic, or
+//    manual as soon as you shift yourself), the drive let go while the lever crosses the gate; an automatic clutch
 //  - four-wheel drive with limited-slip coupling across each axle and between them; the handbrake locks the rear wheels
 //    and opens the rear of the drivetrain, as a rally car's hydraulic handbrake does
 //  - brakes with a front bias, rolling resistance, drag and downforce; the body's corners against the ground and its
 //    sides against the world's colliders (trees, bales, posts)
 // The cockpit camera sits at the driver's eyes and moves as a head does: leaning against the lateral and longitudinal g,
 // shaken by the bumps, keeping a little of the horizon, glancing toward the corner as you steer; free look with the
-// mouse. The driver's arms (a skinned rig with fingers, posed by IK) hold the rim at any angle: they turn with it, let it
-// slide through the grip past a comfortable reach and shuffle along it one hand at a time; a shift is a flick of the
-// fingers at the paddle behind the rim (the right hand up, the left down), and the right hand goes to the handbrake
-// beside the wheel while it is pulled, the handbrake moving with it. The dash's
-// shift lights count up the revs, the brake lights glow. C: cockpit / chase / bonnet view.
+// mouse. The driver's arms (a skinned rig with fingers, posed by IK) hold the rim at any angle: the wheel turns only as
+// they turn it, and they shuffle along it one hand at a time; for a shift the right hand takes the gear lever and moves
+// it through the gate (the gear goes in as the knob reaches its slot), and it goes to the handbrake beside the wheel
+// while that is pulled, the handbrake moving with it. The cabin is lit by what its windows let in (see cabinLight). The
+// dash's shift lights count up the revs, the brake lights glow. C: cockpit / chase / bonnet view.
 // Models: WRC Hyundai i20 2017 by vecarz (CC BY-NC-SA 4.0), First Person Arms by DJMaesen (CC BY 4.0); kept in
 // Modeleaut/ next to the game (not in the repository).
-import { THREE, scene, gltfLoader, collide, colInsert, colRemove, clamp, lerp } from './core.js';
+import { THREE, scene, renderer, gltfLoader, collide, colInsert, colRemove, clamp, lerp, smoothstep } from './core.js';
 import { audio } from './audio.js';
 import { toastMsg } from './ui.js';
 
@@ -58,13 +59,13 @@ export async function createCar(world, spawn) {
   const boxOf = o => new THREE.Box3().setFromObject(o);
   const vertsOf = (o, every = 1) => { const pts = []; o.updateMatrixWorld(true); o.traverse(m => { if (!m.isMesh) return; const pa = m.geometry.attributes.position; for (let i = 0; i < pa.count; i += every) pts.push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(m.matrixWorld)); }); return pts; };
   model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && m.map) m.map.anisotropy = 8; } });
-  // (the paddle and the handbrake: their foot and their grip from their own vertices. The steering wheel: its rim found
+  // (the handbrake: its foot and its grip from its own vertices. The steering wheel: its rim found
   // from its own vertices — the outer ring, in 24 sectors, each sector's centroid a point on the rim's centre line — and
   // the circle through those points gives the hub, the axis the wheel turns about, the rim's radius and its thickness)
   const steerNode = find('STEER_HR'), shiftNode = find('shift_paddle'), handNode = find('handbrake');
   const ends = node => { if (!node) return null; const pts = vertsOf(node), b = boxOf(node), lo = new THREE.Vector3(), hi = new THREE.Vector3(); let nl = 0, nh = 0;
     for (const p of pts) { if (p.y < b.min.y + 0.03) { lo.add(p); nl++; } if (p.y > b.max.y - 0.04) { hi.add(p); nh++; } } return nl && nh ? { base: lo.multiplyScalar(1 / nl), top: hi.multiplyScalar(1 / nh) } : null; };
-  const lever = ends(shiftNode), hbL = ends(handNode);
+  const hbL = ends(handNode);
   let steerAxis = new THREE.Vector3(0, -0.33, 0.94).normalize(), steerHub = new THREE.Vector3(0.35, 0.77, 0.17), steerR = 0.17, rimTube = 0.017;
   const flattest = (pts, c) => { let best = null, bv = Infinity; const d = new THREE.Vector3(); // (the direction the points spread least along)
     for (let i = 0; i < 2000; i++) { const t = Math.acos(1 - 2 * (i + 0.5) / 2000), p = Math.PI * (1 + Math.sqrt(5)) * i; d.set(Math.sin(t) * Math.cos(p), Math.cos(t), Math.sin(t) * Math.sin(p)); if (d.z < 0) continue;
@@ -103,7 +104,27 @@ export async function createCar(world, spawn) {
     return { id, front: id[1] === 'F', travel, spin, hubModel: hub.clone(), R: (bb.max.y - bb.min.y) / 2, hub: new THREE.Vector3(hub.x - SPEC.cg[0], hub.y - SPEC.cg[1], hub.z - SPEC.cg[2]),
       w: 0, angle: 0, c: 0, cv: 0, s: S0, Fz: 0, fs: 0, slip: 0, contact: false, surf: 'gravel', cp: new THREE.Vector3(), vx: 0, Td: 0, I: 1, rr: 0 };
   });
-  const steerPivot = steerNode ? pivotAt(steerNode, steerHub) : null, shiftPivot = lever ? pivotAt(shiftNode, lever.base) : null, hbPivot = hbL ? pivotAt(handNode, hbL.base) : null;
+  const steerPivot = steerNode ? pivotAt(steerNode, steerHub) : null, hbPivot = hbL ? pivotAt(handNode, hbL.base) : null;
+  // ---- the gear lever: an H-gate six-speed on the tunnel by the driver's right knee, in place of the sequential paddle
+  // behind the wheel. Each gear a place of the knob: across the gate (toward the driver: R, 1-2, 3-4, 5-6) and along it
+  // (forward: R, 1, 3, 5; back: 2, 4, 6); neutral in the middle of the 3-4 lane
+  if (shiftNode) shiftNode.visible = false;
+  const GL = (() => { const at = (x, z) => { const cock = find('COCKPIT_HR'), o = model.localToWorld(new THREE.Vector3(x, 0.6, z)), rc = new THREE.Raycaster(o, model.localToWorld(new THREE.Vector3(x, 0, z)).sub(o).normalize(), 0, 1.2);
+      const h = cock ? rc.intersectObject(cock, true)[0] : null; return h ? model.worldToLocal(h.point.clone()).y : 0.39; };
+    const base = new THREE.Vector3(0.03, at(0.03, 0.08), 0.08), len = 0.31, d0 = new THREE.Vector3(0.05, 0.3, 0.03).normalize(), R = 0.019;
+    const g = new THREE.Group(); g.name = 'gearLever'; g.position.copy(base); model.add(g);
+    const metal = new THREE.MeshStandardMaterial({ color: 0xc4c8ce, metalness: 0.9, roughness: 0.28 }), leather = new THREE.MeshStandardMaterial({ color: 0x18181a, metalness: 0, roughness: 0.62 });
+    const red = new THREE.MeshStandardMaterial({ color: 0xc8241c, metalness: 0.2, roughness: 0.45 }), boot = new THREE.MeshStandardMaterial({ color: 0x111112, metalness: 0, roughness: 0.92 });
+    const stick = new THREE.Group(); g.add(stick); stick.quaternion.setFromUnitVectors(UP, d0); // (the lever: up its own y)
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0095, len - 0.04, 14), metal); rod.position.y = (len - 0.04) / 2; stick.add(rod);
+    const knob = new THREE.Mesh(new THREE.CapsuleGeometry(R, 0.042, 6, 20), leather); knob.position.y = len - 0.03; stick.add(knob);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.0005, 0.0022, 8, 28), red); ring.rotation.x = Math.PI / 2; ring.position.y = len - 0.008; stick.add(ring);
+    const gaiter = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.05, 0.07, 18, 1, true), boot); gaiter.position.y = 0.03; g.add(gaiter);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.008, 0.16), metal); plate.position.y = 0.002; g.add(plate);
+    for (const o of [rod, knob, ring, gaiter, plate]) { o.castShadow = true; o.receiveShadow = true; }
+    return { g, stick, base, len, d0, R, top0: base.clone().addScaledVector(d0, len) };
+  })();
+  const slotOf = (gr, out) => { out[0] = gr === 0 ? 0.09 : gr === 1 ? 0 : gr < 4 ? 0.045 : gr < 6 ? 0 : -0.045; out[1] = gr === 1 ? 0 : gr % 2 === 0 ? 0.055 : -0.055; return out; };
   // the dash's shift lights and the brake lights (each its own material, so each lights alone)
   const glow = (node, color) => { const ms = []; if (node) node.traverse(o => { if (!o.isMesh) return; o.material = o.material.clone(); o.material.emissive = new THREE.Color(color); o.material.emissiveIntensity = 0; ms.push(o.material); }); return ms; };
   const leds = []; for (let i = 0; i < 21; i++) { const n = find('LED_' + i + '_'); if (n) leds.push(glow(n, i < 7 ? 0x30ff40 : i < 14 ? 0xff2a1a : 0x3a6bff)); }
@@ -112,16 +133,18 @@ export async function createCar(world, spawn) {
   const driver = new THREE.Group(); driver.name = 'driver'; model.add(driver);
   const eye = new THREE.Vector3(steerHub.x, steerHub.y + 0.33, steerHub.z - 0.53); // (the driver's eyes)
   const rig = ag ? armsRig(ag.scene, driver, eye.clone().add(new THREE.Vector3(0, -0.237, -0.09)), 0.0118) : null;
+  cabinLight(model, driver, ag && ag.scene);
   // ---- physics state
   const m = SPEC.mass, [W, H, L] = SPEC.dims, Ib = new THREE.Vector3(m / 12 * (H * H + L * L), m / 12 * (W * W + L * L) * 0.9, m / 12 * (W * W + H * H)); // (pitch, yaw, roll)
   const st = { pos: new THREE.Vector3(), q: new THREE.Quaternion(), vel: new THREE.Vector3(), ang: new THREE.Vector3(),
     steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, gear: 2, rpm: SPEC.engine.idle, shiftT: 0, auto: true, revT: 0, locked: false,
     accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
   const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC,
-    look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0 }, anim: { shift: 0, dir: 0, hb: 0, reach: 0, to: null } };
+    look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0 }, anim: { hb: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
+  car.gearLever = GL;
   // (a box for the walker to bump into while the car stands; out of the car's own way)
   const col = { t: 1, x: 0, z: 0, hx: 0.95, hz: 2.05, c: 1, s: 0, y0: -1e9, y1: 1e9 }; let colIn = false;
-  const place = (x, z, yaw) => { st.pos.set(x, world.groundAt(x, z) + SPEC.cg[1] + 0.01, z); st.q.setFromAxisAngle(UP, yaw); st.vel.set(0, 0, 0); st.ang.set(0, 0, 0); for (const w of wheels) { w.w = 0; w.c = SPEC.susp.rest - S0; } st.gear = 2; st.rpm = SPEC.engine.idle; };
+  const place = (x, z, yaw) => { st.pos.set(x, world.groundAt(x, z) + SPEC.cg[1] + 0.01, z); st.q.setFromAxisAngle(UP, yaw); st.vel.set(0, 0, 0); st.ang.set(0, 0, 0); for (const w of wheels) { w.w = 0; w.c = SPEC.susp.rest - S0; } st.gear = 2; st.rpm = SPEC.engine.idle; Object.assign(car.anim, { gq: null, slot: 2, gMove: 0 }); };
   place(spawn.x, spawn.z, spawn.yaw);
 
   // ---------------------------------------------------------------- controls: keyboard, mouse buttons, a gamepad
@@ -148,15 +171,17 @@ export async function createCar(world, spawn) {
     st.steer = car.handsSteer(clamp(lerp(st.steerIn, (betaF + st.steerIn * 0.19) / SPEC.steerMax, k), -1, 1), dt); // (as fast and as far as the driver's hands turn the wheel)
     st.assist = !analog; // (keys cannot ease a brake off: the brakes keep the wheels from locking for them)
     // (in reverse, S drives and W brakes; the automatic engages reverse after a moment of S at a standstill)
-    if (st.auto) { if (st.gear >= 1 && Math.abs(v) < 1.2 && brk > 0.5 && thr < 0.1) { st.revT += dt; if (st.revT > 0.35) { st.gear = 0; st.revT = 0; } }
-      else if (st.gear === 0 && v > -0.5 && thr > 0.5 && brk < 0.1) { st.revT += dt; if (st.revT > 0.2) { st.gear = 2; st.revT = 0; } } else st.revT = 0; }
+    if (st.auto) { if (st.gear >= 1 && Math.abs(v) < 1.2 && brk > 0.5 && thr < 0.1) { st.revT += dt; if (st.revT > 0.35) { car.selectGear(0); st.revT = 0; } }
+      else if (st.gear === 0 && v > -0.5 && thr > 0.5 && brk < 0.1) { st.revT += dt; if (st.revT > 0.2) { car.selectGear(2); st.revT = 0; } } else st.revT = 0; }
     let t = thr, b = brk; if (st.gear === 0) { t = brk; b = thr; }
     const ramp = (x, y, up, down) => x + clamp(y - x, -down * dt, up * dt);
     st.throttle = analog ? t : ramp(st.throttle, t, 6, 10); st.brake = analog ? b : ramp(st.brake, b, 6, 10); st.hand = ramp(st.hand, hb, 10, 6);
   };
+  // a gear chosen: the right hand takes the lever there (handsSteer), and the gear is in when the knob is in its slot
+  const chosen = () => { const A = car.anim; return A.gq !== null ? A.gq : A.gMove ? A.gTo : A.slot; };
+  car.selectGear = g1 => { if (g1 === chosen() || (g1 === 0 && st.velLocal.z > 1.5)) return false; car.anim.gq = g1; return true; };
   car.shift = d => { if (!car.driving) return; if (st.auto && !car._auto) { st.auto = false; toastMsg('Manual gearbox — X: automatic'); }
-    const g1 = clamp(st.gear + d, 0, SPEC.gears.length - 1); if (g1 === st.gear || (g1 === 0 && st.velLocal.z > 1.5)) return;
-    st.gear = g1; st.shiftT = SPEC.shiftTime; car.anim.shift = 1; car.anim.dir = d; sound.click(d); };
+    car.selectGear(clamp(chosen() + d, 0, SPEC.gears.length - 1)); };
   car.toggleAuto = () => { st.auto = !st.auto; toastMsg(st.auto ? 'Automatic gearbox' : 'Manual gearbox: E / Shift up, Q down (or the mouse buttons)'); };
   car.reset = () => { const f = _v.set(0, 0, 1).applyQuaternion(st.q); place(st.pos.x, st.pos.z, Math.atan2(f.x, f.z)); toastMsg('Car reset'); };
   car.cycleView = () => { car.view = (car.view + 1) % 3; toastMsg(['Cockpit', 'Chase camera', 'Bonnet camera'][car.view]); };
@@ -256,7 +281,7 @@ export async function createCar(world, spawn) {
   }
   // the automatic: up near the limiter, down as the revs fall away
   function autoBox() {
-    if (!st.auto || st.gear < 2 || st.shiftT > 0) return;
+    if (!st.auto || st.gear < 2 || st.shiftT > 0 || car.anim.gq !== null || car.anim.gMove) return;
     car._auto = true;
     if (st.rpm > 7650 && st.gear < SPEC.gears.length - 1 && st.locked && st.throttle > 0.2) car.shift(1);
     else if (st.gear > 2) { const rv = Math.abs(st.velLocal.z) / wheels[0].R * SPEC.gears[st.gear] * SPEC.final * 60 / (2 * Math.PI), lower = rv * SPEC.gears[st.gear - 1] / SPEC.gears[st.gear];
@@ -298,17 +323,22 @@ export async function createCar(world, spawn) {
   const hs = { L: { phi: TH0.L, fly: 0, to: TH0.L, from: pose() }, R: { phi: TH0.R, fly: 0, to: TH0.R, from: pose() }, still: 0, w: 0 }; car.handState = hs; car.handLimits = { RANGE, REGRIP };
   const rad = new THREE.Vector3(), gC = new THREE.Vector3(), gA = new THREE.Vector3(), gS = new THREE.Vector3();
   const rimPose = (side, th, out) => { rimRad(th, rad); gC.copy(steerHub).addScaledVector(rad, steerR); gA.crossVectors(steerAxis, rad).multiplyScalar(thumbSign[side]); return rig.target(side, gC, gA, rimTube, out, side === 'L' ? poleL : poleR); };
+  // the gear knob: the lever's top, a short bar the hand closes round, thumb up
+  const kTop = new THREE.Vector3(), kBot = new THREE.Vector3(), kDir = new THREE.Vector3(), kC = new THREE.Vector3(), poleGear = new THREE.Vector3(-1, -0.6, -0.5);
+  const knobPose = out => { kC.copy(kTop).addScaledVector(kDir, -0.026); return rig.target('R', kC, kDir, GL.R, out, poleGear); };
   const leverPose = (Lv, ang, out) => { const top = Lv.top.clone().sub(Lv.base).applyAxisAngle(XAX, ang).add(Lv.base), A = top.clone().sub(Lv.base).normalize(); hbTop.copy(top); hbBase.copy(Lv.base); return rig.target('R', top.addScaledVector(A, -0.04), A, HB_R, out, poleHb); };
   const poleL = new THREE.Vector3(1, -1, -0.35), poleR = new THREE.Vector3(-1, -1, -0.35), poleHb = new THREE.Vector3(-1, -0.2, -0.6), pole = new THREE.Vector3();
   const P0 = pose(), P1 = pose(), P2 = pose(), lift = new THREE.Vector3();
   // what the fingers close round: the rim (a torus) and the handbrake's rod (a segment)
-  const HB_R = 0.015; if (rig) rig.prepare([rimTube, HB_R]); // (the grips worked out for the rim and the handbrake's rod)
+  const HB_R = 0.015; if (rig) rig.prepare([rimTube, HB_R, GL.R]); // (the grips worked out for the rim, the handbrake's rod and the gear knob)
   car.cockpit.hbRod = () => ({ top: hbL.top.clone().sub(hbL.base).applyAxisAngle(XAX, car.anim.hbVis || 0).add(hbL.base), base: hbL.base.clone(), r: HB_R }); // (the lever as drawn)
   const hbTop = new THREE.Vector3(), hbBase = new THREE.Vector3(), bv = new THREE.Vector3(), bw = new THREE.Vector3();
   const bc = new THREE.Vector3(), bt = new THREE.Vector3(), b1 = new THREE.Vector3(), b2 = new THREE.Vector3();
   const rimBar = { tube: rimTube, dist: p => { bv.subVectors(p, steerHub); const a = bv.dot(steerAxis); bv.addScaledVector(steerAxis, -a); return Math.hypot(bv.length() - steerR, a); },
     near: (p, oc, od) => { bv.subVectors(p, steerHub).projectOnPlane(steerAxis).normalize(); oc.copy(steerHub).addScaledVector(bv, steerR); od.crossVectors(steerAxis, bv); } };
   if (rig) rig.rimBar = rimBar;
+  const knobBar = { tube: GL.R, dist: p => { bw.subVectors(kTop, kBot); const t = clamp(bv.subVectors(p, kBot).dot(bw) / bw.lengthSq(), 0, 1); return bv.copy(kBot).addScaledVector(bw, t).distanceTo(p); },
+    near: (p, oc, od) => { od.subVectors(kTop, kBot); const t = clamp(bv.subVectors(p, kBot).dot(od) / od.lengthSq(), 0, 1); oc.copy(kBot).addScaledVector(od, t); od.normalize(); } };
   const hbBar = { tube: HB_R, dist: p => { bw.subVectors(hbTop, hbBase); const t = clamp(bv.subVectors(p, hbBase).dot(bw) / bw.lengthSq(), 0, 1); return bv.copy(hbBase).addScaledVector(bw, t).distanceTo(p); },
     near: (p, oc, od) => { od.subVectors(hbTop, hbBase); const t = clamp(bv.subVectors(p, hbBase).dot(od) / od.lengthSq(), 0, 1); oc.copy(hbBase).addScaledVector(od, t); od.normalize(); } };
   // a hand's way from one hold to another: it opens and lifts off first, travels clear of the bar, and closes again on
@@ -333,14 +363,30 @@ export async function createCar(world, spawn) {
   // the steering wheel turns only as the hands turn it: the hands holding it move with the rim (it never slides through
   // them), it turns no faster than they can (WHEEL_W) and no further than the holding hands reach; one lets go and takes a
   // new hold while the other holds (the wheel waits for it if the holding one has run out of reach). Asked for a steer,
-  // gives the steer the hands make. The right hand's errand to the handbrake is timed here too.
+  // gives the steer the hands make. The right hand's errands are timed here too.
+  const gp = [[0, 0], [0, 0], [0, 0], [0, 0]], gsA = [0, 0], gsB = [0, 0];
+  const gateAt = (u, out) => { let L = u * car.anim.gLen; for (let i = 0; i < 3; i++) { const a = gp[i], b = gp[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L <= l || i === 2) { const t = l > 1e-6 ? clamp(L / l, 0, 1) : 1; out[0] = lerp(a[0], b[0], t); out[1] = lerp(a[1], b[1], t); return out; } L -= l; } return out; };
   car.handsSteer = (want, dt) => { const A = car.anim, lock = SPEC.steerLock; let rot = st.steer * lock;
-    if (!car.driving) { A.reach = 0; for (const side of ['L', 'R']) { const h = hs[side]; h.fly = 0; h.phi = TH0[side] - want * lock; } return want; }
-    A.reach = clamp(A.reach + (st.hand > 0.08 && hbL ? 1 : -1) * dt / 0.3, 0, 1);
+    if (!car.driving) { A.reach = 0; A.at = A.want = null; A.gMove = 0; A.gq = null; A.slot = st.gear; slotOf(A.slot, A.knob); for (const side of ['L', 'R']) { const h = hs[side]; h.fly = 0; h.phi = TH0[side] - want * lock; } return want; }
+    // the right hand's errands: to the gear lever while a gear is to be put in (a gear on its way in is seen through
+    // first), to the handbrake while it is pulled. A.at: the errand it is on, or coming back from; A.reach: 0 on the rim
+    // .. 1 there. Turned to another errand on the way, it goes on from where it is
+    const job = A.gMove ? 'gear' : st.hand > 0.08 && hbL ? 'hb' : A.gq !== null || A.linger > 0 ? 'gear' : null; A.want = job;
+    if (job && job !== A.at) { if (A.reach > 0) A.snap = true; A.reach = 0; A.at = job; }
+    A.reach = clamp(A.reach + (job ? 1 : -1) * dt / (A.at === 'hb' ? 0.3 : job ? 0.15 : 0.17), 0, 1); if (A.reach === 0 && !job) A.at = null;
+    // the lever: through the gate from the gear it is in to the one chosen, by neutral (the engine's drive let go while it
+    // moves); the gear is in as the knob comes into its slot
+    if (A.at === 'gear' && A.reach >= 1) {
+      if (!A.gMove && A.gq !== null) { if (A.gq !== A.slot) { slotOf(A.slot, gsA); slotOf(A.gq, gsB); gp[0] = [gsA[0], gsA[1]]; gp[1] = [gsA[0], 0]; gp[2] = [gsB[0], 0]; gp[3] = [gsB[0], gsB[1]];
+          A.gLen = Math.abs(gsA[1]) + Math.abs(gsA[0] - gsB[0]) + Math.abs(gsB[1]); A.gFrom = A.slot; A.gTo = A.gq; A.gMove = 1e-4; st.gear = 1; } A.gq = null; }
+      if (A.gMove) { const dur = 0.05 + A.gLen / 1.1; A.gMove = Math.min(1, A.gMove + dt / dur); st.shiftT = Math.max(st.shiftT, (1 - A.gMove) * dur + 0.03); gateAt(sm(A.gMove), A.knob);
+        if (A.gMove >= 1) { A.gMove = 0; A.slot = A.gTo; st.gear = A.gTo; slotOf(A.slot, A.knob); A.linger = 0.2; sound.click(A.gTo > A.gFrom ? 1 : -1); } }
+      else if (A.linger > 0) A.linger = Math.max(0, A.linger - dt); }
+    else if (!A.gMove) slotOf(A.slot, A.knob);
     for (const side of ['L', 'R']) { const h = hs[side];
-      if (side === 'R' && A.reach > 0) { h.fly = 0; h.phi = TH0.R - rot; continue; } // (on its errand: it comes back to its home hold)
+      if (side === 'R' && (A.reach > 0 || A.at)) { h.fly = 0; h.phi = TH0.R - rot; continue; } // (on its errand: it comes back to its home hold)
       if (h.fly > 0) { h.fly -= dt / FLY; if (h.fly <= 0) { h.fly = 0; h.phi = h.to - rot; } } }
-    const grips = side => hs[side].fly === 0 && !(side === 'R' && A.reach > 0);
+    const grips = side => hs[side].fly === 0 && !(side === 'R' && (A.reach > 0 || A.at));
     const tgt = want * lock; let lo = rot - WHEEL_W * dt, hi = rot + WHEEL_W * dt;
     if (!grips('L') && !grips('R')) lo = hi = rot; // (no hand on it: it stays where it is)
     for (const side of ['L', 'R']) if (grips(side)) { const h = hs[side], [a, b] = RANGE[side]; lo = Math.max(lo, Math.min(a - h.phi, rot)); hi = Math.min(hi, Math.max(b - h.phi, rot)); }
@@ -360,42 +406,44 @@ export async function createCar(world, spawn) {
       h.to = go && dir ? clamp(TH0[side] - dir * AHEAD, ra + 0.05, rb - 0.05) : TH0[side];
       if (rig) rimPose(side, th, h.from); h.fly = 1; hs.still = 0; break; }
     return rot / lock; };
-  const awayHb = new THREE.Vector3(), awayR = new THREE.Vector3(), RF = pose(), hbMid = steerAxis.clone().multiplyScalar(-0.13).addScaledVector(UP, 0.03);
+  const awayHb = new THREE.Vector3(), awayR = new THREE.Vector3(), awayKnob = new THREE.Vector3(), RF = pose(), hbMid = steerAxis.clone().multiplyScalar(-0.13).addScaledVector(UP, 0.03);
   function animate(dt) {
     const A = car.anim, rot = st.steer * SPEC.steerLock;
     if (steerPivot) steerPivot.quaternion.setFromAxisAngle(steerAxis, -rot);
-    // a shift: the fingers of one hand leave the rim for the paddle behind it, pull, and close round the rim again
-    if (A.shift > 0) A.shift = Math.max(0, A.shift - dt / 0.28);
-    const fl = A.shift > 0 ? Math.sin(clamp((1 - A.shift) / 0.75, 0, 1) * Math.PI) : 0, flR = A.dir > 0 ? fl : 0, flL = A.dir < 0 ? fl : 0;
-    if (shiftPivot) shiftPivot.quaternion.setFromAxisAngle(XAX, -0.1 * Math.max(0, Math.sin(clamp((1 - A.shift) / 0.75 - 0.2, 0, 1) * Math.PI)) * (A.dir > 0 ? 1 : 0));
+    // the gear lever where the knob is in the gate (it turns about its foot)
+    kTop.copy(GL.top0); kTop.x += A.knob[0]; kTop.z += A.knob[1]; kDir.subVectors(kTop, GL.base).normalize(); kTop.copy(GL.base).addScaledVector(kDir, GL.len); kBot.copy(kTop).addScaledVector(kDir, -0.06);
+    GL.stick.quaternion.setFromUnitVectors(UP, kDir);
     // the handbrake: worked by the driver's hand in the cockpit — it is pulled as the hand closes on it (its rest place
     // is beyond a seated arm's reach) and let go of as the hand opens; otherwise it follows the brake itself
     A.hb = lerp(A.hb, st.hand, 1 - Math.exp(-dt * 18));
-    const HB_PULL = -0.32, handOn = !!rig && car.driving && car.view === 0 && !!hbL, hbA = HB_PULL * (handOn ? sm(clamp((A.reach - 0.15) / 0.35, 0, 1)) : A.hb);
+    const HB_PULL = -0.32, handOn = !!rig && car.driving && car.view === 0 && !!hbL, hbA = HB_PULL * (handOn ? (A.at === 'hb' ? sm(clamp((A.reach - 0.15) / 0.35, 0, 1)) : 0) : A.hb);
     if (hbPivot) hbPivot.quaternion.setFromAxisAngle(XAX, hbA); A.hbVis = hbA;
     // the shift lights and the brake lights
     const lit = Math.round(clamp((st.rpm - 5600) / (SPEC.engine.limiter - 5600), 0, 1) * leds.length), blink = st.rpm > SPEC.engine.limiter - 250 && (performance.now() % 140 < 70);
     leds.forEach((ms, i) => { const v = blink ? 3 : i < lit ? 2.5 : 0; for (const mm of ms) mm.emissiveIntensity = v; });
     for (const mm of brakeLights) mm.emissiveIntensity = car.driving && st.brake > 0.05 ? 3 : 0;
     driver.visible = !!rig && car.driving && car.view === 0; if (!driver.visible) return;
-    // the right hand's errand: to the handbrake while it is pulled (timed with the steering, in handsSteer); it leaves
-    // from where it held, and comes back to its home hold
-    const want = st.hand > 0.08 && hbL ? 'hb' : null; if (want) A.to = want;
+    // the right hand's errands (timed with the steering, in handsSteer): it leaves from where it held — or, turned to
+    // another errand on its way, from where it is — and comes back to its home hold
     const hR = hs.R;
-    if (A.reach > 0) { if (!hR.away) onRim('R', rot, RF); hR.away = true;
-      if (!want) { rimPose('R', TH0.R, PH); const e = 1 - Math.exp(-dt * 8); RF.p.lerp(PH.p, e); RF.q.slerp(PH.q, e); } }
+    if (A.reach > 0) { if (!hR.away || A.snap) { if (P1.p.lengthSq() > 0) { RF.p.copy(P1.p); RF.q.copy(P1.q); } else onRim('R', rot, RF); } A.snap = false; hR.away = true; // (from where it was last: on the rim, or on its way to a new hold)
+      if (!A.want) { rimPose('R', TH0.R, PH); const e = 1 - Math.exp(-dt * 30); RF.p.lerp(PH.p, e); RF.q.slerp(PH.q, e); } }
     else hR.away = false;
     const cL = onRim('L', rot, P0), cR = A.reach > 0 ? 0 : onRim('R', rot, P1);
     let openR = cR, barR = rimBar;
-    if (A.reach > 0) { // (off the rim, out round it, to the handbrake beside the wheel)
+    if (A.reach > 0 && A.at === 'hb') { // (off the rim, out round it, to the handbrake beside the wheel)
       leverPose(hbL, HB_PULL, P2); // (where it is held: pulled)
       awayHb.copy(rig.S.R.dbg.N).multiplyScalar(-0.07).addScaledVector(steerAxis, -0.03); awayRim(RF.p, awayR); // (in to the handbrake from the palm's side ...)
       const k = A.reach; openR = travel(RF, P2, k, awayR, P1, false, awayHb, hbMid); barR = k < 0.5 ? rimBar : hbBar; // (... round behind its rod)
       pole.copy(poleR).lerp(poleHb, sm(clamp((k - 0.2) / 0.58, 0, 1)));
+    } else if (A.reach > 0) { // (off the rim, down to the knob from above, the knob moved through the gate in the hand)
+      knobPose(P2); awayRim(RF.p, awayR); awayKnob.copy(kDir).multiplyScalar(0.05);
+      const k = A.reach; openR = travel(RF, P2, k, awayR, P1, false, awayKnob); barR = k < 0.5 ? rimBar : knobBar;
+      pole.copy(poleR).lerp(poleGear, sm(clamp((k - 0.2) / 0.58, 0, 1)));
     } else pole.copy(poleR);
     rig.frame++;
-    rig.solve('L', P0.p, P0.q, cL, poleL, flL, rimBar, dt);
-    rig.solve('R', P1.p, P1.q, openR, pole, flR * (1 - A.reach), barR, dt);
+    rig.solve('L', P0.p, P0.q, cL, poleL, 0, rimBar, dt);
+    rig.solve('R', P1.p, P1.q, openR, pole, 0, barR, dt);
   }
 
   // the arms' debug overlay (car.debugArms(true)): each arm bone's own axes (x red, y green, z blue), the joints, the
@@ -469,6 +517,89 @@ const CORNERS = [];
 for (const x of [-0.88, 0.88]) for (const z of [-1.92, 1.98]) for (const y of [-0.32, 0.88]) CORNERS.push([x, y, z]);
 CORNERS.push([0, 1.28, -0.3], [0.62, 1.2, -0.3], [-0.62, 1.2, -0.3], [0.9, 0.55, 0], [-0.9, 0.55, 0]);
 const SIDES = [[0.92, 0, 1.9], [-0.92, 0, 1.9], [0.95, 0, 0.65], [-0.95, 0, 0.65], [0.95, 0, -0.65], [-0.95, 0, -0.65], [0.92, 0, -1.85], [-0.92, 0, -1.85], [0, 0, 2.1], [0.5, 0, 2.05], [-0.5, 0, 2.05], [0, 0, -2.0], [0.5, 0, -1.98], [-0.5, 0, -1.98]];
+
+// ---------------------------------------------------------------- the cabin's light
+// A closed cabin is lit by what comes in through its windows: without that, the sky's light reaches every surface inside
+// as if it stood in the open, and the dark trim all reads as one flat, sky-tinted shade. So the car's own occlusion is
+// baked once, per vertex: the model's depth seen from 48 directions (its nearest surface kept by a max blend into a
+// half-float target), each vertex lit by the share of directions over its hemisphere it can see out along. The sky's
+// light (diffuse and reflected) is scaled by it, and what it leaves out comes back as the light bounced about the cabin:
+// a part of the sky's, grey (light inside bounces off the trim, it does not keep the sky's blue). The cockpit's one material is told metal from trim by its own colour: bright, grey
+// texels (the cage, the bolts, the metal fittings) metal and smoother, the dark ones rough non-metal, and none of it
+// under the clear coat the model gives it all (it mirrored the sky off seats and floor alike). The arms, inside,
+// take the cabin's share of the sky.
+const CABIN = { floor: 0.25, bounce: 1.1, lift: 0.07, tow: 0.0042 }; // (the least share of the sky a vertex keeps; the bounced light, of the sky's; black trim lifted to; the carbon's tow, m)
+// the carbon fibre of the cockpit's black trim: a 2/2 twill of rounded tows, laid on in the car's own space from the three
+// axes (the trim's texture has no room for it), fading to its average where a pixel would cover a tow
+const CARBON_GLSL = `varying vec3 vCabP, vCabN;
+float cabTwill(vec2 p) { vec2 c = floor(p), f = fract(p); float warp = step(mod(c.x + c.y, 4.0), 1.5); return mix(0.5, 1.0, warp) * (0.68 + 0.32 * sin(3.14159 * (warp > 0.5 ? f.y : f.x))); }
+float cabCarbonAt(vec3 P, vec3 N, float tow) { vec3 w = pow(abs(N), vec3(4.0)); w /= w.x + w.y + w.z + 1e-5; vec3 q = P / tow; float v = cabTwill(q.yz) * w.x + cabTwill(q.xz) * w.y + cabTwill(q.xy) * w.z; return mix(0.66, v, 1.0 - smoothstep(0.25, 0.6, length(fwidth(q)))); }`;
+function cabinLight(model, driver, arms) {
+  const t0 = performance.now(), V = () => new THREE.Vector3();
+  const under = (o, f) => { for (let q = o; q && q !== model; q = q.parent) if (f(q)) return true; return false; };
+  const glass = m => m.transparent || /window|glass/i.test(m.name);
+  const occ = [], rec = []; model.updateMatrixWorld(true); const inv = model.matrixWorld.clone().invert();
+  model.traverse(o => { if (!o.isMesh || o.isSkinnedMesh || under(o, q => q === driver)) return; const ms = Array.isArray(o.material) ? o.material : [o.material];
+    if (ms.every(glass)) return; const M = new THREE.Matrix4().copy(inv).multiply(o.matrixWorld); occ.push({ o, M }); if (!under(o, q => /^(WHEEL_|SUSP_)/.test(q.name))) rec.push({ o, M }); }); // (the wheels move: they shade, but are not shaded)
+  // (the bounds)
+  const box = new THREE.Box3(), bb = new THREE.Box3(); for (const { o, M } of occ) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); box.union(bb.copy(o.geometry.boundingBox).applyMatrix4(M)); }
+  const C = box.getCenter(V()), Rr = box.getSize(V()).length() / 2 + 0.05, range = 2 * Rr + 0.2, res = 256, ND = 48;
+  const bs = new THREE.Scene(), U = { uO: { value: V() }, uD: { value: V() }, uRange: { value: range } };
+  const dm = new THREE.ShaderMaterial({ uniforms: U, side: THREE.DoubleSide, depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    vertexShader: 'varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: 'uniform vec3 uO, uD; uniform float uRange; varying vec3 vP; void main() { gl_FragColor = vec4(1.0 - dot(uO - vP, uD) / uRange, 0.0, 0.0, 1.0); }' });
+  for (const { o, M } of occ) { const m = new THREE.Mesh(o.geometry, dm); m.matrixAutoUpdate = false; m.matrix.copy(M); m.matrixWorld.copy(M); m.frustumCulled = false; bs.add(m); }
+  bs.matrixWorldAutoUpdate = false;
+  const rt = new THREE.WebGLRenderTarget(res, res, { type: THREE.HalfFloatType, depthBuffer: false }), cam = new THREE.OrthographicCamera(-Rr, Rr, Rr, -Rr, 0.01, range + 0.2);
+  const buf = new Uint16Array(res * res * 4), maps = [], half = THREE.DataUtils.fromHalfFloat;
+  const prevRT = renderer.getRenderTarget(), prevCol = renderer.getClearColor(new THREE.Color()), prevA = renderer.getClearAlpha();
+  renderer.setClearColor(0x000000, 0);
+  for (let i = 0; i < ND; i++) { const t = Math.acos(1 - 2 * (i + 0.5) / ND), ph = Math.PI * (1 + Math.sqrt(5)) * i, d = V().set(Math.sin(t) * Math.cos(ph), Math.cos(t), Math.sin(t) * Math.sin(ph));
+    const O = C.clone().addScaledVector(d, Rr + 0.1); cam.position.copy(O); cam.up.set(Math.abs(d.y) > 0.95 ? 1 : 0, Math.abs(d.y) > 0.95 ? 0 : 1, 0); cam.lookAt(C); cam.updateMatrixWorld(true);
+    U.uO.value.copy(O); U.uD.value.copy(d); renderer.setRenderTarget(rt); renderer.clear(true, false, false); renderer.render(bs, cam);
+    renderer.readRenderTargetPixels(rt, 0, 0, res, res, buf); const near = new Float32Array(res * res); for (let k = 0; k < res * res; k++) near[k] = (1 - half(buf[k * 4])) * range;
+    const right = V().setFromMatrixColumn(cam.matrixWorld, 0), upv = V().setFromMatrixColumn(cam.matrixWorld, 1); maps.push({ d, O, right, upv, near }); }
+  renderer.setRenderTarget(prevRT); renderer.setClearColor(prevCol, prevA); rt.dispose(); dm.dispose();
+  // (each vertex: the directions over its hemisphere it sees out along, by the cosine)
+  const p = V(), n = V(), q = V(), NM = new THREE.Matrix3(), done = new Map();
+  for (const { o, M } of rec) { const g = o.geometry; if (done.has(g)) continue; const pa = g.attributes.position, na = g.attributes.normal; if (!na) continue;
+    NM.getNormalMatrix(M); const ao = new Float32Array(pa.count);
+    for (let i = 0; i < pa.count; i++) { p.fromBufferAttribute(pa, i).applyMatrix4(M); n.fromBufferAttribute(na, i).applyMatrix3(NM).normalize(); let sum = 0, wt = 0;
+      for (const mp of maps) { const w = n.dot(mp.d); if (w <= 0.05) continue; q.copy(p).addScaledVector(n, 0.012); const rx = q.x - C.x, ry = q.y - C.y, rz = q.z - C.z;
+        const u = Math.floor(((rx * mp.right.x + ry * mp.right.y + rz * mp.right.z) / Rr * 0.5 + 0.5) * res), v = Math.floor(((rx * mp.upv.x + ry * mp.upv.y + rz * mp.upv.z) / Rr * 0.5 + 0.5) * res);
+        wt += w; if (u < 0 || v < 0 || u >= res || v >= res) { sum += w; continue; }
+        const dv = (mp.O.x - q.x) * mp.d.x + (mp.O.y - q.y) * mp.d.y + (mp.O.z - q.z) * mp.d.z; if (dv <= mp.near[v * res + u] + 0.025) sum += w; }
+      ao[i] = wt > 0 ? CABIN.floor + (1 - CABIN.floor) * sum / wt : 1; }
+    g.setAttribute('ao', new THREE.BufferAttribute(ao, 1)); done.set(g, true); }
+  // (the materials: the sky's light scaled by the occlusion and greyed where little comes in)
+  const patched = new Set();
+  const patch = (m, constAo) => { if (!m || patched.has(m)) return; patched.add(m); const ob = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => { if (ob) ob(sh, r);
+      if (m.userData.carbon) { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCabP, vCabN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCabP = position; vCabN = normal;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + CARBON_GLSL);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.28 + 0.22 * (1.0 - cabV), cabK);'); }
+      if (constAo === undefined) { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float ao; varying float vCabAo;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCabAo = ao;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCabAo;'); }
+      else sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nconst float vCabAo = ' + constAo.toFixed(3) + ';');
+      if (m.userData.lift) sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = diffuseColor.rgb * ' + (1 - m.userData.lift).toFixed(3) + ' + ' + m.userData.lift.toFixed(3) + ';' + (m.userData.carbon ? ' vec3 cabT = texture2D(map, vMapUv).rgb; float cabK = (1.0 - smoothstep(0.035, 0.075, dot(cabT, vec3(0.2126, 0.7152, 0.0722)))) * (1.0 - smoothstep(0.012, 0.03, max(cabT.r, max(cabT.g, cabT.b)) - min(cabT.r, min(cabT.g, cabT.b)))), cabV = cabCarbonAt(vCabP, normalize(vCabN), ' + CABIN.tow.toFixed(4) + '); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.051, 0.055) * (0.4 + 1.2 * cabV), cabK);' : ''));
+      sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', '#include <aomap_fragment>\n{ float o = vCabAo; vec3 dI = reflectedLight.indirectDiffuse; reflectedLight.indirectDiffuse = mix(vec3(dot(dI, vec3(0.2126, 0.7152, 0.0722))), dI, 0.3 + 0.7 * o) * o + vec3(1.0, 0.97, 0.92) * dot(dI, vec3(0.2126, 0.7152, 0.0722)) * ' + CABIN.bounce.toFixed(3) + ' * (1.0 - o); vec3 sI = reflectedLight.indirectSpecular; reflectedLight.indirectSpecular = mix(vec3(dot(sI, vec3(0.2126, 0.7152, 0.0722))), sI, o) * (0.04 + 0.96 * o * o * o);' + (m.clearcoat > 0 ? ' clearcoatSpecularIndirect *= 0.04 + 0.96 * o * o * o;' : '') + ' }'); };
+    m.customProgramCacheKey = () => 'cabin' + (constAo === undefined ? '' : constAo) + (m.name || ''); m.needsUpdate = true; };
+  for (const { o } of rec) for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (/^(cockpit|steer)$/.test(m.name)) m.userData.lift = m.name === 'steer' ? CABIN.lift * 0.35 : CABIN.lift; // (the wheel's rim: black suede, kept dark)
+    if (m.name === 'cockpit') m.userData.carbon = true; patch(m); }
+  model.traverse(o => { if (!o.isMesh || o.isSkinnedMesh) return; const ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.some(m => patched.has(m)) && !o.geometry.attributes.ao) o.geometry.setAttribute('ao', new THREE.BufferAttribute(new Float32Array(o.geometry.attributes.position.count).fill(1), 1)); });
+  if (arms) arms.traverse(o => { if (o.isSkinnedMesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) patch(m, 0.45); });
+  // (the cockpit's metal and its trim, from its own colour)
+  model.traverse(o => { if (!o.isMesh) return; const m = o.material; if (Array.isArray(m) || m.name !== 'cockpit' || !m.map || !m.map.image || m.userData.trim) return; m.userData.trim = true;
+    const S = 1024, cv = document.createElement('canvas'); cv.width = cv.height = S; const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(m.map.image, 0, 0, S, S);
+    const id = g.getImageData(0, 0, S, S), a = id.data;
+    for (let k = 0; k < a.length; k += 4) { const r = a[k] / 255, gg = a[k + 1] / 255, b = a[k + 2] / 255, mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), L = (r + gg + b) / 3;
+      const metal = smoothstep(0.22, 0.45, L) * (1 - smoothstep(0.06, 0.18, mx - mn)), rough = metal > 0 ? 0.62 - 0.3 * metal : L < 0.05 ? 0.78 : 0.62;
+      a[k] = 255; a[k + 1] = Math.round(rough * 255); a[k + 2] = Math.round(metal * 255); a[k + 3] = 255; }
+    g.putImageData(id, 0, 0); const tx = new THREE.CanvasTexture(cv); tx.flipY = m.map.flipY; tx.channel = m.map.channel; tx.colorSpace = THREE.NoColorSpace; tx.anisotropy = 4;
+    m.metalnessMap = m.roughnessMap = tx; m.metalness = 1; m.roughness = 1; m.color.setScalar(1.15);
+    m.clearcoat = 0; m.needsUpdate = true; }); // (the model lacquers the whole cabin — seats, floor, trim — with a mirror clear coat)
+  // (the side glass: the model's is a dark green, as good as a privacy tint — a rally car's is clear)
+  model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && o.material.name === 'window') { const m = o.material; m.color.setRGB(0.62, 0.7, 0.68); m.opacity = Math.min(m.opacity, 0.22); } });
+  console.log('cabin light baked', (performance.now() - t0).toFixed(0), 'ms');
+}
 
 // the first-person arms: a skinned rig (a chest; each side an arm, an elbow, a wrist, a thumb and four fingers of three
 // joints) posed in the car model's space.
@@ -715,7 +846,7 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
       return out; },
     // the arm to a wrist pose (Wt, Qw); bar {near(p, oc, od), dist(p), tube} the bar the fingers close round (null: their
     // rest curl); open 0 holding .. 1 open (letting go of the bar or closing on it: the fingers only ever more open than
-    // laid round it, so they never enter it); flick opens the index and middle finger; the elbow toward pole
+    // laid round it, so they never enter it); flick opens the index and middle finger (unused: the paddle is gone); the elbow toward pole
     solve(side, Wt, Qw, open, pole, flick = 0, bar = null, dt = 1 / 60) { const sd = S[side]; sd.open = open;
       // the skin itself against the bar (last frame's pose, every other frame): any of it inside pushes the hand back off
       // the bar a little; with none inside the push eases away, so the hand settles where the skin just meets the bar
