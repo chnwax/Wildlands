@@ -58,20 +58,37 @@ export async function createCar(world, spawn) {
   const boxOf = o => new THREE.Box3().setFromObject(o);
   const vertsOf = (o, every = 1) => { const pts = []; o.updateMatrixWorld(true); o.traverse(m => { if (!m.isMesh) return; const pa = m.geometry.attributes.position; for (let i = 0; i < pa.count; i += every) pts.push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(m.matrixWorld)); }); return pts; };
   model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && m.map) m.map.anisotropy = 8; } });
-  // (the paddle and the handbrake: their foot and their grip from their own vertices; the steering wheel's axis is its
-  // thinnest direction, a wheel being a flat disc)
+  // (the paddle and the handbrake: their foot and their grip from their own vertices. The steering wheel: its rim found
+  // from its own vertices — the outer ring, in 24 sectors, each sector's centroid a point on the rim's centre line — and
+  // the circle through those points gives the hub, the axis the wheel turns about, the rim's radius and its thickness)
   const steerNode = find('STEER_HR'), shiftNode = find('shift_paddle'), handNode = find('handbrake');
   const ends = node => { if (!node) return null; const pts = vertsOf(node), b = boxOf(node), lo = new THREE.Vector3(), hi = new THREE.Vector3(); let nl = 0, nh = 0;
     for (const p of pts) { if (p.y < b.min.y + 0.03) { lo.add(p); nl++; } if (p.y > b.max.y - 0.04) { hi.add(p); nh++; } } return nl && nh ? { base: lo.multiplyScalar(1 / nl), top: hi.multiplyScalar(1 / nh) } : null; };
   const lever = ends(shiftNode), hbL = ends(handNode);
-  let steerAxis = new THREE.Vector3(0, -0.33, 0.94).normalize(), steerHub = new THREE.Vector3(0.35, 0.77, 0.17), steerR = 0.17;
-  if (steerNode) {
-    const pts = vertsOf(steerNode, 5), c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
-    let best = steerAxis, bv = Infinity; const d = new THREE.Vector3();
-    for (let i = 0; i < 800; i++) { const t = Math.acos(1 - 2 * (i + 0.5) / 800), p = Math.PI * (1 + Math.sqrt(5)) * i; d.set(Math.sin(t) * Math.cos(p), Math.cos(t), Math.sin(t) * Math.sin(p)); if (d.z < 0) continue;
+  let steerAxis = new THREE.Vector3(0, -0.33, 0.94).normalize(), steerHub = new THREE.Vector3(0.35, 0.77, 0.17), steerR = 0.17, rimTube = 0.017;
+  const flattest = (pts, c) => { let best = null, bv = Infinity; const d = new THREE.Vector3(); // (the direction the points spread least along)
+    for (let i = 0; i < 2000; i++) { const t = Math.acos(1 - 2 * (i + 0.5) / 2000), p = Math.PI * (1 + Math.sqrt(5)) * i; d.set(Math.sin(t) * Math.cos(p), Math.cos(t), Math.sin(t) * Math.sin(p)); if (d.z < 0) continue;
       let v = 0; for (const q of pts) { const k = _v.subVectors(q, c).dot(d); v += k * k; } if (v < bv) { bv = v; best = d.clone(); } }
-    steerAxis = best.normalize(); steerHub = boxOf(steerNode).getCenter(new THREE.Vector3());
-    const rr = pts.map(q => _v.subVectors(q, steerHub).projectOnPlane(steerAxis).length()).sort((a, b) => a - b); steerR = rr[Math.floor(rr.length * 0.97)] - 0.012; // (the rim's centre line)
+    const cost = n => { let v = 0; for (const q of pts) { const k = _v.subVectors(q, c).dot(n); v += k * k; } return v; }, e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), tr = new THREE.Vector3();
+    for (const step of [0.04, 0.015, 0.006, 0.002, 0.0007, 0.00025]) for (let k = 0; k < 12; k++) { e1.set(1, 0, 0).projectOnPlane(best).normalize(); e2.crossVectors(best, e1); let moved = false; // (refined: the coarse search is ~4° apart)
+      for (const [e, sg] of [[e1, 1], [e1, -1], [e2, 1], [e2, -1]]) { tr.copy(best).addScaledVector(e, sg * step).normalize(); const v = cost(tr); if (v < bv) { bv = v; best.copy(tr); moved = true; } } if (!moved) break; }
+    return best.normalize(); };
+  if (steerNode) {
+    const pts = vertsOf(steerNode, 1); let hub = boxOf(steerNode).getCenter(new THREE.Vector3()), axis = flattest(pts.filter((_, i) => i % 5 === 0), hub);
+    for (let round = 0; round < 3; round++) {
+      const upq = UP.clone().projectOnPlane(axis).normalize(), lq = new THREE.Vector3().crossVectors(upq, axis), rr = pts.map(q => _v.subVectors(q, hub).projectOnPlane(axis).length()), rmax = Math.max(...rr);
+      const sec = Array.from({ length: 24 }, () => ({ s: new THREE.Vector3(), n: 0 }));
+      pts.forEach((q, i) => { if (rr[i] < rmax - 0.04) return; const v = _v.subVectors(q, hub), a = Math.atan2(v.dot(lq), v.dot(upq)), k = ((Math.round(a / (Math.PI / 12)) % 24) + 24) % 24; sec[k].s.add(q); sec[k].n++; });
+      const cen = sec.filter(t => t.n).map(t => t.s.multiplyScalar(1 / t.n)), c = cen.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / cen.length);
+      axis = flattest(cen, c); hub = c; steerR = cen.reduce((a, p) => a + _v.subVectors(p, c).projectOnPlane(axis).length(), 0) / cen.length;
+    }
+    steerAxis = axis; steerHub = hub;
+    // the rim's cross-section, sector by sector away from the spokes: its middle sets the centre line's radius, its half-width the tube
+    const upq = UP.clone().projectOnPlane(axis).normalize(), lq = new THREE.Vector3().crossVectors(upq, axis), ext = Array.from({ length: 24 }, () => [9, -9, 9, -9]);
+    for (const q of pts) { const v = _v.subVectors(q, hub), a = v.dot(axis), r = v.projectOnPlane(axis).length() - steerR; if (Math.abs(r) > 0.035 || Math.abs(a) > 0.035) continue;
+      const k = ((Math.round(Math.atan2(v.dot(lq), v.dot(upq)) / (Math.PI / 12)) % 24) + 24) % 24, e = ext[k]; e[0] = Math.min(e[0], r); e[1] = Math.max(e[1], r); e[2] = Math.min(e[2], a); e[3] = Math.max(e[3], a); }
+    const clean = ext.filter(e => e[0] > -0.03 && e[1] > e[0]), med = f => { const v = clean.map(f).sort((x, y) => x - y); return v[v.length >> 1]; };
+    if (clean.length > 4) { steerR += med(e => (e[0] + e[1]) / 2); rimTube = med(e => Math.max(e[1] - e[0], e[3] - e[2]) / 2); }
   }
   const wheelBox = {}; for (const id of ['LF', 'RF', 'LR', 'RR']) wheelBox[id] = boxOf(find('WHEEL_' + id)); // (in the model's own space, before it is placed)
   const root = new THREE.Group(); root.name = 'car'; root.userData.dynamic = true; scene.add(root);
@@ -100,7 +117,7 @@ export async function createCar(world, spawn) {
   const st = { pos: new THREE.Vector3(), q: new THREE.Quaternion(), vel: new THREE.Vector3(), ang: new THREE.Vector3(),
     steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, gear: 2, rpm: SPEC.engine.idle, shiftT: 0, auto: true, revT: 0, locked: false,
     accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
-  const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, get steerR() { return steerR; } }, driving: true, view: 0, inputOn: false, world, spec: SPEC,
+  const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC,
     look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0 }, anim: { shift: 0, dir: 0, hb: 0, reach: 0, to: null } };
   // (a box for the walker to bump into while the car stands; out of the car's own way)
   const col = { t: 1, x: 0, z: 0, hx: 0.95, hz: 2.05, c: 1, s: 0, y0: -1e9, y1: 1e9 }; let colIn = false;
@@ -259,6 +276,7 @@ export async function createCar(world, spawn) {
       w.travel.position.set(w.hubModel.x, w.hubModel.y + S0 - (w.contact ? w.s : SPEC.susp.rest), w.hubModel.z);
       w.travel.quaternion.setFromAxisAngle(UP, w.front ? st.steer * SPEC.steerMax : 0); w.spin.quaternion.setFromAxisAngle(XAX, w.angle); }
     animate(dt);
+    if (dbg) { root.updateMatrixWorld(true); dbgDraw(); }
     // the walker's box: in the hash while the car stands without its driver
     if (!car.driving) { const f = _v.set(0, 0, 1).applyQuaternion(st.q), yaw = Math.atan2(f.x, f.z);
       if (!colIn || Math.hypot(col.x - st.pos.x, col.z - st.pos.z) > 0.05) { if (colIn) colRemove(col); col.x = st.pos.x; col.z = st.pos.z; col.c = Math.cos(yaw); col.s = Math.sin(yaw); col.y0 = st.pos.y - 0.6; col.y1 = 1e9; colInsert(col); colIn = true; } }
@@ -273,22 +291,44 @@ export async function createCar(world, spawn) {
   const TH0 = { L: Math.PI / 2 - 0.22, R: -(Math.PI / 2 - 0.22) }, thumbSign = {}; // (home: a quarter to three, a little high)
   for (const sd of ['L', 'R']) thumbSign[sd] = Math.sign(new THREE.Vector3().crossVectors(steerAxis, rimRad(TH0[sd], new THREE.Vector3())).dot(upw)) || 1;
   // where each hand may hold the rim (beyond it the rim slides through the grip) and past where it goes back for a new hold
-  const RANGE = { L: [-0.6, 2.6], R: [-2.6, 0.6] }, REGRIP = { L: [-0.32, 2.3], R: [-2.3, 0.32] }, FLY = 0.17;
+  // (toward the top the arm runs out of length: past ~1 o'clock for the right hand, ~11 for the left, it lets go)
+  const RANGE = { L: [0.5, 2.35], R: [-2.35, -0.5] }, REGRIP = { L: [0.65, 2.1], R: [-2.1, -0.65] }, FLY = 0.26;
   const pose = () => ({ p: new THREE.Vector3(), q: new THREE.Quaternion() });
-  const hs = { L: { phi: TH0.L, fly: 0, from: pose() }, R: { phi: TH0.R, fly: 0, from: pose() } };
+  const hs = { L: { phi: TH0.L, fly: 0, from: pose() }, R: { phi: TH0.R, fly: 0, from: pose() } }; car.handState = hs;
   const rad = new THREE.Vector3(), gC = new THREE.Vector3(), gA = new THREE.Vector3(), gS = new THREE.Vector3();
-  const rimPose = (side, th, out) => { rimRad(th, rad); gC.copy(steerHub).addScaledVector(rad, steerR); gA.crossVectors(steerAxis, rad).multiplyScalar(thumbSign[side]); gS.copy(rad).multiplyScalar(1 - rig.back).addScaledVector(steerAxis, -rig.back).normalize(); return rig.target(side, gC, gA, gS, out, rig.diag); };
-  const leverPose = (Lv, ang, s, out) => { const top = Lv.top.clone().sub(Lv.base).applyAxisAngle(XAX, ang).add(Lv.base), A = top.clone().sub(Lv.base).normalize(); return rig.target('R', top.addScaledVector(A, -0.04), A, s, out); };
-  const sHand = new THREE.Vector3(0.3, 0.25, -0.92).normalize();
+  const rimPose = (side, th, out) => { rimRad(th, rad); gC.copy(steerHub).addScaledVector(rad, steerR); gA.crossVectors(steerAxis, rad).multiplyScalar(thumbSign[side]); return rig.target(side, gC, gA, rimTube, out, side === 'L' ? poleL : poleR); };
+  const leverPose = (Lv, ang, out) => { const top = Lv.top.clone().sub(Lv.base).applyAxisAngle(XAX, ang).add(Lv.base), A = top.clone().sub(Lv.base).normalize(); hbTop.copy(top); hbBase.copy(Lv.base); return rig.target('R', top.addScaledVector(A, -0.04), A, HB_R, out, poleHb); };
   const poleL = new THREE.Vector3(1, -1, -0.35), poleR = new THREE.Vector3(-1, -1, -0.35), poleHb = new THREE.Vector3(-1, -0.2, -0.6), pole = new THREE.Vector3();
   const P0 = pose(), P1 = pose(), P2 = pose(), lift = new THREE.Vector3();
+  // what the fingers close round: the rim (a torus) and the handbrake's rod (a segment)
+  const HB_R = 0.015; if (rig) rig.prepare([rimTube, HB_R]); // (the grips worked out for the rim and the handbrake's rod)
+  car.cockpit.hbRod = () => ({ top: hbL.top.clone().sub(hbL.base).applyAxisAngle(XAX, car.anim.hbVis || 0).add(hbL.base), base: hbL.base.clone(), r: HB_R }); // (the lever as drawn)
+  const hbTop = new THREE.Vector3(), hbBase = new THREE.Vector3(), bv = new THREE.Vector3(), bw = new THREE.Vector3();
+  const bc = new THREE.Vector3(), bt = new THREE.Vector3(), b1 = new THREE.Vector3(), b2 = new THREE.Vector3();
+  const rimBar = { tube: rimTube, dist: p => { bv.subVectors(p, steerHub); const a = bv.dot(steerAxis); bv.addScaledVector(steerAxis, -a); return Math.hypot(bv.length() - steerR, a); },
+    near: (p, oc, od) => { bv.subVectors(p, steerHub).projectOnPlane(steerAxis).normalize(); oc.copy(steerHub).addScaledVector(bv, steerR); od.crossVectors(steerAxis, bv); } };
+  const hbBar = { tube: HB_R, dist: p => { bw.subVectors(hbTop, hbBase); const t = clamp(bv.subVectors(p, hbBase).dot(bw) / bw.lengthSq(), 0, 1); return bv.copy(hbBase).addScaledVector(bw, t).distanceTo(p); },
+    near: (p, oc, od) => { od.subVectors(hbTop, hbBase); const t = clamp(bv.subVectors(p, hbBase).dot(od) / od.lengthSq(), 0, 1); oc.copy(hbBase).addScaledVector(od, t); od.normalize(); } };
+  // a hand's way from one hold to another: it opens and lifts off first, travels clear of the bar, and closes again on
+  // arrival, so the fingers are never dragged through the bar. Returns how open the hand is (0 holding .. 1 open)
+  const sm = t => t * t * (3 - 2 * t), bump = (x, a, b) => sm(clamp(x / a, 0, 1)) * (1 - sm(clamp((x - b) / (1 - b), 0, 1)));
+  const tv = new THREE.Vector3(), tw = new THREE.Vector3();
+  const ta = new THREE.Vector3();
+  const travel = (from, to, k0, away, out, round = false, awayTo = away, mid = null) => { const m = sm(clamp((k0 - 0.2) / 0.58, 0, 1)); // (away: the way off the first hold; awayTo: the way in to the second)
+    out.p.lerpVectors(from.p, to.p, m);
+    if (round) { const ra = tv.subVectors(from.p, steerHub).projectOnPlane(steerAxis).length(), rb = tw.subVectors(to.p, steerHub).projectOnPlane(steerAxis).length(); // (along the rim's curve, not across its chord)
+      tv.subVectors(out.p, steerHub).projectOnPlane(steerAxis); const r = tv.length(), want = lerp(ra, rb, m); if (r > 1e-4 && r < want) out.p.addScaledVector(tv, (want - r) / r); }
+    out.p.addScaledVector(ta.copy(away).lerp(awayTo, m), bump(k0, 0.2, 0.78)); if (mid) out.p.addScaledVector(mid, Math.sin(Math.PI * m)); // (mid: a way round something between)
+    out.q.slerpQuaternions(from.q, to.q, m); return bump(k0, 0.16, 0.84); };
+  const awayRim = (p, out) => out.subVectors(p, steerHub).projectOnPlane(steerAxis).normalize().addScaledVector(steerAxis, -0.9).normalize().multiplyScalar(0.06); // (out from the rim and toward the driver)
+  const PH = pose(), aw = new THREE.Vector3();
   // a hand on the rim, holding, sliding, or on its way back to its home hold
   const onRim = (side, rot, out) => {
     const h = hs[side];
-    if (h.fly > 0) { const k0 = 1 - h.fly, k = k0 * k0 * (3 - 2 * k0); rimPose(side, TH0[side], out); out.p.lerpVectors(h.from.p, out.p, k); out.q.slerpQuaternions(h.from.q, out.q, k);
-      out.p.add(lift.copy(steerAxis).multiplyScalar(-0.07).addScaledVector(UP, 0.02).multiplyScalar(Math.sin(k0 * Math.PI))); return 1 - 0.55 * Math.sin(k0 * Math.PI); }
-    return rimPose(side, h.phi + rot, out), 1;
+    if (h.fly > 0) { rimPose(side, TH0[side], PH); awayRim(aw.addVectors(h.from.p, PH.p).multiplyScalar(0.5), aw); return travel(h.from, PH, 1 - h.fly, aw, out, true); }
+    return rimPose(side, h.phi + rot, out), 0;
   };
+  const awayHb = new THREE.Vector3(), awayR = new THREE.Vector3(), RF = pose(), hbMid = steerAxis.clone().multiplyScalar(-0.13).addScaledVector(UP, 0.03);
   function animate(dt) {
     const A = car.anim, rot = st.steer * SPEC.steerLock;
     if (steerPivot) steerPivot.quaternion.setFromAxisAngle(steerAxis, -rot);
@@ -296,7 +336,11 @@ export async function createCar(world, spawn) {
     if (A.shift > 0) A.shift = Math.max(0, A.shift - dt / 0.28);
     const fl = A.shift > 0 ? Math.sin(clamp((1 - A.shift) / 0.75, 0, 1) * Math.PI) : 0, flR = A.dir > 0 ? fl : 0, flL = A.dir < 0 ? fl : 0;
     if (shiftPivot) shiftPivot.quaternion.setFromAxisAngle(XAX, -0.1 * Math.max(0, Math.sin(clamp((1 - A.shift) / 0.75 - 0.2, 0, 1) * Math.PI)) * (A.dir > 0 ? 1 : 0));
-    A.hb = lerp(A.hb, st.hand, 1 - Math.exp(-dt * 18)); const hbA = -0.32 * A.hb; if (hbPivot) hbPivot.quaternion.setFromAxisAngle(XAX, hbA);
+    // the handbrake: worked by the driver's hand in the cockpit — it is pulled as the hand closes on it (its rest place
+    // is beyond a seated arm's reach) and let go of as the hand opens; otherwise it follows the brake itself
+    A.hb = lerp(A.hb, st.hand, 1 - Math.exp(-dt * 18));
+    const HB_PULL = -0.32, handOn = !!rig && car.driving && car.view === 0 && !!hbL, hbA = HB_PULL * (handOn ? sm(clamp((A.reach - 0.15) / 0.35, 0, 1)) : A.hb);
+    if (hbPivot) hbPivot.quaternion.setFromAxisAngle(XAX, hbA); A.hbVis = hbA;
     // the shift lights and the brake lights
     const lit = Math.round(clamp((st.rpm - 5600) / (SPEC.engine.limiter - 5600), 0, 1) * leds.length), blink = st.rpm > SPEC.engine.limiter - 250 && (performance.now() % 140 < 70);
     leds.forEach((ms, i) => { const v = blink ? 3 : i < lit ? 2.5 : 0; for (const mm of ms) mm.emissiveIntensity = v; });
@@ -304,32 +348,64 @@ export async function createCar(world, spawn) {
     driver.visible = !!rig && car.driving && car.view === 0; if (!driver.visible) return;
     // the right hand's errand: to the handbrake while it is pulled
     const want = st.hand > 0.08 && hbL ? 'hb' : null;
-    A.reach = lerp(A.reach, want ? 1 : 0, 1 - Math.exp(-dt * (want ? 17 : 11))); if (want) A.to = want;
-    if (A.reach < 0.003) A.reach = 0;
+    A.reach = clamp(A.reach + (want ? 1 : -1) * dt / 0.3, 0, 1); if (want) A.to = want;
     // on the rim: each hand turns with the wheel; past its reach the rim slides through it, and past its comfort it lets
     // go and takes a new hold at home — one hand at a time, never both, and the left one only while the right one holds
     for (const side of ['L', 'R']) {
       const h = hs[side], other = hs[side === 'L' ? 'R' : 'L'];
-      if (side === 'R' && A.reach > 0) { // (on an errand: its hold on the rim moves home, so it comes back there)
-        if (!h.away && h.fly === 0) { rimPose(side, h.phi + rot, h.from); h.fly = 1; } h.away = true;
-        if (h.fly > 0) { h.fly -= dt / FLY; if (h.fly <= 0) h.fly = 0; } h.phi = TH0.R - rot; continue; }
+      if (side === 'R' && A.reach > 0) { // (on an errand: it leaves from where it held, and comes back to its home hold)
+        if (!h.away) { onRim('R', rot, RF); h.fly = 0; } h.away = true;
+        if (!want) { rimPose('R', TH0.R, PH); const e = 1 - Math.exp(-dt * 8); RF.p.lerp(PH.p, e); RF.q.slerp(PH.q, e); }
+        h.phi = TH0.R - rot; continue; }
       h.away = false;
       if (h.fly > 0) { h.fly -= dt / FLY; if (h.fly <= 0) { h.fly = 0; h.phi = TH0[side] - rot; } continue; }
       let th = h.phi + rot; const [a, b] = RANGE[side], [ra, rb] = REGRIP[side];
       if (th < a || th > b) { th = clamp(th, a, b); h.phi = th - rot; }
       if ((th < ra || th > rb) && other.fly === 0 && A.reach === 0) { rimPose(side, th, h.from); h.fly = 1; }
     }
-    const cL = onRim('L', rot, P0), cR = onRim('R', rot, P1);
-    if (flL) P0.p.add(lift.set(-0.012, 0.004, 0.02).multiplyScalar(flL)); if (flR) P1.p.add(lift.set(0.012, 0.004, 0.02).multiplyScalar(flR)); // (the hand leans in to the paddle)
-    let curlR = cR;
+    const cL = onRim('L', rot, P0), cR = A.reach > 0 ? 0 : onRim('R', rot, P1);
+    let openR = cR, barR = rimBar;
     if (A.reach > 0) { // (off the rim, out round it, to the handbrake beside the wheel)
-      leverPose(hbL, hbA, sHand, P2);
-      const k = A.reach * A.reach * (3 - 2 * A.reach); P1.p.lerp(P2.p, k); P1.q.slerp(P2.q, k);
-      P1.p.add(lift.set(-0.07, 0.025, -0.03).multiplyScalar(Math.sin(k * Math.PI))); curlR = lerp(cR, 0.95, k) - 0.4 * Math.sin(k * Math.PI);
-      pole.copy(poleR).lerp(A.to === 'hb' ? poleHb : poleR, k);
+      leverPose(hbL, HB_PULL, P2); // (where it is held: pulled)
+      awayHb.copy(rig.S.R.dbg.N).multiplyScalar(-0.07).addScaledVector(steerAxis, -0.03); awayRim(RF.p, awayR); // (in to the handbrake from the palm's side ...)
+      const k = A.reach; openR = travel(RF, P2, k, awayR, P1, false, awayHb, hbMid); barR = k < 0.5 ? rimBar : hbBar; // (... round behind its rod)
+      pole.copy(poleR).lerp(poleHb, sm(clamp((k - 0.2) / 0.58, 0, 1)));
     } else pole.copy(poleR);
-    rig.solve('L', P0.p, P0.q, cL, poleL, flL); rig.solve('R', P1.p, P1.q, curlR, pole, flR * (1 - A.reach));
+    rig.frame++;
+    rig.solve('L', P0.p, P0.q, cL, poleL, flL, rimBar, dt);
+    rig.solve('R', P1.p, P1.q, openR, pole, flR * (1 - A.reach), barR, dt);
   }
+
+  // the arms' debug overlay (car.debugArms(true)): each arm bone's own axes (x red, y green, z blue), the joints, the
+  // chains, the grip point on the bar (cyan) and the bar's way (yellow), the hand's frame T/F/N (pink/lime/sky), the IK's
+  // wrist target (magenta), the elbow's offset from the shoulder-wrist line (orange), the rim's centre line (white)
+  let dbg = null;
+  car.debugArms = on => { if (!on) { if (dbg) { model.remove(dbg.group); dbg = null; } return; } if (dbg || !rig) return;
+    const mk = (n, size, col) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      const m = size ? new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, depthTest: false }) : new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false });
+      const o = size ? new THREE.Points(g, m) : new THREE.LineSegments(g, m); o.renderOrder = 999; o.frustumCulled = false; return o; };
+    const group = new THREE.Group(); group.name = 'armsDebug'; const lines = mk(4000), pts = mk(200, 6); group.add(lines, pts); model.add(group); dbg = { group, lines, pts }; };
+  const dbgDraw = () => {
+    const L = dbg.lines.geometry.attributes, Pp = dbg.pts.geometry.attributes; let nl = 0, np = 0; const col = new THREE.Color();
+    const seg = (a, b, c) => { col.set(c); L.position.setXYZ(nl, a.x, a.y, a.z); L.color.setXYZ(nl++, col.r, col.g, col.b); L.position.setXYZ(nl, b.x, b.y, b.z); L.color.setXYZ(nl++, col.r, col.g, col.b); };
+    const pt = (a, c) => { col.set(c); Pp.position.setXYZ(np, a.x, a.y, a.z); Pp.color.setXYZ(np++, col.r, col.g, col.b); };
+    const inv = new THREE.Matrix4().copy(model.matrixWorld).invert(), m = new THREE.Matrix4(), loc = o => new THREE.Vector3().setFromMatrixPosition(m.copy(inv).multiply(o.matrixWorld));
+    const tip = (a, d, l) => a.clone().addScaledVector(d, l);
+    for (let i = 0; i <= 48; i++) { const a0 = i / 48 * Math.PI * 2, a1 = (i + 1) / 48 * Math.PI * 2; seg(steerHub.clone().addScaledVector(upw, Math.cos(a0) * steerR).addScaledVector(leftw, Math.sin(a0) * steerR), steerHub.clone().addScaledVector(upw, Math.cos(a1) * steerR).addScaledVector(leftw, Math.sin(a1) * steerR), 0xffffff); }
+    for (const sd of [rig.S.L, rig.S.R]) {
+      const S = loc(sd.up), E = loc(sd.el), W = loc(sd.wr);
+      seg(S, E, 0xdddddd); seg(E, W, 0xdddddd); pt(S, 0xffffff); pt(E, 0xffffff); pt(W, 0xffffff);
+      for (const b of [sd.up, sd.el, sd.wr]) { m.copy(inv).multiply(b.matrixWorld); const o = loc(b), ex = new THREE.Vector3(), ey = new THREE.Vector3(), ez = new THREE.Vector3(); m.extractBasis(ex, ey, ez);
+        seg(o, tip(o, ex.normalize(), 0.05), 0xff3030); seg(o, tip(o, ey.normalize(), 0.05), 0x30ff30); seg(o, tip(o, ez.normalize(), 0.05), 0x3070ff); }
+      for (const ch of sd.fing) { let prev = W; for (const b of ch) { const p = loc(b); seg(prev, p, ch === sd.fing[0] ? 0xffb000 : 0xbbbbbb); pt(p, ch === sd.fing[0] ? 0xffb000 : 0xeeeeee); prev = p; } }
+      const D = sd.dbg; pt(D.C, 0x00ffff); seg(D.C, tip(D.C, D.bar, 0.06), 0xffff00); pt(D.Wt, 0xff00ff);
+      seg(W, tip(W, D.T, 0.06), 0xff60c0); seg(W, tip(W, D.F, 0.06), 0x9cff40); seg(W, tip(W, D.N, 0.06), 0x50c8ff);
+      const line = W.clone().sub(S).normalize(), foot = S.clone().addScaledVector(line, E.clone().sub(S).dot(line)); seg(foot, E, 0xff8000);
+    }
+    for (let i = nl; i < L.position.count; i++) L.position.setXYZ(i, 0, 0, 0); for (let i = np; i < Pp.position.count; i++) Pp.position.setXYZ(i, 0, -9, 0);
+    L.position.needsUpdate = L.color.needsUpdate = Pp.position.needsUpdate = Pp.color.needsUpdate = true; dbg.lines.geometry.setDrawRange(0, nl); dbg.pts.geometry.setDrawRange(0, np);
+  };
+  car.debugDraw = () => { if (dbg) { root.updateMatrixWorld(true); dbgDraw(); } };
 
   // ---------------------------------------------------------------- the camera
   const eyeB = new THREE.Vector3(), bonnet = new THREE.Vector3(0, 0.98, 1.05), qLook = new THREE.Quaternion(), qH = new THREE.Quaternion(), level = new THREE.Quaternion(), cgV = new THREE.Vector3(...SPEC.cg);
@@ -373,11 +449,32 @@ CORNERS.push([0, 1.28, -0.3], [0.62, 1.2, -0.3], [-0.62, 1.2, -0.3], [0.9, 0.55,
 const SIDES = [[0.92, 0, 1.9], [-0.92, 0, 1.9], [0.95, 0, 0.65], [-0.95, 0, 0.65], [0.95, 0, -0.65], [-0.95, 0, -0.65], [0.92, 0, -1.85], [-0.92, 0, -1.85], [0, 0, 2.1], [0.5, 0, 2.05], [-0.5, 0, 2.05], [0, 0, -2.0], [0.5, 0, -1.98], [-0.5, 0, -1.98]];
 
 // the first-person arms: a skinned rig (a chest; each side an arm, an elbow, a wrist, a thumb and four fingers of three
-// joints) posed in the car model's space. A grip — the bar's centre, the bar's direction toward the thumb, and the side
-// the back of the hand faces — set against the hand's own frame in its rest pose (fingers, palm, thumb side) gives the
-// wrist's turn and its place; the arm reaches it by two-bone IK with the elbow's hinge kept in its own plane, the forearm
-// takes part of the wrist's roll (as a forearm does), and the fingers close round the bar
-const GRIP = { f: 0, n: 0 }, CURL = [[0.38, 0.3, 0.35], [0.8, 1.35, 0.9], [0.8, 1.35, 0.9], [0.8, 1.35, 0.9], [0.8, 1.3, 0.85]]; // (the bar's centre from the hook's, m; per finger, per joint, rad)
+// joints) posed in the car model's space.
+//  - The hand's own frame is read from its rest pose: F from the wrist to the middle knuckle, T across the knuckles
+//    toward the index (the thumb's side), N out of the palm (where the fingers bend); a left and a right hand differ in
+//    handedness (sgn), so the same rule poses both.
+//  - The fingers close round a bar by construction, not by search: in each finger's own bending plane, joint by joint
+//    from the knuckle, each bone is laid tangent to the bar's surface (the bar's radius plus the finger's own thickness)
+//    on the bar's far side — so it lies on the bar and never enters it — within the joint's range. The thumb, which
+//    does not bend in one plane, is searched: its base flexion, its swing across the palm and the bend of its two outer
+//    joints, so it lies along the bar's surface without entering it.
+//  - Where in the hand a bar lies is worked out once per bar thickness and slant across the palm (prepare): the place,
+//    among those the palm's own skin stays clear of, where the fingers go furthest round it.
+//  - The hand's turn is taken from the forearm, not from the bar alone: the palm square to the bar and to the forearm,
+//    the wrist straight (a little extended), the bar across the palm on the power grip's diagonal — its thumb end toward
+//    the fingertips — between SLANT_MIN and SLANT_MAX (a bar square to the forearm is held with the wrist cocked a
+//    little toward the thumb, as a hammer is). The forearm's direction depends on where the wrist ends up, so the grip
+//    and the arm's IK are solved together, a few rounds.
+//  - The arm: two-bone IK from the shoulder, the elbow's hinge kept in its own plane (it only ever bends one way) and
+//    toward a pole; the forearm takes the wrist's roll (pronation and supination happen in the forearm, not the wrist).
+//  - Contact is kept honest: the skin of the palm and knuckles is checked against the bar every other frame and pushes
+//    the hand back where it would enter it; a hand letting go opens before it moves and travels clear of the bar; a
+//    finger that would still meet the bar on the way opens only as far as it stays off it.
+const CURL = [[0.3, 0.25, 0.4], [0.8, 1.35, 0.9], [0.8, 1.35, 0.9], [0.8, 1.35, 0.9], [0.8, 1.3, 0.85]]; // (the closed rest curl, per finger, per joint, rad; the thumb's: base flexion, swing, outer joints)
+const FR = [[0.02, 0.019, 0.017], [0.0225, 0.0145, 0.0125]]; // (the half-thickness of the thumb's / a finger's three bones, m: from the skin)
+const BEND = [[[-0.5, 1.0], [-0.2, 1.2], [-0.2, 1.2]], [[-0.3, 1.25], [-0.1, 1.75], [-0.1, 1.3]]]; // (each joint's range beyond the rest pose's own bend: thumb, fingers)
+const OPEN = [[0.1, 0.1, 0.1], [0, 0.15, 0.1], [0, 0.15, 0.1], [0, 0.15, 0.1], [0, 0.2, 0.1]]; // (an open, relaxed hand's bends)
+const SLANTS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7], SLANT_MIN = 0.22, SLANT_MAX = 0.55; // (the bar's angle across the palm: the grips worked out for, and the range held)
 function armsRig(sceneRoot, parent, chestAt, scale) {
   const V = () => new THREE.Vector3(), bone = n => { let f = null; sceneRoot.traverse(o => { if (!f && o.isBone && o.name.startsWith(n)) f = o; }); return f; };
   let skin = null; sceneRoot.traverse(o => { if (o.isSkinnedMesh) skin = o; });
@@ -391,64 +488,210 @@ function armsRig(sceneRoot, parent, chestAt, scale) {
   const inv = parent.matrixWorld.clone().invert(), invQ = new THREE.Quaternion(); parent.matrixWorld.decompose(V(), invQ, V()); invQ.invert();
   const P = o => o.getWorldPosition(V()).applyMatrix4(inv), Q = o => invQ.clone().multiply(o.getWorldQuaternion(new THREE.Quaternion()));
   const chestQi = Q(bone('chest')).invert();
+  // the palm's skin in the rest pose (the vertices the wrist and the palm bones carry), for keeping a bar off it
+  const handSkin = { L: [], R: [] }; // (vertex indices: the palm and the knuckles — checked against the bar each few frames; the thumb keeps itself off it)
+  const palmSkin = { L: [], R: [] }; { const si = skin.geometry.attributes.skinIndex, sw = skin.geometry.attributes.skinWeight, sk = skin.skeleton.bones, pa = skin.geometry.attributes.position, tmp = V(), mw = new THREE.Matrix4().copy(inv).multiply(skin.matrixWorld);
+    for (let i = 0; i < pa.count; i++) { let bi = 0, bw = -1; for (let k = 0; k < 4; k++) { const wv = sw.getComponent(i, k); if (wv > bw) { bw = wv; bi = si.getComponent(i, k); } }
+      const h = /^(L|R)_(wrist|palm|point1|middle1|ring1|pink1)/.exec(sk[bi].name); if (h) handSkin[h[1]].push(i);
+      const m = /^(L|R)_(wrist|palm)/.exec(sk[bi].name); if (m) { skin.getVertexPosition(i, tmp); palmSkin[m[1]].push(tmp.clone().applyMatrix4(mw)); } } }
   const side = p => {
     const b = k => bone(p + '_' + k), up = b('arm'), el = b('elbow'), wr = b('wrist');
     const S0 = P(up), E0 = P(el), W0 = P(wr);
     const fing = ['thumb', 'point', 'middle', 'ring', 'pink'].map(f => [1, 2, 3, 4].map(i => b(f + i))), kn = k => P(fing[k][0]);
     const F0 = kn(2).sub(W0).normalize(), across = kn(1).sub(kn(4)); // (toward the middle knuckle; from the little finger to the index)
-    const m1 = kn(2), m2 = P(fing[2][1]), m3 = P(fing[2][2]), curl = m3.clone().sub(m2).normalize().sub(m2.clone().sub(m1).normalize());
-    const N0 = V().crossVectors(across, F0); if (N0.dot(curl) < 0) N0.negate(); N0.addScaledVector(F0, -N0.dot(F0)).normalize(); // (out of the palm: where the fingers bend)
-    const T0 = V().crossVectors(F0, N0), sgn = T0.dot(across) < 0 ? -1 : 1; T0.multiplyScalar(sgn);
-    const K0 = [1, 2, 3, 4].reduce((a, k) => a.add(kn(k)), V()).multiplyScalar(0.25), G0 = K0.clone().addScaledVector(F0, GRIP.f).addScaledVector(N0, GRIP.n);
+    const m1 = kn(2), m2 = P(fing[2][1]), m3 = P(fing[2][2]), bend = m3.clone().sub(m2).normalize().sub(m2.clone().sub(m1).normalize()); // (the rest pose's fingers bend a little: toward the palm)
+    const N0 = V().crossVectors(across, F0); if (N0.dot(bend) < 0) N0.negate(); N0.addScaledVector(F0, -N0.dot(F0)).normalize();
+    const T0 = V().crossVectors(F0, N0), sgn = T0.dot(across) < 0 ? -1 : 1; T0.multiplyScalar(sgn); // (T0 = sgn·F0×N0, N0 = sgn·T0×F0)
     const u0 = E0.clone().sub(S0).normalize(), f0 = W0.clone().sub(E0).normalize(), n0 = V().crossVectors(u0, f0).normalize();
-    // the joints' bend axes: the fingers close toward the palm; the thumb swings up along the bar and presses onto it
-    const joints = [];
-    fing.forEach((ch, fi) => { for (let j = 0; j < 3; j++) { const bo = ch[j], d = P(ch[j + 1]).sub(P(bo)).normalize();
-      const ax = (fi ? V().crossVectors(d, N0) : j ? V().crossVectors(N0, d) : V().crossVectors(d, T0)).normalize().applyQuaternion(Q(bo).invert());
-      joints.push({ bo, q0: bo.quaternion.clone(), ax, a: CURL[fi][j], thumb: fi === 0, f: fi }); } });
-    // where the bar lies: the centre of the hook the closed fingers make (the circle through each finger's joints)
-    const cc = (a, b, c) => { const ab = b.clone().sub(a), ac = c.clone().sub(a), n = V().crossVectors(ab, ac), l = n.lengthSq();
-      return a.clone().add(V().crossVectors(n, ab).multiplyScalar(ac.lengthSq()).add(V().crossVectors(ac, n).multiplyScalar(ab.lengthSq())).multiplyScalar(0.5 / l)); };
-    for (const J of joints) if (!J.thumb) J.bo.quaternion.copy(J.q0).multiply(new THREE.Quaternion().setFromAxisAngle(J.ax, J.a));
-    sceneRoot.updateMatrixWorld(true);
-    let hook = V(), hookR = 0; for (const k of [1, 2, 3]) { const p = fing[k].map(P), c = cc(p[0], p[1], p[3]); hook.add(c); hookR += c.distanceTo(p[1]) / 3; } hook.multiplyScalar(1 / 3);
-    for (const J of joints) J.bo.quaternion.copy(J.q0);
-    sceneRoot.updateMatrixWorld(true);
-    G0.copy(hook).addScaledVector(F0, GRIP.f).addScaledVector(N0, GRIP.n);
-    return { hook: hook.clone(), hookR, K0W: hook.sub(W0), F0, N0, up, el, wr, S0, Lu: E0.distanceTo(S0), Lf: W0.distanceTo(E0), Qu0: Q(up), Qf0: Q(el), Qw0: Q(wr), sgn, G0W: G0.sub(W0),
-      B0t: new THREE.Matrix4().makeBasis(T0, F0, N0).transpose(), f0, H0t: new THREE.Matrix4().makeBasis(u0, n0, V().crossVectors(u0, n0)).transpose(),
-      rel0i: Q(el).invert().multiply(Q(wr)).invert(), axF: wr.position.clone().normalize(), joints };
+    // each finger: its bones' lengths and rest directions, its bending plane (x along the first bone, y the way it bends,
+    // the joints' axis z), and the rest pose's own bend at each joint in that plane
+    const fd = fing.map((ch, fi) => { const J = ch.map(P), d = [0, 1, 2].map(k => J[k + 1].clone().sub(J[k])), L = d.map(v => v.length()); d.forEach(v => v.normalize());
+      const z = V().crossVectors(d[0], fi ? N0 : N0.clone().addScaledVector(F0, 0.0)).normalize(), x = d[0].clone(), y = V().crossVectors(z, x);
+      const ang2 = v => Math.atan2(v.dot(y), v.dot(x)), rb = [0, ang2(d[1]) - ang2(d[0]), ang2(d[2]) - ang2(d[1])];
+      const joints = ch.slice(0, 3).map((bo, j) => ({ bo, q0: bo.quaternion.clone(), ax: z.clone().applyQuaternion(Q(bo).invert()), ax2: d[j].clone().cross(F0).normalize().applyQuaternion(Q(bo).invert()) }));
+      return { L, x, y, z, rb, joints, P0: J[0].clone().sub(W0) }; });
+    const pre = fing.map(ch => { const l = []; for (let o = ch[0].parent; o && o !== wr; o = o.parent) l.unshift(o); return l; });
+    const palm = palmSkin[p].filter((_, i) => i % 2 === 0).map(v => v.sub(W0)); // (relative to the wrist, rest frame)
+    const wrS = V(); new THREE.Matrix4().copy(inv).multiply(wr.matrixWorld).decompose(V(), new THREE.Quaternion(), wrS); // (the wrist's scale in the model's space)
+    return { p, up, el, wr, fing, fd, pre, palm, wrS, Qw: new THREE.Quaternion(), tf: 0, S0, W0, Lu: E0.distanceTo(S0), Lf: W0.distanceTo(E0), Qu0: Q(up), Qf0: Q(el), Qw0: Q(wr), sgn, F0, N0, T0, f0,
+      B0t: new THREE.Matrix4().makeBasis(T0, F0, N0).transpose(), H0t: new THREE.Matrix4().makeBasis(u0, n0, V().crossVectors(u0, n0)).transpose(),
+      rel0i: Q(el).invert().multiply(Q(wr)).invert(), axF: wr.position.clone().normalize(),
+      ang: fing.map((_, fi) => CURL[fi].slice()), // (each finger's three bends as last set; the thumb's: base flexion, swing, outer joints)
+      skinIdx: handSkin[p], push: 0, pc: 0, tg: CURL[0].slice(), cal: {}, G: V(), Rh: new THREE.Quaternion(), Wm: V(), dbg: { C: V(), bar: V(), T: V(), F: V(), N: V(), E: V(), W: V(), Wt: V() } };
   };
   const S = { L: side('L'), R: side('R') };
-  const M = new THREE.Matrix4(), qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qt = new THREE.Quaternion(), Qu = new THREE.Quaternion(), Qf = new THREE.Quaternion(), rel = new THREE.Quaternion();
-  const T = V(), Fv = V(), N = V(), d = V(), perp = V(), E = V(), Wr = V(), u = V(), f = V(), n = V(), w = V(), g = V();
-  return {
-    // the wrist's place and turn for a grip: C the bar's centre, A along the bar toward the thumb, s from the bar toward
-    // the back of the hand
-    target(side, C, A, s, out, diag = 0) { const sd = S[side];
-      N.copy(s).negate().normalize(); T.copy(A).addScaledVector(N, -A.dot(N)).normalize(); N.addScaledVector(T, -N.dot(T)).normalize();
-      if (diag) T.applyAxisAngle(N, diag * sd.sgn); // (the bar across the palm on a slant, from between thumb and index to the heel of the hand)
-      Fv.crossVectors(N, T).multiplyScalar(sd.sgn);
-      M.makeBasis(T, Fv, N).multiply(sd.B0t); qa.setFromRotationMatrix(M);
-      out.p.copy(C).sub(g.copy(sd.G0W).applyQuaternion(qa)); out.q.copy(qa).multiply(sd.Qw0); return out; },
-    // the arm to a wrist pose (Wt, Qw), its fingers closed by curl (0 open .. 1 round a bar), its elbow toward pole
-    solve(side, Wt, Qw, curl, pole, flick = 0) { const sd = S[side];
-      d.subVectors(Wt, sd.S0); const dl = Math.min(d.length(), sd.Lu + sd.Lf - 1e-3); d.normalize();
-      const ca = clamp((sd.Lu * sd.Lu + dl * dl - sd.Lf * sd.Lf) / (2 * sd.Lu * dl), -1, 1), sa = Math.sqrt(1 - ca * ca);
-      perp.copy(pole).addScaledVector(d, -pole.dot(d)).normalize();
-      E.copy(sd.S0).addScaledVector(d, sd.Lu * ca).addScaledVector(perp, sd.Lu * sa); Wr.copy(sd.S0).addScaledVector(d, dl);
+  const M = new THREE.Matrix4(), qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), qt = new THREE.Quaternion(), qt2 = new THREE.Quaternion();
+  const Qu = new THREE.Quaternion(), Qf = new THREE.Quaternion(), rel = new THREE.Quaternion(), qr = new THREE.Quaternion(), qw2 = new THREE.Quaternion();
+  const T = V(), Fv = V(), N = V(), d = V(), perp = V(), E = V(), Wr = V(), u = V(), f = V(), n = V(), w = V(), g = V(), fa = V();
+  const fx = V(), fy = V(), fz = V(), p0 = V(), bc = V(), bd = V(), lv = V();
+  // two-bone IK on positions: the elbow E and the reachable wrist Wr for a wrist target, the elbow toward pole
+  const reach = (sd, Wt, pole) => { d.subVectors(Wt, sd.S0); const dl = Math.min(d.length(), sd.Lu + sd.Lf - 1e-3); d.normalize();
+    const ca = clamp((sd.Lu * sd.Lu + dl * dl - sd.Lf * sd.Lf) / (2 * sd.Lu * dl), -1, 1), sa = Math.sqrt(1 - ca * ca);
+    perp.copy(pole).addScaledVector(d, -pole.dot(d)).normalize();
+    E.copy(sd.S0).addScaledVector(d, sd.Lu * ca).addScaledVector(perp, sd.Lu * sa); Wr.copy(sd.S0).addScaledVector(d, dl); };
+  // a finger laid round a bar: the hand at wrist W turned Rh from rest; bar.near(p, outC, outDir) gives the bar's centre
+  // line point nearest p and its direction there. Writes the three bends into a and
+  // returns how far round the bar the finger goes (rad) and how close it comes to entering it (m, < 0: inside;
+  // the thumb's small swing toward the fingers left out of its plane)
+  const EDGES = [0, -0.0075, 0.0075], TIP = 0.006; // (a finger's half-width; the fingertip's pad past its last joint, m)
+  const lay = (sd, fi, W, Rh, bar, a) => { const D = sd.fd[fi], th = fi ? 1 : 0, lim = BEND[th];
+    fx.copy(D.x).applyQuaternion(Rh); fy.copy(D.y).applyQuaternion(Rh); fz.copy(D.z).applyQuaternion(Rh); p0.copy(D.P0).applyQuaternion(Rh).add(W);
+    bar.near(p0, bc, bd);
+    const cx = lv.subVectors(bc, p0).dot(fx), cy = lv.dot(fy), bz = bd.dot(fz), slantCos = Math.max(0.6, Math.abs(bz)); // (the bar's section in the finger's plane: a little wider when it crosses on a slant)
+    // (a finger has width: its two edges, ±FW to either side of its plane, see the slanted bar a little nearer or further)
+    const sx = Math.abs(bz) > 0.3 ? bd.dot(fx) / bz : 0, sy = Math.abs(bz) > 0.3 ? bd.dot(fy) / bz : 0;
+    // bone by bone from the knuckle: each laid tangent to the bar, within its joint's range. A bone its joint cannot
+    // straighten enough for (it would enter the bar) makes the joint before it open up, and the finger is laid again
+    const cap = [lim[0][1], lim[1][1], lim[2][1]];
+    let wrap = 0, worst = Infinity;
+    for (let tries = 0; tries < 8; tries++) {
+      let px = 0, py = 0, dir = 0, ang = Math.atan2(-cy, -cx), bad = -1; wrap = 0; worst = Infinity;
+      for (let k = 0; k < 3; k++) {
+        // (a rim curves: the bar's centre line taken afresh nearest this joint)
+        bar.near(lv.copy(p0).addScaledVector(fx, px).addScaledVector(fy, py), bc, bd); lv.subVectors(bc, p0);
+        const kz = bd.dot(fz), kx = lv.dot(fx) - lv.dot(fz) * bd.dot(fx) / (Math.abs(kz) > 0.3 ? kz : 1e9), ky = lv.dot(fy) - lv.dot(fz) * bd.dot(fy) / (Math.abs(kz) > 0.3 ? kz : 1e9); // (where it crosses the finger's plane)
+        const r = bar.tube / Math.max(0.6, Math.abs(kz)) + FR[th][k] + 0.001, vx = kx - px, vy = ky - py;
+        let bb = Infinity; // (tangent to the bar, the bar on the bending side: the least bend of the finger's middle and its edges)
+        for (const o of EDGES) { const ex = vx - o * sx, ey = vy - o * sy, rho = Math.hypot(ex, ey), want = rho > r ? Math.atan2(ey, ex) - Math.asin(r / rho) : dir + D.rb[k] + cap[k];
+          let b0 = want - (dir + D.rb[k]); b0 = Math.atan2(Math.sin(b0), Math.cos(b0)); bb = Math.min(bb, b0); }
+        const low = bb < lim[k][0]; bb = clamp(bb, lim[k][0], cap[k]);
+        a[k] = bb; dir += D.rb[k] + bb;
+        const ux = Math.cos(dir), uy = Math.sin(dir); let gap = Infinity;
+        for (const o of EDGES) { const ex = vx - o * sx, ey = vy - o * sy, t = clamp(ex * ux + ey * uy, 0, D.L[k] + (k === 2 ? TIP : 0)); gap = Math.min(gap, Math.hypot(ex - ux * t, ey - uy * t) - r); }
+        worst = Math.min(worst, gap);
+        if (gap < -0.001 && low && k > 0 && bad < 0) bad = k;
+        px += ux * D.L[k]; py += uy * D.L[k]; const an = Math.atan2(py - cy, px - cx); if (gap < 0.007) wrap += Math.atan2(Math.sin(an - ang), Math.cos(an - ang)); ang = an; } // (round the bar, the bending way, signed — counted only for a bone lying on it)
+      if (bad < 0) break;
+      cap[bad - 1] = Math.max(lim[bad - 1][0], a[bad - 1] - 0.12);
+    }
+    return { wrap, worst }; };
+  // a finger lay could not fit round the bar (the hand passing at a slant, a rim curving away): of a grid of bends, the
+  // one nearest the laid one that keeps clear of the bar, else the one keeping furthest from it
+  const unstick = (sd, fi, W, bar, a) => { const lim = BEND[1], b = [0, 0, 0], best = [0, 0, 0]; let bc2 = -Infinity, bd2 = Infinity, ok = false;
+    for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) { b[0] = lim[0][0] + (lim[0][1] - lim[0][0]) * i / 8; b[1] = lim[1][0] + (lim[1][1] - lim[1][0]) * j / 8; b[2] = clamp(b[1] * CURL[fi][2] / CURL[fi][1], lim[2][0], lim[2][1]);
+      const cl = clearance(sd, fi, W, sd.Rh, bar, b), dd = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2;
+      if (cl >= 0 ? (!ok || dd < bd2) : (!ok && cl > bc2)) { ok = ok || cl >= 0; bc2 = cl; bd2 = dd; best[0] = b[0]; best[1] = b[1]; best[2] = b[2]; } }
+    a[0] = best[0]; a[1] = best[1]; a[2] = best[2]; };
+  // how near a finger with bends a comes to entering the bar (m, < 0: inside), by the same model as lay
+  const clearance = (sd, fi, W, Rh, bar, a) => { const D = sd.fd[fi], th = fi ? 1 : 0;
+    fx.copy(D.x).applyQuaternion(Rh); fy.copy(D.y).applyQuaternion(Rh); fz.copy(D.z).applyQuaternion(Rh); p0.copy(D.P0).applyQuaternion(Rh).add(W);
+    let px = 0, py = 0, dir = 0, worst = Infinity;
+    for (let k = 0; k < 3; k++) { bar.near(lv.copy(p0).addScaledVector(fx, px).addScaledVector(fy, py), bc, bd); lv.subVectors(bc, p0);
+      const kz = bd.dot(fz), sx = Math.abs(kz) > 0.3 ? bd.dot(fx) / kz : 0, sy = Math.abs(kz) > 0.3 ? bd.dot(fy) / kz : 0, kx = lv.dot(fx) - lv.dot(fz) * sx, ky = lv.dot(fy) - lv.dot(fz) * sy;
+      const r = bar.tube / Math.max(0.6, Math.abs(kz)) + FR[th][k], vx = kx - px, vy = ky - py; dir += D.rb[k] + a[k]; const ux = Math.cos(dir), uy = Math.sin(dir);
+      for (const o of EDGES) { const ex = vx - o * sx, ey = vy - o * sy, t = clamp(ex * ux + ey * uy, 0, D.L[k] + (k === 2 ? TIP : 0)); worst = Math.min(worst, Math.hypot(ex - ux * t, ey - uy * t) - r); }
+      px += ux * D.L[k]; py += uy * D.L[k]; }
+    return worst; };
+  // the thumb: its joints for a = [base flexion, swing, outer joints' bend], from the wrist as posed (sd.Wm, sd.Qw)
+  const M1 = new THREE.Matrix4(), M2 = new THREE.Matrix4(), qf = new THREE.Quaternion(), tp = Array.from({ length: 4 }, V), ts = Array.from({ length: 6 }, V);
+  const thumbFK = (sd, a) => { M1.compose(sd.Wm, sd.Qw, sd.wrS); for (const o of sd.pre[0]) M1.multiply(M2.compose(o.position, o.quaternion, o.scale));
+    const ch = sd.fing[0], Js = sd.fd[0].joints;
+    for (let j = 0; j < 3; j++) { qf.copy(Js[j].q0).multiply(qt.setFromAxisAngle(Js[j].ax, j ? a[2] : a[0])); if (!j) qf.multiply(qt2.setFromAxisAngle(Js[0].ax2, a[1]));
+      M1.multiply(M2.compose(ch[j].position, qf, ch[j].scale)); tp[j].setFromMatrixPosition(M1); }
+    M1.multiply(M2.compose(ch[3].position, ch[3].quaternion, ch[3].scale)); tp[3].setFromMatrixPosition(M1);
+    ts[0].lerpVectors(tp[0], tp[1], 0.5); ts[1].copy(tp[1]); ts[2].lerpVectors(tp[1], tp[2], 0.5); ts[3].copy(tp[2]); ts[4].lerpVectors(tp[2], tp[3], 0.5); ts[5].copy(tp[3]).addScaledVector(ts[0].subVectors(tp[3], tp[2]).normalize(), TIP); ts[0].lerpVectors(tp[0], tp[1], 0.5); return ts; };
+  const T_R = [FR[0][0], FR[0][1], FR[0][1], FR[0][2], FR[0][2], FR[0][2]], T_W = [0, 12, 40, 40, 40, 40], T_LIM = [[-0.6, 1.0], [-0.6, 1.0], [-0.3, 1.2]], tc = [0, 0, 0];
+  // how badly the thumb lies along the bar: entering it costs much, standing off it a little; a pull toward the rest pose
+  // (and on the right side of it: the fingers go round the bar's front, the thumb round its back — the side toward the
+  // wrist — the two meeting beyond it, so the thumb's tip lies past the bar's centre from the palm)
+  const tN = V(), tF = V(), tq = V();
+  const thumbCost = (sd, a, bar) => { const q = thumbFK(sd, a); let c = 0;
+    tN.copy(sd.N0).applyQuaternion(sd.Rh); tF.copy(sd.F0).applyQuaternion(sd.Rh);
+    bar.near(q[5], bc, bd); const past = tq.subVectors(q[5], bc).dot(tN); if (past < 0.004) c += 30 * (0.004 - past) * (0.004 - past) * 100;
+    bar.near(q[3], bc, bd); const front = tq.subVectors(q[3], bc).dot(tF); if (front > 0) c += 3000 * front * front;
+    for (let i = 0; i < 6; i++) { const dd = bar.dist(q[i]) - bar.tube - T_R[i]; c += dd < 0 ? 20000 * dd * dd : T_W[i] * dd * dd; }
+    for (let j = 0; j < 3; j++) c += 0.0005 * (a[j] - CURL[0][j]) * (a[j] - CURL[0][j]); return c; };
+  const SEEDS = [[0.3, 0.25, 0.4], [0.6, 0.6, 0.8], [0.1, 0.7, 0.9], [0.8, 0.2, 0.6], [-0.2, 0.5, 1.0]];
+  const thumbFresh = (sd, a, bar) => { let best = Infinity; const b = [0, 0, 0], keep = [0, 0, 0];
+    for (const s0 of SEEDS) { b[0] = s0[0]; b[1] = s0[1]; b[2] = s0[2]; const c = thumbSearch(sd, b, bar, [0.25, 0.1, 0.04, 0.015]); if (c < best) { best = c; keep[0] = b[0]; keep[1] = b[1]; keep[2] = b[2]; } }
+    a[0] = keep[0]; a[1] = keep[1]; a[2] = keep[2]; return best; };
+  const thumbSearch = (sd, a, bar, steps) => { let best = thumbCost(sd, a, bar);
+    for (const step of steps) for (let it = 0; it < 4; it++) { let moved = false;
+      for (let j = 0; j < 3; j++) for (const sg of [1, -1]) { tc[0] = a[0]; tc[1] = a[1]; tc[2] = a[2]; tc[j] = clamp(a[j] + sg * step, T_LIM[j][0], T_LIM[j][1]);
+        const c = thumbCost(sd, tc, bar); if (c < best) { best = c; a[0] = tc[0]; a[1] = tc[1]; a[2] = tc[2]; moved = true; } }
+      if (!moved) break; }
+    return best; };
+  const lineBar = (tube, B, dir) => ({ tube, near: (q, oc, od) => { oc.copy(B).addScaledVector(dir, lv.subVectors(q, B).dot(dir)); od.copy(dir); },
+    dist: q => { lv.subVectors(q, B); return lv.addScaledVector(dir, -lv.dot(dir)).length(); } });
+  // where a bar of radius tube crossing the palm at slant phi lies in the hand (rest frame, against the wrist): among
+  // the places the palm's skin stays clear of, the one the fingers go furthest round
+  const calibrate = (sd, tube, phi) => {
+    const dir = sd.T0.clone().multiplyScalar(Math.cos(phi)).addScaledVector(sd.F0, Math.sin(phi)), Rh = new THREE.Quaternion(), a = [0, 0, 0];
+    let best = null;
+    for (let df = 0.05; df <= 0.181; df += 0.006) for (let dn = 0.015; dn <= 0.1; dn += 0.005) {
+      const G = sd.F0.clone().multiplyScalar(df).addScaledVector(sd.N0, dn), B = G.clone().add(sd.W0), bar = lineBar(tube, B, dir);
+      let pen = 0; for (const v of sd.palm) { const dd = bar.dist(lv.copy(v).add(sd.W0)) - tube - 0.0055; if (dd < 0) pen += -dd; }
+      let score = -pen * 400;
+      for (let fi = 1; fi < 5; fi++) { const r = lay(sd, fi, sd.W0, Rh, bar, a); score += Math.min(r.wrap, 3.6) - (r.worst < 0 ? 600 * -r.worst : 0); }
+      score -= dn * 3; // (the bar as near the palm as it can be)
+      if (!best || score > best.score) best = { score, G };
+    }
+    return best; };
+  const gripAt = (sd, tube, phi, outG) => { const C = sd.cal[tube.toFixed(4)]; if (!C) return outG.copy(sd.F0).multiplyScalar(0.13).addScaledVector(sd.N0, 0.05);
+    const x = clamp((phi - SLANTS[0]) / (SLANTS[1] - SLANTS[0]), 0, SLANTS.length - 1.001), i = Math.floor(x), t = x - i;
+    return outG.copy(C[i].G).lerp(C[i + 1].G, t); };
+  const rig = {
+    S, ext: 0.12, twist: 0.85, frame: 0, lay: (...x) => lay(...x),
+    // work out the grips for the bars this car has (their radii)
+    prepare(tubes) { for (const sd of [S.L, S.R]) for (const tube of tubes) sd.cal[tube.toFixed(4)] = SLANTS.map(phi => calibrate(sd, tube, phi)); },
+    // the wrist's place and turn for a grip on a bar: C a point on the bar's centre line, A along the bar toward the
+    // thumb, tube the bar's radius; the elbow toward pole
+    target(side, C, A, tube, out, pole) { const sd = S[side];
+      fa.subVectors(C, sd.S0).normalize(); // (the first guess at the forearm: from the shoulder)
+      for (let it = 0; it < 4; it++) {
+        // the palm square to the bar and to the forearm; the bar across it on the power grip's diagonal — its thumb end
+        // toward the fingertips — as a straight wrist gives it, kept between SLANT_MIN and SLANT_MAX (a bar square to the
+        // forearm is held with the wrist cocked a little toward the thumb, as a hammer is)
+        N.crossVectors(A, fa).multiplyScalar(sd.sgn).normalize(); w.crossVectors(N, A).normalize(); if (w.dot(fa) < 0) w.negate();
+        const phi = clamp(Math.asin(clamp(A.dot(fa), -1, 1)), SLANT_MIN, SLANT_MAX);
+        T.copy(A).multiplyScalar(Math.cos(phi)).addScaledVector(w, -Math.sin(phi)); Fv.copy(A).multiplyScalar(Math.sin(phi)).addScaledVector(w, Math.cos(phi));
+        if (rig.ext) Fv.applyAxisAngle(T, -rig.ext * sd.sgn);                   // (the wrist a little extended, as a grip holds it)
+        N.crossVectors(T, Fv).multiplyScalar(sd.sgn);
+        M.makeBasis(T, Fv, N).multiply(sd.B0t); qa.setFromRotationMatrix(M);
+        gripAt(sd, tube, Math.atan2(A.dot(Fv), A.dot(T)), sd.G);              // (where in the hand a bar at this slant lies)
+        out.p.copy(C).sub(g.copy(sd.G).applyQuaternion(qa)).addScaledVector(N, -sd.push); // (pushed back where the skin itself met the bar)
+        reach(sd, out.p, pole); fa.subVectors(Wr, E).normalize();             // (where that puts the forearm, for the next round)
+      }
+      out.q.copy(qa).multiply(sd.Qw0);
+      sd.dbg.C.copy(C); sd.dbg.bar.copy(A); sd.dbg.T.copy(T); sd.dbg.F.copy(Fv); sd.dbg.N.copy(N); sd.dbg.Wt.copy(out.p);
+      return out; },
+    // the arm to a wrist pose (Wt, Qw); bar {near(p, oc, od), dist(p), tube} the bar the fingers close round (null: their
+    // rest curl); open 0 holding .. 1 open (letting go of the bar or closing on it: the fingers only ever more open than
+    // laid round it, so they never enter it); flick opens the index and middle finger; the elbow toward pole
+    solve(side, Wt, Qw, open, pole, flick = 0, bar = null, dt = 1 / 60) { const sd = S[side];
+      // the skin itself against the bar (last frame's pose, every other frame): any of it inside pushes the hand back off
+      // the bar a little; with none inside the push eases away, so the hand settles where the skin just meets the bar
+      if (bar && ++sd.pc % 2 === 0) { parent.updateWorldMatrix(true, false); M.copy(parent.matrixWorld).invert(); let deep = 0;
+        for (const i of sd.skinIdx) { skin.getVertexPosition(i, g); g.applyMatrix4(skin.matrixWorld).applyMatrix4(M); deep = Math.max(deep, bar.tube - bar.dist(g)); }
+        sd.push = clamp(deep > 0.0004 ? sd.push + deep * 1.2 : sd.push * 0.93, 0, 0.02); }
+      else if (!bar) sd.push *= 0.9;
+      reach(sd, Wt, pole);
       u.subVectors(E, sd.S0).normalize(); f.subVectors(Wr, E).normalize(); n.crossVectors(u, f).normalize();
       M.makeBasis(u, n, w.crossVectors(u, n)).multiply(sd.H0t); qa.setFromRotationMatrix(M); Qu.copy(qa).multiply(sd.Qu0); // (the upper arm, its hinge plane kept)
-      qb.setFromUnitVectors(w.copy(sd.f0).applyQuaternion(qa), f); Qf.copy(qb).multiply(qa).multiply(sd.Qf0); // (the forearm bent onto the wrist)
+      qb.setFromUnitVectors(w.copy(sd.f0).applyQuaternion(qa), f); Qf.copy(qb).multiply(qa).multiply(sd.Qf0);          // (the forearm bent onto the wrist)
       rel.copy(Qf).invert().multiply(Qw).multiply(sd.rel0i); const pr = rel.x * sd.axF.x + rel.y * sd.axF.y + rel.z * sd.axF.z;
       let tw = 2 * Math.atan2(pr, rel.w); if (tw > Math.PI) tw -= 2 * Math.PI; else if (tw < -Math.PI) tw += 2 * Math.PI;
-      Qf.multiply(qt.setFromAxisAngle(sd.axF, tw * 0.55)); // (the forearm rolls with the wrist)
+      Qf.multiply(qt.setFromAxisAngle(sd.axF, tw * rig.twist)); // (the forearm rolls with the wrist)
+      // (a hand in the air, between holds, relaxes toward the wrist's rest pose against the forearm)
+      if (open > 0) { qr.copy(sd.rel0i).invert(); Qw = qw2.copy(Qf).multiply(qr).slerp(Qw, 1 - 0.6 * open); }
       sd.up.quaternion.copy(chestQi).multiply(Qu); sd.el.quaternion.copy(Qu).invert().multiply(Qf); sd.wr.quaternion.copy(Qf).invert().multiply(Qw);
-      for (const J of sd.joints) J.bo.quaternion.copy(J.q0).multiply(qt.setFromAxisAngle(J.ax, J.a * curl * (J.thumb ? this.thumb : this.curl) * (J.f === 1 || J.f === 2 ? 1 - 0.85 * flick : 1))); }, // (a flick: index and middle finger open)
-    // where the bar lies in the hand: along the fingers and off the palm from the knuckles (m)
-    S, setGrip(f, n) { GRIP.f = f; GRIP.n = n; for (const sd of [S.L, S.R]) sd.G0W.copy(sd.K0W).addScaledVector(sd.F0, f).addScaledVector(sd.N0, n); },
-    curl: 1, thumb: 1, diag: 0, back: 0.2, // (the back of the hand faces mostly out from the rim, a little toward the driver)
+      sd.Wm.copy(Wr); sd.Qw.copy(Qw); sd.Rh.copy(Qw).multiply(qt.copy(sd.Qw0).invert()); sd.dbg.E.copy(E); sd.dbg.W.copy(Wr);
+      // the fingers: laid round the bar, or easing to their rest curl
+      const k = 1 - Math.exp(-dt * 22), tmp = [0, 0, 0];
+      for (let fi = 0; fi < 5; fi++) { const a = sd.ang[fi];
+        if (bar) { if (fi) { if (lay(sd, fi, Wr, sd.Rh, bar, tmp).worst < -0.001) unstick(sd, fi, Wr, bar, tmp); } else { tmp[0] = sd.tg[0]; tmp[1] = sd.tg[1]; tmp[2] = sd.tg[2]; const tc0 = thumbSearch(sd, tmp, bar, ++sd.tf % 8 === 1 ? [0.3, 0.12, 0.05, 0.02, 0.008] : open > 0 ? [0.12, 0.04, 0.015, 0.006] : [0.04, 0.015, 0.006]); if (tc0 > 0.05 || sd.tf % 24 === 5) { const b2 = [0, 0, 0]; if (thumbFresh(sd, b2, bar) < tc0 * 0.8) { tmp[0] = b2[0]; tmp[1] = b2[1]; tmp[2] = b2[2]; } } sd.tg[0] = tmp[0]; sd.tg[1] = tmp[1]; sd.tg[2] = tmp[2]; }
+          if (!fi) for (let j = 0; j < 3; j++) a[j] = tmp[j]; // (the thumb keeps itself off the bar as the hand moves: searched each frame)
+          else { // (a finger: from laid round the bar toward open by "open", but only as far as it stays clear of the bar — a hand
+            // coming in or letting go never drags a finger through it)
+            const c2 = [0, 0, 0], of = fi === 1 || fi === 2 ? Math.max(open, 0.85 * flick) : open; let sOk = 0; // (a flick: the index and middle finger lift off for the paddle)
+            for (let sTry = of; sTry > 0.001; sTry -= 0.1) { for (let j = 0; j < 3; j++) c2[j] = tmp[j] + (Math.min(OPEN[fi][j], tmp[j]) - tmp[j]) * sTry; if (clearance(sd, fi, Wr, sd.Rh, bar, c2) >= -0.0005) { sOk = sTry; break; } }
+            for (let j = 0; j < 3; j++) tmp[j] += (Math.min(OPEN[fi][j], tmp[j]) - tmp[j]) * sOk;
+            for (let j = 0; j < 3; j++) a[j] = tmp[j]; } }
+        else { const c0 = CURL[fi]; for (let j = 0; j < 3; j++) a[j] += (c0[j] * (1 - 0.7 * open) - a[j]) * k; }
+        const op = !bar && (fi === 1 || fi === 2) ? 1 - 0.85 * flick : 1;
+        sd.fd[fi].joints.forEach((J, j) => { J.bo.quaternion.copy(J.q0).multiply(qt.setFromAxisAngle(J.ax, (fi ? a[j] : j ? a[2] : a[0]) * op)); if (!fi && !j) J.bo.quaternion.multiply(qt2.setFromAxisAngle(J.ax2, a[1])); }); } },
   };
+  return rig;
 }
 
 function engineSound(car) {

@@ -174,6 +174,7 @@ addEventListener('keydown', e => {
     return;
   }
   if (car && car.driving) { if (e.code === 'KeyC') car.cycleView(); if (e.code === 'KeyR') car.reset(); if (e.code === 'KeyX') car.toggleAuto(); }
+  if (car && e.code === 'F6') { e.preventDefault(); car._dbgArms = !car._dbgArms; car.debugArms(car._dbgArms); toastMsg(car._dbgArms ? 'Arms debug: bone axes, joints, grips, elbow' : 'Arms debug off'); }
   if (e.code === 'KeyF' && car && car.driving) return;
   if (e.code === 'KeyF') { player.fly = !player.fly; if (player.fly) player.pos.copy(camera.position); else player.vy = 0; toastMsg(player.fly ? 'Fly mode' : 'Walking'); }
   if (e.code === 'KeyT') { time.running = !time.running; toastMsg(time.running ? 'Time running' : 'Time paused'); }
