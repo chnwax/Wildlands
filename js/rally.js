@@ -20,7 +20,7 @@ export const meta = {
   vehicle: true,
 };
 
-const ROAD = 3.6, SHOULDER = 5.2, CLEAR = 12.5; // half widths: graded road, loose edge, low open forest verge
+const ROAD = 1.95, SHOULDER = 2.4, CLEAR = 8.5; // single-lane rally road, soft edge, low readable forest verge
 
 export const PINE_STAGE = {
   id: 'pine', name: 'Pine Forest', target: 1500, roadType: 'gravel', seed: 4471,
@@ -81,7 +81,7 @@ export async function buildStage(progress, cfg) {
   for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, o = j * HN + i, d = distAt(x, z);
     const f = Math.max(cfg.forestMin, woods(x, z)) * smoothstep(CLEAR + 2, CLEAR + 12, d), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
     hf.mask[o * 4] = smoothstep(0.35, 0.8, f) * 235; hf.mask[o * 4 + 1] = 255; hf.mask[o * 4 + 3] = moist * 255;
-    hf.mask2[o * 4] = (1 - smoothstep(ROAD - 0.6, SHOULDER + 0.6, d)) * 255;         // the gravel layer: the road and its edges
+    hf.mask2[o * 4] = (1 - smoothstep(ROAD - 0.25, SHOULDER + 0.15, d)) * 255;       // narrow road texture, without a broad gravel halo
     hf.mask2[o * 4 + 2] = (1 - smoothstep(CLEAR - 1.5, CLEAR + 0.8, d)) * 255;            // no tall grass across the readable verge
     hf.mask2[o * 4 + 3] = (1 - smoothstep(CLEAR, CLEAR + 7, d)) * 255;                   // then only short, sparse grass before the trunks
   }
@@ -143,10 +143,10 @@ export async function buildStage(progress, cfg) {
   return world;
 }
 
-// The graded road is 9 m across. Gravel gets compacted ruts and loose edges; asphalt gets continuous edge paint and a
+// The graded road is about 4.4 m across. Gravel gets compacted ruts and loose edges; asphalt gets edge paint and a
 // dashed centre line. The outer metre dissolves into the terrain with alpha hashing, avoiding a hard floating road edge.
 function roadRibbon(P, T, N, hf, roadType = 'gravel') {
-  const X = [-4.7, -3.4, -1.65, -0.82, 0, 0.82, 1.65, 3.4, 4.7], A = [0, 1, 1, 1, 1, 1, 1, 1, 0], C = [1.1, 1.06, 0.98, 0.8, 0.94, 0.8, 0.98, 1.06, 1.1];
+  const X = [-2.35, -1.98, -0.9, -0.42, 0, 0.42, 0.9, 1.98, 2.35], A = [0, 1, 1, 1, 1, 1, 1, 1, 0], C = [1.1, 1.06, 0.98, 0.8, 0.94, 0.8, 0.98, 1.06, 1.1];
   const step = 2, M = Math.ceil((N - 1) / step), nx = X.length, pos = new Float32Array((M + 1) * nx * 3), uv = new Float32Array((M + 1) * nx * 2), col = new Float32Array((M + 1) * nx * 4), idx = [];
   for (let m = 0; m <= M; m++) { const i = Math.min(N - 1, m * step), [px, pz] = P[i], [tx, tz] = T[i], lx = tz, lz = -tx;
     for (let k = 0; k < nx; k++) { const o = m * nx + k, w = X[k] + (k === 0 || k === nx - 1 ? Math.sin(m * 0.7) * 0.25 + Math.sin(m * 0.23) * 0.3 : 0);
@@ -164,7 +164,7 @@ function roadRibbon(P, T, N, hf, roadType = 'gravel') {
     const marks = [], emit = (i, off, half) => { const j = Math.min(N - 1, i + step), [ax, az] = P[i], [bx, bz] = P[j], [atx, atz] = T[i], [btx, btz] = T[j];
       const a0 = [ax + atz * (off - half), hf.groundAt(ax + atz * off, az - atx * off) + 0.052, az - atx * (off - half)], a1 = [ax + atz * (off + half), a0[1], az - atx * (off + half)];
       const b0 = [bx + btz * (off - half), hf.groundAt(bx + btz * off, bz - btx * off) + 0.052, bz - btx * (off - half)], b1 = [bx + btz * (off + half), b0[1], bz - btx * (off + half)]; marks.push(...a0, ...a1, ...b0, ...a1, ...b1, ...b0); };
-    for (let i = 0; i < N - step; i += step) { emit(i, -3.45, 0.055); emit(i, 3.45, 0.055); if (Math.floor(i / 7) % 2 === 0) emit(i, 0, 0.045); }
+    for (let i = 0; i < N - step; i += step) { emit(i, -1.82, 0.035); emit(i, 1.82, 0.035); if (Math.floor(i / 7) % 2 === 0) emit(i, 0, 0.035); }
     const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.Float32BufferAttribute(marks, 3)); mg.computeVertexNormals();
     const mm = new THREE.MeshStandardMaterial({ color: 0xe5e2d5, roughness: 0.82, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
     const painted = new THREE.Mesh(mg, mm); painted.receiveShadow = true; painted.name = 'rally-road-markings'; group.add(painted);
