@@ -995,9 +995,9 @@ function engineSound(car) {
       // (heard from where the camera is: in the cockpit, or outside — fading with the distance when you walk away)
       const cam = audio.lp, d = Math.hypot(cam.x - st.pos.x, cam.y - st.pos.y, cam.z - st.pos.z), cockpit = car.driving && car.view === 0;
       const slipK = clamp((st.slipMax - 0.9) / 1.5, 0, 1);
-      if (grv) { const t = audio.ctx.currentTime, on = nC ? (gr / nC) : 0, v = clamp(sp / 22, 0, 1.3); // (the gravel: louder and a touch higher the faster, more in a slide; duller from inside)
-        grv.gain.gain.setTargetAtTime(on * Math.pow(v, 0.9) * (0.75 + 0.6 * slipK) * (cockpit ? 0.55 : 0.8) * (car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1)), t, 0.06);
-        grv.src.playbackRate.setTargetAtTime(0.82 + 0.3 * Math.min(1, v), t, 0.1); grv.lp.frequency.setTargetAtTime(cockpit ? 3200 : 9000, t, 0.1); }
+      if (grv) { const t = audio.ctx.currentTime, on = nC ? (gr / nC) : 0, v = clamp(sp / 36, 0, 1); // individual stones merge into a brighter, denser roar as wheel speed rises
+        grv.gain.gain.setTargetAtTime(on * Math.pow(v, 0.72) * (0.68 + 0.72 * slipK) * (cockpit ? 0.58 : 0.84) * (car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1)), t, 0.055);
+        grv.src.playbackRate.setTargetAtTime(0.66 + 0.88 * v + 0.08 * slipK, t, 0.085); grv.lp.frequency.setTargetAtTime(cockpit ? 2200 + 2600 * v : 4800 + 6500 * v, t, 0.09); }
       send({ gravelRec: grv ? 1 : 0, rpm: st.rpm, thr: car.driving ? st.throttle : 0, load: car.driving ? st.throttle : 0, speed: sp, wheel: wsum / 4, slip: clamp((st.slipMax - 0.9) / 1.5, 0, 1),
         gravel: nC ? gr / nC : 0, tarmac: nC ? tm / nC : 0, rough, cut: st.shiftT > 0 || A.gMove ? 1 : 0, limiter: SPEC.engine.limiter, cockpit: cockpit ? 1 : 0, on: 1, gear: st.gear,
         vol: car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1) }); },

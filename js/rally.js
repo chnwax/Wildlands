@@ -1,5 +1,5 @@
-// Rally Stage: a point-to-point gravel special stage on flat ground, for the car (car.js). A hand-shaped route crosses
-// four distinct forest sections through fast sweepers, linked corners, square turns and two slow reversals. A distance
+// Rally Stage: a point-to-point gravel special stage for the car (car.js). A hand-shaped mountain route crosses
+// four distinct forest sections through linked bends, square turns, hairpins, crests and jumps. A distance
 // field over the map (2 m cells: the distance
 // to the centre line and the nearest point on it) answers what the ground is under a wheel, where the trees may stand
 // and how far round the stage the car has come (the stage clock). The road: the ground's own gravel layer under it
@@ -24,20 +24,32 @@ export const meta = {
 const ROAD = 3.6, SHOULDER = 5.2; // (half widths: the graded gravel, the loose edge)
 
 function trackLine() {
-  const way = [[-900, -820], [-720, -830], [-520, -800], [-300, -720], [-80, -760], [160, -730], [420, -700], [650, -690],
-    [780, -650], [860, -580], [885, -500], [860, -430], [790, -370], [690, -330], [500, -300], [330, -190],
-    [230, -175], [150, -220], [70, -250], [-20, -215], [-110, -180], [-250, -210],
-    [-500, -170], [-700, -110], [-830, -20], [-880, 80], [-855, 170], [-790, 250], [-650, 330],
-    [-450, 400], [-250, 455], [-40, 450], [150, 380], [300, 400], [390, 470], [470, 550], [570, 590], [690, 620], [800, 790]];
+  // Three wooded traverses, joined by proper mountain hairpins. The alternating offsets keep the car working instead
+  // of leaving it on kilometre-long straights; the broad separation between traverses prevents progress shortcuts.
+  const way = [[-890, -835], [-790, -790], [-690, -855], [-580, -770], [-470, -840], [-360, -750], [-250, -820], [-140, -730], [-25, -800], [90, -710], [205, -785], [320, -695], [435, -770], [550, -675], [665, -735], [770, -665],
+    [850, -610], [900, -525], [890, -440], [835, -375], [755, -350], [675, -390],
+    [560, -305], [445, -375], [330, -285], [215, -355], [100, -265], [-15, -340], [-130, -245], [-245, -320], [-360, -225], [-475, -300], [-590, -205], [-700, -270], [-790, -205],
+    [-855, -145], [-900, -60], [-890, 30], [-835, 95], [-755, 120], [-675, 75],
+    [-560, 165], [-445, 95], [-330, 190], [-215, 115], [-100, 210], [15, 135], [130, 230], [245, 155], [360, 250], [475, 175], [590, 270], [700, 205], [790, 270],
+    [855, 335], [895, 420], [880, 505], [820, 570], [740, 590], [660, 545],
+    [550, 635], [440, 565], [330, 655], [220, 585], [110, 675], [0, 605], [-110, 695], [-220, 625], [-330, 715], [-440, 645], [-550, 735], [-660, 670], [-770, 750], [-865, 825]];
   const curve = new THREE.CatmullRomCurve3(way.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
   const length = curve.getLength(), n = Math.max(2, Math.round(length)), pts = [];
   for (let i = 0; i <= n; i++) { const p = curve.getPointAt(i / n); pts.push([p.x, p.z]); }
-  return pts;
+  const land = (x, z) => 27 + z * 0.031 + Math.sin(x * 0.0038) * 5.5 + Math.sin(z * 0.0055 + 0.8) * 4 + Math.sin((x + z) * 0.0075) * 2.5;
+  const jumpSpecs = [{ f: 0.165, h: 1.45, text: 'Mały skok' }, { f: 0.405, h: 1.8, text: 'Skok' }, { f: 0.675, h: 1.35, text: 'Przez szczyt' }, { f: 0.855, h: 2.05, text: 'Duży skok' }];
+  const jump = (s, c, h) => { const d = s - c; if (d < -18 || d > 7) return 0; return d <= 0 ? h * Math.pow((d + 18) / 18, 1.18) : h * (1 - d / 7); };
+  const Y = pts.map(([x, z], i) => land(x, z) + Math.sin(i / 360 + 0.5) * 5.8 + Math.sin(i / 135) * 3.2 + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
+  const features = jumpSpecs.map(j => ({ at: Math.round(j.f * n), end: Math.round(j.f * n) + 12, text: j.text, kind: 'feature', dir: 0 }));
+  features.push({ at: Math.round(n * 0.285), end: Math.round(n * 0.285) + 10, text: 'Ślepy szczyt', kind: 'feature', dir: 0 },
+    { at: Math.round(n * 0.54), end: Math.round(n * 0.54) + 10, text: 'Mocna kompresja', kind: 'feature', dir: 0 },
+    { at: Math.round(n * 0.765), end: Math.round(n * 0.765) + 10, text: 'Dwa garby', kind: 'feature', dir: 0 });
+  return { pts, Y, features, land };
 }
 
 export async function build(progress) {
   progress('Laying out the stage', 0.05); await tick();
-  const P = trackLine(), N = P.length;
+  const line = trackLine(), P = line.pts, Y = line.Y, N = P.length;
   const T = P.map((_, i) => { const a = P[Math.max(0, i - 2)], b = P[Math.min(N - 1, i + 2)], l = Math.hypot(b[0] - a[0], b[1] - a[1]); return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; });
   // signed curvature (left positive: the car's left is +x when it faces +z) over ±6 m
   const K = P.map((_, i) => { const a = T[Math.max(0, i - 6)], b = T[Math.min(N - 1, i + 6)]; return (a[1] * b[0] - a[0] * b[1]) / 12; });
@@ -56,7 +68,8 @@ export async function build(progress) {
   const rng = mulberry32(4471), ph = Array.from({ length: 8 }, () => [rng() * 6.28, 0.6 + rng() * 0.8, rng() * 6.28]);
   const woods = (x, z) => { let n = 0; for (let k = 0; k < 8; k++) { const [a, f, p] = ph[k], s = 0.0028 * f * (1 + k * 0.45); n += Math.sin((x * Math.cos(a) + z * Math.sin(a)) * s + p) / (1 + k * 0.6); } return smoothstep(-0.1, 0.9, n * 0.75 + 0.1); };
   progress('Grading the ground', 0.18); await tick();
-  const hf = new Heightfield({ world: WORLD, grid: 1024, height: () => 0 });
+  const terrainHeight = (x, z) => { const base = line.land(x, z), ni = nearAt(x, z); if (ni < 0) return base; const d = distAt(x, z), roadH = Y[clamp(ni, 0, N - 1)]; return lerp(base, roadH, 1 - smoothstep(14, FAR - 3, d)); };
+  const hf = new Heightfield({ world: WORLD, grid: 1024, height: terrainHeight });
   await hf.generate(p => progress('Grading the ground', 0.18 + 0.06 * p));
   const { HN, CELL } = hf, FOREST = new Float32Array(HN * HN), MOIST = new Float32Array(HN * HN);
   for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, o = j * HN + i, d = distAt(x, z);
@@ -90,8 +103,8 @@ export async function build(progress) {
   buildTrees(floor.twigs, { colliders: false });
   buildLogs(floor.logs);
   progress('Grading the road', 0.68); await tick();
-  const road = roadRibbon(P, T, N);
-  const startI = 14, finishI = N - 28, dressing = dressStage(P, T, K, N, left, rng, startI, finishI);
+  const road = roadRibbon(P, T, N, hf);
+  const startI = 14, finishI = N - 28, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf);
   progress('Sowing the meadows', 0.8); await tick();
   const grass = buildGrass(hf, layers.grass.d, { water: -60, snow: 5000, reeds: false, shore: 0.01 });
   progress('Opening the stage', 0.95); await tick();
@@ -99,13 +112,13 @@ export async function build(progress) {
   const s0 = 8, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);
   const carSpawn = { x: sx, z: sz, yaw: Math.atan2(tx, tz) };
   const spawn = { x: sx + lx2 * 5, z: sz + lz2 * 5, yaw: Math.atan2(-tx, -tz), pitch: -0.05 };
-  const clock = stageClock(N, nearAt, distAt, dressing.corners, startI, finishI, carSpawn);
+  const clock = stageClock(N, nearAt, distAt, dressing.corners, line.features, startI, finishI, carSpawn);
   const world = {
     hf, grass, terrain, road, spawn, carSpawn, track: { P, T, N, distAt, nearAt }, race: clock,
     bounds: { minX: -HALF + 30, maxX: HALF - 30, minZ: -HALF + 30, maxZ: HALF - 30 },
     waterLevel: -60, waterAt: () => -60,
     groundAt: (x, z) => hf.groundAt(x, z),
-    normalAt: (x, z, out) => out.set(0, 1, 0),
+    normalAt: (x, z, out) => hf.normalAt(x, z, out),
     surfaceAt(x, z) { const d = distAt(x, z); return d < SHOULDER ? 'gravel' : FOREST[hf.idx(x, z)] > 0.5 ? 'forest' : 'grass'; },
     // (the car feels the road's surface: corrugations and the odd pothole on the gravel, a softer roll on the grass)
     bumpAt(x, z) { const d = distAt(x, z), g = 1 - smoothstep(ROAD, SHOULDER + 1, d);
@@ -122,12 +135,12 @@ export async function build(progress) {
 
 // the graded road over the ground's gravel: 9 m across, its outer metre on each side dissolving into the gravel under it
 // (hashed alpha: no sorting, the temporal AA smooths it), darker compacted ruts, loose gravel on the crown and the edges
-function roadRibbon(P, T, N) {
+function roadRibbon(P, T, N, hf) {
   const X = [-4.7, -3.4, -1.65, -0.82, 0, 0.82, 1.65, 3.4, 4.7], A = [0, 1, 1, 1, 1, 1, 1, 1, 0], C = [1.1, 1.06, 0.98, 0.8, 0.94, 0.8, 0.98, 1.06, 1.1];
   const step = 2, M = Math.ceil((N - 1) / step), nx = X.length, pos = new Float32Array((M + 1) * nx * 3), uv = new Float32Array((M + 1) * nx * 2), col = new Float32Array((M + 1) * nx * 4), idx = [];
   for (let m = 0; m <= M; m++) { const i = Math.min(N - 1, m * step), [px, pz] = P[i], [tx, tz] = T[i], lx = tz, lz = -tx;
     for (let k = 0; k < nx; k++) { const o = m * nx + k, w = X[k] + (k === 0 || k === nx - 1 ? Math.sin(m * 0.7) * 0.25 + Math.sin(m * 0.23) * 0.3 : 0);
-      pos.set([px + lx * w, 0.012, pz + lz * w], o * 3); uv.set([w / 2.5, m * step / 2.5], o * 2);
+      const x = px + lx * w, z = pz + lz * w; pos.set([x, hf.groundAt(x, z) + 0.025, z], o * 3); uv.set([w / 2.5, m * step / 2.5], o * 2);
       const v = C[k] * (0.96 + 0.08 * Math.sin(m * 0.37 + k)); col.set([v, v, v, A[k]], o * 4); } }
   for (let m = 0; m < M; m++) for (let k = 0; k < nx - 1; k++) { const a = m * nx + k, b = a + nx; idx.push(a, a + 1, b, a + 1, b + 1, b); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.BufferAttribute(col, 4)); g.setIndex(idx); g.computeVertexNormals();
@@ -138,7 +151,7 @@ function roadRibbon(P, T, N) {
 }
 
 // boards, bales, tape and the start arch
-function dressStage(P, T, K, N, left, rng, startI, finishI) {
+function dressStage(P, T, K, N, left, rng, startI, finishI, hf) {
   const group = new THREE.Group(); group.name = 'rally-dressing'; scene.add(group);
   const canvasTex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, maxAniso); return t; };
   // chevron boards (red, white arrows toward the turn)
@@ -154,7 +167,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI) {
   const tapeM = new THREE.MeshStandardMaterial({ map: tapeTex, roughness: 0.7, side: THREE.DoubleSide }), poleM = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.8 });
   const items = { board: [], post: [], back: [], bale: [], pole: [] }, tapePos = [], tapeUv = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), S1 = new THREE.Vector3(1, 1, 1);
-  const at = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
+  const at = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, hf.groundAt(x, z) + y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
   // the corners: runs of signed curvature, by their tightest point and direction; the wider runs are kept for pace notes
   const corners = []; let s = -1;
   for (let i = 0; i <= N; i++) { const tight = i < N && Math.abs(K[i]) > 1 / 500; if (tight && s < 0) s = i; if (!tight && s >= 0) { let a = s; for (let k = s; k < i; k++) if (Math.abs(K[k]) > Math.abs(K[a])) a = k; if (a > startI + 45 && a < finishI - 40) corners.push({ s, e: i - 1, apex: a, R: 1 / Math.abs(K[a]), dir: Math.sign(K[a]) }); s = -1; } }
@@ -165,17 +178,17 @@ function dressStage(P, T, K, N, left, rng, startI, finishI) {
     const from = Math.max(0, c.s - 12), to = Math.min(N - 1, c.e + 6), n = Math.max(2, Math.round((to - from) / (c.R < 30 ? 7 : 12)));
     for (let k = 0; k <= n; k++) { const i = Math.round(from + (to - from) * k / n), [ox, oz] = out(i), [px, pz] = P[i], d = 8.8, x = px + ox * d, z = pz + oz * d, yaw = Math.atan2(-ox, -oz);
       items.board.push([at(x, 1.05, z, yaw), c.dir]); items.back.push(at(x + ox * 0.012, 1.05, z + oz * 0.012, yaw + Math.PI)); items.post.push(at(x + Math.cos(yaw) * 0.45, 0, z - Math.sin(yaw) * 0.45, yaw), at(x - Math.cos(yaw) * 0.45, 0, z + Math.sin(yaw) * 0.45, yaw));
-      addBox(x, z, 0.7, 0.12, yaw, 0, 1.4); }
+      const gy = hf.groundAt(x, z); addBox(x, z, 0.7, 0.12, yaw, gy, gy + 1.4); }
     if (c.R > 45) continue;
     // straw bales on the outside of the tight ones, tape on poles behind
     const nb = c.R < 20 ? 7 : 4;
     for (let k = 0; k < nb; k++) { const i = clamp(c.apex + Math.round((k - (nb - 1) / 2) * 2.6), 0, N - 1), [ox, oz] = out(i), [px, pz] = P[i], d = 7.9 + rng() * 0.3, x = px + ox * d, z = pz + oz * d;
-      items.bale.push(at(x, 0.72, z, Math.atan2(T[i][0], T[i][1]) + Math.PI / 2 + (rng() - 0.5) * 0.15)); addCircle(x, z, 0.75, 0, 1.4); }
+      items.bale.push(at(x, 0.72, z, Math.atan2(T[i][0], T[i][1]) + Math.PI / 2 + (rng() - 0.5) * 0.15)); const gy = hf.groundAt(x, z); addCircle(x, z, 0.75, gy, gy + 1.4); }
     let prev = null;
     for (let i = Math.max(0, c.s - 20); i <= Math.min(N - 1, c.e + 20); i += 6) { const ii = i, [ox, oz] = out(ii), [px, pz] = P[ii], x = px + ox * 11.5, z = pz + oz * 11.5;
       items.pole.push(at(x, 0, z, 0)); if (prev) tape(prev, [x, z]); prev = [x, z]; }
   }
-  function tape(a, b) { const l = Math.hypot(b[0] - a[0], b[1] - a[1]), u = l / 2; for (const y of [0.85]) { const h = 0.05, v = [[a[0], y - h, a[1]], [b[0], y - h, b[1]], [b[0], y + h, b[1]], [a[0], y + h, a[1]]]; const base = tapePos.length / 3; for (const p of [v[0], v[1], v[2], v[0], v[2], v[3]]) tapePos.push(...p); tapeUv.push(0, 0, u, 0, u, 1, 0, 0, u, 1, 0, 1); } }
+  function tape(a, b) { const l = Math.hypot(b[0] - a[0], b[1] - a[1]), u = l / 2, ya = hf.groundAt(a[0], a[1]), yb = hf.groundAt(b[0], b[1]); for (const y of [0.85]) { const h = 0.05, v = [[a[0], ya + y - h, a[1]], [b[0], yb + y - h, b[1]], [b[0], yb + y + h, b[1]], [a[0], ya + y + h, a[1]]]; const base = tapePos.length / 3; for (const p of [v[0], v[1], v[2], v[0], v[2], v[3]]) tapePos.push(...p); tapeUv.push(0, 0, u, 0, u, 1, 0, 0, u, 1, 0, 1); } }
   const inst = (geo, mat, list, shadow = true) => { if (!list.length) return; const m = new THREE.InstancedMesh(geo, mat, list.length); list.forEach((x, i) => m.setMatrixAt(i, x)); m.castShadow = shadow; m.receiveShadow = true; group.add(m); return m; };
   inst(boardG, boardR, items.board.filter(b => b[1] < 0).map(b => b[0])); inst(boardG, boardL, items.board.filter(b => b[1] > 0).map(b => b[0]));
   inst(new THREE.PlaneGeometry(1.32, 0.67), backM, items.back, false); inst(postG, postM, items.post); inst(baleG, baleM, items.bale);
@@ -186,8 +199,8 @@ function dressStage(P, T, K, N, left, rng, startI, finishI) {
   const archAt = (i0, label, gold) => { const [px, pz] = P[i0], [tx, tz] = T[i0], [lx, lz] = left(i0), yaw = Math.atan2(tx, tz);
     const banner = canvasTex(1024, 128, (g, w, h) => { g.fillStyle = gold ? '#6e1719' : '#10161f'; g.fillRect(0, 0, w, h); for (let i = 0; i < 16; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#fff' : '#111'; g.fillRect(i * 8, j * 32, 8, 32); g.fillRect(w - 128 + i * 8, j * 32, 8, 32); }
       g.fillStyle = '#fff'; g.font = '700 68px "Segoe UI", system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, w / 2, h / 2 + 2); g.fillStyle = gold ? '#ffe06a' : '#e2b13c'; g.fillRect(140, h - 10, w - 280, 4); });
-    const bannerM = new THREE.MeshStandardMaterial({ map: banner, roughness: 0.7 }), arch = new THREE.Group(); arch.position.set(px, 0, pz); arch.rotation.y = yaw; group.add(arch);
-    for (const sd of [-1, 1]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5.4, 0.35), archM); post.position.set(sd * 6.2, 2.7, 0); post.castShadow = true; arch.add(post); addBox(px + lx * sd * 6.2, pz + lz * sd * 6.2, 0.25, 0.25, yaw, 0, 5.4); }
+    const bannerM = new THREE.MeshStandardMaterial({ map: banner, roughness: 0.7 }), arch = new THREE.Group(), gy = hf.groundAt(px, pz); arch.position.set(px, gy, pz); arch.rotation.y = yaw; group.add(arch);
+    for (const sd of [-1, 1]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5.4, 0.35), archM); post.position.set(sd * 6.2, 2.7, 0); post.castShadow = true; arch.add(post); const x = px + lx * sd * 6.2, z = pz + lz * sd * 6.2, py = hf.groundAt(x, z); addBox(x, z, 0.25, 0.25, yaw, py, py + 5.4); }
     const beam = new THREE.Mesh(new THREE.BoxGeometry(12.8, 0.3, 0.3), archM); beam.position.set(0, 5.3, 0); beam.castShadow = true; arch.add(beam);
     for (const sd of [-1, 1]) { const ban = new THREE.Mesh(new THREE.PlaneGeometry(11.6, 1.45), bannerM); ban.position.set(0, 4.45, sd * 0.16); ban.rotation.y = sd < 0 ? Math.PI : 0; ban.castShadow = true; arch.add(ban); }
     const line = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 0.95).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: chq, roughness: 0.85, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
@@ -199,7 +212,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI) {
 // The supplied ElevenLabs recording is one audio sprite: 136 clean phrases and their timing manifest. Keeping it whole
 // avoids a request per word; linked notes are queued from complete phrases, never assembled word by word.
 function coDriver() {
-  const BASE = 'Modeleaut/sounds/rally-pilot', V = '?v=20261025a', raw = Promise.all([
+  const BASE = 'Modeleaut/sounds/rally-pilot', V = '?v=20261025b', raw = Promise.all([
     fetch(BASE + '.json' + V).then(r => { if (!r.ok) throw new Error(`pilot manifest ${r.status}`); return r.json(); }),
     fetch(BASE + '.mp3' + V).then(r => { if (!r.ok) throw new Error(`pilot audio ${r.status}`); return r.arrayBuffer(); }),
   ]);
@@ -227,11 +240,14 @@ function coDriver() {
     if (!pack) { fallback(text); return; }
     const keys = keysFor(text, pack.data.clips); if (!keys.length) { fallback(text); return; }
     for (const s of active) try { s.stop(); } catch (e) {} active = [];
-    const ctx = audio.ctx, bus = ctx.createGain(), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), comp = ctx.createDynamicsCompressor();
-    bus.gain.value = 1.2; hp.type = 'highpass'; hp.frequency.value = 95; lp.type = 'lowpass'; lp.frequency.value = 9000; comp.threshold.value = -18; comp.knee.value = 8; comp.ratio.value = 3; comp.attack.value = 0.006; comp.release.value = 0.14;
-    bus.connect(hp).connect(lp).connect(comp).connect(audio.master);
+    const ctx = audio.ctx, bus = ctx.createGain(), hp = ctx.createBiquadFilter(), presence = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), drive = ctx.createWaveShaper(), comp = ctx.createDynamicsCompressor();
+    bus.gain.value = 1.34; hp.type = 'highpass'; hp.frequency.value = 280; hp.Q.value = 0.7; presence.type = 'peaking'; presence.frequency.value = 1750; presence.Q.value = 1.1; presence.gain.value = 5.5; lp.type = 'lowpass'; lp.frequency.value = 3650; lp.Q.value = 0.8;
+    const curve = new Float32Array(257); for (let i = 0; i < curve.length; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 1.8) / Math.tanh(1.8); } drive.curve = curve; drive.oversample = '2x';
+    comp.threshold.value = -23; comp.knee.value = 5; comp.ratio.value = 4.5; comp.attack.value = 0.003; comp.release.value = 0.11;
+    bus.connect(hp).connect(presence).connect(lp).connect(drive).connect(comp).connect(audio.master);
     let at = ctx.currentTime + 0.025, left = keys.length;
-    for (const key of keys) { const [offset, duration] = pack.data.clips[key], src = ctx.createBufferSource(); src.buffer = pack.buffer; src.connect(bus); src.start(at, offset, duration); src.onended = () => { const i = active.indexOf(src); if (i >= 0) active.splice(i, 1); if (--left === 0) bus.disconnect(); }; active.push(src); at += Math.max(0.25, duration - 0.06); }
+    for (const key of keys) { let [offset, duration] = pack.data.clips[key]; if (key === 'Trzy') duration = Math.min(duration, 0.48); else if (key === 'Dwa') duration = Math.min(duration, 0.74); else if (key === 'Jeden') duration = Math.min(duration, 0.55); // countdown words end before the next word in the source recording
+      const src = ctx.createBufferSource(); src.buffer = pack.buffer; src.connect(bus); src.start(at, offset, duration); src.onended = () => { const i = active.indexOf(src); if (i >= 0) active.splice(i, 1); if (--left === 0) bus.disconnect(); }; active.push(src); at += Math.max(0.25, duration - 0.04); }
     api.last = text; api.keys = keys; api.loaded = true;
   };
   const api = { say, stop, loaded: false, last: '', keys: [] };
@@ -240,19 +256,20 @@ function coDriver() {
 }
 
 // A real point-to-point special stage: start marshal, mandatory split gates, finish timing and a Polish co-driver.
-function stageClock(N, nearAt, distAt, corners, startI, finishI, spawn) {
+function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn) {
   const host = document.createElement('div'); host.id = 'stageClock';
   host.style.cssText = 'position:fixed;inset:0;z-index:9;color:#fff;font:600 15px/1.25 "Segoe UI",system-ui,sans-serif;text-shadow:0 2px 5px #000;pointer-events:none;letter-spacing:.02em';
   host.innerHTML = `<div data-race style="position:absolute;left:50%;top:14px;transform:translateX(-50%);min-width:260px;padding:9px 16px;border-radius:7px;background:#090d13bd;border:1px solid #ffffff28;text-align:center;box-shadow:0 8px 24px #0008"></div><div data-count style="position:absolute;left:50%;top:32%;transform:translate(-50%,-50%);font:900 92px/1 Impact,Haettenschweiler,sans-serif;color:#fff;text-shadow:0 4px 0 #151515,0 0 28px #000;display:none"></div><div data-note style="position:absolute;left:50%;top:116px;transform:translateX(-50%);min-width:330px;padding:10px 18px;border-radius:7px;background:#10151ee8;border-left:6px solid #e1262f;text-align:center;font:800 24px/1.08 'Segoe UI',system-ui;opacity:0;transition:opacity .12s"></div>`;
   document.body.appendChild(host);
   const raceEl = host.querySelector('[data-race]'), countEl = host.querySelector('[data-count]'), noteEl = host.querySelector('[data-note]');
-  let best = 0; try { best = +localStorage.getItem('wl_rally_stage_best_v2') || 0; } catch (e) {}
+  let best = 0; try { best = +localStorage.getItem('wl_rally_stage_best_v3') || 0; } catch (e) {}
   const grade = r => r < 24 ? 1 : r < 34 ? 2 : r < 48 ? 3 : r < 68 ? 4 : r < 105 ? 5 : 6;
   const phrase = c => `${c.dir > 0 ? 'Lewy' : 'Prawy'} ${grade(c.R)}${c.e - c.s > 42 ? ' długi' : ''}`;
-  const raw = corners.filter(c => c.apex > startI + 70 && c.apex < finishI - 35).map(c => ({ at: c.apex, end: c.e, text: phrase(c), dir: c.dir, grade: grade(c.R), long: c.e - c.s > 42 }));
+  const raw = corners.filter(c => c.apex > startI + 70 && c.apex < finishI - 35).map(c => ({ at: c.apex, end: c.e, text: phrase(c), dir: c.dir, grade: grade(c.R), long: c.e - c.s > 42, kind: 'turn' }));
+  for (const f of features) if (f.at > startI + 70 && f.at < finishI - 35) raw.push(f); raw.sort((a, b) => a.at - b.at);
   const notes = [];
   for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[i + 1];
-    if (b && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true }); i++; }
+    if (a.kind === 'turn' && b && b.kind === 'turn' && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true, kind: 'turn' }); i++; }
     else notes.push(a);
   }
   const checkpoints = []; for (let i = startI + 450; i < finishI - 160; i += 450) checkpoints.push(i);
@@ -261,8 +278,8 @@ function stageClock(N, nearAt, distAt, corners, startI, finishI, spawn) {
   const pilot = coDriver(), say = text => pilot.say(text), stopVoice = () => pilot.stop();
   const lockAtStart = car => { const cs = car.st; cs.pos.set(spawn.x, car.world.groundAt(spawn.x, spawn.z) + car.spec.cg[1] + 0.01, spawn.z); cs.q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.yaw); cs.vel.set(0, 0, 0); cs.ang.set(0, 0, 0); cs.throttle = 0; cs.brake = 1; cs.hand = cs.handEff = 0; for (const w of car.wheels) w.w = 0; };
   const reset = () => { stopVoice(); Object.assign(st, { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 }); };
-  const showNote = (n, distance) => { const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; noteEl.innerHTML = `<span style="display:inline-block;width:29px;color:${n.dir > 0 ? '#ffcf45' : '#60baff'}">${n.dir > 0 ? '↶' : '↷'}</span>${n.text}`; say(lead + n.text); };
-  const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem('wl_rally_stage_best_v2', String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
+  const showNote = (n, distance) => { const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; const special = n.kind === 'feature'; noteEl.innerHTML = `<span style="display:inline-block;width:29px;color:${special ? '#fff075' : n.dir > 0 ? '#ffcf45' : '#60baff'}">${special ? '▲' : n.dir > 0 ? '↶' : '↷'}</span>${n.text}`; say(lead + n.text); };
+  const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem('wl_rally_stage_best_v3', String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
   const api = { state: st, notes, checkpoints, pilot, reset,
     update(dt, car) {
       if (!car) { host.style.display = 'none'; return; }
