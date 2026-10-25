@@ -21,7 +21,7 @@ export const meta = {
   vehicle: true,
 };
 
-const ROAD = 3.6, SHOULDER = 5.2; // (half widths: the graded gravel, the loose edge)
+const ROAD = 3.6, SHOULDER = 5.2, CLEAR = 12.5; // half widths: graded road, loose edge, low open forest verge
 
 function trackLine() {
   // Three wooded traverses, joined by proper mountain hairpins. The alternating offsets keep the car working instead
@@ -64,7 +64,7 @@ export async function build(progress) {
     return lerp(lerp(DIST[o], DIST[o + 1], fx), lerp(DIST[o + DN], DIST[o + DN + 1], fx), fz); };
   const nearAt = (x, z) => { const i = clamp(Math.floor((x + HALF) / DC), 0, DN - 1), j = clamp(Math.floor((z + HALF) / DC), 0, DN - 1); return NEAR[j * DN + i]; };
 
-  // ---- woods: patches from a few long waves, thinned toward the road, none on it
+  // ---- woods: a continuous Wildlands forest, with a low open verge so the next bend remains readable
   const rng = mulberry32(4471), ph = Array.from({ length: 8 }, () => [rng() * 6.28, 0.6 + rng() * 0.8, rng() * 6.28]);
   const woods = (x, z) => { let n = 0; for (let k = 0; k < 8; k++) { const [a, f, p] = ph[k], s = 0.0028 * f * (1 + k * 0.45); n += Math.sin((x * Math.cos(a) + z * Math.sin(a)) * s + p) / (1 + k * 0.6); } return smoothstep(-0.1, 0.9, n * 0.75 + 0.1); };
   progress('Grading the ground', 0.18); await tick();
@@ -73,19 +73,21 @@ export async function build(progress) {
   await hf.generate(p => progress('Grading the ground', 0.18 + 0.06 * p));
   const { HN, CELL } = hf, FOREST = new Float32Array(HN * HN), MOIST = new Float32Array(HN * HN);
   for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, o = j * HN + i, d = distAt(x, z);
-    const f = woods(x, z) * smoothstep(12, 30, d), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
+    const f = Math.max(0.72, woods(x, z)) * smoothstep(CLEAR + 2, CLEAR + 12, d), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
     hf.mask[o * 4] = smoothstep(0.35, 0.8, f) * 235; hf.mask[o * 4 + 1] = 255; hf.mask[o * 4 + 3] = moist * 255;
     hf.mask2[o * 4] = (1 - smoothstep(ROAD - 0.6, SHOULDER + 0.6, d)) * 255;         // the gravel layer: the road and its edges
-    hf.mask2[o * 4 + 2] = (1 - smoothstep(SHOULDER - 0.4, SHOULDER + 1.2, d)) * 255;  // no grass on it
+    hf.mask2[o * 4 + 2] = (1 - smoothstep(CLEAR - 1.5, CLEAR + 0.8, d)) * 255;            // no tall grass across the readable verge
+    hf.mask2[o * 4 + 3] = (1 - smoothstep(CLEAR, CLEAR + 7, d)) * 255;                   // then only short, sparse grass before the trunks
   }
   let bx0 = 1e9, bx1 = -1e9, bz0 = 1e9, bz1 = -1e9; for (const [x, z] of P) { bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x); bz0 = Math.min(bz0, z); bz1 = Math.max(bz1, z); }
   hf.paintPave(bx0 - 8, bz0 - 8, bx1 + 8, bz1 + 8, (x, z) => 1 - smoothstep(ROAD + 0.2, SHOULDER - 0.2, distAt(x, z)));
   // ---- the same forest ecology used by Wildlands: mixed ages and stands, broadleaf fringe, old conifers, dead trees
   progress('Planting the woods', 0.28); await tick();
-  const blocked = (x, z, pad = 0) => distAt(x, z) < 10.5 + pad;
-  const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: 99, water: -60, snow: 5000, blocked,
-    alpine: [110, 175], lowland: [22, 60], meadow: 700, meadowMaxH: 95, sakura: false, step: 4.8 });
-  const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: 5, water: -60, blocked, logs: 260, twigs: 2800, shrubs: 1200 });
+  const blocked = (x, z, pad = 0) => distAt(x, z) < CLEAR + pad;
+  // The same altitude reference and species mix as nature.js: low woodland gets oak/leaf/birch among the conifers.
+  const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: 99, water: 0, snow: 205, blocked,
+    alpine: [110, 175], lowland: [22, 60], meadow: 1100, step: 4.5 });
+  const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: 5, water: 0, blocked, logs: 650, twigs: 7000, shrubs: 3000 });
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Shaping the ground', 0.4); await tick();
