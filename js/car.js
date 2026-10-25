@@ -32,16 +32,16 @@ const G = 9.81;
 const SPEC = {
   mass: 1230, cg: [0, 0.47, 0.05], dims: [1.85, 1.25, 4.05], // (dims: the box its inertia is taken from)
   susp: { rest: 0.3, k: 34000, bump: 3000, rebound: 4400, travel: 0.22, arbF: 15000, arbR: 10000 },
-  wheelI: 1.1, steerMax: 0.5, steerLock: 4.7, // (rad at the front wheels; the steering wheel turns ±270°)
+  wheelI: 1.1, steerMax: 0.56, steerLock: 4.7, // (rad at the front wheels; the steering wheel turns ±270°)
   engine: { idle: 1000, limiter: 8200, inertia: 0.2, braking: 55, curve: [[0, 120], [1000, 190], [2000, 310], [3000, 430], [4000, 475], [5000, 485], [6000, 470], [7000, 430], [8000, 370], [9000, 260]] },
   gears: [-3.3, 0, 3.25, 2.38, 1.88, 1.53, 1.27, 1.07], final: 4.3, eff: 0.88, shiftTime: 0.1, // (0 reverse, 1 neutral, 2.. first..)
   brake: { front: 1650, rear: 720, hand: 3200 }, lsd: 300, center: 420,
   aero: { cda: 0.78, cla: 1.1, front: 0.45 }, crr: 0.016, rollCentre: 0.12,
 };
 // (tuned to drive well rather than to the letter: grippy, quick to answer the wheel, and holding on in a slide)
-const SURF = { gravel: { mu: 1.28, kp: 0.12, ap: 0.13, slide: 0.94 }, grass: { mu: 1.0, kp: 0.14, ap: 0.15, slide: 0.93 }, forest: { mu: 0.98, kp: 0.14, ap: 0.15, slide: 0.93 },
-  asphalt: { mu: 1.45, kp: 0.09, ap: 0.11, slide: 0.95 }, concrete: { mu: 1.4, kp: 0.09, ap: 0.11, slide: 0.95 } };
-const ASSIST = { yaw: 2.6, beta: 0.38, k: 9 }; // (the stability help: how fast the yaw is brought to the steered one, past what body slip it pulls the car straight, how hard)
+const SURF = { gravel: { mu: 1.4, kp: 0.11, ap: 0.115, slide: 0.98 }, grass: { mu: 1.08, kp: 0.13, ap: 0.14, slide: 0.96 }, forest: { mu: 1.05, kp: 0.13, ap: 0.14, slide: 0.96 },
+  asphalt: { mu: 1.52, kp: 0.085, ap: 0.1, slide: 0.98 }, concrete: { mu: 1.48, kp: 0.085, ap: 0.1, slide: 0.98 } };
+const ASSIST = { yaw: 3.8, beta: 0.14, k: 12.5, side: 3.2 }; // (arcade stability: responsive turn-in, a catch before a slide becomes a spin, and gentle lateral recovery)
 const pac = s => Math.sin(1.3 * Math.atan(2.64 * s)); // (1 at s = 1)
 const torqueAt = rpm => { const C = SPEC.engine.curve; for (let i = 0; i + 1 < C.length; i++) if (rpm <= C[i + 1][0]) return lerp(C[i][1], C[i + 1][1], (rpm - C[i][0]) / (C[i + 1][0] - C[i][0])); return C[C.length - 1][1]; };
 // the tyre: normalised slips (sk = κ/κpeak, sa = tan α/tan αpeak) on one curve, the force split along them
@@ -167,10 +167,10 @@ export async function createCar(world, spawn) {
     // angle, measured from where the front axle is actually going, so full lock on a key never just ploughs on, the
     // wheels follow a slide by themselves as a car's caster makes them, and the counter-steer is there when it slides)
     if (analog) st.steerIn = lerp(st.steerIn, steerT, 1 - Math.exp(-dt * 16));
-    else { const rate = (steerT !== 0 && Math.sign(steerT) === Math.sign(st.steerIn) ? 3.2 : 6) * lerp(1, 0.6, clamp(Math.abs(v) / 40, 0, 1)); st.steerIn += clamp(steerT - st.steerIn, -rate * dt, rate * dt); }
+    else { const rate = (steerT !== 0 && Math.sign(steerT) === Math.sign(st.steerIn) ? 3.6 : 6.8) * lerp(1, 0.8, clamp(Math.abs(v) / 40, 0, 1)); st.steerIn += clamp(steerT - st.steerIn, -rate * dt, rate * dt); }
     const angY = st.angLocalY || 0, betaF = Math.atan2(st.velLocal.x + angY * (wheels[0].hub.z), Math.max(Math.abs(v), 1)) * Math.sign(v || 1);
-    const k = clamp((Math.abs(v) - 4) / 10, 0, 1) * (analog ? 0.75 : 1);
-    st.steer = car.handsSteer(clamp(lerp(st.steerIn, (betaF + st.steerIn * 0.19) / SPEC.steerMax, k), -1, 1), dt); // (as fast and as far as the driver's hands turn the wheel)
+    const fast = clamp((Math.abs(v) - 5) / 28, 0, 1), gain = lerp(1, analog ? 0.6 : 0.52, fast), caster = betaF / SPEC.steerMax * (Math.abs(steerT) > 0.05 ? 0.18 : 0.68);
+    st.steer = car.handsSteer(clamp(st.steerIn * gain + caster, -1, 1), dt); // (speed calms the steering without taking it away; released, the wheel follows the road and straightens itself)
     st.assist = !analog; // (keys cannot ease a brake off: the brakes keep the wheels from locking for them)
     // (in reverse, S drives and W brakes; the automatic engages reverse after a moment of S at a standstill)
     if (st.auto) { if (st.gear >= 1 && Math.abs(v) < 1.2 && brk > 0.5 && thr < 0.1) { st.revT += dt; if (st.revT > 0.35) { car.selectGear(0); st.revT = 0; } }
@@ -269,7 +269,9 @@ export async function createCar(world, spawn) {
         const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
         const lim = 11 / Math.max(spd, 1), want = clamp(vL * Math.tan(d) / wb, -lim, lim), beta = Math.atan2(vLat, spd);
         let ty = -(yawNow - want) * ASSIST.yaw * free; if (Math.abs(beta) > ASSIST.beta) ty += Math.sign(beta) * (Math.abs(beta) - ASSIST.beta) * ASSIST.k * free;
-        T.addScaledVector(up, ty * Ib.y * on); } }
+        T.addScaledVector(up, ty * Ib.y * on);
+        const sideFree = spd * 0.085, excess = Math.max(0, Math.abs(vLat) - sideFree); // below a small natural slip the tyres work alone; beyond it the arcade catch smoothly pulls the car back under the driver
+        if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * ASSIST.side * on * free); } }
     // ---- the body against the ground (its corners, its roof) and against the world (its sides)
     for (const [bx, by, bz] of CORNERS) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos), d = world.groundAt(p.x, p.z) - p.y; if (d <= 0) continue;
       r.subVectors(p, st.pos); vp.crossVectors(st.ang, r).add(st.vel); const fn = Math.max(0, 250000 * d - 9000 * vp.y), l = Math.hypot(vp.x, vp.z);
