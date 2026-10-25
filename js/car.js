@@ -35,7 +35,7 @@ const SPEC = {
   wheelI: 1.1, steerMax: 0.56, steerLock: 4.7, // (rad at the front wheels; the steering wheel turns ±270°)
   engine: { idle: 1000, limiter: 8200, inertia: 0.2, braking: 55, curve: [[0, 120], [1000, 190], [2000, 310], [3000, 430], [4000, 475], [5000, 485], [6000, 470], [7000, 430], [8000, 370], [9000, 260]] },
   gears: [-3.3, 0, 3.25, 2.38, 1.88, 1.53, 1.27, 1.07], final: 4.3, eff: 0.88, shiftTime: 0.1, // (0 reverse, 1 neutral, 2.. first..)
-  brake: { front: 1650, rear: 720, hand: 850 }, lsd: 300, center: 420,
+  brake: { front: 1650, rear: 720, hand: 980 }, lsd: 300, center: 420,
   aero: { cda: 0.78, cla: 1.1, front: 0.45 }, crr: 0.016, rollCentre: 0.12,
 };
 // (tuned to drive well rather than to the letter: grippy, quick to answer the wheel, and holding on in a slide)
@@ -243,7 +243,7 @@ export async function createCar(world, spawn) {
         wf.copy(fwd).applyAxisAngle(up, steerA); wf.addScaledVector(_n, -_n.dot(wf)).normalize(); wl.crossVectors(_n, wf);
         r.subVectors(w.cp, st.pos); vp.crossVectors(st.ang, r).add(st.vel);
         const vx = vp.dot(wf), vy = vp.dot(wl); w.vx = vx;
-        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) * (w.front ? 1 : 1 - 0.6 * clamp(hand, 0, 1)); // (the handbrake sheds rear grip instead of stopping the whole car)
+        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) * (w.front ? 1 : 1 - 0.18 * clamp(hand, 0, 1)); // the locked rear tyres keep a believable amount of lateral grip
         const Fz = Math.max(0, w.fs); w.Fz = Fz;
         const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 0.95));
         w.slip = tyre(S, mu, Fz, kappa / S.kp, sa, F2); fx = F2[0]; let fy = F2[1];
@@ -268,14 +268,14 @@ export async function createCar(world, spawn) {
     // geometry, as fast as the grip allows), and a slide pulled back past a body slip — eased off for the handbrake, so
     // it still swings the tail round
     { const vL = st.vel.dot(fwd), sideV = _v.crossVectors(up, fwd), vLat = st.vel.dot(sideV), spd = Math.abs(vL), on = clamp((spd - 3) / 6, 0, 1) * (wheels.filter(w => w.contact).length >= 3 ? 1 : 0);
-      if (on > 0) { hbT = hand > 0.3 ? 1.3 : Math.max(0, hbT - h); const free = 1 - 0.42 * smoothstep(0, 0.6, hbT); // (enough freedom to rotate, with an arcade catch before the slide becomes a spin)
+      if (on > 0) { hbT = hand > 0.12 ? Math.min(1, hbT + h * 5) : Math.max(0, hbT - h * 4); const hbMix = smoothstep(0.08, 0.85, hand) * smoothstep(3, 9, spd), free = 1 - 0.12 * hbT;
         const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
-        const lim = 11 / Math.max(spd, 1), want = clamp(vL * Math.tan(d) / wb, -lim, lim), beta = Math.atan2(vLat, spd);
-        let ty = -(yawNow - want) * ASSIST.yaw * free; if (Math.abs(beta) > ASSIST.beta) ty += Math.sign(beta) * (Math.abs(beta) - ASSIST.beta) * ASSIST.k * free;
+        const lim = 11 / Math.max(spd, 1), roadWant = clamp(vL * Math.tan(d) / wb, -lim, lim), hbWant = st.steer * lerp(0.5, 0.88, clamp(spd / 28, 0, 1)), want = lerp(roadWant, hbWant, hbMix * 0.8), beta = Math.atan2(vLat, spd), betaLim = lerp(ASSIST.beta, 0.24, hbMix);
+        let ty = -(yawNow - want) * ASSIST.yaw * free; if (Math.abs(beta) > betaLim) ty += Math.sign(beta) * (Math.abs(beta) - betaLim) * ASSIST.k * free;
         T.addScaledVector(up, ty * Ib.y * on);
-        const sideFree = spd * 0.085, excess = Math.max(0, Math.abs(vLat) - sideFree); // below a small natural slip the tyres work alone; beyond it the arcade catch smoothly pulls the car back under the driver
+        const sideFree = spd * lerp(0.085, 0.16, hbMix), excess = Math.max(0, Math.abs(vLat) - sideFree); // permit a useful rally slide while held; catch it quickly as soon as the lever is released
         if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * ASSIST.side * on * free);
-        if (hb && st.throttle > 0.05) F.addScaledVector(fwd, m * G * 0.22 * hand * st.throttle); // keep momentum through a powered handbrake turn instead of making the lever a second foot brake
+        if (hb && st.throttle > 0.05) F.addScaledVector(fwd, m * G * 0.18 * hand * st.throttle); // the front axle can still pull the car through the slide
       } }
     // ---- the body against the ground (its corners, its roof) and against the world (its sides)
     for (const [bx, by, bz] of CORNERS) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos), d = world.groundAt(p.x, p.z) - p.y; if (d <= 0) continue;
