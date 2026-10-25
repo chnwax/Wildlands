@@ -10,6 +10,7 @@ import { THREE, scene, clamp, lerp, smoothstep, mulberry32, tick, phTex, NFLAT, 
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs } from './trees.js';
 import { plantForest, forestFloor } from './ecology.js';
+import { audio } from './audio.js';
 
 export const meta = {
   name: 'Rally Stage',
@@ -195,6 +196,49 @@ function dressStage(P, T, K, N, left, rng, startI, finishI) {
   return { group, corners };
 }
 
+// The supplied ElevenLabs recording is one audio sprite: 136 clean phrases and their timing manifest. Keeping it whole
+// avoids a request per word; linked notes are queued from complete phrases, never assembled word by word.
+function coDriver() {
+  const BASE = 'Modeleaut/sounds/rally-pilot', V = '?v=20261025a', raw = Promise.all([
+    fetch(BASE + '.json' + V).then(r => { if (!r.ok) throw new Error(`pilot manifest ${r.status}`); return r.json(); }),
+    fetch(BASE + '.mp3' + V).then(r => { if (!r.ok) throw new Error(`pilot audio ${r.status}`); return r.arrayBuffer(); }),
+  ]);
+  let data = null, buffer = null, decode = null, serial = 0, active = [];
+  const norm = s => s.toLocaleLowerCase('pl-PL').replace(/[.!?]+$/g, '').replace(/\s+/g, ' ').trim();
+  const fallback = text => { if (!text || !('speechSynthesis' in window)) return; const u = new SpeechSynthesisUtterance(text), vs = speechSynthesis.getVoices(); u.voice = vs.find(v => /^pl\b/i.test(v.lang)) || null; u.lang = 'pl-PL'; u.rate = 1.22; u.pitch = 0.86; u.volume = 0.92; speechSynthesis.speak(u); };
+  const ready = async () => { if (!audio.ctx) return null; if (buffer && data) return { data, buffer }; if (!decode) decode = raw.then(async ([m, bytes]) => { data = m; buffer = await audio.ctx.decodeAudioData(bytes.slice(0)); return { data, buffer }; }).catch(e => { console.warn('rally pilot:', e); return null; }); return decode; };
+  const stop = () => { serial++; for (const s of active) try { s.stop(); } catch (e) {} active = []; if ('speechSynthesis' in window) speechSynthesis.cancel(); };
+  const keysFor = (text, clips) => {
+    const byName = new Map(Object.keys(clips).map(k => [norm(k), k])), get = s => byName.get(norm(s));
+    const out = [], push = s => { const k = get(s); if (k) out.push(k); return !!k; };
+    let rest = text.trim().replace(/[.!?]+$/g, '');
+    const distance = rest.match(/^(Za (?:trzydzieści|pięćdziesiąt|osiemdziesiąt|sto(?: pięćdziesiąt)?|dwieście|trzysta|czterysta|pięćset)),\s*(.+)$/i);
+    if (distance) { push(distance[1]); rest = distance[2]; }
+    if (push(rest)) return out;
+    const linked = rest.match(/^(.+?),\s*w\s+((?:lewy|prawy)\s+.+)$/i);
+    if (linked) { push(linked[1]); push(linked[2][0].toUpperCase() + linked[2].slice(1)); return out; }
+    const changing = rest.match(/^((?:Lewy|Prawy)\s+\d)(?:\s+długi)?,\s*(zaciska|otwiera)\s+(\d)/i);
+    if (changing) { const full = `${changing[1]}, ${changing[2].toLowerCase()} ${changing[3]}`; if (!push(full)) push(rest.split(',')[0]); return out; }
+    push(rest.split(',')[0]);
+    return out;
+  };
+  const say = async text => {
+    if (!text) return; const my = ++serial, pack = await ready(); if (my !== serial) return;
+    if (!pack) { fallback(text); return; }
+    const keys = keysFor(text, pack.data.clips); if (!keys.length) { fallback(text); return; }
+    for (const s of active) try { s.stop(); } catch (e) {} active = [];
+    const ctx = audio.ctx, bus = ctx.createGain(), hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), comp = ctx.createDynamicsCompressor();
+    bus.gain.value = 1.2; hp.type = 'highpass'; hp.frequency.value = 95; lp.type = 'lowpass'; lp.frequency.value = 9000; comp.threshold.value = -18; comp.knee.value = 8; comp.ratio.value = 3; comp.attack.value = 0.006; comp.release.value = 0.14;
+    bus.connect(hp).connect(lp).connect(comp).connect(audio.master);
+    let at = ctx.currentTime + 0.025, left = keys.length;
+    for (const key of keys) { const [offset, duration] = pack.data.clips[key], src = ctx.createBufferSource(); src.buffer = pack.buffer; src.connect(bus); src.start(at, offset, duration); src.onended = () => { const i = active.indexOf(src); if (i >= 0) active.splice(i, 1); if (--left === 0) bus.disconnect(); }; active.push(src); at += Math.max(0.25, duration - 0.06); }
+    api.last = text; api.keys = keys; api.loaded = true;
+  };
+  const api = { say, stop, loaded: false, last: '', keys: [] };
+  raw.then(() => { api.fetched = true; }).catch(() => {});
+  return api;
+}
+
 // A real point-to-point special stage: start marshal, mandatory split gates, finish timing and a Polish co-driver.
 function stageClock(N, nearAt, distAt, corners, startI, finishI, spawn) {
   const host = document.createElement('div'); host.id = 'stageClock';
@@ -208,19 +252,18 @@ function stageClock(N, nearAt, distAt, corners, startI, finishI, spawn) {
   const raw = corners.filter(c => c.apex > startI + 70 && c.apex < finishI - 35).map(c => ({ at: c.apex, end: c.e, text: phrase(c), dir: c.dir, grade: grade(c.R), long: c.e - c.s > 42 }));
   const notes = [];
   for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[i + 1];
-    if (b && b.at - a.end < 85) { const tail = a.dir === b.dir ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true }); i++; }
+    if (b && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true }); i++; }
     else notes.push(a);
   }
   const checkpoints = []; for (let i = startI + 450; i < finishI - 160; i += 450) checkpoints.push(i);
   const st = { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 };
   const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
-  const say = text => { if (!text || !('speechSynthesis' in window)) return; const u = new SpeechSynthesisUtterance(text), vs = speechSynthesis.getVoices(); u.voice = vs.find(v => /^pl\b/i.test(v.lang)) || null; u.lang = 'pl-PL'; u.rate = 1.22; u.pitch = 0.86; u.volume = 0.92; speechSynthesis.speak(u); };
-  const stopVoice = () => { if ('speechSynthesis' in window) speechSynthesis.cancel(); };
+  const pilot = coDriver(), say = text => pilot.say(text), stopVoice = () => pilot.stop();
   const lockAtStart = car => { const cs = car.st; cs.pos.set(spawn.x, car.world.groundAt(spawn.x, spawn.z) + car.spec.cg[1] + 0.01, spawn.z); cs.q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.yaw); cs.vel.set(0, 0, 0); cs.ang.set(0, 0, 0); cs.throttle = 0; cs.brake = 1; cs.hand = cs.handEff = 0; for (const w of car.wheels) w.w = 0; };
   const reset = () => { stopVoice(); Object.assign(st, { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 }); };
   const showNote = (n, distance) => { const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; noteEl.innerHTML = `<span style="display:inline-block;width:29px;color:${n.dir > 0 ? '#ffcf45' : '#60baff'}">${n.dir > 0 ? '↶' : '↷'}</span>${n.text}`; say(lead + n.text); };
-  const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem('wl_rally_stage_best_v2', String(best)); } catch (e) {} } stopVoice(); say(`${st.newBest ? 'Nowy rekord.' : 'Meta.'} Czas ${Math.floor(st.result / 60)} minut ${Math.round(st.result % 60)} sekund`); st.noteText = ''; st.noteT = 0; };
-  const api = { state: st, notes, checkpoints, reset,
+  const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem('wl_rally_stage_best_v2', String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
+  const api = { state: st, notes, checkpoints, pilot, reset,
     update(dt, car) {
       if (!car) { host.style.display = 'none'; return; }
       host.style.display = car.driving ? '' : 'none';
