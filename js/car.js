@@ -185,7 +185,10 @@ export async function createCar(world, spawn) {
   car.shift = d => { if (!car.driving) return; if (st.auto && !car._auto) { st.auto = false; toastMsg('Manual gearbox — X: automatic'); }
     car.selectGear(clamp(chosen() + d, 0, SPEC.gears.length - 1)); };
   car.toggleAuto = () => { st.auto = !st.auto; toastMsg(st.auto ? 'Automatic gearbox' : 'Manual gearbox: E / Shift up, Q down (or the mouse buttons)'); };
-  car.reset = () => { const f = _v.set(0, 0, 1).applyQuaternion(st.q); place(st.pos.x, st.pos.z, Math.atan2(f.x, f.z)); toastMsg('Car reset'); };
+  car.reset = () => {
+    if (world.restartStage) { place(spawn.x, spawn.z, spawn.yaw); Object.assign(st, { steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, handEff: 0, shiftT: 0 }); world.restartStage(car); toastMsg('Stage restarted'); return; }
+    const f = _v.set(0, 0, 1).applyQuaternion(st.q); place(st.pos.x, st.pos.z, Math.atan2(f.x, f.z)); toastMsg('Car reset');
+  };
   car.cycleView = () => { car.view = (car.view + 1) % 3; toastMsg(['Cockpit', 'Chase camera', 'Bonnet camera'][car.view]); };
   car.lookMouse = (dx, dy) => { const Lk = car.look; Lk.yaw = clamp(Lk.yaw - dx * 0.0022, -2.3, 2.3); Lk.pitch = clamp(Lk.pitch - dy * 0.0022, -0.9, 0.7); Lk.idle = 0; };
   addEventListener('keydown', e => { if (!car.inputOn || !car.driving || e.repeat) return;
