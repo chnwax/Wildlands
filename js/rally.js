@@ -1,10 +1,9 @@
-// Rally Stage: a point-to-point gravel special stage for the car (car.js). A hand-shaped mountain route crosses
-// four distinct forest sections through linked bends, square turns, hairpins, crests and jumps. A distance
+// Shared point-to-point rally stage builder for the car (car.js). Each stage supplies a hand-shaped route,
+// exact competitive distance, surface and ecology while reusing timing, pace notes and roadside dressing. A distance
 // field over the map (2 m cells: the distance
 // to the centre line and the nearest point on it) answers what the ground is under a wheel, where the trees may stand
-// and how far round the stage the car has come (the stage clock). The road: the ground's own gravel layer under it
-// (soft edges into the grass), and a ribbon of graded gravel over that with the two wheel ruts and loose gravel on the
-// crown and the edges. Pine, spruce and birch woods in patches, meadows between; chevron boards on the outside of the
+// and how far round the stage the car has come (the stage clock). The road is graded into the terrain and receives
+// either a gravel ribbon with wheel ruts or painted asphalt. Wildlands woods border a readable low verge; chevron boards mark the
 // tight corners, straw bales and tape at the hairpins and the chicane, the start and finish arch with its line.
 import { THREE, scene, clamp, lerp, smoothstep, mulberry32, tick, phTex, NFLAT, maxAniso, addCircle, addBox } from './core.js';
 import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass } from './terrain.js';
@@ -13,7 +12,7 @@ import { plantForest, forestFloor } from './ecology.js';
 import { audio } from './audio.js';
 
 export const meta = {
-  name: 'Rally Stage',
+  name: 'Pine Forest',
   builder: false,
   startHour: 15.4,
   sunAzimuth: 2.15,
@@ -23,33 +22,40 @@ export const meta = {
 
 const ROAD = 3.6, SHOULDER = 5.2, CLEAR = 12.5; // half widths: graded road, loose edge, low open forest verge
 
-function trackLine() {
-  // Three wooded traverses, joined by proper mountain hairpins. The alternating offsets keep the car working instead
-  // of leaving it on kilometre-long straights; the broad separation between traverses prevents progress shortcuts.
-  const way = [[-890, -835], [-790, -790], [-690, -855], [-580, -770], [-470, -840], [-360, -750], [-250, -820], [-140, -730], [-25, -800], [90, -710], [205, -785], [320, -695], [435, -770], [550, -675], [665, -735], [770, -665],
-    [850, -610], [900, -525], [890, -440], [835, -375], [755, -350], [675, -390],
-    [560, -305], [445, -375], [330, -285], [215, -355], [100, -265], [-15, -340], [-130, -245], [-245, -320], [-360, -225], [-475, -300], [-590, -205], [-700, -270], [-790, -205],
-    [-855, -145], [-900, -60], [-890, 30], [-835, 95], [-755, 120], [-675, 75],
-    [-560, 165], [-445, 95], [-330, 190], [-215, 115], [-100, 210], [15, 135], [130, 230], [245, 155], [360, 250], [475, 175], [590, 270], [700, 205], [790, 270],
-    [855, 335], [895, 420], [880, 505], [820, 570], [740, 590], [660, 545],
-    [550, 635], [440, 565], [330, 655], [220, 585], [110, 675], [0, 605], [-110, 695], [-220, 625], [-330, 715], [-440, 645], [-550, 735], [-660, 670], [-770, 750], [-865, 825]];
-  const curve = new THREE.CatmullRomCurve3(way.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
-  const length = curve.getLength(), n = Math.max(2, Math.round(length)), pts = [];
+export const PINE_STAGE = {
+  id: 'pine', name: 'Pine Forest', target: 1500, roadType: 'gravel', seed: 4471,
+  bestKey: 'wl_rally_pine_best_v1', forestMin: 0.72, forestSeed: 99, floorSeed: 5,
+  way: [[-355, -360], [-365, -300], [-340, -245], [-360, -185], [-335, -125], [-300, -70], [-280, -5], [-230, 55], [-170, 82], [-120, 62], [-100, 112], [-62, 78], [-18, 112], [35, 102], [82, 62], [118, 20], [168, -5], [225, -18], [272, -58], [294, -118], [310, -190], [350, -255], [382, -325]],
+  jumps: [{ f: 0.31, h: 0.8, text: 'Przez szczyt' }, { f: 0.72, h: 1.05, text: 'Mały skok' }],
+  features: [{ f: 0.49, text: 'Mocna kompresja' }],
+};
+
+function trackLine(cfg) {
+  // Fit each hand-drawn route to its declared competitive distance. Sampling is followed by one final uniform
+  // correction, so the polyline used by timing, pace notes and the road itself has the requested length.
+  let way = cfg.way.map(p => p.slice()), curve = new THREE.CatmullRomCurve3(way.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+  const fit = cfg.target / curve.getLength(); way = way.map(([x, z]) => [x * fit, z * fit]);
+  curve = new THREE.CatmullRomCurve3(way.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+  const n = Math.max(2, Math.round(cfg.target)), pts = [];
   for (let i = 0; i <= n; i++) { const p = curve.getPointAt(i / n); pts.push([p.x, p.z]); }
-  const land = (x, z) => 27 + z * 0.031 + Math.sin(x * 0.0038) * 5.5 + Math.sin(z * 0.0055 + 0.8) * 4 + Math.sin((x + z) * 0.0075) * 2.5;
-  const jumpSpecs = [{ f: 0.165, h: 1.45, text: 'Mały skok' }, { f: 0.405, h: 1.8, text: 'Skok' }, { f: 0.675, h: 1.35, text: 'Przez szczyt' }, { f: 0.855, h: 2.05, text: 'Duży skok' }];
+  const sampled = pts.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0), exact = cfg.target / sampled;
+  for (const p of pts) { p[0] *= exact; p[1] *= exact; }
+  const land = cfg.roadType === 'asphalt'
+    ? (x, z) => 48 + z * 0.075 + Math.sin(x * 0.006) * 7 + Math.sin(z * 0.008 + 0.8) * 5 + Math.sin((x + z) * 0.012) * 2.8
+    : (x, z) => 24 + z * 0.025 + Math.sin(x * 0.005) * 4.5 + Math.sin(z * 0.007 + 0.8) * 3.5 + Math.sin((x + z) * 0.01) * 2;
+  const jumpSpecs = cfg.jumps || [];
   const jump = (s, c, h) => { const d = s - c; if (d < -18 || d > 7) return 0; return d <= 0 ? h * Math.pow((d + 18) / 18, 1.18) : h * (1 - d / 7); };
-  const Y = pts.map(([x, z], i) => land(x, z) + Math.sin(i / 360 + 0.5) * 5.8 + Math.sin(i / 135) * 3.2 + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
+  const Y = pts.map(([x, z], i) => land(x, z) + Math.sin(i / (cfg.roadType === 'asphalt' ? 210 : 260) + 0.5) * (cfg.roadType === 'asphalt' ? 3.8 : 2.8) + Math.sin(i / 92) * 1.7 + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
   const features = jumpSpecs.map(j => ({ at: Math.round(j.f * n), end: Math.round(j.f * n) + 12, text: j.text, kind: 'feature', dir: 0 }));
-  features.push({ at: Math.round(n * 0.285), end: Math.round(n * 0.285) + 10, text: 'Ślepy szczyt', kind: 'feature', dir: 0 },
-    { at: Math.round(n * 0.54), end: Math.round(n * 0.54) + 10, text: 'Mocna kompresja', kind: 'feature', dir: 0 },
-    { at: Math.round(n * 0.765), end: Math.round(n * 0.765) + 10, text: 'Dwa garby', kind: 'feature', dir: 0 });
-  return { pts, Y, features, land };
+  for (const f of cfg.features || []) features.push({ at: Math.round(n * f.f), end: Math.round(n * f.f) + 10, text: f.text, kind: 'feature', dir: 0 });
+  return { pts, Y, features, land, length: cfg.target };
 }
 
-export async function build(progress) {
+export async function build(progress) { return buildStage(progress, PINE_STAGE); }
+
+export async function buildStage(progress, cfg) {
   progress('Laying out the stage', 0.05); await tick();
-  const line = trackLine(), P = line.pts, Y = line.Y, N = P.length;
+  const line = trackLine(cfg), P = line.pts, Y = line.Y, N = P.length;
   const T = P.map((_, i) => { const a = P[Math.max(0, i - 2)], b = P[Math.min(N - 1, i + 2)], l = Math.hypot(b[0] - a[0], b[1] - a[1]); return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; });
   // signed curvature (left positive: the car's left is +x when it faces +z) over ±6 m
   const K = P.map((_, i) => { const a = T[Math.max(0, i - 6)], b = T[Math.min(N - 1, i + 6)]; return (a[1] * b[0] - a[0] * b[1]) / 12; });
@@ -65,7 +71,7 @@ export async function build(progress) {
   const nearAt = (x, z) => { const i = clamp(Math.floor((x + HALF) / DC), 0, DN - 1), j = clamp(Math.floor((z + HALF) / DC), 0, DN - 1); return NEAR[j * DN + i]; };
 
   // ---- woods: a continuous Wildlands forest, with a low open verge so the next bend remains readable
-  const rng = mulberry32(4471), ph = Array.from({ length: 8 }, () => [rng() * 6.28, 0.6 + rng() * 0.8, rng() * 6.28]);
+  const rng = mulberry32(cfg.seed), ph = Array.from({ length: 8 }, () => [rng() * 6.28, 0.6 + rng() * 0.8, rng() * 6.28]);
   const woods = (x, z) => { let n = 0; for (let k = 0; k < 8; k++) { const [a, f, p] = ph[k], s = 0.0028 * f * (1 + k * 0.45); n += Math.sin((x * Math.cos(a) + z * Math.sin(a)) * s + p) / (1 + k * 0.6); } return smoothstep(-0.1, 0.9, n * 0.75 + 0.1); };
   progress('Grading the ground', 0.18); await tick();
   const terrainHeight = (x, z) => { const base = line.land(x, z), ni = nearAt(x, z); if (ni < 0) return base; const d = distAt(x, z), roadH = Y[clamp(ni, 0, N - 1)]; return lerp(base, roadH, 1 - smoothstep(14, FAR - 3, d)); };
@@ -73,7 +79,7 @@ export async function build(progress) {
   await hf.generate(p => progress('Grading the ground', 0.18 + 0.06 * p));
   const { HN, CELL } = hf, FOREST = new Float32Array(HN * HN), MOIST = new Float32Array(HN * HN);
   for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, o = j * HN + i, d = distAt(x, z);
-    const f = Math.max(0.72, woods(x, z)) * smoothstep(CLEAR + 2, CLEAR + 12, d), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
+    const f = Math.max(cfg.forestMin, woods(x, z)) * smoothstep(CLEAR + 2, CLEAR + 12, d), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
     hf.mask[o * 4] = smoothstep(0.35, 0.8, f) * 235; hf.mask[o * 4 + 1] = 255; hf.mask[o * 4 + 3] = moist * 255;
     hf.mask2[o * 4] = (1 - smoothstep(ROAD - 0.6, SHOULDER + 0.6, d)) * 255;         // the gravel layer: the road and its edges
     hf.mask2[o * 4 + 2] = (1 - smoothstep(CLEAR - 1.5, CLEAR + 0.8, d)) * 255;            // no tall grass across the readable verge
@@ -85,9 +91,11 @@ export async function build(progress) {
   progress('Planting the woods', 0.28); await tick();
   const blocked = (x, z, pad = 0) => distAt(x, z) < CLEAR + pad;
   // The same altitude reference and species mix as nature.js: low woodland gets oak/leaf/birch among the conifers.
-  const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: 99, water: 0, snow: 205, blocked,
-    alpine: [110, 175], lowland: [22, 60], meadow: 1100, step: 4.5 });
-  const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: 5, water: 0, blocked, logs: 650, twigs: 7000, shrubs: 3000 });
+  const alpine = cfg.roadType === 'asphalt';
+  const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: cfg.forestSeed, water: 0, snow: 205, blocked,
+    alpine: alpine ? [38, 76] : [110, 175], lowland: alpine ? [12, 32] : [22, 60], meadow: 1100, step: alpine ? 5.4 : 4.5 });
+  const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: cfg.floorSeed, water: 0, blocked,
+    logs: alpine ? 320 : 650, twigs: alpine ? 3500 : 7000, shrubs: alpine ? 1500 : 3000 });
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Shaping the ground', 0.4); await tick();
@@ -105,7 +113,7 @@ export async function build(progress) {
   buildTrees(floor.twigs, { colliders: false });
   buildLogs(floor.logs);
   progress('Grading the road', 0.68); await tick();
-  const road = roadRibbon(P, T, N, hf);
+  const road = roadRibbon(P, T, N, hf, cfg.roadType);
   const startI = 14, finishI = N - 28, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf);
   progress('Sowing the meadows', 0.8); await tick();
   const grass = buildGrass(hf, layers.grass.d, { water: -60, snow: 5000, reeds: false, shore: 0.01 });
@@ -114,14 +122,14 @@ export async function build(progress) {
   const s0 = 8, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);
   const carSpawn = { x: sx, z: sz, yaw: Math.atan2(tx, tz) };
   const spawn = { x: sx + lx2 * 5, z: sz + lz2 * 5, yaw: Math.atan2(-tx, -tz), pitch: -0.05 };
-  const clock = stageClock(N, nearAt, distAt, dressing.corners, line.features, startI, finishI, carSpawn);
+  const clock = stageClock(N, nearAt, distAt, dressing.corners, line.features, startI, finishI, carSpawn, cfg);
   const world = {
-    hf, grass, terrain, road, spawn, carSpawn, track: { P, T, N, distAt, nearAt }, race: clock,
+    hf, grass, terrain, road, spawn, carSpawn, track: { P, T, N, distAt, nearAt, length: line.length }, race: clock, stage: cfg,
     bounds: { minX: -HALF + 30, maxX: HALF - 30, minZ: -HALF + 30, maxZ: HALF - 30 },
     waterLevel: -60, waterAt: () => -60,
     groundAt: (x, z) => hf.groundAt(x, z),
     normalAt: (x, z, out) => hf.normalAt(x, z, out),
-    surfaceAt(x, z) { const d = distAt(x, z); return d < SHOULDER ? 'gravel' : FOREST[hf.idx(x, z)] > 0.5 ? 'forest' : 'grass'; },
+    surfaceAt(x, z) { const d = distAt(x, z); return d < SHOULDER ? cfg.roadType : FOREST[hf.idx(x, z)] > 0.5 ? 'forest' : 'grass'; },
     // (the car feels the road's surface: corrugations and the odd pothole on the gravel, a softer roll on the grass)
     bumpAt(x, z) { const d = distAt(x, z), g = 1 - smoothstep(ROAD, SHOULDER + 1, d);
       const b = Math.sin(x * 1.1 + z * 0.5) * Math.sin(z * 0.9 - x * 0.3) * 0.003 + Math.sin(x * 0.37 - z * 0.41) * Math.sin(z * 0.29 + x * 0.19) * 0.012;
@@ -135,9 +143,9 @@ export async function build(progress) {
   return world;
 }
 
-// the graded road over the ground's gravel: 9 m across, its outer metre on each side dissolving into the gravel under it
-// (hashed alpha: no sorting, the temporal AA smooths it), darker compacted ruts, loose gravel on the crown and the edges
-function roadRibbon(P, T, N, hf) {
+// The graded road is 9 m across. Gravel gets compacted ruts and loose edges; asphalt gets continuous edge paint and a
+// dashed centre line. The outer metre dissolves into the terrain with alpha hashing, avoiding a hard floating road edge.
+function roadRibbon(P, T, N, hf, roadType = 'gravel') {
   const X = [-4.7, -3.4, -1.65, -0.82, 0, 0.82, 1.65, 3.4, 4.7], A = [0, 1, 1, 1, 1, 1, 1, 1, 0], C = [1.1, 1.06, 0.98, 0.8, 0.94, 0.8, 0.98, 1.06, 1.1];
   const step = 2, M = Math.ceil((N - 1) / step), nx = X.length, pos = new Float32Array((M + 1) * nx * 3), uv = new Float32Array((M + 1) * nx * 2), col = new Float32Array((M + 1) * nx * 4), idx = [];
   for (let m = 0; m <= M; m++) { const i = Math.min(N - 1, m * step), [px, pz] = P[i], [tx, tz] = T[i], lx = tz, lz = -tx;
@@ -146,10 +154,22 @@ function roadRibbon(P, T, N, hf) {
       const v = C[k] * (0.96 + 0.08 * Math.sin(m * 0.37 + k)); col.set([v, v, v, A[k]], o * 4); } }
   for (let m = 0; m < M; m++) for (let k = 0; k < nx - 1; k++) { const a = m * nx + k, b = a + nx; idx.push(a, a + 1, b, a + 1, b + 1, b); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.BufferAttribute(col, 4)); g.setIndex(idx); g.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ color: 0xb8a68c, map: phTex('bicolour_gravel', 'diff', '1k', true), normalMap: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), normalScale: new THREE.Vector2(0.6, 0.6),
-    roughness: 0.97, metalness: 0, vertexColors: true, alphaHash: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-  const mesh = new THREE.Mesh(g, mat); mesh.receiveShadow = true; mesh.name = 'rally-road'; scene.add(mesh);
-  return mesh;
+  const asphalt = roadType === 'asphalt';
+  const mat = new THREE.MeshStandardMaterial({ color: asphalt ? 0x3b3d3e : 0xb8a68c,
+    map: asphalt ? null : phTex('bicolour_gravel', 'diff', '1k', true), normalMap: asphalt ? null : phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), normalScale: new THREE.Vector2(0.6, 0.6),
+    roughness: asphalt ? 0.9 : 0.97, metalness: 0, vertexColors: true, alphaHash: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const group = new THREE.Group(); group.name = 'rally-road'; scene.add(group);
+  const mesh = new THREE.Mesh(g, mat); mesh.receiveShadow = true; mesh.name = 'rally-road-surface'; group.add(mesh);
+  if (asphalt) {
+    const marks = [], emit = (i, off, half) => { const j = Math.min(N - 1, i + step), [ax, az] = P[i], [bx, bz] = P[j], [atx, atz] = T[i], [btx, btz] = T[j];
+      const a0 = [ax + atz * (off - half), hf.groundAt(ax + atz * off, az - atx * off) + 0.052, az - atx * (off - half)], a1 = [ax + atz * (off + half), a0[1], az - atx * (off + half)];
+      const b0 = [bx + btz * (off - half), hf.groundAt(bx + btz * off, bz - btx * off) + 0.052, bz - btx * (off - half)], b1 = [bx + btz * (off + half), b0[1], bz - btx * (off + half)]; marks.push(...a0, ...a1, ...b0, ...a1, ...b1, ...b0); };
+    for (let i = 0; i < N - step; i += step) { emit(i, -3.45, 0.055); emit(i, 3.45, 0.055); if (Math.floor(i / 7) % 2 === 0) emit(i, 0, 0.045); }
+    const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.Float32BufferAttribute(marks, 3)); mg.computeVertexNormals();
+    const mm = new THREE.MeshStandardMaterial({ color: 0xe5e2d5, roughness: 0.82, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    const painted = new THREE.Mesh(mg, mm); painted.receiveShadow = true; painted.name = 'rally-road-markings'; group.add(painted);
+  }
+  return group;
 }
 
 // boards, bales, tape and the start arch
@@ -258,13 +278,13 @@ function coDriver() {
 }
 
 // A real point-to-point special stage: start marshal, mandatory split gates, finish timing and a Polish co-driver.
-function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn) {
+function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn, cfg) {
   const host = document.createElement('div'); host.id = 'stageClock';
   host.style.cssText = 'position:fixed;inset:0;z-index:9;color:#fff;font:600 15px/1.25 "Segoe UI",system-ui,sans-serif;text-shadow:0 2px 5px #000;pointer-events:none;letter-spacing:.02em';
   host.innerHTML = `<div data-race style="position:absolute;left:50%;top:14px;transform:translateX(-50%);min-width:260px;padding:9px 16px;border-radius:7px;background:#090d13bd;border:1px solid #ffffff28;text-align:center;box-shadow:0 8px 24px #0008"></div><div data-count style="position:absolute;left:50%;top:32%;transform:translate(-50%,-50%);font:900 92px/1 Impact,Haettenschweiler,sans-serif;color:#fff;text-shadow:0 4px 0 #151515,0 0 28px #000;display:none"></div><div data-note style="position:absolute;left:50%;top:116px;transform:translateX(-50%);min-width:330px;padding:10px 18px;border-radius:7px;background:#10151ee8;border-left:6px solid #e1262f;text-align:center;font:800 24px/1.08 'Segoe UI',system-ui;opacity:0;transition:opacity .12s"></div>`;
   document.body.appendChild(host);
   const raceEl = host.querySelector('[data-race]'), countEl = host.querySelector('[data-count]'), noteEl = host.querySelector('[data-note]');
-  let best = 0; try { best = +localStorage.getItem('wl_rally_stage_best_v3') || 0; } catch (e) {}
+  let best = 0; try { best = +localStorage.getItem(cfg.bestKey) || 0; } catch (e) {}
   const grade = r => r < 24 ? 1 : r < 34 ? 2 : r < 48 ? 3 : r < 68 ? 4 : r < 105 ? 5 : 6;
   const phrase = c => `${c.dir > 0 ? 'Lewy' : 'Prawy'} ${grade(c.R)}${c.e - c.s > 42 ? ' długi' : ''}`;
   const raw = corners.filter(c => c.apex > startI + 70 && c.apex < finishI - 35).map(c => ({ at: c.apex, end: c.e, text: phrase(c), dir: c.dir, grade: grade(c.R), long: c.e - c.s > 42, kind: 'turn' }));
@@ -274,14 +294,14 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
     if (a.kind === 'turn' && b && b.kind === 'turn' && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true, kind: 'turn' }); i++; }
     else notes.push(a);
   }
-  const checkpoints = []; for (let i = startI + 450; i < finishI - 160; i += 450) checkpoints.push(i);
+  const checkpoints = []; for (let i = startI + 300; i < finishI - 120; i += 300) checkpoints.push(i);
   const st = { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 };
   const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
   const pilot = coDriver(), say = text => pilot.say(text), stopVoice = () => pilot.stop();
   const lockAtStart = car => { const cs = car.st; cs.pos.set(spawn.x, car.world.groundAt(spawn.x, spawn.z) + car.spec.cg[1] + 0.01, spawn.z); cs.q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.yaw); cs.vel.set(0, 0, 0); cs.ang.set(0, 0, 0); cs.throttle = 0; cs.brake = 1; cs.hand = cs.handEff = 0; for (const w of car.wheels) w.w = 0; };
   const reset = () => { stopVoice(); Object.assign(st, { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 }); };
   const showNote = (n, distance) => { const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; const special = n.kind === 'feature'; noteEl.innerHTML = `<span style="display:inline-block;width:29px;color:${special ? '#fff075' : n.dir > 0 ? '#ffcf45' : '#60baff'}">${special ? '▲' : n.dir > 0 ? '↶' : '↷'}</span>${n.text}`; say(lead + n.text); };
-  const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem('wl_rally_stage_best_v3', String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
+  const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem(cfg.bestKey, String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
   const api = { state: st, notes, checkpoints, pilot, reset,
     update(dt, car) {
       if (!car) { host.style.display = 'none'; return; }
@@ -304,7 +324,7 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
       countEl.style.display = cd ? '' : 'none'; countEl.textContent = cd;
       if (++st.frame % 3) return;
       const km = Math.max(0, finishI - st.progress) / 1000, pct = clamp((st.progress - startI) / (finishI - startI), 0, 1);
-      if (st.phase === 'waiting') raceEl.innerHTML = '<div style="font-size:18px">ODCINEK SPECJALNY</div><div style="opacity:.75;font-size:12px">Kliknij, aby rozpocząć odliczanie</div>';
+      if (st.phase === 'waiting') raceEl.innerHTML = `<div style="font-size:18px">${cfg.name.toUpperCase()} · ${(cfg.target / 1000).toFixed(1)} KM</div><div style="opacity:.75;font-size:12px">Kliknij, aby rozpocząć odliczanie</div>`;
       else if (st.phase === 'finished') raceEl.innerHTML = `<div style="color:#ffd54d;font:800 14px 'Segoe UI'">${st.newBest ? 'NOWY REKORD' : 'META'}</div><div style="font:800 34px/1.05 'Segoe UI'">${fmt(st.result)}</div><div style="opacity:.72;font-size:12px">R — ponowny start · rekord ${fmt(best)}</div>`;
       else raceEl.innerHTML = `<div style="font:800 31px/1.05 'Segoe UI'">${fmt(st.t)}</div><div style="height:3px;background:#ffffff28;margin:6px 0 5px"><i style="display:block;height:100%;width:${(pct * 100).toFixed(1)}%;background:#e1252d"></i></div><div style="opacity:.78;font-size:12px">${km.toFixed(2)} km do mety · PK ${st.checkpoint}/${checkpoints.length}${best ? ' · rekord ' + fmt(best) : ''}</div>`;
     },

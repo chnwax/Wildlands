@@ -15,8 +15,10 @@ const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 export const CITIES = [
   { id: 'sakuragawa', map: 'town', name: 'Sakuragawa', kanji: '桜川', blurb: 'A small Japanese river town',
     tags: ['river & bridges', 'trains', 'traffic', 'apartment district'] },
-  { id: 'rally', map: 'rally', name: 'Rally Stage', kanji: 'ラリー', blurb: 'A gravel special stage through the pine woods, at the wheel of a WRC car',
-    tags: ['WRC Hyundai i20', 'cockpit view', 'stage clock'] },
+  { id: 'rally', map: 'rally', name: 'Pine Forest', kanji: '01', blurb: 'A 1.5 km gravel sprint through dense Wildlands forest',
+    tags: ['1.5 km', 'gravel', 'forest stage'] },
+  { id: 'alpine', map: 'rally2', name: 'Alpine Pass', kanji: '02', blurb: 'A 1.6 km paved climb through tight mountain bends',
+    tags: ['1.6 km', 'asphalt', 'mountain stage'] },
   { id: 'shiomi', map: null, name: 'Shiomi', kanji: '潮見', blurb: 'A seaside harbour town' },
 ];
 const UNLISTED = { nature: { name: 'Wildlands', kanji: '' }, assetmap: { name: 'Asset Garden', kanji: '庭' } };
@@ -312,6 +314,12 @@ const ART = {
     <path d="M150 112h34l6-6h-6l-6-6h-14l-8 6h-6z" fill="#1d2f6e"/><path d="M164 101h12l4 5h-20z" fill="#9fc3e0" opacity=".8"/>
     <circle cx="158" cy="112" r="4" fill="#111"/><circle cx="182" cy="112" r="4" fill="#111"/><rect x="166" y="106" width="10" height="2" fill="#c41f28"/>
     <g fill="#c8151b"><rect x="214" y="84" width="14" height="7"/></g><path d="M217 85l3 2.5-3 2.5M222 85l3 2.5-3 2.5" stroke="#fff" fill="none"/></svg>`,
+  alpine: `<svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <defs><linearGradient id="aAlpSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#577aa0"/><stop offset="1" stop-color="#c8d2cf"/></linearGradient></defs>
+    <rect width="300" height="130" fill="url(#aAlpSky)"/><path d="M0 84L50 34l28 33 44-54 48 55 35-34 45 50 50-33v79H0Z" fill="#65726d"/><path d="M0 95l42-36 22 20 54-42 42 44 41-27 45 33 54-30v73H0Z" fill="#34483d"/>
+    <g fill="#1e3329"><path d="M12 106l10-42 10 42z"/><path d="M32 106l8-34 8 34z"/><path d="M254 106l11-46 11 46z"/><path d="M274 106l9-38 9 38z"/></g>
+    <path d="M105 130c13-18 35-29 67-38 29-8 52-19 70-39l13 4c-17 28-42 42-70 51-19 6-30 13-39 22z" fill="#343638"/><path d="M131 130c12-14 30-23 55-31 26-8 45-19 63-42" stroke="#e8e5d7" stroke-width="1.5" fill="none" stroke-dasharray="8 7"/>
+    <path d="M207 81h22v10h-22z" fill="#b92127"/><path d="M211 83l5 3-5 3m7-6 5 3-5 3" stroke="#fff" fill="none"/></svg>`,
   shiomi: `<svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
     <defs><linearGradient id="aSea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7f9fb3"/><stop offset="1" stop-color="#152338"/></linearGradient>
     <linearGradient id="aBeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff6d8" stop-opacity=".5"/><stop offset="1" stop-color="#fff6d8" stop-opacity="0"/></linearGradient></defs>
