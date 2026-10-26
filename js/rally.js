@@ -10,6 +10,7 @@ import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass } from './
 import { buildTrees, buildBushes, buildLogs } from './trees.js';
 import { plantForest, forestFloor } from './ecology.js';
 import { audio } from './audio.js';
+import { loadPacks } from './packs.js';
 
 export const meta = {
   name: 'Pine Forest',
@@ -20,11 +21,11 @@ export const meta = {
   vehicle: true,
 };
 
-const ROAD = 1.3, SHOULDER = 1.6, CLEAR = 6.5; // one-car rally lane, narrow soft edge, readable forest verge
+const ROAD = 1.3, SHOULDER = 1.6, CLEAR = 3.45; // one-car lane with the pack-tree forest closing in just behind the verge
 
 export const PINE_STAGE = {
   id: 'pine', name: 'Pine Forest', target: 1500, roadType: 'gravel', seed: 4471,
-  bestKey: 'wl_rally_pine_best_v1', forestMin: 0.72, forestSeed: 99, floorSeed: 5,
+  bestKey: 'wl_rally_pine_best_v1', forestMin: 0.86, forestSeed: 99, floorSeed: 5,
   way: [[-355, -360], [-365, -300], [-340, -245], [-360, -185], [-335, -125], [-300, -70], [-280, -5], [-230, 55], [-170, 82], [-120, 62], [-100, 112], [-62, 78], [-18, 112], [35, 102], [82, 62], [118, 20], [168, -5], [225, -18], [272, -58], [294, -118], [310, -190], [350, -255], [382, -325]],
   jumps: [{ f: 0.31, h: 0.8, text: 'Przez szczyt' }, { f: 0.72, h: 1.05, text: 'Mały skok' }],
   features: [{ f: 0.49, text: 'Mocna kompresja' }],
@@ -54,6 +55,10 @@ function trackLine(cfg) {
 export async function build(progress) { return buildStage(progress, PINE_STAGE); }
 
 export async function buildStage(progress, cfg) {
+  // Start loading the same owned Idyllic Woodlands / Illustrated Nature library used by Wildlands. trees.js will
+  // automatically use tree02/tree03 and their LODs once it is ready, while installations without the local pack
+  // retain the procedural fallback.
+  const packsP = loadPacks();
   progress('Laying out the stage', 0.05); await tick();
   const line = trackLine(cfg), P = line.pts, Y = line.Y, N = P.length;
   const T = P.map((_, i) => { const a = P[Math.max(0, i - 2)], b = P[Math.min(N - 1, i + 2)], l = Math.hypot(b[0] - a[0], b[1] - a[1]); return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; });
@@ -70,7 +75,7 @@ export async function buildStage(progress, cfg) {
     return lerp(lerp(DIST[o], DIST[o + 1], fx), lerp(DIST[o + DN], DIST[o + DN + 1], fx), fz); };
   const nearAt = (x, z) => { const i = clamp(Math.floor((x + HALF) / DC), 0, DN - 1), j = clamp(Math.floor((z + HALF) / DC), 0, DN - 1); return NEAR[j * DN + i]; };
 
-  // ---- woods: a continuous Wildlands forest, with a low open verge so the next bend remains readable
+  // ---- woods: the dense Wildlands pack forest forms a close corridor; posts and a clean road edge keep bends legible
   const rng = mulberry32(cfg.seed), ph = Array.from({ length: 8 }, () => [rng() * 6.28, 0.6 + rng() * 0.8, rng() * 6.28]);
   const woods = (x, z) => { let n = 0; for (let k = 0; k < 8; k++) { const [a, f, p] = ph[k], s = 0.0028 * f * (1 + k * 0.45); n += Math.sin((x * Math.cos(a) + z * Math.sin(a)) * s + p) / (1 + k * 0.6); } return smoothstep(-0.1, 0.9, n * 0.75 + 0.1); };
   progress('Grading the ground', 0.18); await tick();
@@ -78,18 +83,19 @@ export async function buildStage(progress, cfg) {
   const hf = new Heightfield({ world: WORLD, grid: 1024, height: terrainHeight });
   await hf.generate(p => progress('Grading the ground', 0.18 + 0.06 * p));
   const { HN, CELL } = hf, FOREST = new Float32Array(HN * HN), MOIST = new Float32Array(HN * HN);
-  for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, o = j * HN + i, d = distAt(x, z);
-    const f = Math.max(cfg.forestMin, woods(x, z)) * smoothstep(CLEAR + 2, CLEAR + 12, d), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
+  const clearAt = (x, z) => { const ni = nearAt(x, z); return ni >= 0 && (ni < 58 || ni > N - 72) ? 7.4 : CLEAR; };
+  for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, o = j * HN + i, d = distAt(x, z), clear = clearAt(x, z);
+    const f = Math.max(cfg.forestMin, woods(x, z)) * smoothstep(clear + 0.35, clear + 4.8, d), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
     hf.mask[o * 4] = smoothstep(0.35, 0.8, f) * 235; hf.mask[o * 4 + 1] = 255; hf.mask[o * 4 + 3] = moist * 255;
     hf.mask2[o * 4] = (1 - smoothstep(ROAD - 0.15, SHOULDER + 0.1, d)) * 255;        // one-car road texture, without a broad gravel halo
-    hf.mask2[o * 4 + 2] = (1 - smoothstep(CLEAR - 1.5, CLEAR + 0.8, d)) * 255;            // no tall grass across the readable verge
-    hf.mask2[o * 4 + 3] = (1 - smoothstep(CLEAR, CLEAR + 7, d)) * 255;                   // then only short, sparse grass before the trunks
+    hf.mask2[o * 4 + 2] = (1 - smoothstep(SHOULDER + 0.05, SHOULDER + 0.55, d)) * 255; // tall grass begins just past the road edge
+    hf.mask2[o * 4 + 3] = (1 - smoothstep(SHOULDER + 0.15, SHOULDER + 1.15, d)) * 255; // short transition keeps the road itself clean
   }
   let bx0 = 1e9, bx1 = -1e9, bz0 = 1e9, bz1 = -1e9; for (const [x, z] of P) { bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x); bz0 = Math.min(bz0, z); bz1 = Math.max(bz1, z); }
   hf.paintPave(bx0 - 5, bz0 - 5, bx1 + 5, bz1 + 5, (x, z) => 1 - smoothstep(ROAD + 0.05, SHOULDER - 0.05, distAt(x, z)));
   // ---- the same forest ecology used by Wildlands: mixed ages and stands, broadleaf fringe, old conifers, dead trees
   progress('Planting the woods', 0.28); await tick();
-  const blocked = (x, z, pad = 0) => distAt(x, z) < CLEAR + pad;
+  const blocked = (x, z, pad = 0) => distAt(x, z) < clearAt(x, z) + pad;
   // The same altitude reference and species mix as nature.js: low woodland gets oak/leaf/birch among the conifers.
   const alpine = cfg.roadType === 'asphalt';
   const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: cfg.forestSeed, water: 0, snow: 205, blocked,
@@ -108,6 +114,7 @@ export async function buildStage(progress, cfg) {
   };
   const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: -60, snow: 5000, shore: 0.01, conifer: 0.7 }));
   progress('Growing the woods', 0.55); await tick();
+  await packsP;
   buildTrees([...trees, ...saplings]);
   buildBushes(floor.shrubs, 'bush');
   buildTrees(floor.twigs, { colliders: false });
@@ -172,7 +179,7 @@ function roadRibbon(P, T, N, hf, roadType = 'gravel') {
   return group;
 }
 
-// boards, bales, tape and the start arch
+// roadside marker posts, boards, bales, tape and the start arch
 function dressStage(P, T, K, N, left, rng, startI, finishI, hf) {
   const group = new THREE.Group(); group.name = 'rally-dressing'; scene.add(group);
   const canvasTex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, maxAniso); return t; };
@@ -187,9 +194,14 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf) {
   const baleG = new THREE.CylinderGeometry(0.72, 0.72, 1.2, 18, 1).rotateZ(Math.PI / 2), baleM = new THREE.MeshStandardMaterial({ map: strawTex, roughness: 0.95 });
   const tapeTex = canvasTex(128, 16, (g, w, h) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#fff' : '#d01a20'; g.fillRect(i * 16, 0, 16, h); } }); tapeTex.wrapS = THREE.RepeatWrapping;
   const tapeM = new THREE.MeshStandardMaterial({ map: tapeTex, roughness: 0.7, side: THREE.DoubleSide }), poleM = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.8 });
-  const items = { board: [], post: [], back: [], bale: [], pole: [] }, tapePos = [], tapeUv = [];
+  const items = { board: [], post: [], back: [], bale: [], pole: [], marker: [] }, tapePos = [], tapeUv = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), S1 = new THREE.Vector3(1, 1, 1);
   const at = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, hf.groundAt(x, z) + y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
+  // Frequent red/white delineators make the narrow road readable through the dense tree corridor, as on real stages.
+  for (let i = startI + 18; i < finishI - 12; i += 22) {
+    const [px, pz] = P[i], [lx, lz] = left(i), wobble = (rng() - 0.5) * 0.12;
+    for (const side of [-1, 1]) { const d = 2.18 + wobble, x = px + lx * d * side, z = pz + lz * d * side; items.marker.push(at(x, 0, z, Math.atan2(T[i][0], T[i][1]))); }
+  }
   // the corners: runs of signed curvature, by their tightest point and direction; the wider runs are kept for pace notes
   const corners = []; let s = -1;
   for (let i = 0; i <= N; i++) { const tight = i < N && Math.abs(K[i]) > 1 / 500; if (tight && s < 0) s = i; if (!tight && s >= 0) { let a = s; for (let k = s; k < i; k++) if (Math.abs(K[k]) > Math.abs(K[a])) a = k; if (a > startI + 45 && a < finishI - 40) corners.push({ s, e: i - 1, apex: a, R: 1 / Math.abs(K[a]), dir: Math.sign(K[a]) }); s = -1; } }
@@ -215,6 +227,10 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf) {
   inst(boardG, boardR, items.board.filter(b => b[1] < 0).map(b => b[0])); inst(boardG, boardL, items.board.filter(b => b[1] > 0).map(b => b[0]));
   inst(new THREE.PlaneGeometry(1.32, 0.67), backM, items.back, false); inst(postG, postM, items.post); inst(baleG, baleM, items.bale);
   inst(new THREE.CylinderGeometry(0.025, 0.025, 1.0, 6).translate(0, 0.5, 0), poleM, items.pole, false);
+  const markerWhite = new THREE.MeshStandardMaterial({ color: 0xe8e8df, roughness: 0.88 }), markerRed = new THREE.MeshStandardMaterial({ color: 0xc9272f, roughness: 0.76 });
+  const markerBase = inst(new THREE.BoxGeometry(0.075, 1.05, 0.075).translate(0, 0.525, 0), markerWhite, items.marker, false);
+  const markerBand = inst(new THREE.BoxGeometry(0.09, 0.22, 0.09).translate(0, 0.72, 0), markerRed, items.marker, false);
+  if (markerBase) markerBase.name = 'rally-marker-posts'; if (markerBand) markerBand.name = 'rally-marker-bands';
   if (tapePos.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(tapePos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(tapeUv, 2)); g.computeVertexNormals(); group.add(new THREE.Mesh(g, tapeM)); }
   const chq = canvasTex(512, 64, (g, w, h) => { for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#f2f2ee' : '#1a1a1a'; g.fillRect(i * 16, j * 16, 16, 16); } });
   const archM = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.6, metalness: 0.3 });
