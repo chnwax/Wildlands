@@ -19,6 +19,8 @@ export const CITIES = [
     tags: ['1.5 km', 'gravel', 'forest stage'] },
   { id: 'alpine', map: 'rally2', name: 'Alpine Pass', kanji: '02', blurb: 'A 1.6 km paved climb through tight mountain bends',
     tags: ['1.6 km', 'asphalt', 'mountain stage'] },
+  { id: 'hillcrest', map: 'rally3', name: 'Hill Crest', kanji: '03', blurb: 'A 1.8 km asphalt stage climbing through hillside switchbacks',
+    tags: ['1.8 km', 'asphalt', 'hill stage'] },
   { id: 'shiomi', map: null, name: 'Shiomi', kanji: '潮見', blurb: 'A seaside harbour town' },
 ];
 const UNLISTED = { nature: { name: 'Wildlands', kanji: '' }, assetmap: { name: 'Asset Garden', kanji: '庭' } };
@@ -320,6 +322,12 @@ const ART = {
     <g fill="#1e3329"><path d="M12 106l10-42 10 42z"/><path d="M32 106l8-34 8 34z"/><path d="M254 106l11-46 11 46z"/><path d="M274 106l9-38 9 38z"/></g>
     <path d="M105 130c13-18 35-29 67-38 29-8 52-19 70-39l13 4c-17 28-42 42-70 51-19 6-30 13-39 22z" fill="#343638"/><path d="M131 130c12-14 30-23 55-31 26-8 45-19 63-42" stroke="#e8e5d7" stroke-width="1.5" fill="none" stroke-dasharray="8 7"/>
     <path d="M207 81h22v10h-22z" fill="#b92127"/><path d="M211 83l5 3-5 3m7-6 5 3-5 3" stroke="#fff" fill="none"/></svg>`,
+  hillcrest: `<svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <defs><linearGradient id="aHillSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7899b1"/><stop offset="1" stop-color="#d7d9c9"/></linearGradient></defs>
+    <rect width="300" height="130" fill="url(#aHillSky)"/><path d="M0 83C38 58 80 54 118 70s63 12 95-7 60-17 87-3v70H0Z" fill="#667a54"/><path d="M0 100c48-24 86-17 126-8s75-4 106-20 51-11 68-3v61H0Z" fill="#354b35"/>
+    <g fill="#1f3427"><path d="M8 108l10-41 10 41z"/><path d="M27 108l8-32 8 32z"/><path d="M256 106l11-45 11 45z"/><path d="M277 106l9-36 9 36z"/></g>
+    <path d="M56 130c8-17 30-25 59-28 37-4 58-14 55-27-4-15-33-18-54-23l9-7c42 7 68 18 69 34 1 19-23 31-65 38-18 3-29 7-36 13z" fill="#353739"/><path d="M74 130c9-12 27-18 52-21 39-5 57-16 54-29-3-13-25-18-55-26" stroke="#e8e4d4" stroke-width="1.4" fill="none" stroke-dasharray="7 6"/>
+    <path d="M185 72h23v10h-23z" fill="#bd242b"/><path d="M189 74l5 3-5 3m7-6 5 3-5 3" stroke="#fff" fill="none"/></svg>`,
   shiomi: `<svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
     <defs><linearGradient id="aSea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7f9fb3"/><stop offset="1" stop-color="#152338"/></linearGradient>
     <linearGradient id="aBeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff6d8" stop-opacity=".5"/><stop offset="1" stop-color="#fff6d8" stop-opacity="0"/></linearGradient></defs>

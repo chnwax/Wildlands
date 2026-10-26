@@ -41,12 +41,17 @@ function trackLine(cfg) {
   for (let i = 0; i <= n; i++) { const p = curve.getPointAt(i / n); pts.push([p.x, p.z]); }
   const sampled = pts.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0), exact = cfg.target / sampled;
   for (const p of pts) { p[0] *= exact; p[1] *= exact; }
-  const land = cfg.roadType === 'asphalt'
+  const hills = cfg.profile === 'hills';
+  const land = hills
+    ? (x, z) => 56 + z * 0.045 + x * 0.008 + Math.sin(x * 0.009 + 0.4) * 4 + Math.sin(z * 0.011 + 1.1) * 3 + Math.sin((x - z) * 0.016) * 1.5
+    : cfg.roadType === 'asphalt'
     ? (x, z) => 48 + z * 0.075 + Math.sin(x * 0.006) * 7 + Math.sin(z * 0.008 + 0.8) * 5 + Math.sin((x + z) * 0.012) * 2.8
     : (x, z) => 24 + z * 0.025 + Math.sin(x * 0.005) * 4.5 + Math.sin(z * 0.007 + 0.8) * 3.5 + Math.sin((x + z) * 0.01) * 2;
   const jumpSpecs = cfg.jumps || [];
   const jump = (s, c, h) => { const d = s - c; if (d < -18 || d > 7) return 0; return d <= 0 ? h * Math.pow((d + 18) / 18, 1.18) : h * (1 - d / 7); };
-  const Y = pts.map(([x, z], i) => land(x, z) + Math.sin(i / (cfg.roadType === 'asphalt' ? 210 : 260) + 0.5) * (cfg.roadType === 'asphalt' ? 3.8 : 2.8) + Math.sin(i / 92) * 1.7 + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
+  const Y = pts.map(([x, z], i) => land(x, z)
+    + (hills ? Math.sin(i / 145 + 0.5) * 4 + Math.sin(i / 63) * 1.4 : Math.sin(i / (cfg.roadType === 'asphalt' ? 210 : 260) + 0.5) * (cfg.roadType === 'asphalt' ? 3.8 : 2.8) + Math.sin(i / 92) * 1.7)
+    + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
   const features = jumpSpecs.map(j => ({ at: Math.round(j.f * n), end: Math.round(j.f * n) + 12, text: j.text, kind: 'feature', dir: 0 }));
   for (const f of cfg.features || []) features.push({ at: Math.round(n * f.f), end: Math.round(n * f.f) + 10, text: f.text, kind: 'feature', dir: 0 });
   return { pts, Y, features, land, length: cfg.target };
