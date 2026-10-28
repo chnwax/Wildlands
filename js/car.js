@@ -39,9 +39,12 @@ const SPEC = {
   aero: { cda: 0.78, cla: 1.1, front: 0.45 }, crr: 0.016, rollCentre: 0.12,
 };
 // (tuned to drive well rather than to the letter: grippy, quick to answer the wheel, and holding on in a slide)
-const SURF = { gravel: { mu: 1.4, kp: 0.11, ap: 0.115, slide: 0.98 }, grass: { mu: 1.08, kp: 0.13, ap: 0.14, slide: 0.96 }, forest: { mu: 1.05, kp: 0.13, ap: 0.14, slide: 0.96 },
-  asphalt: { mu: 1.52, kp: 0.085, ap: 0.1, slide: 0.98 }, concrete: { mu: 1.48, kp: 0.085, ap: 0.1, slide: 0.98 }, snow: { mu: 0.72, kp: 0.16, ap: 0.18, slide: 0.94 } };
+// (gravel: a gravel tyre's grip, about 1 g, peaking at larger slip angles and falling away gently past them — the car
+// moves about under you and drifts a little through the bends; asphalt stays grippy and precise)
+const SURF = { gravel: { mu: 1.12, kp: 0.12, ap: 0.15, slide: 0.95, loose: 1 }, grass: { mu: 0.9, kp: 0.14, ap: 0.17, slide: 0.93, loose: 1 }, forest: { mu: 0.88, kp: 0.14, ap: 0.17, slide: 0.93, loose: 1 },
+  asphalt: { mu: 1.52, kp: 0.085, ap: 0.1, slide: 0.98 }, concrete: { mu: 1.48, kp: 0.085, ap: 0.1, slide: 0.98 }, snow: { mu: 0.72, kp: 0.16, ap: 0.18, slide: 0.94, loose: 1 } };
 const ASSIST = { yaw: 3.8, beta: 0.14, k: 12.5, side: 3.2 }; // (arcade stability: responsive turn-in, a catch before a slide becomes a spin, and gentle lateral recovery)
+const LOOSE = { yaw: 0.72, beta: 0.24, side: 0.16 }; // (on loose ground the help lets the car rotate and drift more before it steps in)
 const HB = { rise: 7, catch: 1.5, yawK: 32, yawMin: 0.8, yawMax: 2.6, yawGain: 0.5, beta: 1.15, side: 0.98 }; // (the handbrake turn: see the stability help)
 const pac = s => Math.sin(1.3 * Math.atan(2.64 * s)); // (1 at s = 1)
 const torqueAt = rpm => { const C = SPEC.engine.curve; for (let i = 0; i + 1 < C.length; i++) if (rpm <= C[i + 1][0]) return lerp(C[i][1], C[i + 1][1], (rpm - C[i][0]) / (C[i + 1][0] - C[i][0])); return C[C.length - 1][1]; };
@@ -146,7 +149,7 @@ export async function createCar(world, spawn) {
     accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
   const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC,
     look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0, t: 0, bump: 0, kick: new THREE.Vector3() }, fov: 75, anim: { hb: 0, hbGrip: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
-  car.gearLever = GL; car.tune = { HB, ASSIST, SURF }; // (live handling tuning from the console)
+  car.gearLever = GL; car.tune = { HB, ASSIST, SURF, LOOSE }; // (live handling tuning from the console)
   // (a box for the walker to bump into while the car stands; out of the car's own way)
   const col = { t: 1, x: 0, z: 0, hx: 0.95, hz: 2.05, c: 1, s: 0, y0: -1e9, y1: 1e9 }; let colIn = false;
   const place = (x, z, yaw) => { st.pos.set(x, world.groundAt(x, z) + SPEC.cg[1] + 0.01, z); st.q.setFromAxisAngle(UP, yaw); st.vel.set(0, 0, 0); st.ang.set(0, 0, 0); for (const w of wheels) { w.w = 0; w.c = SPEC.susp.rest - S0; } st.gear = 2; st.rpm = SPEC.engine.idle; Object.assign(car.anim, { gq: null, slot: 2, gMove: 0 }); };
@@ -238,7 +241,7 @@ export async function createCar(world, spawn) {
       w.Td = (connected ? Tw / nW : 0) + clamp((other.w - w.w) * SPEC.lsd, -800, 800) + (hb ? 0 : clamp(((w.front ? ra : fa) - (w.front ? fa : ra)) * SPEC.center * 0.5, -800, 800));
       w.I = SPEC.wheelI + (connected ? Ie : 0); }
     // ---- the tyres
-    let slipMax = 0;
+    let slipMax = 0, nLoose = 0, nOn = 0;
     for (const w of wheels) {
       const steerA = w.front ? st.steer * SPEC.steerMax : 0, bh = w.front ? 0 : SPEC.brake.hand * hand; let bt = (w.front ? SPEC.brake.front : SPEC.brake.rear) * st.brake;
       let fx = 0, dfdw = 0; w.slip = 0; w.Fz = 0; w.rr = 0;
@@ -248,7 +251,7 @@ export async function createCar(world, spawn) {
         r.subVectors(w.cp, st.pos); vp.crossVectors(st.ang, r).add(st.vel);
         const vx = vp.dot(wf), vy = vp.dot(wl); w.vx = vx;
         w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) ; // (a locked rear tyre loses its side grip by itself: all its force goes against the way it slides)
-        const Fz = Math.max(0, w.fs); w.Fz = Fz;
+        const Fz = Math.max(0, w.fs); w.Fz = Fz; nOn++; if (S.loose) nLoose++;
         const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 0.95));
         w.slip = tyre(S, mu, Fz, kappa / S.kp, sa, F2); fx = F2[0]; let fy = F2[1];
         if (st.assist && bt > 0 && vx > 2) bt *= clamp(1 - (-kappa / S.kp - 0.9) * 1.6, 0.25, 1);
@@ -263,7 +266,7 @@ export async function createCar(world, spawn) {
       w.w += h * (w.Td - fx * w.R) / (w.I + h * w.R * Math.max(0, dfdw));
       const dw = (bt + bh + w.rr) * h / w.I; w.w = Math.abs(w.w) <= dw ? 0 : w.w - Math.sign(w.w) * dw;
     }
-    st.slipMax = slipMax;
+    st.slipMax = slipMax; st.loose = nOn ? nLoose / nOn : st.loose || 0;
     // ---- the air
     const vF = st.vel.dot(fwd), sp = st.vel.length();
     if (sp > 0.1) { addForce(_v.copy(st.vel).multiplyScalar(-0.5 * 1.225 * SPEC.aero.cda * sp), st.pos);
@@ -278,10 +281,10 @@ export async function createCar(world, spawn) {
       if (on > 0) { const held = smoothstep(0.12, 0.6, hand), hbMix = hbT * smoothstep(2.5, 7, sp2), pull = held * hbMix;
         const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
         const lim = 11 / Math.max(spd, 1), roadWant = clamp(vL * Math.tan(d) / wb, -lim, lim), hbWant = st.steer * clamp(HB.yawK / (sp2 + 3), HB.yawMin, HB.yawMax);
-        const want = lerp(roadWant, hbWant, pull), beta = Math.atan2(vLat, Math.max(vL, 0.5)), betaLim = lerp(ASSIST.beta, HB.beta, hbMix);
-        let ty = -(yawNow - want) * ASSIST.yaw * lerp(1, HB.yawGain, pull); if (Math.abs(beta) > betaLim) ty += Math.sign(beta) * (Math.abs(beta) - betaLim) * ASSIST.k;
+        const lo = st.loose || 0, want = lerp(roadWant, hbWant, pull), beta = Math.atan2(vLat, Math.max(vL, 0.5)), betaLim = lerp(lerp(ASSIST.beta, LOOSE.beta, lo), HB.beta, hbMix);
+        let ty = -(yawNow - want) * ASSIST.yaw * lerp(1, LOOSE.yaw, lo) * lerp(1, HB.yawGain, pull); if (Math.abs(beta) > betaLim) ty += Math.sign(beta) * (Math.abs(beta) - betaLim) * ASSIST.k;
         T.addScaledVector(up, ty * Ib.y * on);
-        const sideFree = sp2 * lerp(0.085, HB.side, hbMix), excess = Math.max(0, Math.abs(vLat) - sideFree);
+        const sideFree = sp2 * lerp(lerp(0.085, LOOSE.side, lo), HB.side, hbMix), excess = Math.max(0, Math.abs(vLat) - sideFree);
         if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * ASSIST.side * on);
       } }
     // ---- the body against the ground (its corners, its roof) and against the world (its sides)

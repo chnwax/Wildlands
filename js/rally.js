@@ -119,10 +119,10 @@ export async function buildStage(progress, cfg) {
   const woods = (x, z) => { let n = 0; for (let k = 0; k < 8; k++) { const [a, f, p] = ph[k], s = 0.0028 * f * (1 + k * 0.45); n += Math.sin((x * Math.cos(a) + z * Math.sin(a)) * s + p) / (1 + k * 0.6); } return smoothstep(-0.1, 0.9, n * 0.75 + 0.1); };
   progress('Grading the ground', 0.18); await tick();
   const mountain = cfg.profile === 'mountain', asphalt = cfg.roadType === 'asphalt', cut = (cfg.verge || (mountain ? 'cut' : 'ditch')) === 'cut', eco = cfg.eco || {};
-  // ---- the road's own surface, exact between the 2 m cells of the ground: a crowned cross-section (water runs off to
-  // the edges, more so on gravel), the bends banked a little toward their inside. Wheels, the ribbon and the ground under
+  // ---- the road's own surface, exact between the 2 m cells of the ground: a nearly flat cross-section with a slight
+  // crown (water runs off to the edges), the bends banked a little toward their inside. Wheels, the ribbon and the ground under
   // it all read it from here, so the road never takes the shape of the coarse terrain grid
-  const CROWN = asphalt ? 0.035 : 0.075, BANK = Float32Array.from(K, k => asphalt ? clamp(k * 7, -0.055, 0.055) : clamp(k * 3, -0.03, 0.03));
+  const CROWN = asphalt ? 0.016 : 0.026, BANK = Float32Array.from(K, k => asphalt ? clamp(k * 5, -0.035, 0.035) : clamp(k * 2, -0.018, 0.018)); // (about 1-2 % each way: nearly flat)
   const project = (x, z, o) => { const i = nearAt(x, z); if (i < 0) return null; let best = Infinity;
     for (let k = Math.max(0, i - 3); k <= Math.min(N - 2, i + 2); k++) { const ax = P[k][0], az = P[k][1], dx = P[k + 1][0] - ax, dz = P[k + 1][1] - az, l2 = dx * dx + dz * dz || 1e-9;
       const t = clamp(((x - ax) * dx + (z - az) * dz) / l2, 0, 1), ex = x - ax - dx * t, ez = z - az - dz * t, d2 = ex * ex + ez * ez;
@@ -141,7 +141,7 @@ export async function buildStage(progress, cfg) {
     if (cut) { const px = lerp(P[o.k][0], P[o.k + 1][0], o.t), pz = lerp(P[o.k][1], P[o.k + 1][1], o.t), natural = base + (roadH - line.land(px, pz)) * (1 - smoothstep(5, 14, d)), dh = natural - edgeY;
       const span = clamp(Math.abs(dh) * (dh > 0 ? 0.75 : 1.5), 1.4, 16), gutter = dh > 0.5 ? 0.28 * smoothstep(ED, ED + 0.7, d) * (1 - smoothstep(ED + 1.2, BANK0, d)) : 0;
       return lerp(edgeY, natural, smoothstep(dh > 0 ? BANK0 : ED + 0.15, (dh > 0 ? BANK0 : ED) + span, d)) - gutter; }
-    const far = lerp(base, roadH, 1 - smoothstep(10, FAR - 3, d)), dip = (cfg.ditch ?? 0.5) * smoothstep(ED, ED + 1.0, d) * (1 - smoothstep(ED + 1.4, ED + 2.9, d));
+    const far = lerp(base, roadH, 1 - smoothstep(10, FAR - 3, d)), dip = (cfg.ditch ?? 0.32) * smoothstep(ED + 0.25, ED + 1.2, d) * (1 - smoothstep(ED + 1.5, ED + 3.0, d));
     return lerp(edgeY, far, smoothstep(far > edgeY ? BANK0 : ED + 1, ED + 8, d)) - dip; };
   // where the spectators stand and the timber is stacked: kept clear of trees
   const corners = findCorners(K, N, 14, N - 28), sites = crowdSites(P, T, K, N, left, corners, line.features, distAt, cfg, mulberry32(cfg.seed + 11)), piles = cut ? [] : logPiles(P, T, K, N, left, distAt, mulberry32(cfg.seed + 17));
