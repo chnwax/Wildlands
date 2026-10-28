@@ -219,7 +219,7 @@ export async function buildStage(progress, cfg) {
   const PG = { k: 0, t: 0, w: 0, d: 0 };
   const groundBase = (x, z, o) => { if (o.d > ED + 0.4) return hf.groundAt(x, z); const r = roadY(o) + 0.02; return o.d <= SHOULDER ? r : lerp(r, hf.groundAt(x, z), smoothstep(SHOULDER, ED + 0.4, o.d)); };
   if (BANKAMT.some(v => v > 0.01)) snowBanks(P, T, N, left, DROP, BANKAMT, bankH, (x, z) => { const o = project(x, z, PB); return o ? groundBase(x, z, o) : hf.groundAt(x, z); });
-  const clock = stageClock(N, nearAt, distAt, corners, line.features, startI, finishI, carSpawn, cfg);
+  const clock = stageClock(N, nearAt, distAt, corners, line.features, startI, finishI, carSpawn, cfg, P);
   const world = {
     hf, grass, terrain, road, spawn, carSpawn, track: { P, T, N, distAt, nearAt, length: line.length, sites, piles }, race: clock, stage: cfg,
     bounds: { minX: -HALF + 30, maxX: HALF - 30, minZ: -HALF + 30, maxZ: HALF - 30 },
@@ -644,10 +644,84 @@ function coDriver() {
 }
 
 // A real point-to-point special stage: start marshal, mandatory split gates, finish timing and a Polish co-driver.
-function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn, cfg) {
+// Pace-note pictograms, drawn as the co-driver reads the note: a bend is an arrow that turns as far as the bend does (a
+// six barely, a one more than a right angle, a hairpin right round), its arc tight or wide by the same measure and
+// longer for a long bend, with the bend's number beside it; crests, jumps, compressions and cautions have signs of their
+// own. Left yellow, right blue, as the text has them.
+const TURN_ICON = [[180, 6.5], [140, 8], [115, 10], [92, 12.5], [72, 15], [52, 19], [32, 26]]; // (by grade, 0 a hairpin: degrees turned, radius)
+function paceIcon(part) {
+  const col = part.kind === 'feature' ? '#fff075' : part.dir > 0 ? '#ffcf45' : '#60baff';
+  const svg = (vb, body) => `<svg width="62" height="62" viewBox="${vb}" style="display:block;overflow:visible">${body}</svg>`;
+  if (part.kind === 'feature') {
+    const t = part.text.toLowerCase(), s = 'fill="none" stroke-linecap="round" stroke-linejoin="round"', two = d => `<path d="${d}" ${s} stroke="#05080c" stroke-width="11"/><path d="${d}" ${s} stroke="${col}" stroke-width="6"/>`;
+    if (/skok/.test(t)) return svg('0 0 64 64', two('M4 52 L24 52 L38 38') + `<path d="M42 33 Q52 20 61 30" ${s} stroke="${col}" stroke-width="4" stroke-dasharray="4 5"/>`);
+    if (/szczyt/.test(t)) return svg('0 0 64 64', two('M5 50 Q32 12 59 50') + (/ślepy/.test(t) ? `<path d="M22 22 L42 42 M42 22 L22 42" ${s} stroke="#05080c" stroke-width="9"/><path d="M22 22 L42 42 M42 22 L22 42" ${s} stroke="#ff5a4a" stroke-width="5"/>` : ''));
+    if (/kompresja|dół/.test(t)) return svg('0 0 64 64', two('M5 18 Q32 60 59 18'));
+    return svg('0 0 64 64', `<path d="M32 6 L60 56 L4 56 Z" fill="${col}" stroke="#05080c" stroke-width="4" stroke-linejoin="round"/><path d="M32 22 L32 40" stroke="#05080c" stroke-width="7" stroke-linecap="round"/><circle cx="32" cy="48" r="3.6" fill="#05080c"/>`);
+  }
+  let [deg, r] = TURN_ICON[clamp(part.grade, 0, 6)]; if (part.long) deg = Math.min(deg * 1.2 + 14, 205);
+  let x = 0, y = 0, h = -Math.PI / 2; const pts = [[0, 0], [0, -11]]; y = -11;
+  const n = 28, th = deg * Math.PI / 180, ds = r * th / n, sg = part.dir > 0 ? -1 : 1;
+  for (let k = 0; k < n; k++) { h += sg * th / n; x += Math.cos(h) * ds; y += Math.sin(h) * ds; pts.push([x, y]); }
+  x += Math.cos(h) * 3; y += Math.sin(h) * 3; pts.push([x, y]);
+  const tip = [x + Math.cos(h) * 7, y + Math.sin(h) * 7], px = -Math.sin(h), py = Math.cos(h), head = [tip, [x + px * 6, y + py * 6], [x - px * 6, y - py * 6]];
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const [a, b] of [...pts, ...head]) { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, a); y1 = Math.max(y1, b); }
+  const S = Math.max(x1 - x0, y1 - y0) + 12, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, vb = `${(cx - S / 2).toFixed(1)} ${(cy - S / 2).toFixed(1)} ${S.toFixed(1)} ${S.toFixed(1)}`;
+  const d = 'M' + pts.map(([a, b]) => a.toFixed(2) + ' ' + b.toFixed(2)).join(' L'), hd = head.map(([a, b]) => a.toFixed(2) + ',' + b.toFixed(2)).join(' '), w = S * 0.085;
+  return svg(vb, `<path d="${d}" fill="none" stroke="#05080c" stroke-width="${(w * 1.8).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/><polygon points="${hd}" fill="#05080c" stroke="#05080c" stroke-width="${(w * 0.9).toFixed(2)}" stroke-linejoin="round"/>`
+    + `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/><polygon points="${hd}" fill="${col}"/>`);
+}
+// one note's card: its pictograms (two for linked bends, the link between them), the bend numbers, the words under them
+function paceCard(n, distance) {
+  const parts = n.parts || [n], col = p => p.kind === 'feature' ? '#fff075' : p.dir > 0 ? '#ffcf45' : '#60baff';
+  const tile = p => `<div style="display:flex;align-items:center;gap:4px">${paceIcon(p)}${p.kind === 'turn' && p.grade > 0 ? `<span style="font:900 40px/1 'Segoe UI',system-ui;color:${col(p)};text-shadow:0 2px 0 #05080c,0 0 8px #000">${p.grade}</span>` : ''}</div>`;
+  const link = n.link ? `<span style="font:800 15px/1 'Segoe UI',system-ui;color:#c9d4df;opacity:.9;text-transform:uppercase;letter-spacing:.06em">${n.link}</span>` : '';
+  const dist = distance > 115 ? '100' : distance > 88 ? '80' : '';
+  return `<div style="display:flex;align-items:center;justify-content:center;gap:12px">${dist ? `<span style="font:800 15px/1 'Segoe UI',system-ui;color:#9fb3c6">${dist}</span>` : ''}${tile(parts[0])}${parts[1] ? link + tile(parts[1]) : ''}</div><div style="margin-top:5px;font:800 19px/1.1 'Segoe UI',system-ui">${n.text}</div>`;
+}
+
+// The stage map in the corner. Before the start and at the finish it shows the whole route north-up (start green,
+// splits amber, finish chequered); on the stage it is the road round the car, turned so the car heads up the map, the
+// bends ahead drawn as they come, the part already driven red, with the stage's progress and its splits under it.
+function stageMap(host, P, startI, finishI, checkpoints) {
+  const C = 196, dpr = Math.min(2, window.devicePixelRatio || 1), cv = document.createElement('canvas'); cv.width = cv.height = Math.round(C * dpr);
+  cv.style.cssText = `position:absolute;left:16px;top:14px;width:${C}px;height:${C}px;border-radius:9px;background:#090d13c8;border:1px solid #ffffff28;box-shadow:0 8px 24px #0008`;
+  host.appendChild(cv); const g = cv.getContext('2d'), N = P.length;
+  let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const [x, z] of P) { x0 = Math.min(x0, x); z0 = Math.min(z0, z); x1 = Math.max(x1, x); z1 = Math.max(z1, z); }
+  const fit = (C - 40) / Math.max(x1 - x0, z1 - z0, 1), mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, R = 210; // (R: metres seen round the car)
+  const path = (a, b, step, f) => { g.beginPath(); for (let i = a; i <= b; i += step) { const q = P[Math.min(i, b)]; i === a ? g.moveTo(...f(q)) : g.lineTo(...f(q)); } g.lineTo(...f(P[b])); };
+  const dot = (q, f, r, fill) => { const [a, b] = f(q); g.beginPath(); g.arc(a, b, r, 0, 6.283); g.fillStyle = fill; g.fill(); g.lineWidth = r * 0.45; g.strokeStyle = '#05080c'; g.stroke(); };
+  const flag = (q, f, h) => { const [a, b] = f(q); for (let k = 0; k < 4; k++) { g.fillStyle = k % 2 ? '#111' : '#fff'; g.fillRect(a - h + (k % 2) * h, b - h + (k >> 1) * h, h, h); } g.lineWidth = h * 0.3; g.strokeStyle = '#05080c'; g.strokeRect(a - h, b - h, 2 * h, 2 * h); };
+  const marks = (f, k) => { for (const i of checkpoints) dot(P[i], f, 3.4 * k, '#ffc21a'); dot(P[startI], f, 4.6 * k, '#3ce26a'); flag(P[finishI], f, 5 * k); };
+  return { el: cv, draw(progress, car, whole) {
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, C, C); g.lineCap = g.lineJoin = 'round';
+    const done = Math.min(progress, finishI);
+    if (whole || !car) { const f = ([x, z]) => [C / 2 - (x - mx) * fit, C / 2 - (z - mz) * fit]; // (north up, east right)
+      path(0, N - 1, 2, f); g.lineWidth = 7; g.strokeStyle = '#05080c'; g.stroke(); g.lineWidth = 3.4; g.strokeStyle = '#d6dde5'; g.stroke();
+      if (done > startI + 2) { path(startI, done, 2, f); g.lineWidth = 3.6; g.strokeStyle = '#e1252d'; g.stroke(); }
+      marks(f, 1);
+      if (car) { const [a, b] = f([car.st.pos.x, car.st.pos.z]); g.beginPath(); g.arc(a, b, 4.5, 0, 6.283); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#e1252d'; g.stroke(); }
+      return; }
+    // (round the car: the map turned so that it heads up, the car a little below the middle to show more of the road ahead)
+    const p = car.st.pos, fw = new THREE.Vector3(0, 0, 1).applyQuaternion(car.st.q), hx = -fw.x, hy = -fw.z, ang = -Math.PI / 2 - Math.atan2(hy, hx), cs = Math.cos(ang), sn = Math.sin(ang), k = (C / 2 - 8) / R, ox = C / 2, oy = C * 0.62;
+    const f = ([x, z]) => { const u = -(x - p.x), v = -(z - p.z); return [ox + (u * cs - v * sn) * k, oy + (u * sn + v * cs) * k]; };
+    let lo = N, hi = -1; for (let i = 0; i < N; i += 3) { const [x, z] = P[i]; if (Math.abs(x - p.x) < R * 1.5 && Math.abs(z - p.z) < R * 1.5) { lo = Math.min(lo, i); hi = Math.max(hi, i); } }
+    g.save(); g.beginPath(); g.rect(0, 0, C, C - 16); g.clip();
+    if (hi > lo) { const a = Math.max(0, lo - 3), b = Math.min(N - 1, hi + 3); path(a, b, 1, f); g.lineWidth = 9; g.strokeStyle = '#05080c'; g.stroke(); g.lineWidth = 4.6; g.strokeStyle = '#d6dde5'; g.stroke();
+      const d0 = Math.max(a, startI), d1 = Math.min(b, done); if (d1 > d0 + 1) { path(d0, d1, 1, f); g.lineWidth = 4.6; g.strokeStyle = '#e1252d'; g.stroke(); } }
+    marks(f, 1.15);
+    g.beginPath(); g.moveTo(ox, oy - 10); g.lineTo(ox - 7, oy + 7); g.lineTo(ox, oy + 3); g.lineTo(ox + 7, oy + 7); g.closePath(); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#e1252d'; g.stroke();
+    g.restore();
+    // (the stage's progress along the bottom, its splits marked)
+    const bx = 12, bw = C - 24, by = C - 11, t = clamp((done - startI) / (finishI - startI), 0, 1);
+    g.fillStyle = '#ffffff28'; g.fillRect(bx, by, bw, 4); g.fillStyle = '#e1252d'; g.fillRect(bx, by, bw * t, 4);
+    g.fillStyle = '#ffc21a'; for (const i of checkpoints) g.fillRect(bx + bw * (i - startI) / (finishI - startI) - 1, by - 2, 2, 8); } };
+}
+
+function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn, cfg, P) {
   const host = document.createElement('div'); host.id = 'stageClock';
   host.style.cssText = 'position:fixed;inset:0;z-index:9;color:#fff;font:600 15px/1.25 "Segoe UI",system-ui,sans-serif;text-shadow:0 2px 5px #000;pointer-events:none;letter-spacing:.02em';
-  host.innerHTML = `<div data-race style="position:absolute;left:50%;top:14px;transform:translateX(-50%);min-width:260px;padding:9px 16px;border-radius:7px;background:#090d13bd;border:1px solid #ffffff28;text-align:center;box-shadow:0 8px 24px #0008"></div><div data-count style="position:absolute;left:50%;top:32%;transform:translate(-50%,-50%);font:900 92px/1 Impact,Haettenschweiler,sans-serif;color:#fff;text-shadow:0 4px 0 #151515,0 0 28px #000;display:none"></div><div data-note style="position:absolute;left:50%;top:116px;transform:translateX(-50%);min-width:330px;padding:10px 18px;border-radius:7px;background:#10151ee8;border-left:6px solid #e1262f;text-align:center;font:800 24px/1.08 'Segoe UI',system-ui;opacity:0;transition:opacity .12s"></div>`;
+  host.innerHTML = `<div data-race style="position:absolute;left:50%;top:14px;transform:translateX(-50%);min-width:260px;padding:9px 16px;border-radius:7px;background:#090d13bd;border:1px solid #ffffff28;text-align:center;box-shadow:0 8px 24px #0008"></div><div data-count style="position:absolute;left:50%;top:32%;transform:translate(-50%,-50%);font:900 92px/1 Impact,Haettenschweiler,sans-serif;color:#fff;text-shadow:0 4px 0 #151515,0 0 28px #000;display:none"></div><div data-note style="position:absolute;left:50%;top:116px;transform:translateX(-50%);min-width:260px;padding:8px 18px 10px;border-radius:9px;background:#10151ee8;border-left:6px solid #e1262f;text-align:center;font:800 24px/1.08 'Segoe UI',system-ui;opacity:0;transition:opacity .12s"></div>`;
   document.body.appendChild(host);
   const raceEl = host.querySelector('[data-race]'), countEl = host.querySelector('[data-count]'), noteEl = host.querySelector('[data-note]');
   let best = 0; try { best = +localStorage.getItem(cfg.bestKey) || 0; } catch (e) {}
@@ -657,18 +731,19 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
   for (const f of features) if (f.at > startI + 70 && f.at < finishI - 35) raw.push(f); raw.sort((a, b) => a.at - b.at);
   const notes = [];
   for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[i + 1];
-    if (a.kind === 'turn' && b && b.kind === 'turn' && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade && a.grade > 0 && b.grade > 0 ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true, kind: 'turn' }); i++; }
+    if (a.kind === 'turn' && b && b.kind === 'turn' && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade && a.grade > 0 && b.grade > 0 ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true, kind: 'turn', parts: [a, b], link: tail.split(' ')[0] }); i++; }
     else notes.push(a);
   }
   const checkpoints = []; for (let i = startI + 300; i < finishI - 120; i += 300) checkpoints.push(i);
+  const map = stageMap(host, P, startI, finishI, checkpoints);
   const st = { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 };
   const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
   const pilot = coDriver(), say = text => pilot.say(text), stopVoice = () => pilot.stop();
   const lockAtStart = car => { const cs = car.st; cs.pos.set(spawn.x, car.world.groundAt(spawn.x, spawn.z) + car.spec.cg[1] + 0.01, spawn.z); cs.q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.yaw); cs.vel.set(0, 0, 0); cs.ang.set(0, 0, 0); cs.throttle = 0; cs.brake = 1; cs.hand = cs.handEff = 0; for (const w of car.wheels) w.w = 0; };
   const reset = () => { stopVoice(); Object.assign(st, { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 }); };
-  const showNote = (n, distance) => { const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; const special = n.kind === 'feature'; noteEl.innerHTML = `<span style="display:inline-block;width:29px;color:${special ? '#fff075' : n.dir > 0 ? '#ffcf45' : '#60baff'}">${special ? '▲' : n.dir > 0 ? '↶' : '↷'}</span>${n.text}`; say(lead + n.text); };
+  const showNote = (n, distance) => { const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; noteEl.innerHTML = paceCard(n, distance); say(lead + n.text); };
   const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem(cfg.bestKey, String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
-  const api = { state: st, notes, checkpoints, pilot, reset,
+  const api = { state: st, notes, checkpoints, pilot, reset, card: paceCard, map,
     update(dt, car) {
       if (!car) { host.style.display = 'none'; return; }
       host.style.display = car.driving ? '' : 'none';
@@ -688,6 +763,7 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
       noteEl.style.opacity = st.noteT > 0 && st.phase === 'running' ? '1' : '0';
       const cd = st.phase === 'countdown' ? Math.min(3, Math.max(1, Math.ceil(st.countdown))) : st.phase === 'running' && st.t < 0.7 ? 'START!' : '';
       countEl.style.display = cd ? '' : 'none'; countEl.textContent = cd;
+      map.draw(st.progress, car, st.phase === 'waiting' || st.phase === 'finished');
       if (++st.frame % 3) return;
       const km = Math.max(0, finishI - st.progress) / 1000, pct = clamp((st.progress - startI) / (finishI - startI), 0, 1);
       if (st.phase === 'waiting') raceEl.innerHTML = `<div style="font-size:18px">${cfg.name.toUpperCase()} · ${(cfg.target / 1000).toFixed(1)} KM</div><div style="opacity:.75;font-size:12px">Kliknij, aby rozpocząć odliczanie</div>`;
