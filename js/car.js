@@ -135,8 +135,10 @@ export async function createCar(world, spawn) {
   // ---- the driver: the first-person arms, their chest set so the shoulders sit below and either side of the eyes
   const driver = new THREE.Group(); driver.name = 'driver'; model.add(driver);
   const eye = new THREE.Vector3(steerHub.x, steerHub.y + 0.33, steerHub.z - 0.53); // (the driver's eyes)
+  if (ag) suitUp(ag.scene); // (full-fingered gloves and the race suit's sleeves)
   const rig = ag ? armsRig(ag.scene, driver, eye.clone().add(new THREE.Vector3(0, -0.237, -0.09)), 0.0118) : null;
   cabinLight(model, driver, ag && ag.scene);
+  const dash = (() => { let q = null; const n = find('LCD001'); if (n) n.traverse(o => { if (o.isMesh && !q) q = o; }); return q ? dashDisplay(q, model) : null; })();
   // ---- physics state
   const m = SPEC.mass, [W, H, L] = SPEC.dims, Ib = new THREE.Vector3(m / 12 * (H * H + L * L), m / 12 * (W * W + L * L) * 0.9, m / 12 * (W * W + H * H)); // (pitch, yaw, roll)
   const st = { pos: new THREE.Vector3(), q: new THREE.Quaternion(), vel: new THREE.Vector3(), ang: new THREE.Vector3(),
@@ -328,6 +330,7 @@ export async function createCar(world, spawn) {
     for (const w of wheels) { w.angle = (w.angle + w.w * dt) % (Math.PI * 2);
       w.travel.position.set(w.hubModel.x, w.hubModel.y + S0 - (w.contact ? w.s : SPEC.susp.rest), w.hubModel.z);
       w.travel.quaternion.setFromAxisAngle(UP, w.front ? st.steer * SPEC.steerMax : 0); w.spin.quaternion.setFromAxisAngle(XAX, w.angle); }
+    if (dash && car.driving) dash.update(dt, car);
     animate(dt);
     if (dbg) { root.updateMatrixWorld(true); dbgDraw(); }
     // the walker's box: in the hash while the car stands without its driver
@@ -461,8 +464,18 @@ export async function createCar(world, spawn) {
       h.arc = clamp(0.3 * dist, 0.022, 0.07) * (0.8 + Math.random() * 0.4); h.fly = 1; hs.still = 0; break; }
     return rot / lock; };
   const awayHb = new THREE.Vector3(), awayR = new THREE.Vector3(), awayKnob = new THREE.Vector3(), RF = pose(), hbMid = steerAxis.clone().multiplyScalar(-0.13).addScaledVector(UP, 0.03);
+  // the road in the wheel: the front wheels' bumps kick it a degree or so either way (the hands holding it go with it) and
+  // gravel buzzes through it, more as the speed rises; seen only — the steering itself is untouched
+  let shake = 0, shakeV = 0;
+  function roadFeel(dt) {
+    const [wl, wr] = wheels, sp = st.vel.length(), loose = wl.surf === 'gravel' || wl.surf === 'grass' || wl.surf === 'forest' ? 1 : 0.35;
+    const kick = wl.contact && wr.contact ? clamp((wl.cv - wr.cv) * 0.02, -0.03, 0.03) : 0, buzz = (Math.random() - 0.5) * 0.006 * loose * clamp(sp / 25, 0, 1);
+    shakeV += ((kick + buzz - shake) * 900 - shakeV * 38) * dt; shake = clamp(shake + shakeV * dt, -0.035, 0.035); // (a stiff, damped spring)
+    if (!car.driving || dt <= 0) { shake = shakeV = 0; }
+  }
   function animate(dt) {
-    const A = car.anim, rot = st.steer * SPEC.steerLock;
+    roadFeel(Math.min(dt, 0.05));
+    const A = car.anim, rot = st.steer * SPEC.steerLock + shake;
     if (steerPivot) steerPivot.quaternion.setFromAxisAngle(steerAxis, -rot);
     // the gear lever where the knob is in the gate (it turns about its foot)
     kTop.copy(GL.top0); kTop.x += A.knob[0]; kTop.z += A.knob[1]; kDir.subVectors(kTop, GL.base).normalize(); kTop.copy(GL.base).addScaledVector(kDir, GL.len); kBot.copy(kTop).addScaledVector(kDir, -0.06);
@@ -595,12 +608,38 @@ const SIDES = [[0.92, 0, 1.9], [-0.92, 0, 1.9], [0.95, 0, 0.65], [-0.95, 0, 0.65
 // texels (the cage, the bolts, the metal fittings) metal and smoother, the dark ones rough non-metal, and none of it
 // under the clear coat the model gives it all (it mirrored the sky off seats and floor alike). The arms, inside,
 // take the cabin's share of the sky.
-const CABIN = { floor: 0.25, bounce: 1.1, lift: 0.07, tow: 0.0042 }; // (the least share of the sky a vertex keeps; the bounced light, of the sky's; black trim lifted to; the carbon's tow, m)
+const CABIN = { floor: 0.25, bounce: 1.1, lift: 0.07, tow: 0.0021 }; // (the least share of the sky a vertex keeps; the bounced light, of the sky's; black trim lifted to; the carbon's tow, m)
 // the carbon fibre of the cockpit's black trim: a 2/2 twill of rounded tows, laid on in the car's own space from the three
 // axes (the trim's texture has no room for it), fading to its average where a pixel would cover a tow
 const CARBON_GLSL = `varying vec3 vCabP, vCabN;
 float cabTwill(vec2 p) { vec2 c = floor(p), f = fract(p); float warp = step(mod(c.x + c.y, 4.0), 1.5); return mix(0.5, 1.0, warp) * (0.68 + 0.32 * sin(3.14159 * (warp > 0.5 ? f.y : f.x))); }
-float cabCarbonAt(vec3 P, vec3 N, float tow) { vec3 w = pow(abs(N), vec3(4.0)); w /= w.x + w.y + w.z + 1e-5; vec3 q = P / tow; float v = cabTwill(q.yz) * w.x + cabTwill(q.xz) * w.y + cabTwill(q.xy) * w.z; return mix(0.66, v, 1.0 - smoothstep(0.25, 0.6, length(fwidth(q)))); }`;
+float cabCarbonAt(vec3 P, vec3 N, float tow) { vec3 w = pow(abs(N), vec3(4.0)); w /= w.x + w.y + w.z + 1e-5; vec3 q = P / tow; float v = cabTwill(q.yz) * w.x + cabTwill(q.xz) * w.y + cabTwill(q.xy) * w.z; return mix(0.66, v, 1.0 - smoothstep(0.25, 0.6, length(fwidth(q)))); }
+// the cockpit's black is not all carbon: where a surface is in the cabin (the model's own space: front +z, left +x, the
+// ground at y 0; the driver on the left) says what it is — the dash top and the headliner flocked black (dead matt, a
+// fine pile), the seats' covers a woven fabric with quilted channels, the floor bare ribbed alloy, the door cards, tunnel
+// and panels carbon. Fine detail fades to its average where a pixel would cover it.
+float cabHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+float cabNoise(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(cabHash(i), cabHash(i + vec3(1, 0, 0)), f.x), mix(cabHash(i + vec3(0, 1, 0)), cabHash(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(cabHash(i + vec3(0, 0, 1)), cabHash(i + vec3(1, 0, 1)), f.x), mix(cabHash(i + vec3(0, 1, 1)), cabHash(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
+float cabWeave(vec3 P, vec3 N) { vec3 w = pow(abs(N), vec3(4.0)); w /= w.x + w.y + w.z + 1e-5; vec3 q = P / 0.0016;
+  float fx = sin(q.y * 3.14159) * sin(q.z * 3.14159), fy = sin(q.x * 3.14159) * sin(q.z * 3.14159), fz = sin(q.x * 3.14159) * sin(q.y * 3.14159);
+  float v = 0.5 + 0.5 * (fx * w.x + fy * w.y + fz * w.z); return mix(0.5, v, 1.0 - smoothstep(0.25, 0.6, length(fwidth(q)))); }
+void cabSurface(vec3 P, vec3 N, float tow, out vec3 col, out float rough) {
+  float cv = cabCarbonAt(P, N, tow);
+  col = vec3(0.05, 0.051, 0.055) * (0.4 + 1.2 * cv); rough = 0.28 + 0.22 * (1.0 - cv);                                     // carbon
+  float pile = cabNoise(P * 700.0) * 0.6 + cabNoise(P * 90.0) * 0.4;
+  float ax = abs(P.x), seat = (1.0 - smoothstep(-0.03, 0.05, P.z)) * smoothstep(-0.95, -0.85, P.z) * smoothstep(0.1, 0.16, ax) * (1.0 - smoothstep(0.62, 0.68, ax)) * smoothstep(0.2, 0.28, P.y) * (1.0 - smoothstep(1.22, 1.3, P.y));
+  float chan = mix(0.72, 1.0, smoothstep(0.03, 0.12, abs(fract(P.y * 11.0 + P.z * 3.0) - 0.5)));                          // (quilted channels)
+  vec3 fabric = vec3(0.052, 0.052, 0.056) * (0.7 + 0.45 * cabWeave(P, N)) * chan * (0.9 + 0.2 * pile);
+  float flr = (1.0 - smoothstep(0.26, 0.33, P.y)) * smoothstep(0.4, 0.8, N.y), rib = 0.5 + 0.5 * sin(P.x * 420.0);
+  vec3 alloy = vec3(0.11, 0.112, 0.118) * (0.8 + 0.25 * mix(0.5, rib, 1.0 - smoothstep(0.2, 0.5, fwidth(P.x * 67.0)))) * (0.9 + 0.2 * pile);
+  float dash = smoothstep(0.32, 0.42, P.z) * smoothstep(0.62, 0.72, P.y) * smoothstep(-0.1, 0.35, N.y - 0.5 * N.z), roof = smoothstep(1.1, 1.18, P.y) * smoothstep(0.2, 0.6, -N.y);
+  vec3 flock = vec3(0.03, 0.03, 0.032) * (0.8 + 0.35 * pile); float fl = max(dash, roof);
+  col = mix(col, alloy, flr); rough = mix(rough, 0.55, flr);
+  col = mix(col, fabric, seat * (1.0 - flr)); rough = mix(rough, 0.92, seat * (1.0 - flr));
+  col = mix(col, flock, fl); rough = mix(rough, 0.98, fl);
+}`;
 function cabinLight(model, driver, arms) {
   const t0 = performance.now(), V = () => new THREE.Vector3();
   const under = (o, f) => { for (let q = o; q && q !== model; q = q.parent) if (f(q)) return true; return false; };
@@ -643,10 +682,10 @@ function cabinLight(model, driver, arms) {
   const patch = (m, constAo) => { if (!m || patched.has(m)) return; patched.add(m); const ob = m.onBeforeCompile;
     m.onBeforeCompile = (sh, r) => { if (ob) ob(sh, r);
       if (m.userData.carbon) { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCabP, vCabN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCabP = position; vCabN = normal;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + CARBON_GLSL);
-        sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.28 + 0.22 * (1.0 - cabV), cabK);'); }
+        sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, cabRough, cabK);'); }
       if (constAo === undefined) { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float ao; varying float vCabAo;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCabAo = ao;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCabAo;'); }
       else sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nconst float vCabAo = ' + constAo.toFixed(3) + ';');
-      if (m.userData.lift) sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = diffuseColor.rgb * ' + (1 - m.userData.lift).toFixed(3) + ' + ' + m.userData.lift.toFixed(3) + ';' + (m.userData.carbon ? ' vec3 cabT = texture2D(map, vMapUv).rgb; float cabK = (1.0 - smoothstep(0.035, 0.075, dot(cabT, vec3(0.2126, 0.7152, 0.0722)))) * (1.0 - smoothstep(0.012, 0.03, max(cabT.r, max(cabT.g, cabT.b)) - min(cabT.r, min(cabT.g, cabT.b)))), cabV = cabCarbonAt(vCabP, normalize(vCabN), ' + CABIN.tow.toFixed(4) + '); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.051, 0.055) * (0.4 + 1.2 * cabV), cabK);' : ''));
+      if (m.userData.lift) sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = diffuseColor.rgb * ' + (1 - m.userData.lift).toFixed(3) + ' + ' + m.userData.lift.toFixed(3) + ';' + (m.userData.carbon ? ' vec3 cabT = texture2D(map, vMapUv).rgb; float cabK = (1.0 - smoothstep(0.035, 0.075, dot(cabT, vec3(0.2126, 0.7152, 0.0722)))) * (1.0 - smoothstep(0.012, 0.03, max(cabT.r, max(cabT.g, cabT.b)) - min(cabT.r, min(cabT.g, cabT.b)))), cabRough; vec3 cabCol; cabSurface(vCabP, normalize(vCabN), ' + CABIN.tow.toFixed(4) + ', cabCol, cabRough); diffuseColor.rgb = mix(diffuseColor.rgb, cabCol, cabK);' : ''));
       sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', '#include <aomap_fragment>\n{ float o = vCabAo; vec3 dI = reflectedLight.indirectDiffuse; reflectedLight.indirectDiffuse = mix(vec3(dot(dI, vec3(0.2126, 0.7152, 0.0722))), dI, 0.3 + 0.7 * o) * o + vec3(1.0, 0.97, 0.92) * dot(dI, vec3(0.2126, 0.7152, 0.0722)) * ' + CABIN.bounce.toFixed(3) + ' * (1.0 - o); vec3 sI = reflectedLight.indirectSpecular; reflectedLight.indirectSpecular = mix(vec3(dot(sI, vec3(0.2126, 0.7152, 0.0722))), sI, o) * (0.04 + 0.96 * o * o * o);' + (m.clearcoat > 0 ? ' clearcoatSpecularIndirect *= 0.04 + 0.96 * o * o * o;' : '') + ' }'); };
     m.customProgramCacheKey = () => 'cabin' + (constAo === undefined ? '' : constAo) + (m.name || ''); m.needsUpdate = true; };
   for (const { o } of rec) for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (/^(cockpit|steer)$/.test(m.name)) m.userData.lift = m.name === 'steer' ? CABIN.lift * 0.35 : CABIN.lift; // (the wheel's rim: black suede, kept dark)
@@ -666,6 +705,63 @@ function cabinLight(model, driver, arms) {
   // (the side glass: the model's is a dark green, as good as a privacy tint — a rally car's is clear)
   model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && o.material.name === 'window') { const m = o.material; m.color.setRGB(0.62, 0.7, 0.68); m.opacity = Math.min(m.opacity, 0.22); } });
   console.log('cabin light baked', (performance.now() - t0).toFixed(0), 'ms');
+}
+
+// The dash display: the LCD behind the wheel is a bare quad in the model (a black 32-pixel texture). It gets its own
+// screen-aligned texture coordinates and a canvas drawn live, as a rally car's data logger shows it: the rev bar with
+// its shift band, the gear, the speed, the stage clock and the engine's temperatures.
+function dashDisplay(mesh, model) {
+  model.updateMatrixWorld(true);
+  const M = model.matrixWorld.clone().invert().multiply(mesh.matrixWorld), pa = mesh.geometry.attributes.position, n = pa.count;
+  const P = Array.from({ length: n }, (_, i) => new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(M)), c = P.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / n);
+  const nrm = new THREE.Vector3().subVectors(P[1], P[0]).cross(new THREE.Vector3().subVectors(P[2], P[0])).normalize(); if (nrm.z > 0) nrm.negate(); // (facing the driver)
+  const right = new THREE.Vector3(-1, 0, 0).projectOnPlane(nrm).normalize(), up = new THREE.Vector3().crossVectors(nrm, right).normalize(); if (up.y < 0) up.negate();
+  let w = 0, h = 0; for (const p of P) { const d = p.clone().sub(c); w = Math.max(w, Math.abs(d.dot(right))); h = Math.max(h, Math.abs(d.dot(up))); }
+  const uv = new Float32Array(n * 2); P.forEach((p, i) => { const d = p.clone().sub(c); uv[i * 2] = d.dot(right) / (2 * w) + 0.5; uv[i * 2 + 1] = d.dot(up) / (2 * h) + 0.5; });
+  const geo = mesh.geometry.clone(); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); mesh.geometry = geo;
+  const cv = document.createElement('canvas'); cv.width = 320; cv.height = Math.max(64, Math.round(320 * h / w)); const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  mesh.material = new THREE.MeshStandardMaterial({ color: 0x030405, roughness: 0.18, metalness: 0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.15 });
+  let acc = 1, water = 84, oil = 4.6;
+  return { update(dt, car) {
+    acc += dt; if (acc < 1 / 20) return; acc = 0;
+    const st = car.st, spec = car.spec, lim = spec.engine.limiter, rpm = st.rpm, kmh = Math.abs(st.velLocal.z) * 3.6, race = car.world.race && car.world.race.state;
+    water += ((78 + 22 * clamp(rpm / lim, 0, 1)) - water) * 0.01; oil = 1.2 + 4.2 * clamp(rpm / lim, 0, 1);
+    g.fillStyle = '#04070a'; g.fillRect(0, 0, W, H);
+    // (the rev bar: 24 segments, green to the shift band, then amber and red; flashing at the limiter)
+    const segs = 24, sw = (W - 16) / segs, lit = Math.round(clamp((rpm - 2500) / (lim - 2500), 0, 1) * segs), flash = rpm > lim - 220 && (performance.now() % 160 < 80);
+    for (let i = 0; i < segs; i++) { const on = i < lit; g.fillStyle = flash ? '#ff2a1a' : !on ? '#152028' : i < segs * 0.6 ? '#3ce26a' : i < segs * 0.82 ? '#ffc21a' : '#ff2a1a'; g.fillRect(8 + i * sw + 1, 6, sw - 2, H * 0.14); }
+    g.fillStyle = '#7f93a6'; g.font = `600 ${Math.round(H * 0.1)}px "Segoe UI", system-ui, sans-serif`; g.textBaseline = 'alphabetic';
+    g.textAlign = 'left'; g.fillText('RPM', 10, H * 0.34); g.fillText('km/h', W * 0.62, H * 0.34);
+    g.fillStyle = '#e8f2ff'; g.font = `700 ${Math.round(H * 0.2)}px "Segoe UI", system-ui, sans-serif`; g.fillText(String(Math.round(rpm / 10) * 10), 10, H * 0.58);
+    g.textAlign = 'right'; g.fillText(String(Math.round(kmh)), W - 10, H * 0.58);
+    // (the gear, large, in the middle)
+    g.textAlign = 'center'; g.font = `800 ${Math.round(H * 0.62)}px "Segoe UI", system-ui, sans-serif`; g.fillStyle = st.gear === 1 ? '#ffc21a' : st.gear === 0 ? '#ff5a4a' : '#ffffff';
+    g.fillText(st.gear === 0 ? 'R' : st.gear === 1 ? 'N' : String(st.gear - 1), W * 0.47, H * 0.86);
+    // (the bottom row: the stage clock, the water and oil)
+    g.font = `600 ${Math.round(H * 0.11)}px "Segoe UI", system-ui, sans-serif`; g.fillStyle = '#9fb3c6'; g.textAlign = 'left';
+    const tt = race ? race.t : 0, mm = Math.floor(tt / 60), ss = tt - mm * 60;
+    g.fillText(`${mm}:${ss < 10 ? '0' : ''}${ss.toFixed(1)}`, 10, H * 0.94); g.textAlign = 'right'; g.fillText(`W ${Math.round(water)}°  O ${oil.toFixed(1)}`, W - 10, H * 0.94);
+    if (st.auto) { g.textAlign = 'left'; g.fillStyle = '#3ce26a'; g.fillText('AUTO', 10, H * 0.76); }
+    tex.needsUpdate = true; } };
+}
+
+// The driver's kit, painted over the arms' own texture once: the model's fingerless gloves become full-fingered FIA
+// gloves (the bare fingers and nails take the glove's black leather, the knuckles' creases kept as its folds), and the sleeves
+// the dark blue of the team's race suit. Skin is told by its hue; the sleeve is the cloth region of the sheet.
+function suitUp(arms) {
+  arms.traverse(o => { if (!o.isSkinnedMesh) return; const m = o.material; if (!m || !m.map || !m.map.image || m.userData.suited) return; m.userData.suited = true;
+    const img = m.map.image, S = Math.min(2048, img.width || 2048), cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, S, S); const id = g.getImageData(0, 0, S, S), a = id.data;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const k = (y * S + x) * 4, r = a[k] / 255, gg = a[k + 1] / 255, b = a[k + 2] / 255, L = 0.3 * r + 0.55 * gg + 0.15 * b, sat = Math.max(r, gg, b) - Math.min(r, gg, b);
+      const fingers = x < S * 0.7 && y < S * 0.35 && L > 0.1, skin = fingers ? 1 : clamp((r - gg) * 6 - 0.15, 0, 1) * clamp((gg - b) * 8, 0, 1) * clamp((r - 0.25) * 4, 0, 1); // (the sheet's finger region, nails and all)
+      if (skin > 0) { const f = 0.055 + 0.06 * clamp(L * 1.3 - 0.35, 0, 0.8); // (the gloved finger: black leather, its folds from the skin's shading)
+        a[k] = lerp(a[k], f * 255, skin); a[k + 1] = lerp(a[k + 1], f * 255, skin); a[k + 2] = lerp(a[k + 2], f * 1.08 * 255, skin); continue; }
+      if (x < S * 0.6 && y > S * 0.34 && sat < 0.08) { const f = clamp(L / 0.12, 0.35, 1.8); // (the sleeve: the suit's navy Nomex)
+        a[k] = 0.085 * f * 255; a[k + 1] = 0.12 * f * 255; a[k + 2] = 0.22 * f * 255; } }
+    g.putImageData(id, 0, 0);
+    const tx = new THREE.CanvasTexture(cv); tx.flipY = m.map.flipY; tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8; tx.wrapS = m.map.wrapS; tx.wrapT = m.map.wrapT; tx.channel = m.map.channel;
+    m.map = tx; m.roughness = 0.74; m.needsUpdate = true; });
 }
 
 // the first-person arms: a skinned rig (a chest; each side an arm, an elbow, a wrist, a thumb and four fingers of three

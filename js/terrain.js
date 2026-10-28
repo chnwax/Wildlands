@@ -269,6 +269,8 @@ export const paintU = {};
 // with the mower's stripes, no flowers, seed heads or weeds (the ground under it is the pitch's own turf surface)
 export const turfU = { uTurf0: { value: new THREE.Vector4(0, 0, 0, 0) }, uTurf1: { value: new THREE.Vector4(0, 0, 0, 0) }, uTurfStripe: { value: new THREE.Vector4(1, 0, 5.25, 0) } };
 for (const k in PAINT) paintU['uP_' + k] = { value: new THREE.Color(PAINT[k]) };
+// a map's own palette over the defaults (the rally stages: drier, stonier, muted greens); setPaint() restores them
+export function setPaint(over = {}) { for (const k in PAINT) paintU['uP_' + k].value.set(over[k] || PAINT[k]); }
 // Flowers per square metre in a meadow, shared by the grass blades / clump cards and the close-up blossom sprites
 // (life.js), so a patch looks equally rich at every distance. z1/z2/z3: tNoise at world * 0.0021 / 0.013 / 0.06;
 // forest: forest mask (woodland flowers along the edges); h: height above water.

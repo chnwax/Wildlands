@@ -5,8 +5,8 @@
 // and how far round the stage the car has come (the stage clock). The road is graded into the terrain and receives
 // either a gravel ribbon with wheel ruts or painted asphalt. Wildlands woods border a readable low verge; chevron boards mark the
 // tight corners, straw bales and tape at the hairpins and the chicane, the start and finish arch with its line.
-import { THREE, scene, camera, clamp, lerp, smoothstep, mulberry32, tick, phTex, NFLAT, maxAniso, addCircle, addBox, Scatter, withScatterMeta } from './core.js';
-import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass } from './terrain.js';
+import { THREE, scene, camera, clamp, lerp, smoothstep, mulberry32, tick, phTex, NFLAT, maxAniso, addCircle, addBox, Scatter, withScatterMeta, erosion, fbm, decimate } from './core.js';
+import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, setPaint } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs } from './trees.js';
 import { plantForest, forestFloor } from './ecology.js';
 import { audio } from './audio.js';
@@ -18,15 +18,23 @@ export const meta = {
   builder: false,
   startHour: 15.4,
   sunAzimuth: 2.15,
-  life: { flowers: true, birds: true, fireflies: 0.3, mist: 0 },
+  life: { flowers: false, birds: true, fireflies: 0.3, mist: 0.2 },
   vehicle: true,
 };
 
 const ROAD = 1.3, SHOULDER = 1.6, CLEAR = 3.45; // one-car lane with the pack-tree forest closing in just behind the verge
 
+// the forest's ground: a low, rolling moraine country (the road rides its crests and dips), granite breaking out of it
+function pineLand(x, z) {
+  const e = erosion(x * 0.0029 + 1.4, z * 0.0029 - 3.8, 5), cr = 1 - Math.abs(fbm(x * 0.009 + 6.1, z * 0.009 - 2.7, 4));
+  return 24 + z * 0.025 + Math.sin(x * 0.005) * 4.5 + Math.sin(z * 0.007 + 0.8) * 3.5 + Math.sin((x + z) * 0.01) * 2 + 6.5 * e + 5 * smoothstep(0.78, 0.95, cr);
+}
+
 export const PINE_STAGE = {
   id: 'pine', name: 'Pine Forest', target: 1500, roadType: 'gravel', seed: 4471,
-  bestKey: 'wl_rally_pine_best_v1', forestMin: 0.86, forestSeed: 99, floorSeed: 5,
+  bestKey: 'wl_rally_pine_best_v2', forestMin: 0.86, forestSeed: 99, floorSeed: 5, forestNear: 2.6, stony: 0.22, land: pineLand, grade: 30,
+  // (a northern wood: dark spruce, needle litter and moss up to the ditches, grey granite, the grass short and dull)
+  paint: { gDeep: '#2e452b', gLush: '#47592f', gLight: '#878a51', gDry: '#9f915b', forest: '#3f3b27', canopy: '#25362a', rockL: '#a5a197', rockD: '#5a5753' },
   way: [[-355, -360], [-365, -300], [-340, -245], [-360, -185], [-335, -125], [-300, -70], [-280, -5], [-230, 55], [-170, 82], [-120, 62], [-100, 112], [-62, 78], [-18, 112], [35, 102], [82, 62], [118, 20], [168, -5], [225, -18], [272, -58], [294, -118], [310, -190], [350, -255], [382, -325]],
   jumps: [{ f: 0.31, h: 0.8, text: 'Przez szczyt' }, { f: 0.72, h: 1.05, text: 'Mały skok' }],
   features: [{ f: 0.49, text: 'Mocna kompresja' }],
@@ -64,18 +72,18 @@ function trackLine(cfg) {
   const sampled = pts.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0), exact = cfg.target / sampled;
   for (const p of pts) { p[0] *= exact; p[1] *= exact; }
   const mountain = cfg.profile === 'mountain';
-  const land = mountain
+  const land = cfg.land || (mountain
     ? (x, z) => 68 + z * 0.105 + x * 0.006 + Math.sin(x * 0.007 + 0.4) * 3.2 + Math.sin(z * 0.008 + 1.1) * 2.4 + Math.sin((x - z) * 0.014) * 1.1 + Math.sin(x * 0.013 - z * 0.004 + 2.1) * 5 + Math.sin(x * 0.031 + z * 0.017) * 2.2
     : cfg.roadType === 'asphalt'
     ? (x, z) => 48 + z * 0.075 + Math.sin(x * 0.006) * 7 + Math.sin(z * 0.008 + 0.8) * 5 + Math.sin((x + z) * 0.012) * 2.8 + Math.sin(x * 0.016 + z * 0.005 + 1.3) * 10 + Math.sin(z * 0.021 - x * 0.011 + 0.4) * 4.5
-    : (x, z) => 24 + z * 0.025 + Math.sin(x * 0.005) * 4.5 + Math.sin(z * 0.007 + 0.8) * 3.5 + Math.sin((x + z) * 0.01) * 2;
+    : (x, z) => 24 + z * 0.025 + Math.sin(x * 0.005) * 4.5 + Math.sin(z * 0.007 + 0.8) * 3.5 + Math.sin((x + z) * 0.01) * 2);
   const jumpSpecs = cfg.jumps || [];
   const jump = (s, c, h) => { const d = s - c; if (d < -18 || d > 7) return 0; return d <= 0 ? h * Math.pow((d + 18) / 18, 1.18) : h * (1 - d / 7); };
   // (a hillside road is graded: it follows the land smoothed along its way, cutting into the rises and built up over the
   // hollows, so the slopes beside it keep their own shape)
-  const graded = mountain || cfg.verge === 'cut', L0 = pts.map(([x, z]) => land(x, z)), LS = graded ? L0.map((_, i) => { let a = 0, c = 0; for (let k = Math.max(0, i - 60); k <= Math.min(L0.length - 1, i + 60); k += 3) { a += L0[k]; c++; } return a / c; }) : L0;
+  const graded = mountain || cfg.verge === 'cut' || cfg.grade, L0 = pts.map(([x, z]) => land(x, z)), LS = graded ? L0.map((_, i) => { let a = 0, c = 0; for (let k = Math.max(0, i - (cfg.grade || 60)); k <= Math.min(L0.length - 1, i + (cfg.grade || 60)); k += 3) { a += L0[k]; c++; } return a / c; }) : L0;
   const Y = pts.map(([x, z], i) => LS[i]
-    + (mountain ? Math.sin(i / 180 + 0.5) * 2.4 + Math.sin(i / 80) * 0.8 : Math.sin(i / (cfg.roadType === 'asphalt' ? 210 : 260) + 0.5) * (cfg.roadType === 'asphalt' ? 3.8 : 2.8) + Math.sin(i / 92) * 1.7)
+    + (cfg.land ? Math.sin(i / 70) * 0.5 : mountain ? Math.sin(i / 180 + 0.5) * 2.4 + Math.sin(i / 80) * 0.8 : Math.sin(i / (cfg.roadType === 'asphalt' ? 210 : 260) + 0.5) * (cfg.roadType === 'asphalt' ? 3.8 : 2.8) + Math.sin(i / 92) * 1.7)
     + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
   const features = jumpSpecs.map(j => ({ at: Math.round(j.f * n), end: Math.round(j.f * n) + 12, text: j.text, kind: 'feature', dir: 0 }));
   for (const f of cfg.features || []) features.push({ at: Math.round(n * f.f), end: Math.round(n * f.f) + 10, text: f.text, kind: 'feature', dir: 0 });
@@ -88,6 +96,7 @@ export async function buildStage(progress, cfg) {
   // Start loading the same owned Idyllic Woodlands / Illustrated Nature library used by Wildlands. trees.js will
   // automatically use tree02/tree03 and their LODs once it is ready, while installations without the local pack
   // retain the procedural fallback.
+  setPaint(cfg.paint); // (each stage's own palette: a dry upland, a dark northern wood, a high massif)
   const packsP = loadPacks(), peopleP = loadPeople().catch(e => { console.warn('rally spectators: ' + e.message); return null; });
   progress('Laying out the stage', 0.05); await tick();
   const line = trackLine(cfg), P = line.pts, Y = line.Y, N = P.length;
@@ -109,7 +118,7 @@ export async function buildStage(progress, cfg) {
   const rng = mulberry32(cfg.seed), ph = Array.from({ length: 8 }, () => [rng() * 6.28, 0.6 + rng() * 0.8, rng() * 6.28]);
   const woods = (x, z) => { let n = 0; for (let k = 0; k < 8; k++) { const [a, f, p] = ph[k], s = 0.0028 * f * (1 + k * 0.45); n += Math.sin((x * Math.cos(a) + z * Math.sin(a)) * s + p) / (1 + k * 0.6); } return smoothstep(-0.1, 0.9, n * 0.75 + 0.1); };
   progress('Grading the ground', 0.18); await tick();
-  const mountain = cfg.profile === 'mountain', asphalt = cfg.roadType === 'asphalt', cut = (cfg.verge || (mountain ? 'cut' : 'ditch')) === 'cut';
+  const mountain = cfg.profile === 'mountain', asphalt = cfg.roadType === 'asphalt', cut = (cfg.verge || (mountain ? 'cut' : 'ditch')) === 'cut', eco = cfg.eco || {};
   // ---- the road's own surface, exact between the 2 m cells of the ground: a crowned cross-section (water runs off to
   // the edges, more so on gravel), the bends banked a little toward their inside. Wheels, the ribbon and the ground under
   // it all read it from here, so the road never takes the shape of the coarse terrain grid
@@ -129,7 +138,7 @@ export async function buildStage(progress, cfg) {
     const edgeY = roadY(o, o.w < 0 ? -ED : ED) - 0.035, roadH = lerp(Y[o.k], Y[o.k + 1], o.t);
     // (ground rising above the road starts only past BANK0: a terrain triangle reaches 2.8 m, and one touching the road's
     // edge must not stand over it)
-    if (cut) { const px = lerp(P[o.k][0], P[o.k + 1][0], o.t), pz = lerp(P[o.k][1], P[o.k + 1][1], o.t), natural = base + (roadH - line.land(px, pz)) * (1 - smoothstep(22, FAR - 4, d)), dh = natural - edgeY;
+    if (cut) { const px = lerp(P[o.k][0], P[o.k + 1][0], o.t), pz = lerp(P[o.k][1], P[o.k + 1][1], o.t), natural = base + (roadH - line.land(px, pz)) * (1 - smoothstep(5, 14, d)), dh = natural - edgeY;
       const span = clamp(Math.abs(dh) * (dh > 0 ? 0.75 : 1.5), 1.4, 16), gutter = dh > 0.5 ? 0.28 * smoothstep(ED, ED + 0.7, d) * (1 - smoothstep(ED + 1.2, BANK0, d)) : 0;
       return lerp(edgeY, natural, smoothstep(dh > 0 ? BANK0 : ED + 0.15, (dh > 0 ? BANK0 : ED) + span, d)) - gutter; }
     const far = lerp(base, roadH, 1 - smoothstep(10, FAR - 3, d)), dip = (cfg.ditch ?? 0.5) * smoothstep(ED, ED + 1.0, d) * (1 - smoothstep(ED + 1.4, ED + 2.9, d));
@@ -152,11 +161,14 @@ export async function buildStage(progress, cfg) {
   const snowBank = o => BANKAMT[o.k] > 0.01 && (o.w < 0 ? -1 : 1) === -DROP[o.k] ? bankH(o.d) * BANKAMT[o.k] : 0;
   const clearAt = (x, z) => { const ni = nearAt(x, z); if (mountain) return 9; return ni >= 0 && (ni < 58 || ni > N - 72) ? 7.4 : CLEAR; };
   for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, o = j * HN + i, d = distAt(x, z), clear = clearAt(x, z);
-    const forestBase = mountain ? Math.max(0, woods(x, z) - 0.56) * 0.5 : Math.max(cfg.forestMin, woods(x, z));
-    const f = forestBase * smoothstep(clear + 0.35, clear + 4.8, d) * (d < 40 && keepClear(x, z, 2) ? 0.25 : 1), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
+    const forestBase = mountain || eco.woods ? Math.max(0, woods(x, z) - (eco.woods ?? 0.56)) * (eco.woods ? 1.6 : 0.5) : Math.max(cfg.forestMin, woods(x, z)), near = cfg.forestNear ?? clear + 0.35;
+    const f = forestBase * smoothstep(near, near + 4.4, d) * (d < 40 && keepClear(x, z, 2) ? 0.25 : 1), moist = clamp(0.48 + 0.22 * Math.sin(x * 0.011 + z * 0.007) + 0.1 * Math.sin(z * 0.021), 0, 1); FOREST[o] = f; MOIST[o] = moist;
     hf.mask[o * 4] = smoothstep(0.35, 0.8, f) * 235; hf.mask[o * 4 + 1] = 255; hf.mask[o * 4 + 3] = moist * 255;
     const rag = Math.sin(x * 0.37 + z * 0.23) * 0.5 + Math.sin(x * 0.11 - z * 0.29) * 0.5; // (a ragged verge, never a ruled line)
-    hf.mask2[o * 4] = (1 - smoothstep(SHOULDER - 0.1, SHOULDER + 0.5 + rag * 0.25, d)) * 255;   // the shoulder: loose gravel and bare earth
+    // the shoulder (loose gravel, bare earth) and, on a stony stage, broken stone over the slopes: little soil, little grass
+    const slope = 1 - hf.gridNormalY(i, j), patch = 0.5 + 0.35 * Math.sin(x * 0.031 + z * 0.017 + Math.sin(z * 0.05)) + 0.25 * Math.sin(x * 0.083 - z * 0.061);
+    const stony = (cfg.stony || 0) * clamp(smoothstep(0.1, 0.3, slope + (patch - 0.5) * 0.16) * 0.8 + smoothstep(0.78, 1.05, patch) * 0.5, 0, 1) * (1 - smoothstep(0.3, 0.7, f)) * (1 - smoothstep(0.32, 0.46, slope)); // (cliffs stay the rock layer's)
+    hf.mask2[o * 4] = Math.max(1 - smoothstep(SHOULDER - 0.1, SHOULDER + 0.5 + rag * 0.25, d), stony) * 255;
     hf.mask2[o * 4 + 2] = (1 - smoothstep(SHOULDER + 0.05, SHOULDER + 0.55, d)) * 255;
     hf.mask2[o * 4 + 3] = (1 - smoothstep(SHOULDER + 2.5, SHOULDER + 5.5 + rag, d)) * 255;   // a mown verge: short, sparse grass before the long grass
   }
@@ -166,11 +178,11 @@ export async function buildStage(progress, cfg) {
   progress('Planting the woods', 0.28); await tick();
   const blocked = (x, z, pad = 0) => distAt(x, z) < clearAt(x, z) + pad || keepClear(x, z, pad);
   // The same altitude reference and species mix as nature.js: low woodland gets oak/leaf/birch among the conifers.
-  const alpine = asphalt, ecologySnow = cfg.snowLine ?? 205;
+  const alpine = asphalt, ecologySnow = eco.snow ?? cfg.snowLine ?? 205;
   const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: cfg.forestSeed, water: 0, snow: ecologySnow, blocked,
-    alpine: alpine ? [38, 76] : [110, 175], lowland: alpine ? [12, 32] : [22, 60], meadow: 1100, step: alpine ? 5.4 : 4.5 });
+    alpine: eco.alpine || (alpine ? [38, 76] : [110, 175]), lowland: eco.lowland || (alpine ? [12, 32] : [22, 60]), meadow: 1100, step: eco.step || (alpine ? 5.4 : 4.5) });
   const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: cfg.floorSeed, water: 0, blocked,
-    logs: mountain ? 60 : alpine ? 320 : 650, twigs: mountain ? 500 : alpine ? 3500 : 7000, shrubs: mountain ? 280 : alpine ? 1500 : 3000 });
+    logs: eco.logs ?? (mountain ? 60 : alpine ? 320 : 650), twigs: eco.twigs ?? (mountain ? 500 : alpine ? 3500 : 7000), shrubs: eco.shrubs ?? (mountain ? 280 : alpine ? 1500 : 3000) });
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
   progress('Shaping the ground', 0.4); await tick();
@@ -179,7 +191,9 @@ export async function buildStage(progress, cfg) {
     forest: { d: phTex('forest_leaves_03', 'diff', '2k', true, [70, 58, 40]), n: phTex('forest_leaves_03', 'nor_gl', '1k', false, NFLAT), s: 3 },
     rock: { d: phTex('rock_face_03', 'diff', '2k', true, [110, 100, 90]), n: phTex('rock_face_03', 'nor_gl', '2k', false, NFLAT), s: 9 },
     shore: { d: phTex('coast_sand_01', 'diff', '2k', true, [140, 125, 100]), n: phTex('coast_sand_01', 'nor_gl', '1k', false, NFLAT), s: 4, tint: [0.78, 0.72, 0.6] },
-    urban: { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.08, 0.98, 0.84], norm: 0.5 },
+    // (the shoulders and the stony ground: gravel in the woods, broken rock on the mountains)
+    urban: cfg.stoneGround ? { d: phTex('rock_face_03', 'diff', '2k', true, [110, 100, 90]), n: phTex('rock_face_03', 'nor_gl', '2k', false, NFLAT), s: 3.4, tint: cfg.stoneGround, norm: cfg.stoneNorm || 0.3 }
+      : { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.08, 0.98, 0.84], norm: 0.5 },
   };
   const terrainSnow = cfg.snowLine ?? 5000;
   const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: -60, snow: terrainSnow, shore: 0.01, conifer: 0.7 }));
@@ -371,15 +385,26 @@ function roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, rng
     const y = Math.min(hf.groundAt(x, z), hf.groundAt(x + w * 0.3, z), hf.groundAt(x - w * 0.3, z), hf.groundAt(x, z + w * 0.3), hf.groundAt(x, z - w * 0.3)) - h * sink;
     if (!items.has(id)) items.set(id, []); items.get(id).push({ x, y, z, s, r: rng() * 6.283, tilt: (rng() - 0.5) * 0.3, tilt2: (rng() - 0.5) * 0.3, c: new THREE.Color().setHSL(0.08 + rng() * 0.05, 0.07, cut ? 0.4 + rng() * 0.14 : 0.36 + rng() * 0.12) });
     if (h * (1 - sink) > 0.35) addCircle(x, z, w * 0.36, y, y + h); };
-  for (let i = startI + 25; i < finishI - 10; i += cut ? 7 + Math.floor(rng() * 16) : 30 + Math.floor(rng() * 50)) {
+  const putSmall = (id, x, z, s) => { const M = packs.models[id]; if (!items.has(id)) items.set(id, []); items.get(id).push({ x, y: hf.groundAt(x, z) - M.dims[1] * s * 0.3, z, s, r: rng() * 6.283, tilt: (rng() - 0.5) * 0.6, tilt2: (rng() - 0.5) * 0.6, c: new THREE.Color().setHSL(0.08 + rng() * 0.04, 0.06, 0.42 + rng() * 0.12) }); };
+  for (let i = startI + 25; i < finishI - 10; i += cut ? 7 + Math.floor(rng() * 16) : 14 + Math.floor(rng() * 26)) {
     const [px, pz] = P[i], [lx, lz] = left(i);
     if (cut) { const up = hf.groundAt(px + lx * 7, pz + lz * 7) > hf.groundAt(px - lx * 7, pz - lz * 7) ? 1 : -1, sd = rng() < 0.82 ? up : -up, d = sd === up ? 3.2 + rng() * 5 : 4 + rng() * 6;
       put(ids[Math.floor(rng() * ids.length)], px + lx * sd * d, pz + lz * sd * d, 0.45 + rng() * rng() * 2.2, 0.35);
       if (rng() < 0.2) { const d2 = 7 + rng() * 9; put(ids[Math.floor(rng() * ids.length)], px + lx * up * d2, pz + lz * up * d2, 1.6 + rng() * 1.8, 0.45); } } // (now and then a big block broken out of the slope)
-    else { const sd = rng() < 0.5 ? 1 : -1, d = 4.8 + rng() * 5; put(ids[Math.floor(rng() * ids.length)], px + lx * sd * d, pz + lz * sd * d, 0.4 + rng() * rng() * 1.3, 0.4); }
+    else { const sd = rng() < 0.5 ? 1 : -1, d = 4.6 + rng() * 6; put(ids[Math.floor(rng() * ids.length)], px + lx * sd * d, pz + lz * sd * d, 0.4 + rng() * rng() * 1.5, 0.4); if (rng() < 0.4) put(ids[Math.floor(rng() * ids.length)], px + lx * sd * (d + 1.5), pz + lz * sd * (d + 1.5), 0.3 + rng() * 0.5, 0.45); }
   }
   // (tinted per stone like the town's rocks: the library's stone is pale)
-  for (const [id, list] of items) withScatterMeta({ prefab: 'rally_' + id, category: 'rock' }, () => new Scatter(list, [{ dist: () => 280, parts: packs.models[id].parts.map(q => ({ ...q, castShadow: true, tint: true })) }], 128));
+  if (cut) { // (rock fallen from the cut bank into the gutter and the odd stone at the edge; boulders all over the slopes)
+    for (let i = startI + 6; i < finishI - 6; i += 3 + Math.floor(rng() * 6)) { const [px, pz] = P[i], [lx, lz] = left(i), up = hf.groundAt(px + lx * 7, pz + lz * 7) > hf.groundAt(px - lx * 7, pz - lz * 7) ? 1 : -1;
+      const edge = rng() < 0.18, d = edge ? 1.75 + rng() * 0.3 : 2.5 + rng() * 1.4; putSmall(ids[Math.floor(rng() * ids.length)], px + lx * up * d, pz + lz * up * d, edge ? 0.08 + rng() * 0.1 : 0.14 + rng() * rng() * 0.45); }
+    const box = [1e9, 1e9, -1e9, -1e9]; for (const [x, z] of P) { box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], z); box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], z); }
+    const n3 = new THREE.Vector3();
+    for (let k = 0; k < 9000; k++) { const x = box[0] - 220 + rng() * (box[2] - box[0] + 440), z = box[1] - 220 + rng() * (box[3] - box[1] + 440), dd = distAt(x, z); if (dd < 6) continue;
+      hf.normalAt(x, z, n3); const sl = 1 - n3.y; if (sl < 0.08 || rng() > smoothstep(0.08, 0.3, sl) * 0.5) continue;
+      const big = rng() < 0.1; put(ids[Math.floor(rng() * ids.length)], x, z, big ? 2.2 + rng() * 3 : 0.5 + rng() * rng() * 2, big ? 0.35 : 0.4); }
+  }
+  for (const [id, list] of items) withScatterMeta({ prefab: 'rally_' + id, category: 'rock' }, () => new Scatter(list, [{ dist: () => 70, parts: packs.models[id].parts.map(q => ({ ...q, castShadow: true, tint: true })) },
+    { dist: () => 300, parts: packs.models[id].parts.map(q => ({ ...q, geometry: decimate(q.geometry, 8), castShadow: true, tint: true })) }], 128)); // (a clustered copy past 70 m)
 }
 
 // the spectators: little groups behind the tape, standing about and talking, turning to watch the car come and waving it
@@ -457,7 +482,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const tapeTex = canvasTex(128, 16, (g, w, h) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#fff' : '#d01a20'; g.fillRect(i * 16, 0, 16, h); } }); tapeTex.wrapS = THREE.RepeatWrapping;
   const tapeM = new THREE.MeshStandardMaterial({ map: tapeTex, roughness: 0.7, side: THREE.DoubleSide }), poleM = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.8 });
   const mountain = cfg.profile === 'mountain';
-  const items = { board: [], post: [], back: [], bale: [], pole: [], marker: [], guard: [], guardPost: [], reflector: [] }, tapePos = [], tapeUv = [];
+  const items = { board: [], post: [], back: [], bale: [], pole: [], marker: [], guard: [], guardPost: [], reflector: [], wall: [] }, tapePos = [], tapeUv = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), S1 = new THREE.Vector3(1, 1, 1);
   const at = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, hf.groundAt(x, z) + y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
   const atY = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
@@ -467,13 +492,23 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
     for (const side of [-1, 1]) { const d = 2.18 + wobble, x = px + lx * d * side, z = pz + lz * d * side; items.marker.push(at(x, 0, z, Math.atan2(T[i][0], T[i][1]))); }
   }
   const wide = new Float32Array(N); for (const c of corners) if (c.R < 40) for (let i = Math.max(0, c.s - 10); i <= Math.min(N - 1, c.e + 10); i++) wide[i] = 1;
+  const fall = new Uint8Array(N), railed = new Uint8Array(N);
+  if (mountain || cfg.walls) { for (let i = startI + 10; i < finishI - 10; i += 4) { const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], y = hf.groundAt(px, pz); fall[i] = wide[i] || y - hf.groundAt(px + lx * s * 7, pz + lz * s * 7) > (cfg.walls ? 1.4 : 2.2) ? 1 : 0; }
+    for (let i = startI + 10; i < finishI - 10; i += 4) for (let k = i - 16; k <= i + 16; k += 4) if (fall[k]) { railed[i] = 1; break; } }
   if (mountain) for (let i = startI + 10; i < finishI - 10; i += 4) {
+    if (!railed[i]) continue; // (where the hill falls away; elsewhere the road's edge is its stones and its posts)
     const [px, pz] = P[i], [lx, lz] = left(i), yaw = Math.atan2(T[i][0], T[i][1]);
     // (a little way off the edge, further round the switchbacks, where the car sweeps wide; the posts down to the ground)
     const side = DROP[i], rd = 2.5 + 0.7 * wide[i], x = px + lx * side * rd, z = pz + lz * side * rd, y = hf.groundAt(px, pz), gx = x + lx * side * 0.08, gz = z + lz * side * 0.08, gy = Math.min(y, hf.groundAt(gx, gz)), ph = y + 0.75 - gy + 0.25;
     items.guard.push(atY(x, y + 0.6, z, yaw + (side > 0 ? 0 : Math.PI))); items.guardPost.push(m4.compose(new THREE.Vector3(gx, gy - 0.25 + ph / 2, gz), q.setFromAxisAngle(UP, yaw), new THREE.Vector3(1, ph, 1)).clone()); addBox(x, z, 0.1, 2.1, yaw, y - 0.2, y + 0.95);
     if ((i - startI) % 20 < 4) items.reflector.push(atY(x - lx * side * 0.02, y + 0.9, z - lz * side * 0.02, yaw));
   }
+  // dry-stone walls along the drops (the old southern mountain roads have them instead of steel): knee high, a little
+  // way off the edge (further round the hairpins), in 3 m courses following the road
+  if (cfg.walls) for (let i = startI + 10; i < finishI - 10; i += 3) {
+    if (!railed[i - (i - startI - 10) % 4]) continue;
+    const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], yaw = Math.atan2(T[i][0], T[i][1]), rd = 2.55 + 0.8 * wide[i], x = px + lx * s * rd, z = pz + lz * s * rd, y = Math.min(hf.groundAt(px, pz) - 0.05, hf.groundAt(x, z));
+    items.wall.push(m4.compose(new THREE.Vector3(x, y - 0.25, z), q.setFromAxisAngle(UP, yaw + (rng() - 0.5) * 0.02), new THREE.Vector3(1, 1, 1)).clone()); addBox(x, z, 0.24, 1.55, yaw, y - 0.3, y + 0.7); }
   for (const c of corners) {
     if (c.R > 60) continue; // (chevrons only where a bend can catch you out)
     const out = i => { const [lx, lz] = left(i); return [-lx * c.dir, -lz * c.dir]; }; // (the corner's outside)
@@ -510,6 +545,12 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
     const posts = inst(new THREE.BoxGeometry(0.1, 1, 0.15), darkSteel, items.guardPost); if (posts) posts.name = 'rally-mountain-guardrail-posts';
     const reflectors = inst(new THREE.BoxGeometry(0.16, 0.12, 0.05), orange, items.reflector, false); if (reflectors) reflectors.name = 'rally-mountain-reflectors';
   }
+  if (items.wall.length) { // (the stone photo laid on in metres, so the courses keep their size on every face)
+    const g = new THREE.BoxGeometry(0.46, 0.92, 3.08).translate(0, 0.46, 0), pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv;
+    for (let k = 0; k < pa.count; k++) { const x = pa.getX(k), y = pa.getY(k), z = pa.getZ(k), nx = Math.abs(na.getX(k)), ny = Math.abs(na.getY(k)); ua.setXY(k, (nx > 0.5 ? z : x) / 1.4 + (ny > 0.5 ? 0 : 0), (ny > 0.5 ? z : y) / 1.4); }
+    const sw = new THREE.MeshStandardMaterial({ map: phTex('japanese_stone_wall', 'diff', '1k', true), normalMap: phTex('japanese_stone_wall', 'nor_gl', '1k', false, NFLAT), roughness: 0.95, color: 0xe2d8c6 });
+    for (const t of [sw.map, sw.normalMap]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    const walls = inst(g, sw, items.wall); if (walls) walls.name = 'rally-stone-walls'; }
   if (tapePos.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(tapePos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(tapeUv, 2)); g.computeVertexNormals(); group.add(new THREE.Mesh(g, tapeM)); }
   const chq = canvasTex(512, 64, (g, w, h) => { for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#f2f2ee' : '#1a1a1a'; g.fillRect(i * 16, j * 16, 16, 16); } });
   const archM = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.6, metalness: 0.3 });
@@ -589,13 +630,13 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
   document.body.appendChild(host);
   const raceEl = host.querySelector('[data-race]'), countEl = host.querySelector('[data-count]'), noteEl = host.querySelector('[data-note]');
   let best = 0; try { best = +localStorage.getItem(cfg.bestKey) || 0; } catch (e) {}
-  const grade = r => r < 24 ? 1 : r < 34 ? 2 : r < 48 ? 3 : r < 68 ? 4 : r < 105 ? 5 : 6;
-  const phrase = c => `${c.dir > 0 ? 'Lewy' : 'Prawy'} ${grade(c.R)}${c.e - c.s > 42 ? ' długi' : ''}`;
+  const grade = r => r < 15 ? 0 : r < 24 ? 1 : r < 34 ? 2 : r < 48 ? 3 : r < 68 ? 4 : r < 105 ? 5 : 6; // (0: a hairpin)
+  const phrase = c => grade(c.R) === 0 ? `${c.dir > 0 ? 'Lewy' : 'Prawy'} nawrót` : `${c.dir > 0 ? 'Lewy' : 'Prawy'} ${grade(c.R)}${c.e - c.s > 42 ? ' długi' : ''}`;
   const raw = corners.filter(c => c.apex > startI + 70 && c.apex < finishI - 35).map(c => ({ at: c.apex, end: c.e, text: phrase(c), dir: c.dir, grade: grade(c.R), long: c.e - c.s > 42, kind: 'turn' }));
   for (const f of features) if (f.at > startI + 70 && f.at < finishI - 35) raw.push(f); raw.sort((a, b) => a.at - b.at);
   const notes = [];
   for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[i + 1];
-    if (a.kind === 'turn' && b && b.kind === 'turn' && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true, kind: 'turn' }); i++; }
+    if (a.kind === 'turn' && b && b.kind === 'turn' && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade && a.grade > 0 && b.grade > 0 ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true, kind: 'turn' }); i++; }
     else notes.push(a);
   }
   const checkpoints = []; for (let i = startI + 300; i < finishI - 120; i += 300) checkpoints.push(i);

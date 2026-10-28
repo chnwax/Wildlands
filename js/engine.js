@@ -6,6 +6,7 @@ import { time, updateSky, followCamera, env, applyShadowQuality, prepareShadowCa
 import { post, buildComposer, updateRays } from './post.js';
 import { flattenPhotoMaterials } from './toon.js';
 import { perf } from './perf.js';
+import { setPaint } from './terrain.js';
 
 export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js'), rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js') };
 // ?map=<name>; Sakuragawa when missing or unknown (the Wildlands valley, 'nature', opens only when asked for by name)
@@ -60,6 +61,7 @@ export function setQuality(name, world) {
 export async function loadWorld(mapName, { progress = () => {}, editor = false } = {}) {
   progress('Preparing', 0.02); await tick();
   const mod = await MAPS[mapName]();
+  setPaint(); // (the default palette: a map that wants its own sets it as it builds)
   time.hour = mod.meta.startHour; env.azimuth = mod.meta.sunAzimuth ?? env.azimuth;
   const world = await mod.build(progress, { editor, map: mapName });
   world.meta = mod.meta; world.mapName = mapName;
