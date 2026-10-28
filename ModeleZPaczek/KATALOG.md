@@ -1,0 +1,1057 @@
+# Modele z paczek (Wildlands)
+
+Wszystkie modele z czterech paczek Unity, każdy w osobnym pliku GLB (metry, oś Y w górę, podstawa modelu w punkcie 0).
+Tekstury są wspólne, w `_tekstury/`. Podgląd: uruchom `Przegladarka-Modeli.bat` z folderu Wildlands (dwuklik) — sama strona otwarta z dysku nie pokaże modeli
+
+Wygenerowano: 2026-10-15T21:36:39.247Z — narzędzie: `node tools/packs-extract.mjs`
+
+| kategoria | modeli | co zawiera |
+|---|---|---|
+| drzewa | 108 | drzewa, pnie, martwe drzewa |
+| roslinnosc | 82 | krzewy, trawy, kwiaty, trzciny, lilie, liście, gałęzie na ziemi |
+| uprawy_i_owoce | 179 | rośliny uprawne, warzywa, owoce, skrzynki z plonami, grządki |
+| domy | 11 | domy mieszkalne, domy farmerskie, bloki mieszkalne |
+| budynki | 26 | sklepy, konbini, restauracje, stodoły, garaże, szklarnie, silosy, szopy |
+| urban_ulica | 104 | latarnie, słupy, sygnalizacja, lustra, chodniki, krawężniki, studzienki, hydranty, automaty, kosze, klimatyzatory, kable |
+| ogrodzenia_i_mury | 76 | płoty, mury, bramy, furtki, słupki |
+| znaki_i_szyldy | 104 | znaki drogowe, tablice ostrzegawcze, szyldy sklepów, naklejki, markizy, potykacze |
+| dekoracje | 52 | donice, meble, kartony, butelki, lampiony, naczynia, drobne przedmioty |
+| farma | 109 | narzędzia, siano, beczki, ule, kurniki, studnie, taczki, worki, wyposażenie gospodarstwa |
+| pojazdy | 22 | rowery, skutery, samochody, ciągniki, maszyny, pociąg |
+| kolej | 12 | tory, szlabany, przejazdy, sieć trakcyjna, znaki kolejowe |
+| skaly_i_teren | 40 | skały, głazy, góry, kawałki terenu, drogi gruntowe, woda, kamyki |
+| postacie_i_zwierzeta | 17 | postacie, zwierzęta, ptaki, ryby, motyle |
+| efekty_i_niebo | 7 | chmury, efekty cząsteczkowe, niebo, mgła, promienie |
+| inne | 3 | wszystko, co nie pasuje gdzie indziej |
+
+## drzewa (108)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [tree_cherry](drzewa/anime_japan/tree_cherry.glb) | anime_japan | 4.30 × 6.24 × 3.88 | 2704 |
+| [tree_cherry_02](drzewa/anime_japan/tree_cherry_02.glb) | anime_japan | 4.25 × 5.74 × 3.66 | 2468 |
+| [tree_garden](drzewa/anime_japan/tree_garden.glb) | anime_japan | 4.80 × 4.25 × 3.17 | 3216 |
+| [tree_tall_01](drzewa/anime_japan/tree_tall_01.glb) | anime_japan | 4.75 × 7.74 × 4.30 | 2632 |
+| [tree_tall_02](drzewa/anime_japan/tree_tall_02.glb) | anime_japan | 4.00 × 6.94 × 4.68 | 2468 |
+| [tree01](drzewa/idyllic_woodlands/tree01.glb) | idyllic_woodlands | 5.34 × 7.51 × 5.12 | 920 |
+| [tree02](drzewa/idyllic_woodlands/tree02.glb) | idyllic_woodlands | 5.23 × 11.29 × 5.03 | 916 |
+| [tree03](drzewa/idyllic_woodlands/tree03.glb) | idyllic_woodlands | 5.30 × 5.93 × 5.48 | 911 |
+| [tree_beech_01](drzewa/illustrated_nature/tree_beech_01.glb) | illustrated_nature | 3.00 × 5.18 × 3.09 | 3812 |
+| [tree_beech_01__card](drzewa/illustrated_nature/tree_beech_01__card.glb) | illustrated_nature | 4.00 × 5.00 × 4.00 | 4 |
+| [tree_beech_01__lod1](drzewa/illustrated_nature/tree_beech_01__lod1.glb) | illustrated_nature | 3.12 × 5.18 × 3.17 | 2184 |
+| [tree_beech_01__lod2](drzewa/illustrated_nature/tree_beech_01__lod2.glb) | illustrated_nature | 3.21 × 5.23 × 3.21 | 1152 |
+| [tree_beech_01__lod3](drzewa/illustrated_nature/tree_beech_01__lod3.glb) | illustrated_nature | 3.61 × 5.61 × 3.67 | 324 |
+| [tree_beech_01_dead](drzewa/illustrated_nature/tree_beech_01_dead.glb) | illustrated_nature | 2.34 × 4.79 × 2.44 | 1652 |
+| [tree_beech_01_onemesh](drzewa/illustrated_nature/tree_beech_01_onemesh.glb) | illustrated_nature | 3.00 × 5.18 × 3.09 | 3812 |
+| [tree_beech_02](drzewa/illustrated_nature/tree_beech_02.glb) | illustrated_nature | 5.04 × 7.90 × 5.38 | 5724 |
+| [tree_beech_02__card](drzewa/illustrated_nature/tree_beech_02__card.glb) | illustrated_nature | 6.00 × 8.00 × 6.00 | 4 |
+| [tree_beech_02__lod1](drzewa/illustrated_nature/tree_beech_02__lod1.glb) | illustrated_nature | 5.23 × 7.96 × 5.49 | 3680 |
+| [tree_beech_02__lod2](drzewa/illustrated_nature/tree_beech_02__lod2.glb) | illustrated_nature | 5.40 × 8.01 × 5.66 | 1864 |
+| [tree_beech_02__lod3](drzewa/illustrated_nature/tree_beech_02__lod3.glb) | illustrated_nature | 6.11 × 8.21 × 5.96 | 294 |
+| [tree_beech_02_dead](drzewa/illustrated_nature/tree_beech_02_dead.glb) | illustrated_nature | 4.02 × 7.38 × 4.32 | 1524 |
+| [tree_beech_02_onemesh](drzewa/illustrated_nature/tree_beech_02_onemesh.glb) | illustrated_nature | 5.04 × 7.90 × 5.38 | 5724 |
+| [tree_beech_03](drzewa/illustrated_nature/tree_beech_03.glb) | illustrated_nature | 3.56 × 9.81 × 3.67 | 5048 |
+| [tree_beech_03__card](drzewa/illustrated_nature/tree_beech_03__card.glb) | illustrated_nature | 4.00 × 10.00 × 4.00 | 4 |
+| [tree_beech_03__lod1](drzewa/illustrated_nature/tree_beech_03__lod1.glb) | illustrated_nature | 3.69 × 9.89 × 3.84 | 3136 |
+| [tree_beech_03__lod2](drzewa/illustrated_nature/tree_beech_03__lod2.glb) | illustrated_nature | 3.79 × 9.96 × 4.01 | 1700 |
+| [tree_beech_03__lod3](drzewa/illustrated_nature/tree_beech_03__lod3.glb) | illustrated_nature | 4.46 × 10.17 × 4.26 | 298 |
+| [tree_beech_03_dead](drzewa/illustrated_nature/tree_beech_03_dead.glb) | illustrated_nature | 2.46 × 8.95 × 2.56 | 1508 |
+| [tree_beech_03_onemesh](drzewa/illustrated_nature/tree_beech_03_onemesh.glb) | illustrated_nature | 3.56 × 9.81 × 3.67 | 5048 |
+| [tree_birch_01](drzewa/illustrated_nature/tree_birch_01.glb) | illustrated_nature | 3.00 × 5.18 × 3.09 | 3812 |
+| [tree_birch_01__card](drzewa/illustrated_nature/tree_birch_01__card.glb) | illustrated_nature | 4.00 × 5.00 × 4.00 | 4 |
+| [tree_birch_01__lod1](drzewa/illustrated_nature/tree_birch_01__lod1.glb) | illustrated_nature | 3.12 × 5.18 × 3.17 | 2184 |
+| [tree_birch_01__lod2](drzewa/illustrated_nature/tree_birch_01__lod2.glb) | illustrated_nature | 3.21 × 5.23 × 3.21 | 1152 |
+| [tree_birch_01__lod3](drzewa/illustrated_nature/tree_birch_01__lod3.glb) | illustrated_nature | 3.61 × 5.61 × 3.67 | 324 |
+| [tree_birch_01_card](drzewa/illustrated_nature/tree_birch_01_card.glb) | illustrated_nature | 4.00 × 5.26 × 4.00 | 3816 |
+| [tree_birch_01_dead](drzewa/illustrated_nature/tree_birch_01_dead.glb) | illustrated_nature | 2.34 × 4.79 × 2.44 | 1652 |
+| [tree_birch_01_dead_card](drzewa/illustrated_nature/tree_birch_01_dead_card.glb) | illustrated_nature | 4.00 × 5.26 × 4.00 | 3816 |
+| [tree_birch_01_onemesh](drzewa/illustrated_nature/tree_birch_01_onemesh.glb) | illustrated_nature | 3.00 × 5.18 × 3.09 | 3812 |
+| [tree_birch_02](drzewa/illustrated_nature/tree_birch_02.glb) | illustrated_nature | 5.04 × 7.90 × 5.38 | 5724 |
+| [tree_birch_02__card](drzewa/illustrated_nature/tree_birch_02__card.glb) | illustrated_nature | 6.00 × 8.00 × 6.00 | 4 |
+| [tree_birch_02__lod1](drzewa/illustrated_nature/tree_birch_02__lod1.glb) | illustrated_nature | 5.23 × 7.96 × 5.49 | 3680 |
+| [tree_birch_02__lod2](drzewa/illustrated_nature/tree_birch_02__lod2.glb) | illustrated_nature | 5.40 × 8.01 × 5.66 | 1864 |
+| [tree_birch_02__lod3](drzewa/illustrated_nature/tree_birch_02__lod3.glb) | illustrated_nature | 6.11 × 8.21 × 5.96 | 294 |
+| [tree_birch_02_card](drzewa/illustrated_nature/tree_birch_02_card.glb) | illustrated_nature | 6.00 × 8.26 × 6.00 | 5728 |
+| [tree_birch_02_dead](drzewa/illustrated_nature/tree_birch_02_dead.glb) | illustrated_nature | 4.02 × 7.38 × 4.32 | 1524 |
+| [tree_birch_02_dead_card](drzewa/illustrated_nature/tree_birch_02_dead_card.glb) | illustrated_nature | 6.00 × 8.26 × 6.00 | 5728 |
+| [tree_birch_02_onemesh](drzewa/illustrated_nature/tree_birch_02_onemesh.glb) | illustrated_nature | 5.04 × 7.90 × 5.38 | 5724 |
+| [tree_birch_03](drzewa/illustrated_nature/tree_birch_03.glb) | illustrated_nature | 3.56 × 9.81 × 3.67 | 5048 |
+| [tree_birch_03__card](drzewa/illustrated_nature/tree_birch_03__card.glb) | illustrated_nature | 4.00 × 10.00 × 4.00 | 4 |
+| [tree_birch_03__lod1](drzewa/illustrated_nature/tree_birch_03__lod1.glb) | illustrated_nature | 3.69 × 9.89 × 3.84 | 3136 |
+| [tree_birch_03__lod2](drzewa/illustrated_nature/tree_birch_03__lod2.glb) | illustrated_nature | 3.79 × 9.96 × 4.01 | 1700 |
+| [tree_birch_03__lod3](drzewa/illustrated_nature/tree_birch_03__lod3.glb) | illustrated_nature | 4.46 × 10.17 × 4.26 | 298 |
+| [tree_birch_03_card](drzewa/illustrated_nature/tree_birch_03_card.glb) | illustrated_nature | 4.00 × 10.27 × 4.00 | 5052 |
+| [tree_birch_03_dead](drzewa/illustrated_nature/tree_birch_03_dead.glb) | illustrated_nature | 2.46 × 8.95 × 2.56 | 1508 |
+| [tree_birch_03_dead_card](drzewa/illustrated_nature/tree_birch_03_dead_card.glb) | illustrated_nature | 4.00 × 10.27 × 4.00 | 5052 |
+| [tree_birch_03_onemesh](drzewa/illustrated_nature/tree_birch_03_onemesh.glb) | illustrated_nature | 3.56 × 9.81 × 3.67 | 5048 |
+| [tree_pine_01](drzewa/illustrated_nature/tree_pine_01.glb) | illustrated_nature | 3.09 × 4.98 × 2.87 | 2076 |
+| [tree_pine_01__card](drzewa/illustrated_nature/tree_pine_01__card.glb) | illustrated_nature | 4.00 × 5.00 × 4.00 | 4 |
+| [tree_pine_01__lod1](drzewa/illustrated_nature/tree_pine_01__lod1.glb) | illustrated_nature | 3.02 × 4.98 × 2.87 | 836 |
+| [tree_pine_01__lod2](drzewa/illustrated_nature/tree_pine_01__lod2.glb) | illustrated_nature | 3.02 × 4.98 × 2.87 | 628 |
+| [tree_pine_01_card](drzewa/illustrated_nature/tree_pine_01_card.glb) | illustrated_nature | 4.00 × 5.50 × 4.00 | 2080 |
+| [tree_pine_01_dead](drzewa/illustrated_nature/tree_pine_01_dead.glb) | illustrated_nature | 3.09 × 4.95 × 2.87 | 1544 |
+| [tree_pine_01_dead_card](drzewa/illustrated_nature/tree_pine_01_dead_card.glb) | illustrated_nature | 4.00 × 5.50 × 4.00 | 2080 |
+| [tree_pine_01_onemesh](drzewa/illustrated_nature/tree_pine_01_onemesh.glb) | illustrated_nature | 3.09 × 4.98 × 2.87 | 2076 |
+| [tree_pine_02](drzewa/illustrated_nature/tree_pine_02.glb) | illustrated_nature | 5.54 × 8.53 × 5.37 | 2456 |
+| [tree_pine_02__card](drzewa/illustrated_nature/tree_pine_02__card.glb) | illustrated_nature | 6.00 × 8.00 × 6.00 | 4 |
+| [tree_pine_02__lod1](drzewa/illustrated_nature/tree_pine_02__lod1.glb) | illustrated_nature | 5.39 × 8.53 × 5.36 | 944 |
+| [tree_pine_02__lod2](drzewa/illustrated_nature/tree_pine_02__lod2.glb) | illustrated_nature | 5.39 × 8.53 × 5.36 | 736 |
+| [tree_pine_02_card](drzewa/illustrated_nature/tree_pine_02_card.glb) | illustrated_nature | 6.00 × 8.53 × 6.00 | 2460 |
+| [tree_pine_02_dead](drzewa/illustrated_nature/tree_pine_02_dead.glb) | illustrated_nature | 5.54 × 8.45 × 5.37 | 1816 |
+| [tree_pine_02_dead_card](drzewa/illustrated_nature/tree_pine_02_dead_card.glb) | illustrated_nature | 6.00 × 8.53 × 6.00 | 2460 |
+| [tree_pine_02_onemesh](drzewa/illustrated_nature/tree_pine_02_onemesh.glb) | illustrated_nature | 5.54 × 8.53 × 5.37 | 2456 |
+| [tree_pine_03](drzewa/illustrated_nature/tree_pine_03.glb) | illustrated_nature | 3.95 × 18.27 × 3.73 | 2652 |
+| [tree_pine_03__card](drzewa/illustrated_nature/tree_pine_03__card.glb) | illustrated_nature | 4.00 × 18.00 × 4.00 | 4 |
+| [tree_pine_03__lod1](drzewa/illustrated_nature/tree_pine_03__lod1.glb) | illustrated_nature | 3.86 × 18.27 × 3.72 | 1244 |
+| [tree_pine_03__lod2](drzewa/illustrated_nature/tree_pine_03__lod2.glb) | illustrated_nature | 3.86 × 18.27 × 3.72 | 712 |
+| [tree_pine_03_card](drzewa/illustrated_nature/tree_pine_03_card.glb) | illustrated_nature | 4.02 × 18.50 × 4.00 | 2656 |
+| [tree_pine_03_dead](drzewa/illustrated_nature/tree_pine_03_dead.glb) | illustrated_nature | 3.95 × 18.27 × 3.73 | 2048 |
+| [tree_pine_03_dead_card](drzewa/illustrated_nature/tree_pine_03_dead_card.glb) | illustrated_nature | 4.02 × 18.50 × 4.00 | 2656 |
+| [tree_pine_03_onemesh](drzewa/illustrated_nature/tree_pine_03_onemesh.glb) | illustrated_nature | 3.95 × 18.27 × 3.73 | 2652 |
+| [env_tree_apple_01](drzewa/polygon_farm/env_tree_apple_01.glb) | polygon_farm | 2.93 × 4.30 × 2.96 | 336 |
+| [env_tree_apple_grown_01](drzewa/polygon_farm/env_tree_apple_grown_01.glb) | polygon_farm | 3.04 × 4.30 × 2.96 | 1044 |
+| [env_tree_apricot_01](drzewa/polygon_farm/env_tree_apricot_01.glb) | polygon_farm | 4.11 × 4.87 × 3.13 | 442 |
+| [env_tree_apricot_grown_01](drzewa/polygon_farm/env_tree_apricot_grown_01.glb) | polygon_farm | 4.13 × 4.87 × 3.13 | 1860 |
+| [env_tree_cherry_01](drzewa/polygon_farm/env_tree_cherry_01.glb) | polygon_farm | 3.29 × 4.34 × 3.07 | 484 |
+| [env_tree_cherry_grown_01](drzewa/polygon_farm/env_tree_cherry_grown_01.glb) | polygon_farm | 3.29 × 4.34 × 3.07 | 2250 |
+| [env_tree_large_01](drzewa/polygon_farm/env_tree_large_01.glb) | polygon_farm | 14.31 × 12.84 × 10.49 | 4450 |
+| [env_tree_lemon_01](drzewa/polygon_farm/env_tree_lemon_01.glb) | polygon_farm | 1.73 × 2.76 × 1.77 | 229 |
+| [env_tree_lemon_grown_01](drzewa/polygon_farm/env_tree_lemon_grown_01.glb) | polygon_farm | 1.73 × 2.76 × 1.77 | 845 |
+| [env_tree_orange_01](drzewa/polygon_farm/env_tree_orange_01.glb) | polygon_farm | 3.11 × 3.20 × 3.18 | 229 |
+| [env_tree_orange_grown_01](drzewa/polygon_farm/env_tree_orange_grown_01.glb) | polygon_farm | 3.11 × 3.20 × 3.18 | 845 |
+| [env_tree_peach_01](drzewa/polygon_farm/env_tree_peach_01.glb) | polygon_farm | 3.24 × 4.51 × 2.71 | 280 |
+| [env_tree_peach_grown_01](drzewa/polygon_farm/env_tree_peach_grown_01.glb) | polygon_farm | 3.24 × 4.51 × 2.73 | 1038 |
+| [env_tree_pear_01](drzewa/polygon_farm/env_tree_pear_01.glb) | polygon_farm | 2.39 × 3.82 × 2.15 | 306 |
+| [env_tree_pear_grown_01](drzewa/polygon_farm/env_tree_pear_grown_01.glb) | polygon_farm | 2.39 × 3.82 × 2.15 | 1504 |
+| [env_tree_plum_01](drzewa/polygon_farm/env_tree_plum_01.glb) | polygon_farm | 2.52 × 3.74 × 2.01 | 280 |
+| [env_tree_plum_grown_01](drzewa/polygon_farm/env_tree_plum_grown_01.glb) | polygon_farm | 2.52 × 3.74 × 2.01 | 978 |
+| [env_tree_stump_01](drzewa/polygon_farm/env_tree_stump_01.glb) | polygon_farm | 2.20 × 1.52 × 2.27 | 168 |
+| [env_tree_stump_02](drzewa/polygon_farm/env_tree_stump_02.glb) | polygon_farm | 1.05 × 0.82 × 0.89 | 64 |
+| [env_tree_stump_03](drzewa/polygon_farm/env_tree_stump_03.glb) | polygon_farm | 0.77 × 0.69 × 0.67 | 84 |
+| [generic_tree_01](drzewa/polygon_farm/generic_tree_01.glb) | polygon_farm | 1.81 × 3.30 × 1.71 | 598 |
+| [generic_tree_02](drzewa/polygon_farm/generic_tree_02.glb) | polygon_farm | 1.39 × 3.51 × 1.47 | 288 |
+| [generic_tree_03](drzewa/polygon_farm/generic_tree_03.glb) | polygon_farm | 1.73 × 3.49 × 1.54 | 266 |
+| [generic_tree_04](drzewa/polygon_farm/generic_tree_04.glb) | polygon_farm | 1.82 × 3.22 × 1.54 | 316 |
+| [generic_tree_patch_01](drzewa/polygon_farm/generic_tree_patch_01.glb) | polygon_farm | 15.57 × 10.63 × 14.42 | 452 |
+| [generic_tree_patch_02](drzewa/polygon_farm/generic_tree_patch_02.glb) | polygon_farm | 24.65 × 10.63 × 14.42 | 688 |
+| [generic_treedead_01](drzewa/polygon_farm/generic_treedead_01.glb) | polygon_farm | 2.03 × 5.24 × 3.00 | 306 |
+| [generic_treestump_01](drzewa/polygon_farm/generic_treestump_01.glb) | polygon_farm | 0.78 × 0.50 × 0.82 | 228 |
+
+## roslinnosc (82)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [bush_01](roslinnosc/anime_japan/bush_01.glb) | anime_japan | 2.77 × 1.34 × 2.59 | 360 |
+| [grass_patch_large](roslinnosc/anime_japan/grass_patch_large.glb) | anime_japan | 2.14 × 0.50 × 2.17 | 280 |
+| [grass_patch_small](roslinnosc/anime_japan/grass_patch_small.glb) | anime_japan | 0.83 × 0.49 × 0.84 | 30 |
+| [leaves_ground](roslinnosc/anime_japan/leaves_ground.glb) | anime_japan | 1.63 × 0.07 × 1.55 | 138 |
+| [bush01](roslinnosc/idyllic_woodlands/bush01.glb) | idyllic_woodlands | 1.75 × 1.35 × 1.65 | 484 |
+| [flower01](roslinnosc/idyllic_woodlands/flower01.glb) | idyllic_woodlands | 0.26 × 0.45 × 0.28 | 46 |
+| [flower02](roslinnosc/idyllic_woodlands/flower02.glb) | idyllic_woodlands | 0.28 × 0.43 × 0.28 | 66 |
+| [reedgrass](roslinnosc/idyllic_woodlands/reedgrass.glb) | idyllic_woodlands | 0.39 × 0.92 × 0.05 | 188 |
+| [waterlilies](roslinnosc/idyllic_woodlands/waterlilies.glb) | idyllic_woodlands | 5.79 × 0.00 × 4.16 | 67 |
+| [dead_branch_01](roslinnosc/illustrated_nature/dead_branch_01.glb) | illustrated_nature | 0.07 × 0.04 × 0.46 | 212 |
+| [dead_branch_02](roslinnosc/illustrated_nature/dead_branch_02.glb) | illustrated_nature | 0.09 × 0.03 × 0.40 | 260 |
+| [dead_branch_03](roslinnosc/illustrated_nature/dead_branch_03.glb) | illustrated_nature | 0.04 × 0.02 × 0.39 | 110 |
+| [dead_branch_decal_01](roslinnosc/illustrated_nature/dead_branch_decal_01.glb) | illustrated_nature | 0.10 × 0.01 × 0.50 | 8 |
+| [dead_branch_decal_02](roslinnosc/illustrated_nature/dead_branch_decal_02.glb) | illustrated_nature | 0.13 × 0.02 × 0.50 | 8 |
+| [dead_leaf_01](roslinnosc/illustrated_nature/dead_leaf_01.glb) | illustrated_nature | 0.08 × 0.02 × 0.18 | 104 |
+| [dead_leaf_02](roslinnosc/illustrated_nature/dead_leaf_02.glb) | illustrated_nature | 0.22 × 0.01 × 0.22 | 162 |
+| [dead_leaf_decal_01](roslinnosc/illustrated_nature/dead_leaf_decal_01.glb) | illustrated_nature | 0.25 × 0.01 × 0.25 | 8 |
+| [dead_leaf_decal_02](roslinnosc/illustrated_nature/dead_leaf_decal_02.glb) | illustrated_nature | 0.25 × 0.03 × 0.25 | 8 |
+| [plant_flower_01](roslinnosc/illustrated_nature/plant_flower_01.glb) | illustrated_nature | 0.30 × 0.38 × 0.41 | 82 |
+| [plant_flower_02](roslinnosc/illustrated_nature/plant_flower_02.glb) | illustrated_nature | 0.33 × 0.96 × 0.43 | 52 |
+| [plant_flower_03](roslinnosc/illustrated_nature/plant_flower_03.glb) | illustrated_nature | 0.34 × 0.98 × 0.37 | 232 |
+| [plant_grass_01](roslinnosc/illustrated_nature/plant_grass_01.glb) | illustrated_nature | 1.58 × 0.38 × 1.68 | 100 |
+| [plant_grass_01__lod1](roslinnosc/illustrated_nature/plant_grass_01__lod1.glb) | illustrated_nature | 1.52 × 0.54 × 1.53 | 30 |
+| [plant_grass_01__lod2](roslinnosc/illustrated_nature/plant_grass_01__lod2.glb) | illustrated_nature | 1.74 × 0.74 × 1.90 | 16 |
+| [plant_grass_02](roslinnosc/illustrated_nature/plant_grass_02.glb) | illustrated_nature | 1.78 × 0.69 × 1.89 | 100 |
+| [plant_grass_02__lod1](roslinnosc/illustrated_nature/plant_grass_02__lod1.glb) | illustrated_nature | 1.88 × 0.83 × 2.06 | 30 |
+| [plant_grass_02__lod2](roslinnosc/illustrated_nature/plant_grass_02__lod2.glb) | illustrated_nature | 1.90 × 1.09 × 1.92 | 16 |
+| [plant_grass_03](roslinnosc/illustrated_nature/plant_grass_03.glb) | illustrated_nature | 1.65 × 1.23 × 1.52 | 50 |
+| [plant_grass_03__lod1](roslinnosc/illustrated_nature/plant_grass_03__lod1.glb) | illustrated_nature | 1.88 × 1.36 × 1.71 | 20 |
+| [plant_grass_03__lod2](roslinnosc/illustrated_nature/plant_grass_03__lod2.glb) | illustrated_nature | 1.86 × 1.73 × 1.89 | 10 |
+| [plant_grass_04](roslinnosc/illustrated_nature/plant_grass_04.glb) | illustrated_nature | 1.65 × 1.23 × 1.52 | 50 |
+| [plant_grass_04__lod1](roslinnosc/illustrated_nature/plant_grass_04__lod1.glb) | illustrated_nature | 1.88 × 1.36 × 1.71 | 20 |
+| [plant_grass_04__lod2](roslinnosc/illustrated_nature/plant_grass_04__lod2.glb) | illustrated_nature | 1.86 × 1.73 × 1.89 | 10 |
+| [plant_waterlily_01](roslinnosc/illustrated_nature/plant_waterlily_01.glb) | illustrated_nature | 0.31 × 0.95 × 0.54 | 86 |
+| [plant_waterlily_01__lod1](roslinnosc/illustrated_nature/plant_waterlily_01__lod1.glb) | illustrated_nature | 0.31 × 0.01 × 0.34 | 33 |
+| [shrub_round_01](roslinnosc/illustrated_nature/shrub_round_01.glb) | illustrated_nature | 1.70 × 1.47 × 1.66 | 2739 |
+| [shrub_round_01__card](roslinnosc/illustrated_nature/shrub_round_01__card.glb) | illustrated_nature | 2.00 × 1.50 × 2.00 | 4 |
+| [shrub_round_01__lod1](roslinnosc/illustrated_nature/shrub_round_01__lod1.glb) | illustrated_nature | 1.76 × 1.59 × 1.79 | 1472 |
+| [shrub_round_01__lod2](roslinnosc/illustrated_nature/shrub_round_01__lod2.glb) | illustrated_nature | 1.88 × 1.73 × 1.81 | 658 |
+| [shrub_round_01__lod3](roslinnosc/illustrated_nature/shrub_round_01__lod3.glb) | illustrated_nature | 2.07 × 1.93 × 2.04 | 240 |
+| [shrub_round_01_card](roslinnosc/illustrated_nature/shrub_round_01_card.glb) | illustrated_nature | 2.00 × 1.71 × 2.00 | 2743 |
+| [shrub_round_01_dead](roslinnosc/illustrated_nature/shrub_round_01_dead.glb) | illustrated_nature | 1.47 × 1.28 × 1.49 | 2259 |
+| [shrub_round_01_dead_card](roslinnosc/illustrated_nature/shrub_round_01_dead_card.glb) | illustrated_nature | 2.00 × 1.71 × 2.00 | 2743 |
+| [shrub_round_01_onemesh](roslinnosc/illustrated_nature/shrub_round_01_onemesh.glb) | illustrated_nature | 1.70 × 1.47 × 1.66 | 2739 |
+| [shrub_round_02](roslinnosc/illustrated_nature/shrub_round_02.glb) | illustrated_nature | 1.73 × 1.80 × 1.69 | 2437 |
+| [shrub_round_02__card](roslinnosc/illustrated_nature/shrub_round_02__card.glb) | illustrated_nature | 2.00 × 2.00 × 2.00 | 4 |
+| [shrub_round_02__lod1](roslinnosc/illustrated_nature/shrub_round_02__lod1.glb) | illustrated_nature | 1.81 × 1.86 × 1.82 | 1218 |
+| [shrub_round_02__lod2](roslinnosc/illustrated_nature/shrub_round_02__lod2.glb) | illustrated_nature | 1.94 × 1.85 × 1.94 | 722 |
+| [shrub_round_02__lod3](roslinnosc/illustrated_nature/shrub_round_02__lod3.glb) | illustrated_nature | 2.08 × 2.05 × 2.09 | 274 |
+| [shrub_round_02_card](roslinnosc/illustrated_nature/shrub_round_02_card.glb) | illustrated_nature | 2.00 × 2.04 × 2.00 | 2441 |
+| [shrub_round_02_dead](roslinnosc/illustrated_nature/shrub_round_02_dead.glb) | illustrated_nature | 1.52 × 1.78 × 1.51 | 1837 |
+| [shrub_round_02_dead_card](roslinnosc/illustrated_nature/shrub_round_02_dead_card.glb) | illustrated_nature | 2.00 × 2.04 × 2.00 | 2441 |
+| [shrub_round_02_onemesh](roslinnosc/illustrated_nature/shrub_round_02_onemesh.glb) | illustrated_nature | 1.73 × 1.80 × 1.69 | 2437 |
+| [shrub_round_03](roslinnosc/illustrated_nature/shrub_round_03.glb) | illustrated_nature | 1.83 × 2.28 × 1.82 | 2836 |
+| [shrub_round_03__card](roslinnosc/illustrated_nature/shrub_round_03__card.glb) | illustrated_nature | 2.00 × 2.50 × 2.00 | 4 |
+| [shrub_round_03__lod1](roslinnosc/illustrated_nature/shrub_round_03__lod1.glb) | illustrated_nature | 1.96 × 2.35 × 1.94 | 1650 |
+| [shrub_round_03__lod2](roslinnosc/illustrated_nature/shrub_round_03__lod2.glb) | illustrated_nature | 2.08 × 2.42 × 2.01 | 680 |
+| [shrub_round_03__lod3](roslinnosc/illustrated_nature/shrub_round_03__lod3.glb) | illustrated_nature | 2.24 × 2.41 × 2.14 | 278 |
+| [shrub_round_03_card](roslinnosc/illustrated_nature/shrub_round_03_card.glb) | illustrated_nature | 2.00 × 2.54 × 2.00 | 2840 |
+| [shrub_round_03_dead](roslinnosc/illustrated_nature/shrub_round_03_dead.glb) | illustrated_nature | 1.63 × 2.23 × 1.69 | 2236 |
+| [shrub_round_03_dead_card](roslinnosc/illustrated_nature/shrub_round_03_dead_card.glb) | illustrated_nature | 2.00 × 2.54 × 2.00 | 2840 |
+| [shrub_round_03_onemesh](roslinnosc/illustrated_nature/shrub_round_03_onemesh.glb) | illustrated_nature | 1.83 × 2.28 × 1.82 | 2836 |
+| [env_flowers_01](roslinnosc/polygon_farm/env_flowers_01.glb) | polygon_farm | 1.44 × 0.51 × 1.13 | 795 |
+| [env_flowers_02](roslinnosc/polygon_farm/env_flowers_02.glb) | polygon_farm | 0.98 × 0.51 × 0.69 | 424 |
+| [env_flowers_03](roslinnosc/polygon_farm/env_flowers_03.glb) | polygon_farm | 0.60 × 0.51 × 0.41 | 212 |
+| [env_lillypads_01](roslinnosc/polygon_farm/env_lillypads_01.glb) | polygon_farm | 3.43 × 0.18 × 2.99 | 286 |
+| [env_lillypads_02](roslinnosc/polygon_farm/env_lillypads_02.glb) | polygon_farm | 4.48 × 0.21 × 2.73 | 498 |
+| [env_reeds_01](roslinnosc/polygon_farm/env_reeds_01.glb) | polygon_farm | 0.77 × 2.19 × 0.75 | 136 |
+| [env_reeds_02](roslinnosc/polygon_farm/env_reeds_02.glb) | polygon_farm | 0.88 × 2.14 × 0.92 | 226 |
+| [env_reeds_03](roslinnosc/polygon_farm/env_reeds_03.glb) | polygon_farm | 0.99 × 2.03 × 1.01 | 168 |
+| [env_road_grassedge_01](roslinnosc/polygon_farm/env_road_grassedge_01.glb) | polygon_farm | 4.43 × 0.50 × 14.52 | 74 |
+| [env_road_grassedge_02](roslinnosc/polygon_farm/env_road_grassedge_02.glb) | polygon_farm | 5.10 × 0.50 × 14.72 | 69 |
+| [generic_grass_patch_01](roslinnosc/polygon_farm/generic_grass_patch_01.glb) | polygon_farm | 0.29 × 0.62 × 0.31 | 42 |
+| [generic_grass_patch_02](roslinnosc/polygon_farm/generic_grass_patch_02.glb) | polygon_farm | 2.81 × 0.92 × 2.16 | 602 |
+| [generic_grass_patch_03](roslinnosc/polygon_farm/generic_grass_patch_03.glb) | polygon_farm | 1.11 × 1.16 × 1.29 | 238 |
+| [generic_mountains_grass_01](roslinnosc/polygon_farm/generic_mountains_grass_01.glb) | polygon_farm | 22.61 × 5.57 × 22.34 | 2251 |
+| [generic_mountains_grass_02](roslinnosc/polygon_farm/generic_mountains_grass_02.glb) | polygon_farm | 14.50 × 5.54 × 14.49 | 498 |
+| [gerneric_grass_patch_02](roslinnosc/polygon_farm/gerneric_grass_patch_02.glb) | polygon_farm | 2.81 × 0.92 × 2.16 | 602 |
+| [gerneric_grass_patch_03](roslinnosc/polygon_farm/gerneric_grass_patch_03.glb) | polygon_farm | 1.11 × 1.16 × 1.29 | 238 |
+| [prop_bush_round_row_01](roslinnosc/polygon_farm/prop_bush_round_row_01.glb) | polygon_farm | 1.11 × 0.22 × 7.27 | 720 |
+| [prop_sunflower_01](roslinnosc/polygon_farm/prop_sunflower_01.glb) | polygon_farm | 0.40 × 1.29 × 0.34 | 398 |
+| [prop_sunflower_02](roslinnosc/polygon_farm/prop_sunflower_02.glb) | polygon_farm | 0.37 × 1.10 × 0.35 | 322 |
+
+## uprawy_i_owoce (179)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [env_dirt_rows_01](uprawy_i_owoce/polygon_farm/env_dirt_rows_01.glb) | polygon_farm | 4.99 × 0.20 × 5.07 | 499 |
+| [env_dirt_rows_center_01](uprawy_i_owoce/polygon_farm/env_dirt_rows_center_01.glb) | polygon_farm | 5.00 × 0.20 × 5.00 | 364 |
+| [env_dirt_rows_end_bottom_01](uprawy_i_owoce/polygon_farm/env_dirt_rows_end_bottom_01.glb) | polygon_farm | 5.00 × 0.20 × 5.00 | 469 |
+| [env_dirt_rows_end_top_01](uprawy_i_owoce/polygon_farm/env_dirt_rows_end_top_01.glb) | polygon_farm | 5.00 × 0.20 × 5.00 | 469 |
+| [env_dirt_rows_mounds_01](uprawy_i_owoce/polygon_farm/env_dirt_rows_mounds_01.glb) | polygon_farm | 4.73 × 0.20 × 4.58 | 300 |
+| [env_dirt_rows_skirt_01](uprawy_i_owoce/polygon_farm/env_dirt_rows_skirt_01.glb) | polygon_farm | 5.65 × 0.33 × 5.75 | 577 |
+| [env_vege_rows_01](uprawy_i_owoce/polygon_farm/env_vege_rows_01.glb) | polygon_farm | 4.32 × 0.34 × 4.82 | 499 |
+| [env_vege_rows_02](uprawy_i_owoce/polygon_farm/env_vege_rows_02.glb) | polygon_farm | 4.40 × 0.26 × 4.50 | 882 |
+| [env_vege_rows_03](uprawy_i_owoce/polygon_farm/env_vege_rows_03.glb) | polygon_farm | 4.53 × 0.42 × 4.58 | 1000 |
+| [prop_apple_01](uprawy_i_owoce/polygon_farm/prop_apple_01.glb) | polygon_farm | 0.15 × 0.15 × 0.13 | 85 |
+| [prop_apple_01_group](uprawy_i_owoce/polygon_farm/prop_apple_01_group.glb) | polygon_farm | 0.26 × 0.16 × 0.28 | 255 |
+| [prop_apricot_01](uprawy_i_owoce/polygon_farm/prop_apricot_01.glb) | polygon_farm | 0.09 × 0.10 × 0.10 | 93 |
+| [prop_apricot_01_group](uprawy_i_owoce/polygon_farm/prop_apricot_01_group.glb) | polygon_farm | 0.20 × 0.11 × 0.19 | 372 |
+| [prop_asparagus_01](uprawy_i_owoce/polygon_farm/prop_asparagus_01.glb) | polygon_farm | 0.11 × 0.49 × 0.09 | 1074 |
+| [prop_asparagus_01_l](uprawy_i_owoce/polygon_farm/prop_asparagus_01_l.glb) | polygon_farm | 0.17 × 0.45 × 0.11 | 570 |
+| [prop_asparagus_01_m](uprawy_i_owoce/polygon_farm/prop_asparagus_01_m.glb) | polygon_farm | 0.16 × 0.35 × 0.11 | 570 |
+| [prop_asparagus_01_s](uprawy_i_owoce/polygon_farm/prop_asparagus_01_s.glb) | polygon_farm | 0.16 × 0.23 × 0.10 | 470 |
+| [prop_asparagus_01_single](uprawy_i_owoce/polygon_farm/prop_asparagus_01_single.glb) | polygon_farm | 0.04 × 0.46 × 0.03 | 114 |
+| [prop_banana_01](uprawy_i_owoce/polygon_farm/prop_banana_01.glb) | polygon_farm | 0.08 × 0.17 × 0.36 | 108 |
+| [prop_banana_01_group](uprawy_i_owoce/polygon_farm/prop_banana_01_group.glb) | polygon_farm | 0.27 × 0.18 × 0.36 | 240 |
+| [prop_banana_01_l](uprawy_i_owoce/polygon_farm/prop_banana_01_l.glb) | polygon_farm | 0.40 × 0.37 × 0.41 | 720 |
+| [prop_banana_01_m](uprawy_i_owoce/polygon_farm/prop_banana_01_m.glb) | polygon_farm | 0.28 × 0.37 × 0.16 | 240 |
+| [prop_bean_01_group](uprawy_i_owoce/polygon_farm/prop_bean_01_group.glb) | polygon_farm | 0.24 × 0.08 × 0.36 | 380 |
+| [prop_bean_01_l](uprawy_i_owoce/polygon_farm/prop_bean_01_l.glb) | polygon_farm | 0.07 × 0.04 × 0.32 | 76 |
+| [prop_bean_01_m](uprawy_i_owoce/polygon_farm/prop_bean_01_m.glb) | polygon_farm | 0.04 × 0.03 × 0.25 | 66 |
+| [prop_bean_01_s](uprawy_i_owoce/polygon_farm/prop_bean_01_s.glb) | polygon_farm | 0.04 × 0.03 × 0.16 | 66 |
+| [prop_beetroot_01](uprawy_i_owoce/polygon_farm/prop_beetroot_01.glb) | polygon_farm | 0.17 × 0.25 × 0.15 | 100 |
+| [prop_beetroot_01_group](uprawy_i_owoce/polygon_farm/prop_beetroot_01_group.glb) | polygon_farm | 0.30 × 0.20 × 0.31 | 300 |
+| [prop_beetroot_01_l](uprawy_i_owoce/polygon_farm/prop_beetroot_01_l.glb) | polygon_farm | 0.42 × 0.49 × 0.40 | 260 |
+| [prop_beetroot_01_m](uprawy_i_owoce/polygon_farm/prop_beetroot_01_m.glb) | polygon_farm | 0.27 × 0.39 × 0.26 | 210 |
+| [prop_beetroot_01_s](uprawy_i_owoce/polygon_farm/prop_beetroot_01_s.glb) | polygon_farm | 0.22 × 0.22 × 0.10 | 160 |
+| [prop_box_apple_01](uprawy_i_owoce/polygon_farm/prop_box_apple_01.glb) | polygon_farm | 0.76 × 0.48 × 0.45 | 1258 |
+| [prop_box_apple_02](uprawy_i_owoce/polygon_farm/prop_box_apple_02.glb) | polygon_farm | 0.76 × 0.48 × 0.45 | 1258 |
+| [prop_box_apricot_01](uprawy_i_owoce/polygon_farm/prop_box_apricot_01.glb) | polygon_farm | 0.76 × 0.45 × 0.45 | 1477 |
+| [prop_box_carrot_01](uprawy_i_owoce/polygon_farm/prop_box_carrot_01.glb) | polygon_farm | 1.14 × 0.54 × 0.51 | 1196 |
+| [prop_box_cucumber_01](uprawy_i_owoce/polygon_farm/prop_box_cucumber_01.glb) | polygon_farm | 0.76 × 0.43 × 0.45 | 628 |
+| [prop_box_eggplant_01](uprawy_i_owoce/polygon_farm/prop_box_eggplant_01.glb) | polygon_farm | 0.76 × 0.41 × 0.45 | 844 |
+| [prop_box_onion_01](uprawy_i_owoce/polygon_farm/prop_box_onion_01.glb) | polygon_farm | 1.04 × 0.58 × 0.53 | 1406 |
+| [prop_box_peach_01](uprawy_i_owoce/polygon_farm/prop_box_peach_01.glb) | polygon_farm | 0.76 × 0.45 × 0.45 | 1477 |
+| [prop_box_plum_01](uprawy_i_owoce/polygon_farm/prop_box_plum_01.glb) | polygon_farm | 0.76 × 0.45 × 0.45 | 1477 |
+| [prop_box_potato_01](uprawy_i_owoce/polygon_farm/prop_box_potato_01.glb) | polygon_farm | 0.76 × 0.39 × 0.45 | 1372 |
+| [prop_broccoli_01](uprawy_i_owoce/polygon_farm/prop_broccoli_01.glb) | polygon_farm | 0.28 × 0.28 × 0.25 | 160 |
+| [prop_broccoli_01_l](uprawy_i_owoce/polygon_farm/prop_broccoli_01_l.glb) | polygon_farm | 0.89 × 0.47 × 0.79 | 408 |
+| [prop_broccoli_01_m](uprawy_i_owoce/polygon_farm/prop_broccoli_01_m.glb) | polygon_farm | 0.60 × 0.27 × 0.61 | 348 |
+| [prop_broccoli_01_s](uprawy_i_owoce/polygon_farm/prop_broccoli_01_s.glb) | polygon_farm | 0.30 × 0.18 × 0.30 | 254 |
+| [prop_cabbage_01_l](uprawy_i_owoce/polygon_farm/prop_cabbage_01_l.glb) | polygon_farm | 0.44 × 0.29 × 0.50 | 258 |
+| [prop_cabbage_01_m](uprawy_i_owoce/polygon_farm/prop_cabbage_01_m.glb) | polygon_farm | 0.31 × 0.20 × 0.30 | 138 |
+| [prop_cabbage_01_s](uprawy_i_owoce/polygon_farm/prop_cabbage_01_s.glb) | polygon_farm | 0.18 × 0.13 × 0.20 | 66 |
+| [prop_carrot_01](uprawy_i_owoce/polygon_farm/prop_carrot_01.glb) | polygon_farm | 0.12 × 0.65 × 0.13 | 116 |
+| [prop_carrot_01_group](uprawy_i_owoce/polygon_farm/prop_carrot_01_group.glb) | polygon_farm | 0.34 × 0.28 × 0.70 | 464 |
+| [prop_carrot_01_l](uprawy_i_owoce/polygon_farm/prop_carrot_01_l.glb) | polygon_farm | 0.64 × 0.75 × 0.64 | 110 |
+| [prop_carrot_01_m](uprawy_i_owoce/polygon_farm/prop_carrot_01_m.glb) | polygon_farm | 0.44 × 0.33 × 0.44 | 70 |
+| [prop_carrot_01_s](uprawy_i_owoce/polygon_farm/prop_carrot_01_s.glb) | polygon_farm | 0.31 × 0.18 × 0.32 | 46 |
+| [prop_cherry_01](uprawy_i_owoce/polygon_farm/prop_cherry_01.glb) | polygon_farm | 0.11 × 0.10 × 0.06 | 136 |
+| [prop_cherry_01_group](uprawy_i_owoce/polygon_farm/prop_cherry_01_group.glb) | polygon_farm | 0.22 × 0.11 × 0.24 | 548 |
+| [prop_chilli_01](uprawy_i_owoce/polygon_farm/prop_chilli_01.glb) | polygon_farm | 0.08 × 0.06 × 0.20 | 95 |
+| [prop_chilli_01_group](uprawy_i_owoce/polygon_farm/prop_chilli_01_group.glb) | polygon_farm | 0.22 × 0.10 × 0.31 | 380 |
+| [prop_chilli_01_l](uprawy_i_owoce/polygon_farm/prop_chilli_01_l.glb) | polygon_farm | 0.07 × 0.25 × 0.06 | 95 |
+| [prop_chilli_01_m](uprawy_i_owoce/polygon_farm/prop_chilli_01_m.glb) | polygon_farm | 0.05 × 0.19 × 0.05 | 95 |
+| [prop_chilli_01_s](uprawy_i_owoce/polygon_farm/prop_chilli_01_s.glb) | polygon_farm | 0.04 × 0.14 × 0.03 | 95 |
+| [prop_corn_01](uprawy_i_owoce/polygon_farm/prop_corn_01.glb) | polygon_farm | 0.16 × 0.14 × 0.50 | 144 |
+| [prop_corn_01_group](uprawy_i_owoce/polygon_farm/prop_corn_01_group.glb) | polygon_farm | 0.49 × 0.27 × 0.66 | 576 |
+| [prop_corn_02](uprawy_i_owoce/polygon_farm/prop_corn_02.glb) | polygon_farm | 0.16 × 0.14 × 0.50 | 144 |
+| [prop_cucumber_01](uprawy_i_owoce/polygon_farm/prop_cucumber_01.glb) | polygon_farm | 0.12 × 0.09 × 0.56 | 60 |
+| [prop_cucumber_01_group](uprawy_i_owoce/polygon_farm/prop_cucumber_01_group.glb) | polygon_farm | 0.27 × 0.16 × 0.65 | 180 |
+| [prop_cucumber_01_l](uprawy_i_owoce/polygon_farm/prop_cucumber_01_l.glb) | polygon_farm | 0.12 × 0.09 × 0.94 | 92 |
+| [prop_cucumber_01_m](uprawy_i_owoce/polygon_farm/prop_cucumber_01_m.glb) | polygon_farm | 0.09 × 0.08 × 0.75 | 92 |
+| [prop_cucumber_01_s](uprawy_i_owoce/polygon_farm/prop_cucumber_01_s.glb) | polygon_farm | 0.09 × 0.08 × 0.66 | 92 |
+| [prop_eggplant_01](uprawy_i_owoce/polygon_farm/prop_eggplant_01.glb) | polygon_farm | 0.14 × 0.12 × 0.43 | 96 |
+| [prop_eggplant_01_group](uprawy_i_owoce/polygon_farm/prop_eggplant_01_group.glb) | polygon_farm | 0.43 × 0.18 × 0.46 | 288 |
+| [prop_eggplant_01_l](uprawy_i_owoce/polygon_farm/prop_eggplant_01_l.glb) | polygon_farm | 0.14 × 0.60 × 0.12 | 108 |
+| [prop_eggplant_01_m](uprawy_i_owoce/polygon_farm/prop_eggplant_01_m.glb) | polygon_farm | 0.14 × 0.42 × 0.12 | 88 |
+| [prop_eggplant_01_s](uprawy_i_owoce/polygon_farm/prop_eggplant_01_s.glb) | polygon_farm | 0.13 × 0.26 × 0.12 | 76 |
+| [prop_hemp_01_l](uprawy_i_owoce/polygon_farm/prop_hemp_01_l.glb) | polygon_farm | 0.80 × 1.23 × 0.83 | 350 |
+| [prop_hemp_01_m](uprawy_i_owoce/polygon_farm/prop_hemp_01_m.glb) | polygon_farm | 0.69 × 1.06 × 0.63 | 234 |
+| [prop_hemp_01_s](uprawy_i_owoce/polygon_farm/prop_hemp_01_s.glb) | polygon_farm | 0.19 × 0.25 × 0.28 | 56 |
+| [prop_lemon_01](uprawy_i_owoce/polygon_farm/prop_lemon_01.glb) | polygon_farm | 0.19 × 0.13 × 0.11 | 76 |
+| [prop_lemon_01_group](uprawy_i_owoce/polygon_farm/prop_lemon_01_group.glb) | polygon_farm | 0.29 × 0.14 × 0.30 | 228 |
+| [prop_lettuce_01_l](uprawy_i_owoce/polygon_farm/prop_lettuce_01_l.glb) | polygon_farm | 0.30 × 0.22 × 0.28 | 164 |
+| [prop_lettuce_01_m](uprawy_i_owoce/polygon_farm/prop_lettuce_01_m.glb) | polygon_farm | 0.20 × 0.13 × 0.21 | 80 |
+| [prop_lettuce_01_s](uprawy_i_owoce/polygon_farm/prop_lettuce_01_s.glb) | polygon_farm | 0.15 × 0.10 × 0.16 | 38 |
+| [prop_onion_01](uprawy_i_owoce/polygon_farm/prop_onion_01.glb) | polygon_farm | 0.15 × 0.18 × 0.15 | 100 |
+| [prop_onion_01_group](uprawy_i_owoce/polygon_farm/prop_onion_01_group.glb) | polygon_farm | 0.30 × 0.19 × 0.26 | 300 |
+| [prop_onion_01_l](uprawy_i_owoce/polygon_farm/prop_onion_01_l.glb) | polygon_farm | 0.20 × 0.53 × 0.18 | 152 |
+| [prop_onion_01_m](uprawy_i_owoce/polygon_farm/prop_onion_01_m.glb) | polygon_farm | 0.12 × 0.34 × 0.12 | 146 |
+| [prop_onion_01_s](uprawy_i_owoce/polygon_farm/prop_onion_01_s.glb) | polygon_farm | 0.08 × 0.19 × 0.08 | 94 |
+| [prop_orange_01](uprawy_i_owoce/polygon_farm/prop_orange_01.glb) | polygon_farm | 0.15 × 0.14 × 0.13 | 76 |
+| [prop_orange_01_group](uprawy_i_owoce/polygon_farm/prop_orange_01_group.glb) | polygon_farm | 0.27 × 0.14 × 0.26 | 228 |
+| [prop_peach_01](uprawy_i_owoce/polygon_farm/prop_peach_01.glb) | polygon_farm | 0.12 × 0.12 × 0.12 | 93 |
+| [prop_peach_01_group](uprawy_i_owoce/polygon_farm/prop_peach_01_group.glb) | polygon_farm | 0.21 × 0.12 × 0.23 | 279 |
+| [prop_pear_01](uprawy_i_owoce/polygon_farm/prop_pear_01.glb) | polygon_farm | 0.15 × 0.23 × 0.14 | 103 |
+| [prop_pear_01_group](uprawy_i_owoce/polygon_farm/prop_pear_01_group.glb) | polygon_farm | 0.29 × 0.23 × 0.28 | 309 |
+| [prop_pepper_01](uprawy_i_owoce/polygon_farm/prop_pepper_01.glb) | polygon_farm | 0.13 × 0.18 × 0.13 | 185 |
+| [prop_pepper_01_group](uprawy_i_owoce/polygon_farm/prop_pepper_01_group.glb) | polygon_farm | 0.32 × 0.20 × 0.26 | 555 |
+| [prop_pepper_01_l](uprawy_i_owoce/polygon_farm/prop_pepper_01_l.glb) | polygon_farm | 0.13 × 0.21 × 0.14 | 185 |
+| [prop_pepper_01_m](uprawy_i_owoce/polygon_farm/prop_pepper_01_m.glb) | polygon_farm | 0.10 × 0.17 × 0.13 | 185 |
+| [prop_pepper_01_s](uprawy_i_owoce/polygon_farm/prop_pepper_01_s.glb) | polygon_farm | 0.07 × 0.12 × 0.11 | 85 |
+| [prop_plant_bush_01_bean](uprawy_i_owoce/polygon_farm/prop_plant_bush_01_bean.glb) | polygon_farm | 0.63 × 0.99 × 0.60 | 806 |
+| [prop_plant_bush_01_l](uprawy_i_owoce/polygon_farm/prop_plant_bush_01_l.glb) | polygon_farm | 0.63 × 0.99 × 0.60 | 274 |
+| [prop_plant_bush_01_m](uprawy_i_owoce/polygon_farm/prop_plant_bush_01_m.glb) | polygon_farm | 0.49 × 0.68 × 0.47 | 230 |
+| [prop_plant_bush_01_pepper](uprawy_i_owoce/polygon_farm/prop_plant_bush_01_pepper.glb) | polygon_farm | 0.63 × 0.99 × 0.60 | 1014 |
+| [prop_plant_bush_01_s](uprawy_i_owoce/polygon_farm/prop_plant_bush_01_s.glb) | polygon_farm | 0.27 × 0.31 × 0.28 | 154 |
+| [prop_plant_bush_02_l](uprawy_i_owoce/polygon_farm/prop_plant_bush_02_l.glb) | polygon_farm | 0.63 × 0.99 × 0.60 | 274 |
+| [prop_plant_bush_02_m](uprawy_i_owoce/polygon_farm/prop_plant_bush_02_m.glb) | polygon_farm | 0.49 × 0.68 × 0.47 | 230 |
+| [prop_plant_bush_02_s](uprawy_i_owoce/polygon_farm/prop_plant_bush_02_s.glb) | polygon_farm | 0.27 × 0.31 × 0.28 | 154 |
+| [prop_plant_bush_02_tomato](uprawy_i_owoce/polygon_farm/prop_plant_bush_02_tomato.glb) | polygon_farm | 0.63 × 0.99 × 0.60 | 654 |
+| [prop_plant_bush_03_chilli](uprawy_i_owoce/polygon_farm/prop_plant_bush_03_chilli.glb) | polygon_farm | 1.06 × 0.93 × 1.00 | 767 |
+| [prop_plant_bush_03_l](uprawy_i_owoce/polygon_farm/prop_plant_bush_03_l.glb) | polygon_farm | 1.06 × 0.93 × 1.00 | 200 |
+| [prop_plant_bush_03_m](uprawy_i_owoce/polygon_farm/prop_plant_bush_03_m.glb) | polygon_farm | 0.73 × 0.64 × 0.69 | 152 |
+| [prop_plant_bush_03_s](uprawy_i_owoce/polygon_farm/prop_plant_bush_03_s.glb) | polygon_farm | 0.42 × 0.35 × 0.29 | 94 |
+| [prop_plant_corn_01](uprawy_i_owoce/polygon_farm/prop_plant_corn_01.glb) | polygon_farm | 0.82 × 2.19 × 0.86 | 726 |
+| [prop_plant_corn_01_l](uprawy_i_owoce/polygon_farm/prop_plant_corn_01_l.glb) | polygon_farm | 0.82 × 2.19 × 0.86 | 510 |
+| [prop_plant_corn_01_m](uprawy_i_owoce/polygon_farm/prop_plant_corn_01_m.glb) | polygon_farm | 0.73 × 1.79 × 0.77 | 404 |
+| [prop_plant_corn_01_s](uprawy_i_owoce/polygon_farm/prop_plant_corn_01_s.glb) | polygon_farm | 0.51 × 0.98 × 0.59 | 180 |
+| [prop_plant_ground_01_l](uprawy_i_owoce/polygon_farm/prop_plant_ground_01_l.glb) | polygon_farm | 1.30 × 0.46 × 1.08 | 244 |
+| [prop_plant_ground_01_l2](uprawy_i_owoce/polygon_farm/prop_plant_ground_01_l2.glb) | polygon_farm | 1.89 × 0.36 × 1.43 | 333 |
+| [prop_plant_ground_01_m](uprawy_i_owoce/polygon_farm/prop_plant_ground_01_m.glb) | polygon_farm | 0.67 × 0.23 × 0.55 | 96 |
+| [prop_plant_ground_01_s](uprawy_i_owoce/polygon_farm/prop_plant_ground_01_s.glb) | polygon_farm | 0.32 × 0.14 × 0.21 | 60 |
+| [prop_plant_ground_02_l](uprawy_i_owoce/polygon_farm/prop_plant_ground_02_l.glb) | polygon_farm | 1.28 × 0.21 × 0.94 | 190 |
+| [prop_plant_ground_02_l2](uprawy_i_owoce/polygon_farm/prop_plant_ground_02_l2.glb) | polygon_farm | 1.45 × 0.29 × 1.74 | 427 |
+| [prop_plant_ground_02_m](uprawy_i_owoce/polygon_farm/prop_plant_ground_02_m.glb) | polygon_farm | 0.82 × 0.16 × 0.54 | 136 |
+| [prop_plant_ground_02_s](uprawy_i_owoce/polygon_farm/prop_plant_ground_02_s.glb) | polygon_farm | 0.33 × 0.10 × 0.30 | 76 |
+| [prop_plant_ground_03_l](uprawy_i_owoce/polygon_farm/prop_plant_ground_03_l.glb) | polygon_farm | 1.06 × 0.41 × 0.91 | 190 |
+| [prop_plant_ground_03_l2](uprawy_i_owoce/polygon_farm/prop_plant_ground_03_l2.glb) | polygon_farm | 1.60 × 0.41 × 1.39 | 311 |
+| [prop_plant_ground_03_m](uprawy_i_owoce/polygon_farm/prop_plant_ground_03_m.glb) | polygon_farm | 0.62 × 0.20 × 0.52 | 96 |
+| [prop_plant_ground_03_s](uprawy_i_owoce/polygon_farm/prop_plant_ground_03_s.glb) | polygon_farm | 0.24 × 0.14 × 0.29 | 62 |
+| [prop_plant_potato_01_l](uprawy_i_owoce/polygon_farm/prop_plant_potato_01_l.glb) | polygon_farm | 1.18 × 1.00 × 1.13 | 396 |
+| [prop_plant_potato_01_m](uprawy_i_owoce/polygon_farm/prop_plant_potato_01_m.glb) | polygon_farm | 0.92 × 0.70 × 0.50 | 228 |
+| [prop_plant_potato_01_s](uprawy_i_owoce/polygon_farm/prop_plant_potato_01_s.glb) | polygon_farm | 0.19 × 0.37 × 0.26 | 71 |
+| [prop_plant_strawberry_01](uprawy_i_owoce/polygon_farm/prop_plant_strawberry_01.glb) | polygon_farm | 0.69 × 0.16 × 0.69 | 580 |
+| [prop_plant_wheat_01](uprawy_i_owoce/polygon_farm/prop_plant_wheat_01.glb) | polygon_farm | 0.19 × 0.85 × 0.18 | 132 |
+| [prop_plant_wheat_02](uprawy_i_owoce/polygon_farm/prop_plant_wheat_02.glb) | polygon_farm | 0.47 × 1.14 × 0.40 | 382 |
+| [prop_plant_wheat_03](uprawy_i_owoce/polygon_farm/prop_plant_wheat_03.glb) | polygon_farm | 0.75 × 1.19 × 0.73 | 1154 |
+| [prop_plant_wheat_04](uprawy_i_owoce/polygon_farm/prop_plant_wheat_04.glb) | polygon_farm | 1.75 × 1.19 × 1.44 | 3198 |
+| [prop_plant_wheat_cut_01](uprawy_i_owoce/polygon_farm/prop_plant_wheat_cut_01.glb) | polygon_farm | 0.66 × 0.37 × 0.60 | 256 |
+| [prop_plant_wheat_cut_02](uprawy_i_owoce/polygon_farm/prop_plant_wheat_cut_02.glb) | polygon_farm | 1.66 × 0.34 × 1.37 | 704 |
+| [prop_plant_wheat_optimised_01](uprawy_i_owoce/polygon_farm/prop_plant_wheat_optimised_01.glb) | polygon_farm | 0.19 × 0.62 × 0.18 | 39 |
+| [prop_plant_wheat_optimised_02](uprawy_i_owoce/polygon_farm/prop_plant_wheat_optimised_02.glb) | polygon_farm | 0.47 × 0.94 × 0.40 | 105 |
+| [prop_plant_wheat_optimised_03](uprawy_i_owoce/polygon_farm/prop_plant_wheat_optimised_03.glb) | polygon_farm | 0.75 × 0.94 × 0.73 | 321 |
+| [prop_plant_wheat_optimised_04](uprawy_i_owoce/polygon_farm/prop_plant_wheat_optimised_04.glb) | polygon_farm | 1.74 × 0.94 × 1.44 | 885 |
+| [prop_plum_01](uprawy_i_owoce/polygon_farm/prop_plum_01.glb) | polygon_farm | 0.11 × 0.12 × 0.12 | 99 |
+| [prop_plum_01_group](uprawy_i_owoce/polygon_farm/prop_plum_01_group.glb) | polygon_farm | 0.21 × 0.12 × 0.21 | 297 |
+| [prop_potato_01](uprawy_i_owoce/polygon_farm/prop_potato_01.glb) | polygon_farm | 0.11 × 0.08 × 0.16 | 76 |
+| [prop_potato_01_group](uprawy_i_owoce/polygon_farm/prop_potato_01_group.glb) | polygon_farm | 0.37 × 0.13 × 0.30 | 368 |
+| [prop_potato_02](uprawy_i_owoce/polygon_farm/prop_potato_02.glb) | polygon_farm | 0.11 × 0.08 × 0.15 | 70 |
+| [prop_pumpkin_01](uprawy_i_owoce/polygon_farm/prop_pumpkin_01.glb) | polygon_farm | 0.54 × 0.43 × 0.55 | 280 |
+| [prop_pumpkin_01_l](uprawy_i_owoce/polygon_farm/prop_pumpkin_01_l.glb) | polygon_farm | 0.54 × 0.53 × 0.80 | 335 |
+| [prop_pumpkin_01_m](uprawy_i_owoce/polygon_farm/prop_pumpkin_01_m.glb) | polygon_farm | 0.34 × 0.35 × 0.65 | 325 |
+| [prop_pumpkin_01_s](uprawy_i_owoce/polygon_farm/prop_pumpkin_01_s.glb) | polygon_farm | 0.13 × 0.17 × 0.40 | 145 |
+| [prop_pumpkin_italian_01](uprawy_i_owoce/polygon_farm/prop_pumpkin_italian_01.glb) | polygon_farm | 0.32 × 0.32 × 0.30 | 278 |
+| [prop_pumpkin_italian_01_l](uprawy_i_owoce/polygon_farm/prop_pumpkin_italian_01_l.glb) | polygon_farm | 0.42 × 0.31 × 0.44 | 318 |
+| [prop_pumpkin_italian_01_m](uprawy_i_owoce/polygon_farm/prop_pumpkin_italian_01_m.glb) | polygon_farm | 0.34 × 0.20 × 0.37 | 305 |
+| [prop_pumpkin_italian_01_s](uprawy_i_owoce/polygon_farm/prop_pumpkin_italian_01_s.glb) | polygon_farm | 0.30 × 0.17 × 0.34 | 145 |
+| [prop_pumpkin_white_01](uprawy_i_owoce/polygon_farm/prop_pumpkin_white_01.glb) | polygon_farm | 0.39 × 0.28 × 0.39 | 290 |
+| [prop_pumpkin_white_01_l](uprawy_i_owoce/polygon_farm/prop_pumpkin_white_01_l.glb) | polygon_farm | 0.39 × 0.34 × 0.67 | 330 |
+| [prop_pumpkin_white_01_m](uprawy_i_owoce/polygon_farm/prop_pumpkin_white_01_m.glb) | polygon_farm | 0.30 × 0.29 × 0.60 | 265 |
+| [prop_pumpkin_white_01_s](uprawy_i_owoce/polygon_farm/prop_pumpkin_white_01_s.glb) | polygon_farm | 0.23 × 0.18 × 0.54 | 155 |
+| [prop_squash_butternut_01](uprawy_i_owoce/polygon_farm/prop_squash_butternut_01.glb) | polygon_farm | 0.29 × 0.53 × 0.29 | 164 |
+| [prop_squash_butternut_01_l](uprawy_i_owoce/polygon_farm/prop_squash_butternut_01_l.glb) | polygon_farm | 0.46 × 0.28 × 0.81 | 194 |
+| [prop_squash_butternut_01_m](uprawy_i_owoce/polygon_farm/prop_squash_butternut_01_m.glb) | polygon_farm | 0.34 × 0.19 × 0.50 | 184 |
+| [prop_squash_butternut_01_s](uprawy_i_owoce/polygon_farm/prop_squash_butternut_01_s.glb) | polygon_farm | 0.26 × 0.11 × 0.25 | 125 |
+| [prop_squash_delicata_01](uprawy_i_owoce/polygon_farm/prop_squash_delicata_01.glb) | polygon_farm | 0.19 × 0.19 × 0.55 | 278 |
+| [prop_squash_delicata_01_l](uprawy_i_owoce/polygon_farm/prop_squash_delicata_01_l.glb) | polygon_farm | 0.24 × 0.19 × 0.78 | 298 |
+| [prop_squash_delicata_01_m](uprawy_i_owoce/polygon_farm/prop_squash_delicata_01_m.glb) | polygon_farm | 0.22 × 0.17 × 0.62 | 298 |
+| [prop_squash_delicata_01_s](uprawy_i_owoce/polygon_farm/prop_squash_delicata_01_s.glb) | polygon_farm | 0.09 × 0.13 × 0.36 | 112 |
+| [prop_strawberry_01](uprawy_i_owoce/polygon_farm/prop_strawberry_01.glb) | polygon_farm | 0.08 × 0.10 × 0.09 | 80 |
+| [prop_strawberry_01_group](uprawy_i_owoce/polygon_farm/prop_strawberry_01_group.glb) | polygon_farm | 0.29 × 0.13 × 0.29 | 720 |
+| [prop_strawberry_01_l](uprawy_i_owoce/polygon_farm/prop_strawberry_01_l.glb) | polygon_farm | 0.07 × 0.10 × 0.07 | 80 |
+| [prop_strawberry_01_m](uprawy_i_owoce/polygon_farm/prop_strawberry_01_m.glb) | polygon_farm | 0.06 × 0.07 × 0.06 | 80 |
+| [prop_strawberry_01_s](uprawy_i_owoce/polygon_farm/prop_strawberry_01_s.glb) | polygon_farm | 0.03 × 0.04 × 0.04 | 38 |
+| [prop_tomato_01](uprawy_i_owoce/polygon_farm/prop_tomato_01.glb) | polygon_farm | 0.14 × 0.14 × 0.12 | 88 |
+| [prop_tomato_01_group](uprawy_i_owoce/polygon_farm/prop_tomato_01_group.glb) | polygon_farm | 0.26 × 0.14 × 0.23 | 264 |
+| [prop_tomato_01_l](uprawy_i_owoce/polygon_farm/prop_tomato_01_l.glb) | polygon_farm | 0.12 × 0.21 × 0.14 | 76 |
+| [prop_tomato_01_m](uprawy_i_owoce/polygon_farm/prop_tomato_01_m.glb) | polygon_farm | 0.09 × 0.18 × 0.10 | 76 |
+| [prop_tomato_01_s](uprawy_i_owoce/polygon_farm/prop_tomato_01_s.glb) | polygon_farm | 0.05 × 0.15 × 0.06 | 76 |
+| [prop_watermelon_01](uprawy_i_owoce/polygon_farm/prop_watermelon_01.glb) | polygon_farm | 0.36 × 0.36 × 0.51 | 64 |
+| [prop_watermelon_01_l](uprawy_i_owoce/polygon_farm/prop_watermelon_01_l.glb) | polygon_farm | 0.36 × 0.37 × 0.76 | 129 |
+| [prop_watermelon_01_m](uprawy_i_owoce/polygon_farm/prop_watermelon_01_m.glb) | polygon_farm | 0.21 × 0.24 × 0.55 | 129 |
+| [prop_watermelon_01_s](uprawy_i_owoce/polygon_farm/prop_watermelon_01_s.glb) | polygon_farm | 0.13 × 0.19 × 0.42 | 129 |
+
+## domy (11)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [apartment_building_01](domy/anime_japan/apartment_building_01.glb) | anime_japan | 12.18 × 28.95 × 8.05 | 53996 |
+| [apartment_building_02](domy/anime_japan/apartment_building_02.glb) | anime_japan | 9.52 × 19.46 × 9.72 | 31284 |
+| [apartment_building_03](domy/anime_japan/apartment_building_03.glb) | anime_japan | 12.18 × 16.64 × 8.05 | 30728 |
+| [apartment_building_04](domy/anime_japan/apartment_building_04.glb) | anime_japan | 11.05 × 24.21 × 8.47 | 28014 |
+| [apartment_building_05](domy/anime_japan/apartment_building_05.glb) | anime_japan | 11.05 × 44.43 × 8.47 | 53110 |
+| [house_residential_attachment_01](domy/anime_japan/house_residential_attachment_01.glb) | anime_japan | 6.46 × 5.43 × 7.55 | 7670 |
+| [house_residential_building_01](domy/anime_japan/house_residential_building_01.glb) | anime_japan | 9.29 × 9.25 × 8.52 | 12399 |
+| [house_residential_building_02](domy/anime_japan/house_residential_building_02.glb) | anime_japan | 7.80 × 7.97 × 10.15 | 10886 |
+| [house_residential_building_03](domy/anime_japan/house_residential_building_03.glb) | anime_japan | 7.86 × 5.93 × 8.23 | 6752 |
+| [bld_farmhouse_01](domy/polygon_farm/bld_farmhouse_01.glb) | polygon_farm | 13.46 × 9.82 × 10.95 | 14829 |
+| [bld_farmhouse_02](domy/polygon_farm/bld_farmhouse_02.glb) | polygon_farm | 8.58 × 6.79 × 9.21 | 7347 |
+
+## budynki (26)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [convenience_store](budynki/anime_japan/convenience_store.glb) | anime_japan | 12.13 × 5.26 × 8.89 | 7116 |
+| [ramenshop](budynki/anime_japan/ramenshop.glb) | anime_japan | 6.52 × 4.49 × 4.59 | 14712 |
+| [restaurant_traditional_building](budynki/anime_japan/restaurant_traditional_building.glb) | anime_japan | 8.49 × 8.03 × 8.33 | 23852 |
+| [shop_building_01](budynki/anime_japan/shop_building_01.glb) | anime_japan | 6.39 × 8.46 × 7.74 | 14838 |
+| [shop_building_02](budynki/anime_japan/shop_building_02.glb) | anime_japan | 6.97 × 9.67 × 6.97 | 18172 |
+| [shop_building_03](budynki/anime_japan/shop_building_03.glb) | anime_japan | 5.68 × 9.67 × 7.56 | 4340 |
+| [shop_building_04](budynki/anime_japan/shop_building_04.glb) | anime_japan | 6.29 × 9.67 × 8.08 | 21178 |
+| [shop_building_05](budynki/anime_japan/shop_building_05.glb) | anime_japan | 6.45 × 8.46 × 7.74 | 14262 |
+| [store_rowbuilding_01](budynki/anime_japan/store_rowbuilding_01.glb) | anime_japan | 5.51 × 10.93 × 7.43 | 4616 |
+| [store_rowbuilding_02](budynki/anime_japan/store_rowbuilding_02.glb) | anime_japan | 5.45 × 11.43 × 7.75 | 5682 |
+| [store_rowbuilding_03](budynki/anime_japan/store_rowbuilding_03.glb) | anime_japan | 5.49 × 12.06 × 7.24 | 4826 |
+| [bld_barn_01](budynki/polygon_farm/bld_barn_01.glb) | polygon_farm | 13.49 × 9.11 × 14.16 | 13151 |
+| [bld_barn_02](budynki/polygon_farm/bld_barn_02.glb) | polygon_farm | 13.49 × 9.11 × 7.43 | 10212 |
+| [bld_barn_03](budynki/polygon_farm/bld_barn_03.glb) | polygon_farm | 9.77 × 9.11 × 7.43 | 8160 |
+| [bld_concretebase_01](budynki/polygon_farm/bld_concretebase_01.glb) | polygon_farm | 4.50 × 0.99 × 4.50 | 48 |
+| [bld_garage_01](budynki/polygon_farm/bld_garage_01.glb) | polygon_farm | 13.89 × 4.87 × 6.88 | 2952 |
+| [bld_greenhouse_01](budynki/polygon_farm/bld_greenhouse_01.glb) | polygon_farm | 5.57 × 4.99 × 7.71 | 628 |
+| [bld_greenhouse_large_01](budynki/polygon_farm/bld_greenhouse_large_01.glb) | polygon_farm | 12.87 × 6.77 × 32.46 | 1828 |
+| [bld_outhouse_01](budynki/polygon_farm/bld_outhouse_01.glb) | polygon_farm | 1.87 × 3.18 × 2.39 | 1113 |
+| [bld_producestand_01](budynki/polygon_farm/bld_producestand_01.glb) | polygon_farm | 3.08 × 3.33 × 3.08 | 1936 |
+| [bld_shelter_01](budynki/polygon_farm/bld_shelter_01.glb) | polygon_farm | 4.93 × 3.61 × 3.60 | 824 |
+| [bld_silo_01](budynki/polygon_farm/bld_silo_01.glb) | polygon_farm | 5.11 × 18.59 × 5.47 | 508 |
+| [bld_silo_02](budynki/polygon_farm/bld_silo_02.glb) | polygon_farm | 5.11 × 18.59 × 5.47 | 304 |
+| [bld_silo_base_01](budynki/polygon_farm/bld_silo_base_01.glb) | polygon_farm | 6.84 × 0.81 × 6.84 | 88 |
+| [bld_silo_small_01](budynki/polygon_farm/bld_silo_small_01.glb) | polygon_farm | 4.58 × 4.59 × 4.58 | 424 |
+| [bld_watertower_01](budynki/polygon_farm/bld_watertower_01.glb) | polygon_farm | 2.68 × 8.42 × 2.85 | 1786 |
+
+## urban_ulica (104)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [airconditioner_01](urban_ulica/anime_japan/airconditioner_01.glb) | anime_japan | 0.94 × 0.87 × 0.39 | 354 |
+| [airconditioner_02](urban_ulica/anime_japan/airconditioner_02.glb) | anime_japan | 1.24 × 1.23 × 0.57 | 668 |
+| [antenna_01](urban_ulica/anime_japan/antenna_01.glb) | anime_japan | 1.78 × 2.10 × 1.08 | 580 |
+| [antenna_02](urban_ulica/anime_japan/antenna_02.glb) | anime_japan | 1.28 × 2.26 × 1.08 | 340 |
+| [asphalt_circle](urban_ulica/anime_japan/asphalt_circle.glb) | anime_japan | 38.01 × 0.00 × 35.37 | 40 |
+| [bikestand](urban_ulica/anime_japan/bikestand.glb) | anime_japan | 0.76 × 0.55 × 1.74 | 3528 |
+| [cable_line_01](urban_ulica/anime_japan/cable_line_01.glb) | anime_japan | 1.32 × 0.68 × 10.95 | 312 |
+| [cable_line_02](urban_ulica/anime_japan/cable_line_02.glb) | anime_japan | 1.32 × 0.27 × 10.84 | 168 |
+| [cable_line_03](urban_ulica/anime_japan/cable_line_03.glb) | anime_japan | 1.32 × 0.02 × 10.96 | 24 |
+| [cable_single](urban_ulica/anime_japan/cable_single.glb) | anime_japan | 0.02 × 0.27 × 10.84 | 42 |
+| [cables_hanging_01](urban_ulica/anime_japan/cables_hanging_01.glb) | anime_japan | 4.36 × 0.68 × 0.02 | 216 |
+| [cables_hanging_02](urban_ulica/anime_japan/cables_hanging_02.glb) | anime_japan | 3.87 × 0.90 × 0.03 | 288 |
+| [cables_hanging_03](urban_ulica/anime_japan/cables_hanging_03.glb) | anime_japan | 3.66 × 0.84 × 0.03 | 624 |
+| [curbs_01](urban_ulica/anime_japan/curbs_01.glb) | anime_japan | 5.01 × 0.15 × 0.27 | 60 |
+| [curbs_02](urban_ulica/anime_japan/curbs_02.glb) | anime_japan | 2.00 × 0.15 × 0.27 | 24 |
+| [drain_street](urban_ulica/anime_japan/drain_street.glb) | anime_japan | 0.75 × 0.04 × 0.52 | 106 |
+| [firehydrant](urban_ulica/anime_japan/firehydrant.glb) | anime_japan | 0.92 × 1.19 × 0.42 | 1302 |
+| [fusebox_large](urban_ulica/anime_japan/fusebox_large.glb) | anime_japan | 1.06 × 1.68 × 0.48 | 218 |
+| [lamp_01](urban_ulica/anime_japan/lamp_01.glb) | anime_japan | 0.75 × 0.70 × 0.40 | 591 |
+| [lamp_02](urban_ulica/anime_japan/lamp_02.glb) | anime_japan | 1.63 × 1.00 × 0.32 | 362 |
+| [lamp_03](urban_ulica/anime_japan/lamp_03.glb) | anime_japan | 0.39 × 0.35 × 0.40 | 582 |
+| [lamp_04](urban_ulica/anime_japan/lamp_04.glb) | anime_japan | 0.45 × 0.59 × 0.39 | 320 |
+| [mailbox_post](urban_ulica/anime_japan/mailbox_post.glb) | anime_japan | 0.51 × 1.28 × 0.45 | 376 |
+| [manhole](urban_ulica/anime_japan/manhole.glb) | anime_japan | 0.84 × 0.04 × 0.84 | 262 |
+| [mirror_round_01](urban_ulica/anime_japan/mirror_round_01.glb) | anime_japan | 0.87 × 0.87 × 0.33 | 716 |
+| [mirror_round_02](urban_ulica/anime_japan/mirror_round_02.glb) | anime_japan | 0.87 × 3.34 × 0.36 | 744 |
+| [mirror_round_03](urban_ulica/anime_japan/mirror_round_03.glb) | anime_japan | 0.77 × 3.36 × 0.84 | 1048 |
+| [platform_01](urban_ulica/anime_japan/platform_01.glb) | anime_japan | 7.68 × 2.00 × 7.68 | 506 |
+| [pole_street](urban_ulica/anime_japan/pole_street.glb) | anime_japan | 0.17 × 1.04 × 0.17 | 164 |
+| [sidewalk_corner](urban_ulica/anime_japan/sidewalk_corner.glb) | anime_japan | 3.27 × 0.15 × 3.10 | 74 |
+| [sidewalk_curve](urban_ulica/anime_japan/sidewalk_curve.glb) | anime_japan | 2.10 × 0.15 × 2.10 | 198 |
+| [sidewalk_curve_01](urban_ulica/anime_japan/sidewalk_curve_01.glb) | anime_japan | 10.22 × 0.15 × 1.95 | 268 |
+| [sidewalk_curve_02](urban_ulica/anime_japan/sidewalk_curve_02.glb) | anime_japan | 10.31 × 0.15 × 2.82 | 268 |
+| [sidewalk_curve_03](urban_ulica/anime_japan/sidewalk_curve_03.glb) | anime_japan | 5.16 × 0.15 × 2.82 | 130 |
+| [sidewalk_island](urban_ulica/anime_japan/sidewalk_island.glb) | anime_japan | 14.15 × 0.15 × 8.54 | 1524 |
+| [sidewalk_island_large](urban_ulica/anime_japan/sidewalk_island_large.glb) | anime_japan | 26.38 × 0.15 × 16.15 | 1760 |
+| [sidewalk_long](urban_ulica/anime_japan/sidewalk_long.glb) | anime_japan | 24.98 × 0.15 × 3.34 | 610 |
+| [sidewalk_straight](urban_ulica/anime_japan/sidewalk_straight.glb) | anime_japan | 5.02 × 0.15 × 1.55 | 122 |
+| [sidewalk_thin_long](urban_ulica/anime_japan/sidewalk_thin_long.glb) | anime_japan | 20.02 × 0.15 × 1.55 | 488 |
+| [sidewalk_wide](urban_ulica/anime_japan/sidewalk_wide.glb) | anime_japan | 5.02 × 0.15 × 3.34 | 122 |
+| [stairs_01](urban_ulica/anime_japan/stairs_01.glb) | anime_japan | 1.24 × 1.62 × 3.38 | 322 |
+| [stairs_wide](urban_ulica/anime_japan/stairs_wide.glb) | anime_japan | 7.01 × 1.05 × 3.86 | 184 |
+| [street_1](urban_ulica/anime_japan/street_1.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal](urban_ulica/anime_japan/street_decal.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_1](urban_ulica/anime_japan/street_decal_1.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_10](urban_ulica/anime_japan/street_decal_10.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_11](urban_ulica/anime_japan/street_decal_11.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_12](urban_ulica/anime_japan/street_decal_12.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_13](urban_ulica/anime_japan/street_decal_13.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_3](urban_ulica/anime_japan/street_decal_3.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_4](urban_ulica/anime_japan/street_decal_4.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_4_1](urban_ulica/anime_japan/street_decal_4_1.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [street_decal_9](urban_ulica/anime_japan/street_decal_9.glb) | anime_japan | 5.00 × 0.00 × 5.00 | 2 |
+| [traffic_pylon](urban_ulica/anime_japan/traffic_pylon.glb) | anime_japan | 0.46 × 0.62 × 0.49 | 174 |
+| [trafficlight_cars](urban_ulica/anime_japan/trafficlight_cars.glb) | anime_japan | 3.00 × 4.61 × 0.96 | 5640 |
+| [trafficlight_cars_0](urban_ulica/anime_japan/trafficlight_cars_0.glb) | anime_japan | 2.78 × 0.86 × 0.96 | 3656 |
+| [trafficlight_pedestrian_01](urban_ulica/anime_japan/trafficlight_pedestrian_01.glb) | anime_japan | 0.33 × 0.66 × 0.41 | 1016 |
+| [trafficlight_pedestrian_02](urban_ulica/anime_japan/trafficlight_pedestrian_02.glb) | anime_japan | 0.33 × 3.23 × 0.41 | 1044 |
+| [trafficlight_pole](urban_ulica/anime_japan/trafficlight_pole.glb) | anime_japan | 0.51 × 4.61 × 0.58 | 1984 |
+| [trash_can_01](urban_ulica/anime_japan/trash_can_01.glb) | anime_japan | 0.69 × 1.14 × 0.69 | 1176 |
+| [trash_can_02](urban_ulica/anime_japan/trash_can_02.glb) | anime_japan | 0.64 × 0.93 × 0.64 | 1176 |
+| [trash_container_01](urban_ulica/anime_japan/trash_container_01.glb) | anime_japan | 0.70 × 1.25 × 0.76 | 998 |
+| [trash_container_02](urban_ulica/anime_japan/trash_container_02.glb) | anime_japan | 0.64 × 0.98 × 0.69 | 998 |
+| [trash_recycling](urban_ulica/anime_japan/trash_recycling.glb) | anime_japan | 0.62 × 1.19 × 0.50 | 510 |
+| [utility_pole_01](urban_ulica/anime_japan/utility_pole_01.glb) | anime_japan | 1.63 × 4.87 × 0.77 | 1516 |
+| [utility_pole_02](urban_ulica/anime_japan/utility_pole_02.glb) | anime_japan | 1.07 × 6.90 × 1.64 | 5842 |
+| [utility_pole_03](urban_ulica/anime_japan/utility_pole_03.glb) | anime_japan | 1.81 × 6.82 × 1.55 | 2930 |
+| [utility_pole_04](urban_ulica/anime_japan/utility_pole_04.glb) | anime_japan | 1.56 × 6.85 × 0.53 | 3980 |
+| [utility_pole_05](urban_ulica/anime_japan/utility_pole_05.glb) | anime_japan | 1.64 × 8.54 × 1.64 | 7050 |
+| [vendingmachine_01](urban_ulica/anime_japan/vendingmachine_01.glb) | anime_japan | 1.21 × 2.04 × 0.72 | 970 |
+| [vendingmachine_02](urban_ulica/anime_japan/vendingmachine_02.glb) | anime_japan | 1.21 × 2.04 × 0.72 | 976 |
+| [vendingmachine_bottles_01](urban_ulica/anime_japan/vendingmachine_bottles_01.glb) | anime_japan | 1.21 × 2.04 × 0.72 | 2266 |
+| [vendingmachine_bottles_02](urban_ulica/anime_japan/vendingmachine_bottles_02.glb) | anime_japan | 1.21 × 2.04 × 0.72 | 1876 |
+| [vendingmachine_bottles_03](urban_ulica/anime_japan/vendingmachine_bottles_03.glb) | anime_japan | 1.21 × 2.04 × 0.72 | 2086 |
+| [vendingmachine_bottles_03_1](urban_ulica/anime_japan/vendingmachine_bottles_03_1.glb) | anime_japan | 1.21 × 2.04 × 0.72 | 2086 |
+| [vendingmachine_bottles_04](urban_ulica/anime_japan/vendingmachine_bottles_04.glb) | anime_japan | 1.21 × 2.04 × 0.72 | 1750 |
+| [ventilation_01](urban_ulica/anime_japan/ventilation_01.glb) | anime_japan | 0.74 × 0.57 × 0.56 | 308 |
+| [ventilation_02](urban_ulica/anime_japan/ventilation_02.glb) | anime_japan | 0.93 × 0.84 × 0.42 | 168 |
+| [ventilation_03](urban_ulica/anime_japan/ventilation_03.glb) | anime_japan | 0.63 × 0.52 × 0.07 | 98 |
+| [env_road_dirt_corner_01](urban_ulica/polygon_farm/env_road_dirt_corner_01.glb) | polygon_farm | 9.40 × 0.27 × 9.40 | 257 |
+| [env_road_dirt_corner_02](urban_ulica/polygon_farm/env_road_dirt_corner_02.glb) | polygon_farm | 10.43 × 0.27 × 13.91 | 270 |
+| [env_road_dirt_end_01](urban_ulica/polygon_farm/env_road_dirt_end_01.glb) | polygon_farm | 15.29 × 0.60 × 15.02 | 270 |
+| [env_road_dirt_end_02](urban_ulica/polygon_farm/env_road_dirt_end_02.glb) | polygon_farm | 25.49 × 0.60 × 15.02 | 270 |
+| [env_road_dirt_intersection_01](urban_ulica/polygon_farm/env_road_dirt_intersection_01.glb) | polygon_farm | 11.91 × 0.27 × 11.91 | 473 |
+| [env_road_dirt_straight_01](urban_ulica/polygon_farm/env_road_dirt_straight_01.glb) | polygon_farm | 7.10 × 0.27 × 11.91 | 270 |
+| [env_road_dirt_swerve_01](urban_ulica/polygon_farm/env_road_dirt_swerve_01.glb) | polygon_farm | 13.03 × 0.28 × 41.91 | 485 |
+| [env_road_dirt_swerve_02](urban_ulica/polygon_farm/env_road_dirt_swerve_02.glb) | polygon_farm | 16.08 × 0.28 × 41.91 | 489 |
+| [env_road_dirt_t_section_01](urban_ulica/polygon_farm/env_road_dirt_t_section_01.glb) | polygon_farm | 11.91 × 0.27 × 9.53 | 435 |
+| [env_road_gravel_corner_01](urban_ulica/polygon_farm/env_road_gravel_corner_01.glb) | polygon_farm | 11.18 × 0.31 × 11.50 | 254 |
+| [env_road_gravel_corner_02](urban_ulica/polygon_farm/env_road_gravel_corner_02.glb) | polygon_farm | 12.72 × 0.30 × 14.95 | 270 |
+| [env_road_gravel_end_01](urban_ulica/polygon_farm/env_road_gravel_end_01.glb) | polygon_farm | 17.54 × 0.56 × 15.02 | 270 |
+| [env_road_gravel_end_02](urban_ulica/polygon_farm/env_road_gravel_end_02.glb) | polygon_farm | 27.72 × 0.55 × 14.90 | 266 |
+| [env_road_gravel_intersection_01](urban_ulica/polygon_farm/env_road_gravel_intersection_01.glb) | polygon_farm | 15.00 × 0.28 × 15.00 | 473 |
+| [env_road_gravel_straight_01](urban_ulica/polygon_farm/env_road_gravel_straight_01.glb) | polygon_farm | 9.37 × 0.29 × 11.91 | 270 |
+| [env_road_gravel_swerve_01](urban_ulica/polygon_farm/env_road_gravel_swerve_01.glb) | polygon_farm | 15.22 × 0.33 × 41.91 | 485 |
+| [env_road_gravel_swerve_02](urban_ulica/polygon_farm/env_road_gravel_swerve_02.glb) | polygon_farm | 18.30 × 0.32 × 41.91 | 489 |
+| [env_road_gravel_t_section_01](urban_ulica/polygon_farm/env_road_gravel_t_section_01.glb) | polygon_farm | 15.67 × 0.32 × 12.36 | 435 |
+| [env_road_pebbles_01](urban_ulica/polygon_farm/env_road_pebbles_01.glb) | polygon_farm | 6.96 × 0.24 × 8.68 | 231 |
+| [env_road_pebbles_02](urban_ulica/polygon_farm/env_road_pebbles_02.glb) | polygon_farm | 5.63 × 0.25 × 10.19 | 231 |
+| [prop_power_lines_01](urban_ulica/polygon_farm/prop_power_lines_01.glb) | polygon_farm | 1.98 × 1.15 × 14.95 | 108 |
+| [prop_power_pole_01](urban_ulica/polygon_farm/prop_power_pole_01.glb) | polygon_farm | 2.22 × 6.48 × 0.35 | 268 |
+| [prop_windfarm_01](urban_ulica/polygon_farm/prop_windfarm_01.glb) | polygon_farm | 38.85 × 87.09 × 9.87 | 1308 |
+| [prop_windfarm_blades_01](urban_ulica/polygon_farm/prop_windfarm_blades_01.glb) | polygon_farm | 38.85 × 87.09 × 9.87 | 1308 |
+| [prop_windmill_01](urban_ulica/polygon_farm/prop_windmill_01.glb) | polygon_farm | 3.77 × 11.48 × 4.83 | 1075 |
+
+## ogrodzenia_i_mury (76)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [cornerwall](ogrodzenia_i_mury/anime_japan/cornerwall.glb) | anime_japan | 8.88 × 3.12 × 4.99 | 28 |
+| [entrance_edge](ogrodzenia_i_mury/anime_japan/entrance_edge.glb) | anime_japan | 0.13 × 1.52 × 0.13 | 34 |
+| [entrance_fence](ogrodzenia_i_mury/anime_japan/entrance_fence.glb) | anime_japan | 0.89 × 1.36 × 0.13 | 266 |
+| [entrance_fence_02](ogrodzenia_i_mury/anime_japan/entrance_fence_02.glb) | anime_japan | 1.39 × 1.09 × 0.09 | 232 |
+| [entrance_fence_03](ogrodzenia_i_mury/anime_japan/entrance_fence_03.glb) | anime_japan | 0.89 × 1.40 × 0.07 | 224 |
+| [fence_01](ogrodzenia_i_mury/anime_japan/fence_01.glb) | anime_japan | 2.41 × 1.11 × 0.06 | 276 |
+| [fence_02](ogrodzenia_i_mury/anime_japan/fence_02.glb) | anime_japan | 1.24 × 1.11 × 0.06 | 696 |
+| [fence_03](ogrodzenia_i_mury/anime_japan/fence_03.glb) | anime_japan | 2.23 × 1.06 × 0.05 | 476 |
+| [fence_04](ogrodzenia_i_mury/anime_japan/fence_04.glb) | anime_japan | 2.23 × 1.06 × 0.05 | 404 |
+| [fence_05](ogrodzenia_i_mury/anime_japan/fence_05.glb) | anime_japan | 1.93 × 1.07 × 0.04 | 224 |
+| [fence_06](ogrodzenia_i_mury/anime_japan/fence_06.glb) | anime_japan | 1.92 × 1.08 × 0.06 | 116 |
+| [fence_07](ogrodzenia_i_mury/anime_japan/fence_07.glb) | anime_japan | 1.85 × 1.15 × 0.05 | 156 |
+| [fusebox_wall_01](ogrodzenia_i_mury/anime_japan/fusebox_wall_01.glb) | anime_japan | 0.33 × 0.82 × 0.19 | 478 |
+| [fusebox_wall_02](ogrodzenia_i_mury/anime_japan/fusebox_wall_02.glb) | anime_japan | 0.30 × 0.56 × 0.16 | 70 |
+| [fusebox_wall_03](ogrodzenia_i_mury/anime_japan/fusebox_wall_03.glb) | anime_japan | 0.41 × 0.28 × 0.28 | 230 |
+| [fusebox_wall_04](ogrodzenia_i_mury/anime_japan/fusebox_wall_04.glb) | anime_japan | 0.48 × 1.48 × 0.17 | 425 |
+| [fusebox_wall_07](ogrodzenia_i_mury/anime_japan/fusebox_wall_07.glb) | anime_japan | 0.94 × 1.36 × 0.25 | 604 |
+| [fusebox_wall_08](ogrodzenia_i_mury/anime_japan/fusebox_wall_08.glb) | anime_japan | 0.49 × 0.64 × 0.25 | 100 |
+| [fusebox_wall_09](ogrodzenia_i_mury/anime_japan/fusebox_wall_09.glb) | anime_japan | 0.29 × 0.31 × 0.15 | 182 |
+| [wall_01](ogrodzenia_i_mury/anime_japan/wall_01.glb) | anime_japan | 2.75 × 1.81 × 0.32 | 216 |
+| [wall_01_1](ogrodzenia_i_mury/anime_japan/wall_01_1.glb) | anime_japan | 2.75 × 1.81 × 0.32 | 216 |
+| [wall_01_2](ogrodzenia_i_mury/anime_japan/wall_01_2.glb) | anime_japan | 2.75 × 1.81 × 0.32 | 216 |
+| [wall_01_3](ogrodzenia_i_mury/anime_japan/wall_01_3.glb) | anime_japan | 2.75 × 1.81 × 0.32 | 216 |
+| [wall_corner](ogrodzenia_i_mury/anime_japan/wall_corner.glb) | anime_japan | 1.07 × 1.84 × 1.08 | 360 |
+| [wall_corner_1](ogrodzenia_i_mury/anime_japan/wall_corner_1.glb) | anime_japan | 1.07 × 1.84 × 1.08 | 360 |
+| [wall_corner_2](ogrodzenia_i_mury/anime_japan/wall_corner_2.glb) | anime_japan | 1.07 × 1.84 × 1.08 | 360 |
+| [wall_corner_3](ogrodzenia_i_mury/anime_japan/wall_corner_3.glb) | anime_japan | 1.07 × 1.84 × 1.08 | 360 |
+| [wall_fence](ogrodzenia_i_mury/anime_japan/wall_fence.glb) | anime_japan | 3.02 × 1.82 × 0.32 | 468 |
+| [wall_fence_1](ogrodzenia_i_mury/anime_japan/wall_fence_1.glb) | anime_japan | 3.02 × 1.82 × 0.32 | 468 |
+| [wall_fence_2](ogrodzenia_i_mury/anime_japan/wall_fence_2.glb) | anime_japan | 3.02 × 1.82 × 0.32 | 468 |
+| [wall_fence_3](ogrodzenia_i_mury/anime_japan/wall_fence_3.glb) | anime_japan | 3.02 × 1.82 × 0.32 | 468 |
+| [wall_flowerbed](ogrodzenia_i_mury/anime_japan/wall_flowerbed.glb) | anime_japan | 2.66 × 0.46 × 1.18 | 252 |
+| [wall_flowerbed_1](ogrodzenia_i_mury/anime_japan/wall_flowerbed_1.glb) | anime_japan | 2.66 × 0.46 × 1.18 | 252 |
+| [wall_flowerbed_2](ogrodzenia_i_mury/anime_japan/wall_flowerbed_2.glb) | anime_japan | 2.66 × 0.46 × 1.18 | 252 |
+| [wall_flowerbed_3](ogrodzenia_i_mury/anime_japan/wall_flowerbed_3.glb) | anime_japan | 2.66 × 0.46 × 1.18 | 252 |
+| [wall_pillar](ogrodzenia_i_mury/anime_japan/wall_pillar.glb) | anime_japan | 0.57 × 1.82 × 0.59 | 216 |
+| [wall_pillar_1](ogrodzenia_i_mury/anime_japan/wall_pillar_1.glb) | anime_japan | 0.57 × 1.82 × 0.59 | 216 |
+| [wall_pillar_2](ogrodzenia_i_mury/anime_japan/wall_pillar_2.glb) | anime_japan | 0.57 × 1.82 × 0.59 | 216 |
+| [wall_pillar_3](ogrodzenia_i_mury/anime_japan/wall_pillar_3.glb) | anime_japan | 0.57 × 1.82 × 0.59 | 216 |
+| [walls_poarch_01](ogrodzenia_i_mury/anime_japan/walls_poarch_01.glb) | anime_japan | 11.35 × 1.88 × 14.46 | 7704 |
+| [walls_poarch_01_1](ogrodzenia_i_mury/anime_japan/walls_poarch_01_1.glb) | anime_japan | 11.35 × 1.88 × 14.46 | 7704 |
+| [walls_poarch_02](ogrodzenia_i_mury/anime_japan/walls_poarch_02.glb) | anime_japan | 8.00 × 1.88 × 7.43 | 3744 |
+| [walls_poarch_02_1](ogrodzenia_i_mury/anime_japan/walls_poarch_02_1.glb) | anime_japan | 8.00 × 1.88 × 7.43 | 3744 |
+| [walls_poarch_03](ogrodzenia_i_mury/anime_japan/walls_poarch_03.glb) | anime_japan | 8.00 × 1.88 × 4.74 | 3248 |
+| [walls_poarch_05](ogrodzenia_i_mury/anime_japan/walls_poarch_05.glb) | anime_japan | 7.99 × 1.88 × 4.22 | 2448 |
+| [prop_fence_fancy_01](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_01.glb) | polygon_farm | 2.50 × 1.13 × 0.05 | 104 |
+| [prop_fence_fancy_02](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_02.glb) | polygon_farm | 2.50 × 1.12 × 0.05 | 48 |
+| [prop_fence_fancy_03](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_03.glb) | polygon_farm | 2.50 × 1.16 × 0.10 | 132 |
+| [prop_fence_fancy_gate_01](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_gate_01.glb) | polygon_farm | 5.00 × 1.89 × 0.21 | 692 |
+| [prop_fence_fancy_gate_02](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_gate_02.glb) | polygon_farm | 2.50 × 1.66 × 0.21 | 276 |
+| [prop_fence_fancy_pole_01](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_pole_01.glb) | polygon_farm | 0.17 × 1.70 × 0.17 | 66 |
+| [prop_fence_fancy_pole_02](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_pole_02.glb) | polygon_farm | 0.17 × 1.70 × 0.17 | 28 |
+| [prop_fence_fancy_pole_03](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_pole_03.glb) | polygon_farm | 0.17 × 1.66 × 0.17 | 12 |
+| [prop_fence_fancy_pole_spike_01](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_pole_spike_01.glb) | polygon_farm | 0.17 × 1.89 × 0.17 | 92 |
+| [prop_fence_fancy_pole_spike_02](ogrodzenia_i_mury/polygon_farm/prop_fence_fancy_pole_spike_02.glb) | polygon_farm | 0.17 × 1.89 × 0.17 | 78 |
+| [prop_fence_painted_01](ogrodzenia_i_mury/polygon_farm/prop_fence_painted_01.glb) | polygon_farm | 2.50 × 1.08 × 0.05 | 104 |
+| [prop_fence_painted_02](ogrodzenia_i_mury/polygon_farm/prop_fence_painted_02.glb) | polygon_farm | 2.50 × 1.08 × 0.05 | 104 |
+| [prop_fence_painted_pole_01](ogrodzenia_i_mury/polygon_farm/prop_fence_painted_pole_01.glb) | polygon_farm | 0.17 × 1.66 × 0.17 | 60 |
+| [prop_fence_painted_pole_02](ogrodzenia_i_mury/polygon_farm/prop_fence_painted_pole_02.glb) | polygon_farm | 0.17 × 1.66 × 0.17 | 60 |
+| [prop_fence_wire_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wire_01.glb) | polygon_farm | 5.00 × 1.22 × 0.12 | 168 |
+| [prop_fence_wire_02](ogrodzenia_i_mury/polygon_farm/prop_fence_wire_02.glb) | polygon_farm | 5.00 × 1.22 × 0.17 | 168 |
+| [prop_fence_wire_03](ogrodzenia_i_mury/polygon_farm/prop_fence_wire_03.glb) | polygon_farm | 5.00 × 0.99 × 0.02 | 120 |
+| [prop_fence_wire_04](ogrodzenia_i_mury/polygon_farm/prop_fence_wire_04.glb) | polygon_farm | 2.55 × 0.99 × 0.02 | 120 |
+| [prop_fence_wire_gate_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wire_gate_01.glb) | polygon_farm | 3.56 × 1.17 × 0.08 | 528 |
+| [prop_fence_wire_pole_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wire_pole_01.glb) | polygon_farm | 0.29 × 1.70 × 0.29 | 216 |
+| [prop_fence_wood_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_01.glb) | polygon_farm | 2.50 × 1.08 × 0.05 | 104 |
+| [prop_fence_wood_02](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_02.glb) | polygon_farm | 2.50 × 1.03 × 0.05 | 76 |
+| [prop_fence_wood_03](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_03.glb) | polygon_farm | 2.50 × 1.03 × 0.05 | 36 |
+| [prop_fence_wood_gate_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_gate_01.glb) | polygon_farm | 5.11 × 1.66 × 0.17 | 546 |
+| [prop_fence_wood_pole_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_pole_01.glb) | polygon_farm | 0.17 × 1.66 × 0.17 | 60 |
+| [prop_fence_wood_pole_02](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_pole_02.glb) | polygon_farm | 0.17 × 1.66 × 0.17 | 12 |
+| [prop_fence_wood_pole_inset_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_pole_inset_01.glb) | polygon_farm | 0.18 × 1.68 × 0.20 | 116 |
+| [prop_fence_wood_round_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_round_01.glb) | polygon_farm | 2.60 × 0.96 × 0.16 | 156 |
+| [prop_fence_wood_round_02](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_round_02.glb) | polygon_farm | 2.61 × 0.97 × 0.21 | 156 |
+| [prop_fence_wood_round_inset_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_round_inset_01.glb) | polygon_farm | 2.37 × 0.74 × 0.18 | 84 |
+| [prop_fence_wood_round_pole_01](ogrodzenia_i_mury/polygon_farm/prop_fence_wood_round_pole_01.glb) | polygon_farm | 0.20 × 1.62 × 0.20 | 88 |
+
+## znaki_i_szyldy (104)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [board_digital_01](znaki_i_szyldy/anime_japan/board_digital_01.glb) | anime_japan | 0.66 × 1.12 × 0.70 | 558 |
+| [board_digital_02](znaki_i_szyldy/anime_japan/board_digital_02.glb) | anime_japan | 0.76 × 0.97 × 0.73 | 668 |
+| [board_digital_03](znaki_i_szyldy/anime_japan/board_digital_03.glb) | anime_japan | 0.96 × 2.19 × 0.71 | 422 |
+| [board_foldable_01](znaki_i_szyldy/anime_japan/board_foldable_01.glb) | anime_japan | 0.55 × 0.96 × 0.46 | 96 |
+| [board_foldable_02](znaki_i_szyldy/anime_japan/board_foldable_02.glb) | anime_japan | 0.62 × 1.11 × 0.49 | 108 |
+| [board_foldable_03](znaki_i_szyldy/anime_japan/board_foldable_03.glb) | anime_japan | 0.58 × 1.01 × 0.49 | 96 |
+| [cloth_storefront_01](znaki_i_szyldy/anime_japan/cloth_storefront_01.glb) | anime_japan | 4.73 × 1.26 × 0.10 | 1558 |
+| [cloth_storefront_02](znaki_i_szyldy/anime_japan/cloth_storefront_02.glb) | anime_japan | 3.76 × 1.26 × 0.13 | 1178 |
+| [cloth_storefront_03](znaki_i_szyldy/anime_japan/cloth_storefront_03.glb) | anime_japan | 4.94 × 0.92 × 0.11 | 1966 |
+| [sign_3d_chinesefood](znaki_i_szyldy/anime_japan/sign_3d_chinesefood.glb) | anime_japan | 5.02 × 1.17 × 0.15 | 1608 |
+| [sign_3d_flowerstore](znaki_i_szyldy/anime_japan/sign_3d_flowerstore.glb) | anime_japan | 2.40 × 1.11 × 0.13 | 444 |
+| [sign_3d_karaoke](znaki_i_szyldy/anime_japan/sign_3d_karaoke.glb) | anime_japan | 4.18 × 1.00 × 0.13 | 776 |
+| [sign_3d_konbini](znaki_i_szyldy/anime_japan/sign_3d_konbini.glb) | anime_japan | 4.66 × 1.08 × 0.16 | 284 |
+| [sign_3d_library](znaki_i_szyldy/anime_japan/sign_3d_library.glb) | anime_japan | 3.07 × 0.97 × 0.16 | 2416 |
+| [sign_3d_manga](znaki_i_szyldy/anime_japan/sign_3d_manga.glb) | anime_japan | 4.14 × 0.96 × 0.13 | 280 |
+| [sign_3d_postoffice](znaki_i_szyldy/anime_japan/sign_3d_postoffice.glb) | anime_japan | 4.52 × 1.80 × 0.16 | 3376 |
+| [sign_streetname_01](znaki_i_szyldy/anime_japan/sign_streetname_01.glb) | anime_japan | 1.13 × 3.34 × 0.14 | 188 |
+| [sign_streetname_02](znaki_i_szyldy/anime_japan/sign_streetname_02.glb) | anime_japan | 1.13 × 3.34 × 0.14 | 188 |
+| [sign_streetname_03](znaki_i_szyldy/anime_japan/sign_streetname_03.glb) | anime_japan | 1.13 × 3.34 × 0.14 | 188 |
+| [sign_traffic_001](znaki_i_szyldy/anime_japan/sign_traffic_001.glb) | anime_japan | 0.60 × 2.86 × 0.11 | 204 |
+| [sign_traffic_002](znaki_i_szyldy/anime_japan/sign_traffic_002.glb) | anime_japan | 0.60 × 2.86 × 0.11 | 204 |
+| [sign_traffic_003](znaki_i_szyldy/anime_japan/sign_traffic_003.glb) | anime_japan | 0.60 × 2.86 × 0.11 | 204 |
+| [sign_traffic_003_1](znaki_i_szyldy/anime_japan/sign_traffic_003_1.glb) | anime_japan | 0.60 × 2.86 × 0.11 | 204 |
+| [sign_traffic_004](znaki_i_szyldy/anime_japan/sign_traffic_004.glb) | anime_japan | 0.61 × 2.82 × 0.11 | 280 |
+| [sign_traffic_005](znaki_i_szyldy/anime_japan/sign_traffic_005.glb) | anime_japan | 0.60 × 2.82 × 0.11 | 280 |
+| [sign_traffic_006](znaki_i_szyldy/anime_japan/sign_traffic_006.glb) | anime_japan | 0.61 × 2.82 × 0.11 | 280 |
+| [sign_traffic_007](znaki_i_szyldy/anime_japan/sign_traffic_007.glb) | anime_japan | 0.61 × 2.74 × 0.10 | 228 |
+| [sign_traffic_008](znaki_i_szyldy/anime_japan/sign_traffic_008.glb) | anime_japan | 0.61 × 2.74 × 0.10 | 152 |
+| [sign_traffic_009](znaki_i_szyldy/anime_japan/sign_traffic_009.glb) | anime_japan | 0.61 × 2.93 × 0.11 | 228 |
+| [sign_traffic_010](znaki_i_szyldy/anime_japan/sign_traffic_010.glb) | anime_japan | 0.63 × 2.87 × 0.10 | 172 |
+| [sign_traffic_011](znaki_i_szyldy/anime_japan/sign_traffic_011.glb) | anime_japan | 0.63 × 2.87 × 0.10 | 172 |
+| [sign_traffic_012](znaki_i_szyldy/anime_japan/sign_traffic_012.glb) | anime_japan | 0.54 × 2.83 × 0.10 | 172 |
+| [sign_traffic_013](znaki_i_szyldy/anime_japan/sign_traffic_013.glb) | anime_japan | 0.60 × 2.93 × 0.11 | 172 |
+| [sign_traffic_014](znaki_i_szyldy/anime_japan/sign_traffic_014.glb) | anime_japan | 0.56 × 3.02 × 0.11 | 208 |
+| [sign_traffic_015](znaki_i_szyldy/anime_japan/sign_traffic_015.glb) | anime_japan | 0.44 × 2.23 × 0.10 | 172 |
+| [sign_traffic_016](znaki_i_szyldy/anime_japan/sign_traffic_016.glb) | anime_japan | 0.48 × 2.21 × 0.12 | 248 |
+| [sign_traffic_017](znaki_i_szyldy/anime_japan/sign_traffic_017.glb) | anime_japan | 0.46 × 2.04 × 0.09 | 172 |
+| [signboard_small_01](znaki_i_szyldy/anime_japan/signboard_small_01.glb) | anime_japan | 1.23 × 1.10 × 0.74 | 120 |
+| [signboard_small_02](znaki_i_szyldy/anime_japan/signboard_small_02.glb) | anime_japan | 1.16 × 1.21 × 0.43 | 316 |
+| [signboard_small_04](znaki_i_szyldy/anime_japan/signboard_small_04.glb) | anime_japan | 1.33 × 0.90 × 0.27 | 292 |
+| [signboard_small_05](znaki_i_szyldy/anime_japan/signboard_small_05.glb) | anime_japan | 1.52 × 0.70 × 0.21 | 308 |
+| [signboard_small_06](znaki_i_szyldy/anime_japan/signboard_small_06.glb) | anime_japan | 1.21 × 0.74 × 0.34 | 148 |
+| [signboard_small_09](znaki_i_szyldy/anime_japan/signboard_small_09.glb) | anime_japan | 1.37 × 1.24 × 0.07 | 308 |
+| [signboard_vertical_01](znaki_i_szyldy/anime_japan/signboard_vertical_01.glb) | anime_japan | 1.36 × 2.62 × 0.43 | 180 |
+| [signboard_vertical_02](znaki_i_szyldy/anime_japan/signboard_vertical_02.glb) | anime_japan | 1.30 × 2.62 × 0.43 | 220 |
+| [signboard_vertical_03](znaki_i_szyldy/anime_japan/signboard_vertical_03.glb) | anime_japan | 1.56 × 2.52 × 0.45 | 164 |
+| [signboard_vertical_04](znaki_i_szyldy/anime_japan/signboard_vertical_04.glb) | anime_japan | 1.23 × 2.47 × 0.38 | 372 |
+| [signboard_vertical_05](znaki_i_szyldy/anime_japan/signboard_vertical_05.glb) | anime_japan | 1.42 × 2.62 × 0.43 | 212 |
+| [signboard_vertical_06](znaki_i_szyldy/anime_japan/signboard_vertical_06.glb) | anime_japan | 1.35 × 2.52 × 0.45 | 148 |
+| [signboard_wide_01](znaki_i_szyldy/anime_japan/signboard_wide_01.glb) | anime_japan | 3.10 × 1.03 × 0.24 | 332 |
+| [signboard_wide_02](znaki_i_szyldy/anime_japan/signboard_wide_02.glb) | anime_japan | 3.19 × 1.08 × 0.41 | 156 |
+| [signboard_wide_03](znaki_i_szyldy/anime_japan/signboard_wide_03.glb) | anime_japan | 3.79 × 1.28 × 0.39 | 52 |
+| [signboard_wide_04](znaki_i_szyldy/anime_japan/signboard_wide_04.glb) | anime_japan | 3.79 × 1.28 × 0.30 | 52 |
+| [signboard_wide_05](znaki_i_szyldy/anime_japan/signboard_wide_05.glb) | anime_japan | 3.79 × 1.28 × 0.40 | 182 |
+| [sticker_atm](znaki_i_szyldy/anime_japan/sticker_atm.glb) | anime_japan | 0.33 × 0.33 × 0.00 | 2 |
+| [sticker_open](znaki_i_szyldy/anime_japan/sticker_open.glb) | anime_japan | 0.23 × 0.29 × 0.00 | 2 |
+| [sticker_store_01](znaki_i_szyldy/anime_japan/sticker_store_01.glb) | anime_japan | 0.59 × 0.46 × 0.00 | 2 |
+| [sticker_store_02](znaki_i_szyldy/anime_japan/sticker_store_02.glb) | anime_japan | 0.59 × 0.51 × 0.00 | 2 |
+| [sticker_store_03](znaki_i_szyldy/anime_japan/sticker_store_03.glb) | anime_japan | 0.60 × 0.40 × 0.00 | 2 |
+| [sticker_store_04](znaki_i_szyldy/anime_japan/sticker_store_04.glb) | anime_japan | 0.33 × 0.33 × 0.00 | 2 |
+| [sticker_store_05](znaki_i_szyldy/anime_japan/sticker_store_05.glb) | anime_japan | 0.31 × 0.25 × 0.00 | 2 |
+| [sticker_store_ads](znaki_i_szyldy/anime_japan/sticker_store_ads.glb) | anime_japan | 1.52 × 0.46 × 0.00 | 2 |
+| [sticker_store_ads_02](znaki_i_szyldy/anime_japan/sticker_store_ads_02.glb) | anime_japan | 1.52 × 0.46 × 0.00 | 2 |
+| [sticker_tobacco](znaki_i_szyldy/anime_japan/sticker_tobacco.glb) | anime_japan | 0.43 × 0.17 × 0.00 | 2 |
+| [sunscreen_shop_01](znaki_i_szyldy/anime_japan/sunscreen_shop_01.glb) | anime_japan | 5.55 × 1.45 × 1.16 | 780 |
+| [sunscreen_shop_02](znaki_i_szyldy/anime_japan/sunscreen_shop_02.glb) | anime_japan | 1.75 × 0.65 × 0.78 | 44 |
+| [sunscreen_shop_03](znaki_i_szyldy/anime_japan/sunscreen_shop_03.glb) | anime_japan | 4.58 × 1.74 × 1.32 | 96 |
+| [sunscreen_shop_04](znaki_i_szyldy/anime_japan/sunscreen_shop_04.glb) | anime_japan | 5.42 × 0.92 × 1.86 | 136 |
+| [sunscreen_shop_05](znaki_i_szyldy/anime_japan/sunscreen_shop_05.glb) | anime_japan | 4.29 × 0.90 × 1.97 | 268 |
+| [sunscreen_shop_06](znaki_i_szyldy/anime_japan/sunscreen_shop_06.glb) | anime_japan | 4.56 × 0.89 × 1.52 | 184 |
+| [sunscreen_window_01](znaki_i_szyldy/anime_japan/sunscreen_window_01.glb) | anime_japan | 2.99 × 0.33 × 1.16 | 72 |
+| [sunscreen_window_02](znaki_i_szyldy/anime_japan/sunscreen_window_02.glb) | anime_japan | 4.75 × 0.10 × 0.94 | 512 |
+| [sunscreen_window_03](znaki_i_szyldy/anime_japan/sunscreen_window_03.glb) | anime_japan | 3.47 × 0.40 × 0.66 | 332 |
+| [warning_panel_01](znaki_i_szyldy/anime_japan/warning_panel_01.glb) | anime_japan | 0.41 × 0.41 × 0.01 | 12 |
+| [warning_panel_02](znaki_i_szyldy/anime_japan/warning_panel_02.glb) | anime_japan | 0.41 × 0.41 × 0.01 | 12 |
+| [warning_panel_03](znaki_i_szyldy/anime_japan/warning_panel_03.glb) | anime_japan | 0.71 × 0.47 × 0.01 | 44 |
+| [warning_panel_04](znaki_i_szyldy/anime_japan/warning_panel_04.glb) | anime_japan | 0.71 × 0.47 × 0.01 | 44 |
+| [warning_panel_05](znaki_i_szyldy/anime_japan/warning_panel_05.glb) | anime_japan | 0.71 × 0.47 × 0.01 | 44 |
+| [warning_panel_06](znaki_i_szyldy/anime_japan/warning_panel_06.glb) | anime_japan | 0.29 × 0.29 × 0.02 | 98 |
+| [warning_panel_07](znaki_i_szyldy/anime_japan/warning_panel_07.glb) | anime_japan | 0.29 × 0.29 × 0.02 | 98 |
+| [warning_panel_08](znaki_i_szyldy/anime_japan/warning_panel_08.glb) | anime_japan | 0.29 × 0.29 × 0.02 | 98 |
+| [warning_panel_09](znaki_i_szyldy/anime_japan/warning_panel_09.glb) | anime_japan | 0.29 × 0.29 × 0.02 | 98 |
+| [prop_letterbox_numbers_01](znaki_i_szyldy/polygon_farm/prop_letterbox_numbers_01.glb) | polygon_farm | 0.24 × 0.13 × 0.02 | 12 |
+| [prop_letterbox_numbers_02](znaki_i_szyldy/polygon_farm/prop_letterbox_numbers_02.glb) | polygon_farm | 0.14 × 0.13 × 0.02 | 12 |
+| [prop_letterbox_numbers_03](znaki_i_szyldy/polygon_farm/prop_letterbox_numbers_03.glb) | polygon_farm | 0.28 × 0.13 × 0.02 | 12 |
+| [prop_letterbox_numbers_04](znaki_i_szyldy/polygon_farm/prop_letterbox_numbers_04.glb) | polygon_farm | 0.14 × 0.13 × 0.02 | 12 |
+| [prop_letterbox_signal_flag_01](znaki_i_szyldy/polygon_farm/prop_letterbox_signal_flag_01.glb) | polygon_farm | 0.04 × 0.08 × 0.31 | 60 |
+| [prop_ranch_sign_01](znaki_i_szyldy/polygon_farm/prop_ranch_sign_01.glb) | polygon_farm | 7.59 × 4.24 × 0.48 | 1944 |
+| [prop_sign_apples_01](znaki_i_szyldy/polygon_farm/prop_sign_apples_01.glb) | polygon_farm | 0.87 × 0.41 × 0.02 | 44 |
+| [prop_sign_cheeries_01](znaki_i_szyldy/polygon_farm/prop_sign_cheeries_01.glb) | polygon_farm | 1.10 × 0.37 × 0.03 | 44 |
+| [prop_sign_cucumbers_01](znaki_i_szyldy/polygon_farm/prop_sign_cucumbers_01.glb) | polygon_farm | 1.06 × 0.34 × 0.02 | 56 |
+| [prop_sign_fruit_01](znaki_i_szyldy/polygon_farm/prop_sign_fruit_01.glb) | polygon_farm | 0.97 × 0.34 × 0.02 | 56 |
+| [prop_sign_oranges_01](znaki_i_szyldy/polygon_farm/prop_sign_oranges_01.glb) | polygon_farm | 0.85 × 0.30 × 0.02 | 56 |
+| [prop_sign_peaches_01](znaki_i_szyldy/polygon_farm/prop_sign_peaches_01.glb) | polygon_farm | 1.17 × 0.41 × 0.03 | 56 |
+| [prop_sign_plums_01](znaki_i_szyldy/polygon_farm/prop_sign_plums_01.glb) | polygon_farm | 0.87 × 0.34 × 0.02 | 44 |
+| [prop_sign_potatoes_01](znaki_i_szyldy/polygon_farm/prop_sign_potatoes_01.glb) | polygon_farm | 0.87 × 0.28 × 0.02 | 44 |
+| [prop_sign_pumpkins_01](znaki_i_szyldy/polygon_farm/prop_sign_pumpkins_01.glb) | polygon_farm | 1.15 × 0.34 × 0.02 | 56 |
+| [prop_sign_squash_01](znaki_i_szyldy/polygon_farm/prop_sign_squash_01.glb) | polygon_farm | 0.87 × 0.34 × 0.02 | 44 |
+| [prop_sign_strawberries_01](znaki_i_szyldy/polygon_farm/prop_sign_strawberries_01.glb) | polygon_farm | 1.17 × 0.34 × 0.02 | 56 |
+| [prop_sign_veges_01](znaki_i_szyldy/polygon_farm/prop_sign_veges_01.glb) | polygon_farm | 0.87 × 0.34 × 0.02 | 44 |
+| [prop_signpost_01](znaki_i_szyldy/polygon_farm/prop_signpost_01.glb) | polygon_farm | 1.15 × 0.54 × 0.11 | 114 |
+| [prop_signpost_02](znaki_i_szyldy/polygon_farm/prop_signpost_02.glb) | polygon_farm | 0.93 × 1.85 × 0.25 | 106 |
+| [prop_signpost_03](znaki_i_szyldy/polygon_farm/prop_signpost_03.glb) | polygon_farm | 0.09 × 1.37 × 0.09 | 30 |
+| [prop_stop_sign_01](znaki_i_szyldy/polygon_farm/prop_stop_sign_01.glb) | polygon_farm | 0.61 × 2.27 × 0.11 | 160 |
+
+## dekoracje (52)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [book_shelf_01](dekoracje/anime_japan/book_shelf_01.glb) | anime_japan | 0.94 × 2.30 × 0.65 | 1596 |
+| [book_shelf_02](dekoracje/anime_japan/book_shelf_02.glb) | anime_japan | 1.22 × 2.30 × 0.65 | 1976 |
+| [bottle_drink_01](dekoracje/anime_japan/bottle_drink_01.glb) | anime_japan | 0.11 × 0.41 × 0.11 | 108 |
+| [bottle_drink_02](dekoracje/anime_japan/bottle_drink_02.glb) | anime_japan | 0.11 × 0.31 × 0.11 | 156 |
+| [bottle_drink_03](dekoracje/anime_japan/bottle_drink_03.glb) | anime_japan | 0.09 × 0.32 × 0.09 | 78 |
+| [bottle_drink_04](dekoracje/anime_japan/bottle_drink_04.glb) | anime_japan | 0.11 × 0.18 × 0.11 | 60 |
+| [broom_stick](dekoracje/anime_japan/broom_stick.glb) | anime_japan | 0.28 × 1.83 × 0.12 | 408 |
+| [bucket](dekoracje/anime_japan/bucket.glb) | anime_japan | 0.39 × 0.34 × 0.39 | 580 |
+| [carton_01](dekoracje/anime_japan/carton_01.glb) | anime_japan | 0.85 × 0.45 × 0.55 | 68 |
+| [carton_02](dekoracje/anime_japan/carton_02.glb) | anime_japan | 1.32 × 0.46 × 1.14 | 84 |
+| [carton_03](dekoracje/anime_japan/carton_03.glb) | anime_japan | 0.48 × 0.38 × 0.46 | 68 |
+| [chair](dekoracje/anime_japan/chair.glb) | anime_japan | 0.54 × 0.76 × 0.54 | 108 |
+| [chair_02](dekoracje/anime_japan/chair_02.glb) | anime_japan | 0.52 × 1.31 × 0.56 | 112 |
+| [chopsticks](dekoracje/anime_japan/chopsticks.glb) | anime_japan | 0.07 × 0.04 × 0.30 | 36 |
+| [counter_shop](dekoracje/anime_japan/counter_shop.glb) | anime_japan | 4.81 × 1.12 × 1.46 | 44 |
+| [flowerpot_01](dekoracje/anime_japan/flowerpot_01.glb) | anime_japan | 0.61 × 0.93 × 0.58 | 766 |
+| [flowerpot_010](dekoracje/anime_japan/flowerpot_010.glb) | anime_japan | 0.70 × 0.60 × 0.64 | 452 |
+| [flowerpot_02](dekoracje/anime_japan/flowerpot_02.glb) | anime_japan | 0.54 × 0.72 × 0.59 | 530 |
+| [flowerpot_03](dekoracje/anime_japan/flowerpot_03.glb) | anime_japan | 0.33 × 0.34 × 0.33 | 122 |
+| [flowerpot_04](dekoracje/anime_japan/flowerpot_04.glb) | anime_japan | 0.47 × 0.92 × 0.41 | 600 |
+| [flowerpot_05](dekoracje/anime_japan/flowerpot_05.glb) | anime_japan | 0.36 × 0.68 × 0.35 | 356 |
+| [flowerpot_06](dekoracje/anime_japan/flowerpot_06.glb) | anime_japan | 0.70 × 0.51 × 0.66 | 408 |
+| [flowerpot_07](dekoracje/anime_japan/flowerpot_07.glb) | anime_japan | 0.46 × 0.56 × 0.43 | 1184 |
+| [flowerpot_08](dekoracje/anime_japan/flowerpot_08.glb) | anime_japan | 0.28 × 0.43 × 0.28 | 342 |
+| [flowerpot_09](dekoracje/anime_japan/flowerpot_09.glb) | anime_japan | 0.46 × 0.26 × 0.43 | 224 |
+| [flowerpot_10](dekoracje/anime_japan/flowerpot_10.glb) | anime_japan | 0.59 × 0.93 × 0.59 | 946 |
+| [knife_01](dekoracje/anime_japan/knife_01.glb) | anime_japan | 0.46 × 0.15 × 0.03 | 48 |
+| [knife_02](dekoracje/anime_japan/knife_02.glb) | anime_japan | 0.46 × 0.09 × 0.03 | 80 |
+| [lantern_traditional_01](dekoracje/anime_japan/lantern_traditional_01.glb) | anime_japan | 0.29 × 1.46 × 0.29 | 368 |
+| [lantern_traditional_02](dekoracje/anime_japan/lantern_traditional_02.glb) | anime_japan | 0.42 × 1.63 × 0.42 | 456 |
+| [lantern_traditional_03](dekoracje/anime_japan/lantern_traditional_03.glb) | anime_japan | 0.42 × 1.63 × 0.42 | 456 |
+| [lantern_traditional_04](dekoracje/anime_japan/lantern_traditional_04.glb) | anime_japan | 0.49 × 1.64 × 0.50 | 456 |
+| [mailbox_resident_01](dekoracje/anime_japan/mailbox_resident_01.glb) | anime_japan | 0.39 × 0.46 × 0.14 | 92 |
+| [mailbox_resident_02](dekoracje/anime_japan/mailbox_resident_02.glb) | anime_japan | 0.43 × 0.34 × 0.10 | 64 |
+| [plants_box_01](dekoracje/anime_japan/plants_box_01.glb) | anime_japan | 0.74 × 0.78 × 0.59 | 632 |
+| [plants_box_02](dekoracje/anime_japan/plants_box_02.glb) | anime_japan | 0.64 × 1.18 × 0.66 | 240 |
+| [plants_box_03](dekoracje/anime_japan/plants_box_03.glb) | anime_japan | 1.20 × 1.15 × 0.67 | 392 |
+| [plate_wooden_01](dekoracje/anime_japan/plate_wooden_01.glb) | anime_japan | 0.56 × 0.04 × 0.39 | 28 |
+| [pot01](dekoracje/anime_japan/pot01.glb) | anime_japan | 0.59 × 0.34 × 0.47 | 580 |
+| [pot02](dekoracje/anime_japan/pot02.glb) | anime_japan | 0.66 × 0.22 × 0.33 | 406 |
+| [ramenbowl](dekoracje/anime_japan/ramenbowl.glb) | anime_japan | 0.41 × 0.35 × 0.44 | 636 |
+| [rice_curry_dish](dekoracje/anime_japan/rice_curry_dish.glb) | anime_japan | 0.54 × 0.11 × 0.54 | 504 |
+| [shelf_wooden](dekoracje/anime_japan/shelf_wooden.glb) | anime_japan | 1.22 × 2.30 × 0.65 | 76 |
+| [shelves_store](dekoracje/anime_japan/shelves_store.glb) | anime_japan | 3.65 × 2.63 × 0.81 | 200 |
+| [soup](dekoracje/anime_japan/soup.glb) | anime_japan | 0.19 × 0.10 × 0.18 | 164 |
+| [soysauce](dekoracje/anime_japan/soysauce.glb) | anime_japan | 0.12 × 0.26 × 0.12 | 176 |
+| [stool_01](dekoracje/anime_japan/stool_01.glb) | anime_japan | 0.50 × 0.92 × 0.49 | 288 |
+| [stool_02](dekoracje/anime_japan/stool_02.glb) | anime_japan | 0.45 × 0.86 × 0.45 | 188 |
+| [sushi_plate](dekoracje/anime_japan/sushi_plate.glb) | anime_japan | 0.53 × 0.08 × 0.36 | 908 |
+| [table_01](dekoracje/anime_japan/table_01.glb) | anime_japan | 1.13 × 1.09 × 1.06 | 92 |
+| [table_shop](dekoracje/anime_japan/table_shop.glb) | anime_japan | 1.82 × 1.05 × 0.93 | 108 |
+| [trowel_01](dekoracje/anime_japan/trowel_01.glb) | anime_japan | 0.34 × 0.56 × 0.20 | 268 |
+
+## farma (109)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [prop_anvil_01](farma/polygon_farm/prop_anvil_01.glb) | polygon_farm | 1.00 × 0.59 × 0.32 | 184 |
+| [prop_barrel_01](farma/polygon_farm/prop_barrel_01.glb) | polygon_farm | 0.91 × 1.16 × 0.91 | 456 |
+| [prop_barrel_02](farma/polygon_farm/prop_barrel_02.glb) | polygon_farm | 0.92 × 1.16 × 0.92 | 640 |
+| [prop_barrel_half_01](farma/polygon_farm/prop_barrel_half_01.glb) | polygon_farm | 0.91 × 0.56 × 0.91 | 348 |
+| [prop_bed_01](farma/polygon_farm/prop_bed_01.glb) | polygon_farm | 2.08 × 1.52 × 2.67 | 680 |
+| [prop_beehive_01](farma/polygon_farm/prop_beehive_01.glb) | polygon_farm | 0.78 × 1.21 × 0.80 | 294 |
+| [prop_beehive_02](farma/polygon_farm/prop_beehive_02.glb) | polygon_farm | 0.77 × 1.44 × 0.72 | 303 |
+| [prop_beehive_03](farma/polygon_farm/prop_beehive_03.glb) | polygon_farm | 0.78 × 1.21 × 0.76 | 270 |
+| [prop_beehive_04](farma/polygon_farm/prop_beehive_04.glb) | polygon_farm | 0.79 × 1.24 × 0.76 | 286 |
+| [prop_beehive_05](farma/polygon_farm/prop_beehive_05.glb) | polygon_farm | 0.77 × 1.21 × 0.74 | 270 |
+| [prop_beehive_06](farma/polygon_farm/prop_beehive_06.glb) | polygon_farm | 0.78 × 0.97 × 0.77 | 236 |
+| [prop_bench_01](farma/polygon_farm/prop_bench_01.glb) | polygon_farm | 1.65 × 0.47 × 0.47 | 150 |
+| [prop_can_01](farma/polygon_farm/prop_can_01.glb) | polygon_farm | 0.11 × 0.19 × 0.11 | 212 |
+| [prop_can_02](farma/polygon_farm/prop_can_02.glb) | polygon_farm | 0.17 × 0.11 × 0.19 | 252 |
+| [prop_chainsaw_01](farma/polygon_farm/prop_chainsaw_01.glb) | polygon_farm | 0.35 × 0.31 × 1.09 | 1213 |
+| [prop_chair_01](farma/polygon_farm/prop_chair_01.glb) | polygon_farm | 0.59 × 1.21 × 0.53 | 256 |
+| [prop_chair_rocking_01](farma/polygon_farm/prop_chair_rocking_01.glb) | polygon_farm | 0.74 × 1.32 × 0.85 | 496 |
+| [prop_chicken_coop_01](farma/polygon_farm/prop_chicken_coop_01.glb) | polygon_farm | 2.23 × 2.48 × 3.90 | 1005 |
+| [prop_chicken_coop_cage_01](farma/polygon_farm/prop_chicken_coop_cage_01.glb) | polygon_farm | 1.68 × 1.51 × 3.38 | 430 |
+| [prop_clothesline_01](farma/polygon_farm/prop_clothesline_01.glb) | polygon_farm | 1.07 × 2.27 × 5.49 | 1578 |
+| [prop_clothesline_02](farma/polygon_farm/prop_clothesline_02.glb) | polygon_farm | 1.07 × 2.27 × 5.49 | 1734 |
+| [prop_clothesline_03](farma/polygon_farm/prop_clothesline_03.glb) | polygon_farm | 1.07 × 2.27 × 5.49 | 280 |
+| [prop_crate_01](farma/polygon_farm/prop_crate_01.glb) | polygon_farm | 0.83 × 0.87 × 0.81 | 220 |
+| [prop_gascan_01](farma/polygon_farm/prop_gascan_01.glb) | polygon_farm | 0.45 × 0.56 × 0.15 | 342 |
+| [prop_gastank_01](farma/polygon_farm/prop_gastank_01.glb) | polygon_farm | 1.46 × 2.91 × 2.53 | 596 |
+| [prop_grainbag_01](farma/polygon_farm/prop_grainbag_01.glb) | polygon_farm | 0.84 × 0.32 × 0.57 | 156 |
+| [prop_grainbag_open_01](farma/polygon_farm/prop_grainbag_open_01.glb) | polygon_farm | 0.53 × 0.47 × 0.43 | 158 |
+| [prop_grainbag_open_02](farma/polygon_farm/prop_grainbag_open_02.glb) | polygon_farm | 0.48 × 0.46 × 0.36 | 158 |
+| [prop_hay_bale_round_01](farma/polygon_farm/prop_hay_bale_round_01.glb) | polygon_farm | 1.26 × 1.58 × 1.22 | 936 |
+| [prop_hay_bale_round_01_green](farma/polygon_farm/prop_hay_bale_round_01_green.glb) | polygon_farm | 1.26 × 1.58 × 1.22 | 936 |
+| [prop_hay_bale_round_02](farma/polygon_farm/prop_hay_bale_round_02.glb) | polygon_farm | 1.14 × 1.21 × 1.15 | 724 |
+| [prop_hay_bale_round_02_green](farma/polygon_farm/prop_hay_bale_round_02_green.glb) | polygon_farm | 1.14 × 1.21 × 1.15 | 724 |
+| [prop_hay_bale_round_plastic_01](farma/polygon_farm/prop_hay_bale_round_plastic_01.glb) | polygon_farm | 1.24 × 1.18 × 1.24 | 238 |
+| [prop_hay_bale_square_01](farma/polygon_farm/prop_hay_bale_square_01.glb) | polygon_farm | 1.91 × 0.95 × 1.41 | 544 |
+| [prop_hay_bale_square_01_green](farma/polygon_farm/prop_hay_bale_square_01_green.glb) | polygon_farm | 1.91 × 0.95 × 1.41 | 544 |
+| [prop_hay_bale_square_02](farma/polygon_farm/prop_hay_bale_square_02.glb) | polygon_farm | 1.68 × 0.77 × 1.09 | 412 |
+| [prop_hay_bale_square_02_green](farma/polygon_farm/prop_hay_bale_square_02_green.glb) | polygon_farm | 1.68 × 0.77 × 1.09 | 412 |
+| [prop_hay_bale_square_03](farma/polygon_farm/prop_hay_bale_square_03.glb) | polygon_farm | 1.61 × 0.72 × 1.04 | 296 |
+| [prop_hay_bale_square_03_green](farma/polygon_farm/prop_hay_bale_square_03_green.glb) | polygon_farm | 1.61 × 0.72 × 1.04 | 296 |
+| [prop_hay_bale_square_plastic_01](farma/polygon_farm/prop_hay_bale_square_plastic_01.glb) | polygon_farm | 1.63 × 0.68 × 1.10 | 214 |
+| [prop_hay_pile_01](farma/polygon_farm/prop_hay_pile_01.glb) | polygon_farm | 2.47 × 1.10 × 2.64 | 420 |
+| [prop_hay_pile_01_green](farma/polygon_farm/prop_hay_pile_01_green.glb) | polygon_farm | 2.47 × 1.10 × 2.64 | 420 |
+| [prop_hay_pile_02](farma/polygon_farm/prop_hay_pile_02.glb) | polygon_farm | 1.24 × 0.55 × 6.01 | 451 |
+| [prop_hay_pile_02_green](farma/polygon_farm/prop_hay_pile_02_green.glb) | polygon_farm | 1.24 × 0.55 × 6.01 | 451 |
+| [prop_horse_jump_01](farma/polygon_farm/prop_horse_jump_01.glb) | polygon_farm | 3.98 × 1.51 × 0.78 | 268 |
+| [prop_horse_jump_02](farma/polygon_farm/prop_horse_jump_02.glb) | polygon_farm | 3.98 × 1.51 × 0.78 | 292 |
+| [prop_horse_jump_03](farma/polygon_farm/prop_horse_jump_03.glb) | polygon_farm | 3.98 × 1.51 × 0.78 | 316 |
+| [prop_letterbox_01](farma/polygon_farm/prop_letterbox_01.glb) | polygon_farm | 0.28 × 1.14 × 0.80 | 268 |
+| [prop_letterbox_02](farma/polygon_farm/prop_letterbox_02.glb) | polygon_farm | 0.27 × 1.20 × 0.73 | 268 |
+| [prop_letterbox_03](farma/polygon_farm/prop_letterbox_03.glb) | polygon_farm | 0.53 × 1.67 × 0.70 | 657 |
+| [prop_letterbox_04](farma/polygon_farm/prop_letterbox_04.glb) | polygon_farm | 0.32 × 1.28 × 0.81 | 260 |
+| [prop_letterbox_05](farma/polygon_farm/prop_letterbox_05.glb) | polygon_farm | 0.28 × 1.15 × 0.53 | 212 |
+| [prop_letterbox_06](farma/polygon_farm/prop_letterbox_06.glb) | polygon_farm | 0.38 × 1.23 × 0.38 | 180 |
+| [prop_letterbox_07](farma/polygon_farm/prop_letterbox_07.glb) | polygon_farm | 0.32 × 1.13 × 0.62 | 322 |
+| [prop_letterbox_generic_01](farma/polygon_farm/prop_letterbox_generic_01.glb) | polygon_farm | 0.27 × 1.21 × 0.69 | 260 |
+| [prop_letterbox_group_01](farma/polygon_farm/prop_letterbox_group_01.glb) | polygon_farm | 0.85 × 1.16 × 0.80 | 812 |
+| [prop_letterbox_group_02](farma/polygon_farm/prop_letterbox_group_02.glb) | polygon_farm | 1.76 × 1.25 × 0.74 | 1390 |
+| [prop_palletcrate_01](farma/polygon_farm/prop_palletcrate_01.glb) | polygon_farm | 0.76 × 0.39 × 0.45 | 256 |
+| [prop_plantbox_large_01](farma/polygon_farm/prop_plantbox_large_01.glb) | polygon_farm | 4.20 × 0.56 × 7.69 | 252 |
+| [prop_plasticbin_01](farma/polygon_farm/prop_plasticbin_01.glb) | polygon_farm | 0.63 × 0.43 × 0.85 | 92 |
+| [prop_pot_01](farma/polygon_farm/prop_pot_01.glb) | polygon_farm | 0.29 × 0.28 × 0.28 | 120 |
+| [prop_pot_02](farma/polygon_farm/prop_pot_02.glb) | polygon_farm | 0.10 × 0.13 × 0.10 | 36 |
+| [prop_rack_01](farma/polygon_farm/prop_rack_01.glb) | polygon_farm | 0.96 × 0.82 × 0.40 | 912 |
+| [prop_rubbish_01](farma/polygon_farm/prop_rubbish_01.glb) | polygon_farm | 3.34 × 1.64 × 0.56 | 48 |
+| [prop_rubbish_02](farma/polygon_farm/prop_rubbish_02.glb) | polygon_farm | 0.46 × 0.09 × 1.04 | 150 |
+| [prop_rubbish_03](farma/polygon_farm/prop_rubbish_03.glb) | polygon_farm | 0.52 × 1.21 × 0.56 | 212 |
+| [prop_rubbish_04](farma/polygon_farm/prop_rubbish_04.glb) | polygon_farm | 0.77 × 1.40 × 0.12 | 100 |
+| [prop_rubbish_05](farma/polygon_farm/prop_rubbish_05.glb) | polygon_farm | 0.50 × 0.19 × 0.51 | 140 |
+| [prop_rubbish_06](farma/polygon_farm/prop_rubbish_06.glb) | polygon_farm | 0.68 × 0.62 × 0.17 | 112 |
+| [prop_rubbish_07](farma/polygon_farm/prop_rubbish_07.glb) | polygon_farm | 0.17 × 1.64 × 0.04 | 40 |
+| [prop_rubbish_08](farma/polygon_farm/prop_rubbish_08.glb) | polygon_farm | 1.84 × 0.65 × 0.11 | 64 |
+| [prop_rubbish_09](farma/polygon_farm/prop_rubbish_09.glb) | polygon_farm | 0.61 × 1.68 × 0.61 | 104 |
+| [prop_rubbish_pile_01](farma/polygon_farm/prop_rubbish_pile_01.glb) | polygon_farm | 4.40 × 1.80 × 2.03 | 1603 |
+| [prop_rubbish_pile_02](farma/polygon_farm/prop_rubbish_pile_02.glb) | polygon_farm | 3.59 × 1.72 × 1.73 | 1260 |
+| [prop_rubbish_pile_03](farma/polygon_farm/prop_rubbish_pile_03.glb) | polygon_farm | 2.16 × 1.62 × 2.32 | 930 |
+| [prop_rubbish_pile_04](farma/polygon_farm/prop_rubbish_pile_04.glb) | polygon_farm | 2.26 × 0.97 × 2.16 | 440 |
+| [prop_rubbish_pile_05](farma/polygon_farm/prop_rubbish_pile_05.glb) | polygon_farm | 2.38 × 0.87 × 1.94 | 608 |
+| [prop_rusted_drum_01](farma/polygon_farm/prop_rusted_drum_01.glb) | polygon_farm | 0.70 × 1.04 × 0.71 | 308 |
+| [prop_scarecrow_01](farma/polygon_farm/prop_scarecrow_01.glb) | polygon_farm | 1.67 × 3.29 × 0.50 | 3518 |
+| [prop_seedpacket_01](farma/polygon_farm/prop_seedpacket_01.glb) | polygon_farm | 0.23 × 0.28 × 0.07 | 96 |
+| [prop_seedpacket_02](farma/polygon_farm/prop_seedpacket_02.glb) | polygon_farm | 0.23 × 0.28 × 0.06 | 96 |
+| [prop_spinkler_01](farma/polygon_farm/prop_spinkler_01.glb) | polygon_farm | 0.14 × 1.60 × 0.27 | 268 |
+| [prop_spinkler_hose_01](farma/polygon_farm/prop_spinkler_hose_01.glb) | polygon_farm | 0.13 × 0.09 × 3.02 | 68 |
+| [prop_spoolwheel_01](farma/polygon_farm/prop_spoolwheel_01.glb) | polygon_farm | 1.56 × 1.02 × 1.56 | 258 |
+| [prop_sprinkler_01](farma/polygon_farm/prop_sprinkler_01.glb) | polygon_farm | 0.14 × 1.60 × 0.27 | 268 |
+| [prop_sprinkler_hose_01](farma/polygon_farm/prop_sprinkler_hose_01.glb) | polygon_farm | 0.13 × 0.09 × 3.02 | 68 |
+| [prop_table_01](farma/polygon_farm/prop_table_01.glb) | polygon_farm | 1.21 × 0.88 × 2.45 | 716 |
+| [prop_table_02](farma/polygon_farm/prop_table_02.glb) | polygon_farm | 1.21 × 0.88 × 2.41 | 216 |
+| [prop_tool_axe_01](farma/polygon_farm/prop_tool_axe_01.glb) | polygon_farm | 0.07 × 1.03 × 0.27 | 142 |
+| [prop_tool_bucket_01](farma/polygon_farm/prop_tool_bucket_01.glb) | polygon_farm | 0.36 × 0.28 × 0.37 | 124 |
+| [prop_tool_hayfork_01](farma/polygon_farm/prop_tool_hayfork_01.glb) | polygon_farm | 0.37 × 1.79 × 0.15 | 154 |
+| [prop_tool_hoe_01](farma/polygon_farm/prop_tool_hoe_01.glb) | polygon_farm | 0.33 × 1.31 × 0.32 | 170 |
+| [prop_tool_pitchfork_01](farma/polygon_farm/prop_tool_pitchfork_01.glb) | polygon_farm | 0.29 × 1.51 × 0.08 | 130 |
+| [prop_tool_rake_01](farma/polygon_farm/prop_tool_rake_01.glb) | polygon_farm | 0.52 × 1.39 × 0.16 | 148 |
+| [prop_tool_scythe_01](farma/polygon_farm/prop_tool_scythe_01.glb) | polygon_farm | 0.88 × 1.22 × 0.23 | 194 |
+| [prop_tool_spade_01](farma/polygon_farm/prop_tool_spade_01.glb) | polygon_farm | 0.25 × 1.47 × 0.07 | 94 |
+| [prop_toolbox_01](farma/polygon_farm/prop_toolbox_01.glb) | polygon_farm | 0.27 × 0.33 × 0.72 | 320 |
+| [prop_trough_01](farma/polygon_farm/prop_trough_01.glb) | polygon_farm | 3.22 × 0.42 × 0.92 | 138 |
+| [prop_tyre_01](farma/polygon_farm/prop_tyre_01.glb) | polygon_farm | 1.72 × 0.53 × 1.72 | 1522 |
+| [prop_vice_01](farma/polygon_farm/prop_vice_01.glb) | polygon_farm | 0.36 × 0.45 × 0.20 | 418 |
+| [prop_watering_can_01](farma/polygon_farm/prop_watering_can_01.glb) | polygon_farm | 0.22 × 0.47 × 0.74 | 646 |
+| [prop_weathervane_01](farma/polygon_farm/prop_weathervane_01.glb) | polygon_farm | 1.24 × 2.17 × 1.61 | 724 |
+| [prop_weathervane_02](farma/polygon_farm/prop_weathervane_02.glb) | polygon_farm | 1.43 × 1.12 × 1.36 | 186 |
+| [prop_well_01](farma/polygon_farm/prop_well_01.glb) | polygon_farm | 1.60 × 1.68 × 1.42 | 717 |
+| [prop_wheelbarrow_01](farma/polygon_farm/prop_wheelbarrow_01.glb) | polygon_farm | 0.70 × 0.85 × 2.09 | 694 |
+| [prop_wheelbarrow_metal_01](farma/polygon_farm/prop_wheelbarrow_metal_01.glb) | polygon_farm | 0.69 × 1.01 × 1.93 | 666 |
+| [prop_wood_stack_01](farma/polygon_farm/prop_wood_stack_01.glb) | polygon_farm | 1.92 × 0.72 × 1.09 | 432 |
+| [prop_wood_stack_02](farma/polygon_farm/prop_wood_stack_02.glb) | polygon_farm | 0.68 × 0.51 × 1.09 | 120 |
+| [wep_shotgun_01](farma/polygon_farm/wep_shotgun_01.glb) | polygon_farm | 0.05 × 0.18 × 1.21 | 968 |
+
+## pojazdy (22)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [bicycle](pojazdy/anime_japan/bicycle.glb) | anime_japan | 2.32 × 1.38 × 0.60 | 3832 |
+| [bicycle_1](pojazdy/anime_japan/bicycle_1.glb) | anime_japan | 2.32 × 1.38 × 0.60 | 3832 |
+| [bicycle_2](pojazdy/anime_japan/bicycle_2.glb) | anime_japan | 2.32 × 1.38 × 0.60 | 3832 |
+| [mofa_vehicle](pojazdy/anime_japan/mofa_vehicle.glb) | anime_japan | 2.12 × 1.44 × 0.93 | 4462 |
+| [mofa_vehicle_1](pojazdy/anime_japan/mofa_vehicle_1.glb) | anime_japan | 2.12 × 1.44 × 0.93 | 4462 |
+| [mofa_vehicle_2](pojazdy/anime_japan/mofa_vehicle_2.glb) | anime_japan | 2.12 × 1.44 × 0.93 | 4462 |
+| [train_japan_01](pojazdy/anime_japan/train_japan_01.glb) | anime_japan | 3.81 × 5.04 × 11.21 | 35078 |
+| [train_japan_01_1](pojazdy/anime_japan/train_japan_01_1.glb) | anime_japan | 3.81 × 5.04 × 11.21 | 35078 |
+| [train_japan_01_windows](pojazdy/anime_japan/train_japan_01_windows.glb) | anime_japan | 3.81 × 5.04 × 11.21 | 36204 |
+| [prop_truck_rusted_01](pojazdy/polygon_farm/prop_truck_rusted_01.glb) | polygon_farm | 2.43 × 2.44 × 6.62 | 5936 |
+| [prop_ute_wreck_01](pojazdy/polygon_farm/prop_ute_wreck_01.glb) | polygon_farm | 2.19 × 1.96 × 5.50 | 4437 |
+| [veh_attach_baler_01](pojazdy/polygon_farm/veh_attach_baler_01.glb) | polygon_farm | 2.25 × 2.67 × 6.74 | 7313 |
+| [veh_attach_planter_01](pojazdy/polygon_farm/veh_attach_planter_01.glb) | polygon_farm | 11.44 × 1.51 × 3.91 | 8870 |
+| [veh_attach_plough_01](pojazdy/polygon_farm/veh_attach_plough_01.glb) | polygon_farm | 3.73 × 0.98 × 8.11 | 1862 |
+| [veh_attach_sprayer_01](pojazdy/polygon_farm/veh_attach_sprayer_01.glb) | polygon_farm | 8.85 × 1.76 × 5.56 | 2562 |
+| [veh_attach_trailer_cage_01](pojazdy/polygon_farm/veh_attach_trailer_cage_01.glb) | polygon_farm | 2.41 × 2.08 × 5.05 | 2642 |
+| [veh_attach_trailer_cylinder_01](pojazdy/polygon_farm/veh_attach_trailer_cylinder_01.glb) | polygon_farm | 2.35 × 2.06 × 5.46 | 1732 |
+| [veh_attach_trailer_tank_01](pojazdy/polygon_farm/veh_attach_trailer_tank_01.glb) | polygon_farm | 2.35 × 2.07 × 6.07 | 2568 |
+| [veh_harvester_01](pojazdy/polygon_farm/veh_harvester_01.glb) | polygon_farm | 5.02 × 3.87 × 8.39 | 12115 |
+| [veh_pickup_01](pojazdy/polygon_farm/veh_pickup_01.glb) | polygon_farm | 2.30 × 1.87 × 5.67 | 7010 |
+| [veh_tractor_01](pojazdy/polygon_farm/veh_tractor_01.glb) | polygon_farm | 2.79 × 3.24 × 7.22 | 13126 |
+| [veh_tractorold_01](pojazdy/polygon_farm/veh_tractorold_01.glb) | polygon_farm | 2.10 × 2.21 × 3.30 | 8970 |
+
+## kolej (12)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [blockade_train_01](kolej/anime_japan/blockade_train_01.glb) | anime_japan | 1.59 × 1.08 × 0.03 | 52 |
+| [blockade_train_02](kolej/anime_japan/blockade_train_02.glb) | anime_japan | 1.19 × 0.72 × 0.45 | 68 |
+| [blockade_train_03](kolej/anime_japan/blockade_train_03.glb) | anime_japan | 1.22 × 0.72 × 0.27 | 12 |
+| [cables_trainlines](kolej/anime_japan/cables_trainlines.glb) | anime_japan | 0.72 × 0.55 × 7.84 | 224 |
+| [gate_train](kolej/anime_japan/gate_train.glb) | anime_japan | 5.38 × 0.21 × 0.55 | 488 |
+| [gatelift](kolej/anime_japan/gatelift.glb) | anime_japan | 0.76 × 0.97 × 0.67 | 146 |
+| [powerline_train](kolej/anime_japan/powerline_train.glb) | anime_japan | 0.83 × 4.81 × 0.13 | 120 |
+| [railway_train](kolej/anime_japan/railway_train.glb) | anime_japan | 2.19 × 0.22 × 5.33 | 592 |
+| [sign_train_01](kolej/anime_japan/sign_train_01.glb) | anime_japan | 0.66 × 1.65 × 0.08 | 24 |
+| [sign_train_02](kolej/anime_japan/sign_train_02.glb) | anime_japan | 0.66 × 1.41 × 0.08 | 24 |
+| [sign_train_03](kolej/anime_japan/sign_train_03.glb) | anime_japan | 0.69 × 0.24 × 0.02 | 12 |
+| [traincrossing_cross](kolej/anime_japan/traincrossing_cross.glb) | anime_japan | 1.33 × 4.29 × 0.77 | 1320 |
+
+## skaly_i_teren (40)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [backgroundterrain01](skaly_i_teren/idyllic_woodlands/backgroundterrain01.glb) | idyllic_woodlands | 2.00 × 0.20 × 2.00 | 64 |
+| [backgroundterrain02](skaly_i_teren/idyllic_woodlands/backgroundterrain02.glb) | idyllic_woodlands | 2.00 × 0.20 × 2.00 | 64 |
+| [mountain](skaly_i_teren/idyllic_woodlands/mountain.glb) | idyllic_woodlands | 277.48 × 95.02 × 308.82 | 1992 |
+| [rock01](skaly_i_teren/idyllic_woodlands/rock01.glb) | idyllic_woodlands | 2.05 × 4.99 × 2.01 | 98 |
+| [rock02](skaly_i_teren/idyllic_woodlands/rock02.glb) | idyllic_woodlands | 2.00 × 4.02 × 2.00 | 124 |
+| [water](skaly_i_teren/idyllic_woodlands/water.glb) | idyllic_woodlands | 2.00 × 0.00 × 1.10 | 16864 |
+| [groundpatch](skaly_i_teren/illustrated_nature/groundpatch.glb) | illustrated_nature | 9.98 × 0.48 × 9.98 | 1665 |
+| [rock_boulder_01](skaly_i_teren/illustrated_nature/rock_boulder_01.glb) | illustrated_nature | 1.18 × 1.09 × 1.15 | 260 |
+| [rock_boulder_02](skaly_i_teren/illustrated_nature/rock_boulder_02.glb) | illustrated_nature | 1.03 × 1.00 × 1.03 | 190 |
+| [rock_boulder_03](skaly_i_teren/illustrated_nature/rock_boulder_03.glb) | illustrated_nature | 0.90 × 1.02 × 1.41 | 180 |
+| [waterplane](skaly_i_teren/illustrated_nature/waterplane.glb) | illustrated_nature | 10.00 × 0.00 × 10.00 | 4076 |
+| [env_dirt_01](skaly_i_teren/polygon_farm/env_dirt_01.glb) | polygon_farm | 5.00 × 0.13 × 5.00 | 300 |
+| [env_dirt_mound_01](skaly_i_teren/polygon_farm/env_dirt_mound_01.glb) | polygon_farm | 0.40 × 0.16 × 0.35 | 20 |
+| [env_dirt_skirt_01](skaly_i_teren/polygon_farm/env_dirt_skirt_01.glb) | polygon_farm | 5.92 × 0.35 × 5.83 | 352 |
+| [env_pebbles_01](skaly_i_teren/polygon_farm/env_pebbles_01.glb) | polygon_farm | 0.72 × 0.17 × 1.02 | 64 |
+| [env_pebbles_02](skaly_i_teren/polygon_farm/env_pebbles_02.glb) | polygon_farm | 1.33 × 0.17 × 3.10 | 144 |
+| [env_pebbles_03](skaly_i_teren/polygon_farm/env_pebbles_03.glb) | polygon_farm | 0.60 × 0.12 × 0.50 | 44 |
+| [env_pond_01](skaly_i_teren/polygon_farm/env_pond_01.glb) | polygon_farm | 37.28 × 2.05 × 40.23 | 642 |
+| [env_puddleplane_01](skaly_i_teren/polygon_farm/env_puddleplane_01.glb) | polygon_farm | 8.11 × 0.68 × 11.95 | 26 |
+| [generic_ground_01](skaly_i_teren/polygon_farm/generic_ground_01.glb) | polygon_farm | 5.53 × 0.26 × 5.68 | 200 |
+| [generic_ground_02](skaly_i_teren/polygon_farm/generic_ground_02.glb) | polygon_farm | 10.42 × 0.52 × 11.23 | 439 |
+| [generic_ground_03](skaly_i_teren/polygon_farm/generic_ground_03.glb) | polygon_farm | 18.86 × 0.86 × 18.74 | 760 |
+| [generic_ground_04](skaly_i_teren/polygon_farm/generic_ground_04.glb) | polygon_farm | 18.38 × 2.47 × 19.12 | 760 |
+| [generic_ground_dirt_01](skaly_i_teren/polygon_farm/generic_ground_dirt_01.glb) | polygon_farm | 5.53 × 0.26 × 5.68 | 200 |
+| [generic_ground_flat_01](skaly_i_teren/polygon_farm/generic_ground_flat_01.glb) | polygon_farm | 20.74 × 0.46 × 19.23 | 555 |
+| [generic_ground_flat_wheat_01](skaly_i_teren/polygon_farm/generic_ground_flat_wheat_01.glb) | polygon_farm | 20.74 × 0.46 × 19.23 | 555 |
+| [generic_ground_hill_01](skaly_i_teren/polygon_farm/generic_ground_hill_01.glb) | polygon_farm | 20.74 × 1.54 × 19.23 | 555 |
+| [generic_ground_hill_02](skaly_i_teren/polygon_farm/generic_ground_hill_02.glb) | polygon_farm | 20.74 × 2.73 × 19.23 | 555 |
+| [generic_ground_hill_03](skaly_i_teren/polygon_farm/generic_ground_hill_03.glb) | polygon_farm | 26.24 × 4.19 × 24.44 | 555 |
+| [generic_ground_tile_01](skaly_i_teren/polygon_farm/generic_ground_tile_01.glb) | polygon_farm | 5.00 × 0.00 × 5.00 | 2 |
+| [generic_ground_wheat_01](skaly_i_teren/polygon_farm/generic_ground_wheat_01.glb) | polygon_farm | 5.53 × 0.26 × 5.68 | 200 |
+| [generic_mountains_snow_01](skaly_i_teren/polygon_farm/generic_mountains_snow_01.glb) | polygon_farm | 20.77 × 10.31 × 20.10 | 1115 |
+| [generic_mountains_soft_01](skaly_i_teren/polygon_farm/generic_mountains_soft_01.glb) | polygon_farm | 39.08 × 5.00 × 21.97 | 280 |
+| [generic_ocean_tile_bumps_01](skaly_i_teren/polygon_farm/generic_ocean_tile_bumps_01.glb) | polygon_farm | 30.00 × 0.43 × 30.00 | 800 |
+| [generic_ocean_tile_flat_01](skaly_i_teren/polygon_farm/generic_ocean_tile_flat_01.glb) | polygon_farm | 30.00 × 0.00 × 30.00 | 800 |
+| [generic_small_rocks_01](skaly_i_teren/polygon_farm/generic_small_rocks_01.glb) | polygon_farm | 1.31 × 0.10 × 1.63 | 180 |
+| [generic_small_rocks_02](skaly_i_teren/polygon_farm/generic_small_rocks_02.glb) | polygon_farm | 2.04 × 0.10 × 1.97 | 200 |
+| [generic_small_rocks_03](skaly_i_teren/polygon_farm/generic_small_rocks_03.glb) | polygon_farm | 0.48 × 0.10 × 0.33 | 36 |
+| [generic_small_rocks_04](skaly_i_teren/polygon_farm/generic_small_rocks_04.glb) | polygon_farm | 0.36 × 0.10 × 0.74 | 56 |
+| [generic_small_rocks_05](skaly_i_teren/polygon_farm/generic_small_rocks_05.glb) | polygon_farm | 0.26 × 0.08 × 0.25 | 20 |
+
+## postacie_i_zwierzeta (17)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [bird](postacie_i_zwierzeta/idyllic_woodlands/bird.glb) | idyllic_woodlands | 0.80 × 0.01 × 0.39 | 28 |
+| [butterfly](postacie_i_zwierzeta/idyllic_woodlands/butterfly.glb) | idyllic_woodlands | 0.09 × 0.00 × 0.05 | 12 |
+| [fish](postacie_i_zwierzeta/idyllic_woodlands/fish.glb) | idyllic_woodlands | 0.02 × 0.10 × 0.29 | 110 |
+| [chr_attach_buckethat_01_1](postacie_i_zwierzeta/polygon_farm/chr_attach_buckethat_01_1.glb) | polygon_farm | 0.45 × 0.23 × 0.44 | 112 |
+| [chr_attach_cap_01](postacie_i_zwierzeta/polygon_farm/chr_attach_cap_01.glb) | polygon_farm | 0.28 × 0.17 × 0.43 | 120 |
+| [chr_attach_cap_02](postacie_i_zwierzeta/polygon_farm/chr_attach_cap_02.glb) | polygon_farm | 0.28 × 0.17 × 0.43 | 158 |
+| [chr_attach_cowboyhat_01](postacie_i_zwierzeta/polygon_farm/chr_attach_cowboyhat_01.glb) | polygon_farm | 0.51 × 0.26 × 0.48 | 148 |
+| [chr_attach_cowboyhat_02](postacie_i_zwierzeta/polygon_farm/chr_attach_cowboyhat_02.glb) | polygon_farm | 0.51 × 0.26 × 0.48 | 148 |
+| [chr_attach_glasses_01](postacie_i_zwierzeta/polygon_farm/chr_attach_glasses_01.glb) | polygon_farm | 0.24 × 0.09 × 0.19 | 164 |
+| [chr_attach_scarecrowhat_01](postacie_i_zwierzeta/polygon_farm/chr_attach_scarecrowhat_01.glb) | polygon_farm | 0.56 × 0.40 × 0.52 | 222 |
+| [chr_attach_wheat_01](postacie_i_zwierzeta/polygon_farm/chr_attach_wheat_01.glb) | polygon_farm | 0.14 × 0.11 × 0.12 | 56 |
+| [chr_farmboy_01](postacie_i_zwierzeta/polygon_farm/chr_farmboy_01.glb) | polygon_farm | 2.05 × 1.84 × 0.39 | 12616 |
+| [chr_farmer_female_01](postacie_i_zwierzeta/polygon_farm/chr_farmer_female_01.glb) | polygon_farm | 2.05 × 1.84 × 0.39 | 12616 |
+| [chr_farmer_male_01](postacie_i_zwierzeta/polygon_farm/chr_farmer_male_01.glb) | polygon_farm | 2.05 × 1.84 × 0.39 | 12616 |
+| [chr_farmer_male_old_01](postacie_i_zwierzeta/polygon_farm/chr_farmer_male_old_01.glb) | polygon_farm | 2.05 × 1.84 × 0.39 | 12616 |
+| [chr_farmgirl_01](postacie_i_zwierzeta/polygon_farm/chr_farmgirl_01.glb) | polygon_farm | 2.05 × 1.84 × 0.39 | 12616 |
+| [chr_scarecrow_01](postacie_i_zwierzeta/polygon_farm/chr_scarecrow_01.glb) | polygon_farm | 2.05 × 1.84 × 0.39 | 12616 |
+
+## efekty_i_niebo (7)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [plane_clouds](efekty_i_niebo/anime_japan/plane_clouds.glb) | anime_japan | 12.35 × 12.35 × 0.00 | 2 |
+| [lakefog](efekty_i_niebo/illustrated_nature/lakefog.glb) | illustrated_nature | 151.54 × 10.00 × 154.85 | 176 |
+| [generic_cloud_01](efekty_i_niebo/polygon_farm/generic_cloud_01.glb) | polygon_farm | 6.68 × 1.65 × 1.61 | 280 |
+| [generic_cloud_02](efekty_i_niebo/polygon_farm/generic_cloud_02.glb) | polygon_farm | 7.29 × 1.71 × 2.57 | 252 |
+| [generic_cloud_03](efekty_i_niebo/polygon_farm/generic_cloud_03.glb) | polygon_farm | 7.03 × 1.98 × 3.89 | 490 |
+| [generic_cloud_04](efekty_i_niebo/polygon_farm/generic_cloud_04.glb) | polygon_farm | 5.04 × 1.44 × 1.55 | 200 |
+| [generic_cloud_05](efekty_i_niebo/polygon_farm/generic_cloud_05.glb) | polygon_farm | 3.18 × 1.64 × 1.86 | 300 |
+
+## inne (3)
+
+| model | paczka | wymiary (m) | trójkąty |
+|---|---|---|---|
+| [human_scale](inne/illustrated_nature/human_scale.glb) | illustrated_nature | 0.67 × 1.85 × 0.03 | 2776 |
+| [props_bridge](inne/illustrated_nature/props_bridge.glb) | illustrated_nature | 0.04 × 0.02 × 0.39 | 110 |
+| [pplane1](inne/polygon_farm/pplane1.glb) | polygon_farm | 0.00 × 5.16 × 6.83 | 4 |
