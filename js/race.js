@@ -1,4 +1,10 @@
 // A race on a stage of two lanes: the player's car (car.js, the full simulation) against rivals driven along the road.
+// Each rival is a driver of its own (the stage's pool, rally4.js): a pace, and a way of driving — how readily it passes
+// and how close it follows, how much of the road it takes through a bend (out wide, clipping the inside, out again),
+// how hard it keeps a car behind from coming by, how often it gets it wrong (out wide, a lock-up, a spin), how much its
+// pace wanders, how sharp its start is; it tucks into the slipstream of a car ahead on a straight, and pushes a little
+// harder when it has dropped back and eases off a little when far ahead. The field and the grid are drawn afresh each
+// time (rally.js), and the race calls what happens (the feed under the order).
 // A rival is not simulated tyre by tyre: it rides the stage's line at a distance s and a lateral offset w (left
 // positive), its speed planned from the road — at each station the fastest the bend there allows at the rival's grip,
 // and back from every bend the speed it can brake down from (a backward pass) — and limited by what its engine can give
@@ -26,6 +32,7 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
     const m = src.clone(true); m.updateMatrixWorld(true);
     m.traverse(o => { if (!o.isMesh) return; o.castShadow = true; o.receiveShadow = true;
       if (r.paint && !Array.isArray(o.material) && /^Paint$/.test(o.material.name)) { o.material = o.material.clone(); o.material.color.set(r.paint); }
+      if (r.tint && !Array.isArray(o.material) && /body/i.test(o.material.name)) { o.material = o.material.clone(); o.material.color.set(r.tint); } // (a livery tinted)
       if (/Interior|Alcantara|Leather|Cockpit|Dials|Display|COCKPIT/i.test(o.material.name || '') || /COCKPIT|STEER/.test(o.parent && o.parent.name || '')) o.castShadow = false; });
     const root = new THREE.Group(); root.name = 'rival:' + r.name; root.userData.dynamic = true; root.userData.dynamicCaster = true; scene.add(root); root.add(m);
     const find = n => { let f = null; m.traverse(o => { if (!f && o.name && o.name.startsWith(n)) f = o; }); return f; };
@@ -34,15 +41,24 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
       const bb = new THREE.Box3().setFromObject(node), hub = bb.getCenter(new THREE.Vector3()), pv = new THREE.Object3D(); pv.position.copy(hub); m.add(pv); pv.updateMatrixWorld(true);
       const spin = new THREE.Object3D(); pv.add(spin); spin.updateMatrixWorld(true); spin.attach(node); if (susp) pv.attach(susp); spins.push({ spin, pv, front: id[1] === 'F', R: (bb.max.y - bb.min.y) / 2 }); }
     const g = grid[k], pf = PERF[r.car] || PERF.i20, [dw, , dl] = CAR_DEFS[r.car].spec.dims;
-    cars.push({ ...r, pf, root, spins, s: g.s, w: g.w, wT: g.w, v: 0, yawOff: 0, angle: 0, done: 0, hit: 0, vw: 0, spin: 0, spinV: 0, hx: dw / 2, hz: dl / 2, I: pf.mass * (dw * dw + dl * dl) / 12,
+    cars.push({ aggr: 0.5, line: 0.6, def: 0.5, err: 0.3, cons: 0.3, react: 0.3, ...r, skill0: r.skill, ph: Math.random() * 6.28, pf, root, spins, s: g.s, w: g.w, wT: g.w, v: 0, yawOff: 0, angle: 0, done: 0, hit: 0, vw: 0, spin: 0, spinV: 0, hx: dw / 2, hz: dl / 2, I: pf.mass * (dw * dw + dl * dl) / 12,
       vel: new THREE.Vector3(), col: { t: 1, x: 0, z: 0, hx: dw / 2, hz: dl / 2, c: 1, s: 0, y0: -1e9, y1: 1e9 }, colIn: false, grid: g });
   }
   // ---- the speed each rival may carry at each station: the bend's limit, and the braking back from the next ones
   const R = new Float32Array(N); for (let i = 0; i < N; i++) { const a = P[Math.max(0, i - 8)], b = P[i], c = P[Math.min(N - 1, i + 8)];
     const ab = Math.hypot(b[0] - a[0], b[1] - a[1]), bc = Math.hypot(c[0] - b[0], c[1] - b[1]), ca = Math.hypot(a[0] - c[0], a[1] - c[1]), ar = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
     R[i] = ar < 1e-6 ? 1e5 : ab * bc * ca / (4 * ar); }
-  for (const c of cars) { const vb = new Float32Array(N), grip = c.pf.grip * c.skill; for (let i = 0; i < N; i++) vb[i] = Math.min(c.pf.top * (0.96 + 0.04 * c.skill), Math.sqrt(grip * R[i]));
-    for (let i = N - 2; i >= 0; i--) vb[i] = Math.min(vb[i], Math.sqrt(vb[i + 1] * vb[i + 1] + 2 * c.pf.brake * 0.92)); c.vb = vb; }
+  // (the signed curvature, + to the left: where the bends are and which way, for the racing line)
+  const Ks = new Float32Array(N); for (let i = 0; i < N; i++) { const a = T[Math.max(0, i - 6)], b = T[Math.min(N - 1, i + 6)]; Ks[i] = ((b[0] - a[0]) * T[i][1] - (b[1] - a[1]) * T[i][0]) / 12; }
+  const bend = k => clamp(Math.abs(k) * 140, 0, 1);
+  // (each race a driver is a touch quicker or slower than the last, and starts as sharply as that day goes)
+  const plan = c => { c.skill = c.skill0 * (0.985 + Math.random() * 0.03); const vb = new Float32Array(N), grip = c.pf.grip * c.skill;
+    for (let i = 0; i < N; i++) vb[i] = Math.min(c.pf.top * (0.96 + 0.04 * c.skill), Math.sqrt(grip * R[i]) * (1 + 0.05 * c.line * bend(Ks[i]))); // (the line opens the bend a little)
+    for (let i = N - 2; i >= 0; i--) vb[i] = Math.min(vb[i], Math.sqrt(vb[i + 1] * vb[i + 1] + 2 * c.pf.brake * 0.92)); c.vb = vb;
+    c.react0 = 0.05 + c.react * (0.6 + 0.8 * Math.random()); c.bad = Math.random() < 0.12 ? 1.4 : 0; c.mk = null; c.mT = 4 + Math.random() * 8; c.blockT = 0; };
+  for (const c of cars) plan(c);
+  // ---- the feed: what the race calls out, a few lines under the order, each for a few seconds
+  const feed = [], say = (t, k = 'info') => { if (feed.length && feed[feed.length - 1].t === t) return; feed.push({ t, k, at: performance.now() }); if (feed.length > 4) feed.shift(); };
   // ---- where things are on the road
   const at = (s, w, out) => { const i = clamp(Math.floor(s), 0, N - 2), f = clamp(s - i, 0, 1), tx = lerp(T[i][0], T[i + 1][0], f), tz = lerp(T[i][1], T[i + 1][1], f), l = Math.hypot(tx, tz) || 1;
     out.x = lerp(P[i][0], P[i + 1][0], f) + tz / l * w; out.z = lerp(P[i][1], P[i + 1][1], f) - tx / l * w; out.tx = tx / l; out.tz = tz / l; return out; };
@@ -56,7 +72,10 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
     c.vel.set(A.tx * c.v + A.tz * c.vw, 0, A.tz * c.v - A.tx * c.vw); // (along the lane at its speed, across at its drift)
     const col = c.col; if (c.colIn) { colRemove(col); c.colIn = false; }
     if (onFoot) { col.x = A.x; col.z = A.z; col.c = Math.cos(yaw); col.s = Math.sin(yaw); col.y0 = y - 0.5; col.y1 = y + 1.4; colInsert(col); c.colIn = true; } };
-  const reset = () => { for (const c of cars) { Object.assign(c, { s: c.grid.s, w: c.grid.w, wT: c.grid.w, v: 0, yawOff: 0, done: 0, hit: 0, vw: 0, spin: 0, spinV: 0 }); c.vel.set(0, 0, 0); place(c, 0); } results.length = 0; };
+  const reset = () => { // (the same grid, the drivers in their places shuffled)
+    const g = cars.map(c => c.grid); for (let i = g.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [g[i], g[j]] = [g[j], g[i]]; }
+    cars.forEach((c, k) => { c.grid = g[k]; Object.assign(c, { s: c.grid.s, w: c.grid.w, wT: c.grid.w, v: 0, yawOff: 0, done: 0, hit: 0, vw: 0, spin: 0, spinV: 0 }); c.vel.set(0, 0, 0); plan(c); place(c, 0); });
+    results.length = 0; feed.length = 0; order = null; };
 
   // ---- contact: two boxes on the ground (centre, heading, half width and length): do they overlap, and if so the axis
   // they overlap least on (from the first to the second), how far, and the point between them (each one's corners
@@ -121,7 +140,13 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
   box.style.cssText = 'position:fixed;right:16px;top:44px;z-index:9;min-width:190px;padding:8px 12px;border-radius:9px;background:#090d13c8;border:1px solid #ffffff28;color:#fff;font:600 13px/1.5 "Segoe UI",system-ui,sans-serif;text-shadow:0 1px 3px #000;pointer-events:none';
   document.body.appendChild(box);
   const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
-  let frame = 0;
+  let frame = 0, order = null;
+  const feedBox = document.createElement('div'); feedBox.id = 'raceFeed';
+  feedBox.style.cssText = 'position:fixed;right:16px;z-index:9;min-width:190px;max-width:260px;color:#fff;font:600 12.5px/1.45 "Segoe UI",system-ui,sans-serif;text-shadow:0 1px 3px #000;pointer-events:none;text-align:right';
+  document.body.appendChild(feedBox);
+  const drawFeed = show => { const now = performance.now(); while (feed.length && now - feed[0].at > 4500) feed.shift(); feedBox.style.display = show && feed.length ? '' : 'none';
+    feedBox.style.top = (box.offsetTop + box.offsetHeight + 6) + 'px';
+    feedBox.innerHTML = feed.map(f => `<div style="opacity:${clamp(1 - (now - f.at - 3500) / 1000, 0, 1).toFixed(2)};color:${f.k === 'good' ? '#7dffa0' : f.k === 'bad' ? '#ffb08a' : '#e8eef5'}">${f.t}</div>`).join(''); };
   const api = { cars, results, reset,
     update(dt, player) {
       const phase = clock.state.phase, show = player && player.driving; box.style.display = show ? '' : 'none'; onFoot = !show;
@@ -129,22 +154,48 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
       if (phase === 'running') for (const c of cars) {
         if (c.done) { c.v = Math.max(0, c.v - 6 * dt); c.s = Math.min(N - 3, c.s + c.v * dt); place(c, dt); continue; }
         // (the speed: what the road ahead allows, what the engine gives, the brakes when it must)
-        const i = clamp(Math.floor(c.s), 0, N - 2), vt = Math.min(c.vb[Math.min(N - 1, i + 2)], c.vb[i]);
-        const drag = 0.5 * 1.225 * c.pf.cda * c.v * c.v / c.pf.mass, aMax = Math.min(c.pf.acc, c.pf.power / (c.pf.mass * Math.max(c.v, 1))) * c.skill - drag;
+        const tR = clock.state.t, i = clamp(Math.floor(c.s), 0, N - 2), kNow = Ks[Math.min(N - 1, i + 4)], kFar = Ks[Math.min(N - 1, i + Math.round(clamp(c.v * 1.4, 15, 60)))];
+        // (its pace today: the plan, wandering a little with its consistency, a push when dropped back and a lift when far
+        // ahead of the player; a slow start, or a bogged one)
+        const gapMe = me ? c.s - me.s : 0, rubber = 1 - 0.025 * clamp((gapMe - 120) / 200, 0, 1) + 0.035 * clamp((-gapMe - 120) / 250, 0, 1);
+        const form = (1 + 0.022 * c.cons * Math.sin(tR * 0.31 + c.ph) * Math.sin(tR * 0.13 + c.ph * 1.7)) * rubber;
+        let vt = Math.min(c.vb[Math.min(N - 1, i + 2)], c.vb[i]) * form;
+        const drag = 0.5 * 1.225 * c.pf.cda * c.v * c.v / c.pf.mass; let aMax = Math.min(c.pf.acc, c.pf.power / (c.pf.mass * Math.max(c.v, 1))) * c.skill * rubber - drag;
+        if (tR < c.react0) { vt = 0; aMax = 0; } else if (c.bad > 0) { c.bad -= dt; aMax *= 0.6; if (c.bad <= 0) {} }
+        if (c.bad > 1.3 && tR > c.react0 && tR < c.react0 + 0.1) say(c.name + ': słaby start');
         // (traffic: the nearest car ahead in its lane — a rival, or the player — and the other lane's room)
-        let ahead = null, gap = 1e9, lane = c.wT; const others = cars.filter(o => o !== c).map(o => ({ s: o.s, w: o.w, v: o.v }));
-        if (me && Math.abs(me.w) < half * 2 + 1) others.push({ s: me.s, w: me.w, v: meV });
+        let ahead = null, gap = 1e9, lane = c.wT, blocked = false; const others = cars.filter(o => o !== c).map(o => ({ s: o.s, w: o.w, v: o.v, name: o.name }));
+        if (me && Math.abs(me.w) < half * 2 + 1) others.push({ s: me.s, w: me.w, v: meV, me: true });
         for (const o of others) { const ds = o.s - c.s; if (ds > 0 && ds < gap && Math.abs(o.w - c.w) < 1.9) { gap = ds; ahead = o; } }
         let target = vt;
-        if (ahead && gap < 26 && ahead.v < c.v + 1) { const other = lanes > 1 ? (c.wT > 0 ? -half : half) : c.wT, free = others.every(o => Math.abs(o.w - other) > 1.9 || o.s - c.s < -9 || o.s - c.s > 18);
-          if (free && lanes > 1 && R[i] > 120) lane = other; else target = Math.min(target, ahead.v + (gap - 7) * 0.5); }
+        // (a car ahead in the slipstream on a straight: a little less air to push)
+        if (ahead && gap > 5 && gap < 30 && R[i] > 300) { aMax += 0.8; target += 3; }
+        if (ahead && gap < 14 + 20 * c.aggr && ahead.v < c.v + 1) { const other = lanes > 1 ? (c.wT > 0 ? -half : half) : c.wT, back = 5 + 5 * (1 - c.aggr), free = others.every(o => Math.abs(o.w - other) > 1.9 || o.s - c.s < -back || o.s - c.s > 18);
+          if (free && lanes > 1 && R[i] > 220 - 160 * c.aggr) { if (lane !== other && ahead.v > 15) say(c.name + ' atakuje' + (ahead.me ? ' ciebie' : ' ' + ahead.name)); lane = other; }
+          else { target = Math.min(target, ahead.v + (gap - 5 - 4 * (1 - c.aggr)) * 0.5); blocked = true; } }
         c.wT = lane;
+        // (defending: the player close behind on the other side — it moves across to cover the way by, now and then)
+        c.blockT -= dt;
+        if (me && lanes > 1 && c.blockT <= 0 && gapMe > 3 && gapMe < 14 && Math.abs(me.w - c.w) > 1.2 && R[i] > 150 && Math.random() < c.def * dt * 1.2) { c.blockT = 1.6; c.blockW = clamp(me.w, -half, half); say(c.name + ' broni pozycji'); }
+        // (the racing line: out wide before a bend, the inside at its apex, out again — on the whole road, unless it is
+        // following, passing, defending or has got it wrong)
+        const lineW = (RW - 0.9) * (Math.sign(kNow) * bend(kNow) - 0.7 * Math.sign(kFar) * bend(kFar) * (1 - bend(kNow)));
+        let wGoal = lerp(lane, lineW, blocked ? 0 : c.line * Math.max(bend(kNow), bend(kFar)));
+        if (c.blockT > 0) wGoal = c.blockW;
+        // (mistakes: in a bend now and then, by the driver — out wide, a lock-up, rarely a spin)
+        c.mT -= dt;
+        if (!c.mk && c.mT <= 0 && tR > 3 && Math.random() < c.err * dt * (0.004 + 0.03 * bend(kNow))) { const r = Math.random();
+          c.mk = r < 0.15 * bend(kNow) ? 'spin' : r < 0.65 ? 'wide' : 'lock'; c.mkT = c.mk === 'wide' ? 1.6 : c.mk === 'lock' ? 0.9 : 2.4; c.mkSide = -Math.sign(kNow || kFar || 1);
+          if (c.mk === 'spin') { c.spinV = -c.mkSide * (2.6 + Math.random() * 1.5); c.hit = 2.3; c.v *= 0.75; say(c.name + ' obraca się!', 'bad'); }
+          else say(c.name + (c.mk === 'wide' ? ' wyjeżdża szeroko' : ' blokuje koła'), 'bad'); }
+        if (c.mk) { c.mkT -= dt; if (c.mk === 'wide') { target *= 0.88; wGoal = c.mkSide * (RW + 0.5); } else if (c.mk === 'lock') { target *= 0.82; c.v = Math.max(0, c.v - 5 * dt); }
+          if (c.mkT <= 0) { c.mk = null; c.mT = 8 + Math.random() * 14; } }
         if (c.v < target) c.v = Math.min(target, c.v + aMax * dt); else c.v = Math.max(target, c.v - c.pf.brake * dt);
         // (shoved: it has lost speed and drifts across, spinning, while it gathers the car up — the harder the hit the longer)
         if (c.hit > 0) { c.hit -= dt; c.v = Math.max(0, c.v - dt * 4 * Math.min(1, c.hit)); if (c.v > target) c.v = Math.max(target, c.v - c.pf.brake * dt); }
         c.w += c.vw * dt; c.vw *= Math.exp(-dt * 2.2); c.w = clamp(c.w, -RW - 1.2, RW + 1.2);
         c.spin += c.spinV * dt; c.spinV *= Math.exp(-dt * 2.5); c.spin *= Math.exp(-dt * (c.hit > 0 ? 0.9 : 2.4));
-        const dw = clamp(c.wT - c.w, -1.6 * dt, 1.6 * dt) * (c.hit > 0 ? 0.3 : 1); c.w += dw; c.yawOff = lerp(c.yawOff, -dw / Math.max(c.v * dt, 1e-3) * 0.8, 0.2);
+        const latV = 1.6 + 1.3 * c.line, dw = clamp(wGoal - c.w, -latV * dt, latV * dt) * (c.hit > 0 ? 0.3 : 1); c.w += dw; c.yawOff = lerp(c.yawOff, -dw / Math.max(c.v * dt, 1e-3) * 0.8, 0.2);
         c.s += c.v * dt;
         if (c.s >= finishI) { c.done = 1; results.push({ name: c.name, car: c.car, t: clock.state.t }); }
         place(c, dt);
@@ -155,8 +206,13 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
       // (the order: by distance down the stage; finishers first, by their times)
       const all = [...cars.map(c => ({ name: c.name, car: c.car, s: c.done ? 1e9 - (results.find(r => r.name === c.name) || { t: 0 }).t : c.s, me: false })), { name: 'Ty', car: player ? player.id : '', s: phase === 'finished' ? 1e9 - clock.state.result : ms, me: true }].sort((a, b) => b.s - a.s);
       const pos = all.findIndex(a => a.me) + 1;
+      // (who passed whom, from the order's change)
+      if (phase === 'running') { const now = all.map(a => a.name); if (order && clock.state.t > 4) for (let k = 1; k < now.length; k++) { const was = order.indexOf(now[k - 1]); if (was > order.indexOf(now[k]) && was === order.indexOf(now[k]) + 1) {
+          const a = now[k - 1], b = now[k]; say(a === 'Ty' ? 'Wyprzedzasz: ' + b : b === 'Ty' ? a + ' wyprzedza cię' : a + ' wyprzedza ' + b, a === 'Ty' ? 'good' : b === 'Ty' ? 'bad' : 'info'); } }
+        order = now; }
       if (phase === 'finished') box.innerHTML = `<div style="font:800 15px 'Segoe UI';color:#ffd54d;margin-bottom:3px">WYNIKI</div>` + [...results].sort((a, b) => a.t - b.t).map((r, k) => `<div style="${r.me ? 'color:#ffd54d;font-weight:800' : ''}">${k + 1}. ${r.name} <span style="float:right;margin-left:14px">${fmt(r.t)}</span></div>`).join('') + (results.length < all.length ? `<div style="opacity:.6">… na trasie: ${all.length - results.length}</div>` : '');
       else box.innerHTML = `<div style="font:800 26px/1.1 'Segoe UI'">P${pos}<span style="font-size:15px;opacity:.7"> / ${all.length}</span></div>` + all.map((a, k) => `<div style="${a.me ? 'color:#ffd54d;font-weight:800' : 'opacity:.85'}">${k + 1}. ${a.name}<span style="float:right;margin-left:14px;opacity:.7">${a.car === 'f40' ? 'F40' : a.car === 'i20' ? 'i20' : ''}</span></div>`).join('');
+      drawFeed(show);
     } };
   return api;
 }

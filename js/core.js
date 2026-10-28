@@ -70,6 +70,11 @@ export const QUALITY = {
   extreme: { pr: 1.5, grass: 1600000, tile: 124, shadow: 8192, box: 300, msaa: 8, ao: true,  treeHi: 520, trees: 5000, rocks: 700, props: 560, ferns: 220, bloom: true,  refl: 0.9, far: 4 },
 };
 QUALITY.low.far = 1; QUALITY.medium.far = 1; QUALITY.high.far = 2; // far: how many outer far-forest rings are drawn
+// fog: the haze's thickness and how far off it starts — thicker on the lower settings (it covers what they draw less of
+// far away), thinner and further on the higher, whose far forest and meadow reach the horizon and whose temporal AA
+// already softens the distance a little
+Object.assign(QUALITY.low, { fogK: 1.3, hazeAt: 450 }); Object.assign(QUALITY.medium, { fogK: 1.12, hazeAt: 520 }); Object.assign(QUALITY.high, { fogK: 0.88, hazeAt: 700 });
+Object.assign(QUALITY.ultra, { fogK: 0.76, hazeAt: 850 }); Object.assign(QUALITY.extreme, { fogK: 0.68, hazeAt: 1000 });
 // cascaded sun shadows: [half extent (m), map size] per cascade, finest first, and how often each re-renders (frames)
 QUALITY.high.taa = QUALITY.ultra.taa = QUALITY.extreme.taa = true; // temporal anti-aliasing (post.js)
 QUALITY.low.lodScale = 0.6; QUALITY.medium.lodScale = 0.8; QUALITY.high.lodScale = 1; QUALITY.ultra.lodScale = 1.3; QUALITY.extreme.lodScale = 1.7; // detail draw distance

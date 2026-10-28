@@ -578,7 +578,7 @@ export function updateSky(force) {
   }
   scene.environmentIntensity = lerp(1.0, 0.12, night); // the night sky's fill: dim blue, so unlit ground reads dark
   scene.fog.color.copy(p.fog);
-  scene.fog.density = 0.00022 * p.fogD; env.haze = p.haze;
+  scene.fog.density = 0.00022 * p.fogD * (Q.fogK || 1); env.haze = p.haze;
   S.uFogCol.value.set(p.fog.r, p.fog.g, p.fog.b);
   tmpC.copy(p.zen).lerp(p.hor, 0.55);
   S.uAmb.value.set(tmpC.r, tmpC.g, tmpC.b);
@@ -653,5 +653,5 @@ export function followCamera(groundAt, yaw) {
   fogU.fogParams.value.x = c.y;
   // aerial perspective: terrain and forests now reach the horizon, so the haze no longer hides a draw distance; it only
   // layers the far ridges into the sky (about half-hazed at 3 km, three quarters at 10 km, gone by ~20 km)
-  fogU.fogHaze.value.x = 600; fogU.fogHaze.value.y = 0.00015 * (env.haze || 1);
+  fogU.fogHaze.value.x = Q.hazeAt || 600; fogU.fogHaze.value.y = 0.00015 * (env.haze || 1) * (Q.fogK || 1); // (by the quality: see core.js)
 }

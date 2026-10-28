@@ -234,7 +234,7 @@ export async function createCar(world, spawn, carId = 'i20') {
   car.gearLever = GL; car.tune = { HB, ASSIST: AS, SURF: SURFC, LOOSE }; // (live handling tuning from the console)
   // a blow from outside — another car: an impulse J (N s, the world's frame) at a point, taken by the body at once (its
   // speed and its spin), the driver's head thrown against it, the camera shaken by how hard (k 0..2), and the crunch
-  car.inertia = Ib; car.shake = 0;
+  car.inertia = Ib; car.shake = 0; car.upS = new THREE.Vector3();
   car.impact = (J, at, k) => { st.vel.addScaledVector(J, 1 / m);
     const qi = _q.copy(st.q).invert(), rb = _a.subVectors(at, st.pos).applyQuaternion(qi), Jb = _b.copy(J).applyQuaternion(qi), tb = _c.crossVectors(rb, Jb);
     st.ang.add(tb.set(tb.x / Ib.x, tb.y / Ib.y, tb.z / Ib.z).applyQuaternion(st.q));
@@ -658,7 +658,7 @@ export async function createCar(world, spawn, carId = 'i20') {
   car.debugDraw = () => { if (dbg) { root.updateMatrixWorld(true); dbgDraw(); } };
 
   // ---------------------------------------------------------------- the camera
-  const eyeB = new THREE.Vector3(), bonnet = new THREE.Vector3(0, 0.98, 1.05), qLook = new THREE.Quaternion(), qH = new THREE.Quaternion(), level = new THREE.Quaternion(), cgV = new THREE.Vector3(...SPEC.cg);
+  const eyeB = new THREE.Vector3(), bonnet = new THREE.Vector3(0, 0.98, 1.05), qLook = new THREE.Quaternion(), qH = new THREE.Quaternion(), level = new THREE.Quaternion(), stab = new THREE.Quaternion(), cgV = new THREE.Vector3(...SPEC.cg);
   car.applyCamera = (cam, dt) => {
     const Lk = car.look; Lk.idle += dt; if (Lk.idle > 1.5) { const f = Math.exp(-dt * 2.5); Lk.yaw *= f; Lk.pitch *= f; }
     if (car.view === 1) { // chase: behind and above, swinging round after the car
@@ -681,17 +681,25 @@ export async function createCar(world, spawn, carId = 'i20') {
     const rollT = clamp(a.x * 0.0085, -0.1, 0.1); Hd.rv += (rollT - Hd.r) * 85 * dt; Hd.rv *= Math.exp(-11 * dt); Hd.r += Hd.rv * dt;
     const t = Hd.t, rough = (st.slipMax > 0.3 ? 1.4 : 1) * clamp(sp / 30, 0, 1.3) * (wheels.some(w => w.contact && w.surf !== 'asphalt' && w.surf !== 'concrete') ? 1 : 0.35);
     const n3 = (f, o) => Math.sin(t * f + o) * 0.5 + Math.sin(t * f * 2.31 + o * 1.7) * 0.3 + Math.sin(t * f * 4.73 + o * 0.6) * 0.2;
-    const eng = clamp((st.rpm - 800) / 7400, 0, 1), buzz = 0.00025 * (0.6 + eng) * (car.driving ? 1 : 0);
+    const eng = clamp((st.rpm - 800) / 7400, 0, 1), buzz = 0.00012 * (0.6 + eng) * (car.driving ? 1 : 0);
     Hd.kick.set(n3(31, 0.3) * (0.0011 * rough + buzz), n3(27, 1.9) * (0.0016 * rough + buzz) - Hd.bump * 0.004 * n3(17, 4.1), n3(23, 3.3) * 0.0006 * rough);
     eyeB.copy(car.view === 2 ? bonnet : eye); if (car.view === 0) eyeB.add(Hd.p).add(Hd.kick);
     eyeB.sub(cgV).applyQuaternion(st.q).add(st.pos);
     // (a glance toward the corner as you steer and as the car slides)
     const apex = car.view === 0 ? clamp((st.steer * 0.28 + Math.atan2(st.velLocal.x, Math.max(5, Math.abs(st.velLocal.z))) * 0.38) * clamp(Math.abs(st.velLocal.z) / 8, 0, 1), -0.5, 0.5) : 0;
     car.apex = car.apex === undefined ? apex : lerp(car.apex, apex, 1 - Math.exp(-dt * 5));
-    const cab = car.view === 0, sh = cab ? 3.5 : 1.5; // (the eyes shaken a touch in their turn, not only moved)
-    qLook.setFromEuler(_e.set(Lk.pitch - 0.07 + Hd.kick.y * sh, Math.PI + Lk.yaw + car.apex + Hd.kick.x * sh, cab ? Hd.r + Hd.kick.z * sh * 2 : 0, 'YXZ'));
+    // (the eyes turned a touch by the road too, but only slowly — a few hertz, a twentieth of a degree: the fast buzz turned
+    // the view by several pixels a frame, which at sixty frames a second strobes and makes the distance flicker; it stays
+    // in the head's movement above, millimetres, which the far scenery does not show)
+    const cab = car.view === 0, n2 = (f, o) => Math.sin(t * f + o) * 0.65 + Math.sin(t * f * 1.73 + o * 1.3) * 0.35, rr = rough * (cab ? 1 : 0.4);
+    const rp = n2(5.1, 0.7) * 0.0009 * rr - Hd.bump * 0.003 * n2(8.3, 4.1), ry = n2(4.3, 2.2) * 0.0006 * rr, rl = n2(3.9, 1.3) * 0.0012 * rr;
+    qLook.setFromEuler(_e.set(Lk.pitch - 0.07 + rp, Math.PI + Lk.yaw + car.apex + ry, cab ? Hd.r + rl : 0, 'YXZ'));
     // (the car's pitch and roll followed mostly: a head keeps only a little of the horizon)
-    level.setFromUnitVectors(_v.set(0, 1, 0).applyQuaternion(st.q), UP); qH.identity().slerp(level, cab ? 0.12 : 0.1).multiply(st.q);
+    // (and the eyes hold the world steady as a head does: the car's pitch and roll reach the view smoothed — what the body
+    // does over a fraction of a second, not the buzz of the suspension on the corrugations, which strobed the distance;
+    // its heading taken as it is. The cabin shakes about the eyes instead)
+    _v.set(0, 1, 0).applyQuaternion(st.q); if (car.upS.lengthSq() < 0.5) car.upS.copy(_v); car.upS.lerp(_v, 1 - Math.exp(-Math.min(dt, 0.05) / 0.032)).normalize();
+    stab.setFromUnitVectors(_v, car.upS).multiply(st.q); level.setFromUnitVectors(car.upS, UP); qH.identity().slerp(level, cab ? 0.12 : 0.1).multiply(stab);
     // (the lens: the field of view set by the player, a little wider with the speed)
     car.fovK = lerp(car.fovK || 0, clamp((sp - 8) / 40, 0, 1), 1 - Math.exp(-dt * 2));
     cam.position.copy(eyeB); cam.quaternion.copy(qH).multiply(qLook); shakeCam(cam, dt, 0.03); setLens(cam, 0.035, Math.round((car.fov + (cab ? 0 : 4) + car.fovK * 5) * 4) / 4);

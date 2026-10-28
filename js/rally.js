@@ -224,7 +224,15 @@ export async function buildStage(progress, cfg) {
   progress('Opening the stage', 0.95); await tick();
   // ---- the start: the car on the line facing down the road, the walker beside it
   // (a race starts from a grid: the player on the second row in the right-hand lane, the rivals round about)
-  const s0 = cfg.race ? 4 : 8, lane0 = cfg.race ? -RW / 2 : 0, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);
+  // (a race: its field drawn from the stage's pool of drivers, a different one each time, lined up two by two 8 m apart;
+  // the player's place on the grid drawn too)
+  let field = null, grid = null, slot = null;
+  if (cfg.race) { const pool = [...(cfg.race.pool || cfg.race.rivals)], n = Math.min(cfg.race.count || pool.length, pool.length);
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    field = pool.slice(0, n); const slots = [], rows = Math.ceil((n + 1) / 2);
+    for (let r = 0; r < rows; r++) for (const sd of [1, -1]) if (slots.length < n + 1) slots.push({ s: 4 + 8 * (rows - 1 - r), w: sd * RW / 2 });
+    slot = slots.splice(Math.floor(Math.random() * slots.length), 1)[0]; grid = slots; }
+  const s0 = cfg.race ? slot.s : 8, lane0 = cfg.race ? slot.w : 0, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);
   const carSpawn = { x: sx + lx2 * lane0, z: sz + lz2 * lane0, yaw: Math.atan2(tx, tz) };
   const spawn = { x: sx + lx2 * 5, z: sz + lz2 * 5, yaw: Math.atan2(-tx, -tz), pitch: -0.05 };
   const PG = { k: 0, t: 0, w: 0, d: 0 };
@@ -251,8 +259,8 @@ export async function buildStage(progress, cfg) {
     restartStage() { clock.reset(); world.raceAI && world.raceAI.reset(); },
     update(dt) { clock.update(dt, world.vehicle); world.raceAI && world.raceAI.update(dt, world.vehicle); dressing.update && dressing.update(dt); crowd && crowd.update(dt, world.vehicle); },
   };
-  if (cfg.race) { progress('Lining up the grid', 0.97); await tick(); const h = RW / 2;
-    world.raceAI = await (await import('./race.js')).createRace(world, { rivals: cfg.race.rivals, grid: [{ s: 12, w: h }, { s: 12, w: -h }, { s: 4, w: h }], startI, finishI, lanes: LANES, RW, clock }); }
+  if (cfg.race) { progress('Lining up the grid', 0.97); await tick();
+    world.raceAI = await (await import('./race.js')).createRace(world, { rivals: field, grid, startI, finishI, lanes: LANES, RW, clock }); }
   return world;
 }
 
