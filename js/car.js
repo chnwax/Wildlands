@@ -48,21 +48,21 @@ const SPEC_F40 = {
   mass: 1180, cg: [0, 0.42, -0.2], dims: [1.98, 1.12, 4.45],
   susp: { rest: 0.22, k: 52000, bump: 3800, rebound: 5400, travel: 0.13, arbF: 24000, arbR: 15000 },
   wheelI: 1.2, steerMax: 0.5, steerLock: 3.6,
-  engine: { idle: 950, limiter: 7800, inertia: 0.18, braking: 48, curve: [[0, 150], [1000, 230], [2000, 340], [3000, 470], [4000, 580], [5000, 575], [6000, 545], [7000, 500], [7800, 440], [8500, 300]] },
-  gears: [-3.2, 0, 2.23, 1.53, 1.13, 0.92, 0.81], final: 3.7, eff: 0.9, shiftTime: 0.12,
+  engine: { idle: 950, limiter: 7800, inertia: 0.16, braking: 48, curve: [[0, 190], [1000, 290], [2000, 430], [3000, 590], [4000, 700], [5000, 700], [6000, 670], [7000, 620], [7800, 550], [8500, 380]] },
+  gears: [-3.2, 0, 2.23, 1.53, 1.13, 0.92, 0.81], final: 4.2, eff: 0.9, shiftTime: 0.08,
   brake: { front: 2100, rear: 1300, hand: 1600 }, lsd: 380, center: 0,
   aero: { cda: 0.66, cla: 1.9, front: 0.42 }, crr: 0.014, rollCentre: 0.08, drive: 'rwd', tc: true, fires: 4,
   // its own feel: semi-slick tyres — more grip on tarmac, peaking sharper and letting go more past the peak, and next to
   // none on loose ground; less of the stability help (it turns on the throttle and slides further before it is caught);
-  // a traction control that lets a power slide through; and turbo lag: off boost the engine has little over half its
-  // torque, the boost coming in over half a second above 3000 rpm — then all of it at once
-  feel: { tyre: { tarmac: 1.07, loose: 0.78, kp: 0.85, ap: 0.82, fall: 0.06 }, assist: { yaw: 0.55, beta: 1.6, k: 0.75, side: 0.5, free: 1.6 } }, tcSlip: 0.22,
-  turbo: { lo: 2900, hi: 4300, up: 0.55, down: 0.18, floor: 0.56 },
+  // a traction control that lets a power slide through; and turbo lag: off boost the engine has under three quarters of
+  // its torque, the boost coming in over a quarter of a second above 2300 rpm — then all of it at once
+  feel: { tyre: { tarmac: 1.12, loose: 0.78, kp: 0.85, ap: 0.82, fall: 0.06 }, assist: { yaw: 0.55, beta: 1.6, k: 0.75, side: 0.5, free: 1.6 } }, tcSlip: 0.22,
+  turbo: { lo: 2300, hi: 3600, up: 0.28, down: 0.2, floor: 0.72 },
   // (its sound: a flat-plane V8, four firings a turn, each bank into its own pipe — two four-cylinders a firing apart, the
   // rasp of it; long pipes and a big silencer, no anti-lag but pops on the overrun, twin turbos whistling low and the
   // wastegates fluttering when the throttle is lifted on boost; a quiet synchromesh box)
-  voice: { cyl: 8, fires: 4, banks: 2, pipes: [0.0079, 0.0029, 0.0047], res: [[118, 70], [440, 160], [1750, 620], [3600, 1200]], rasp: 0.65, als: 0, pops: 0.4, flutter: 1, whine: 0.25,
-    turbo: { f0: 1300, f1: 3900, k: 1.5, hiss: 1.7 }, muffle: 1.2 },
+  voice: { cyl: 8, fires: 4, banks: 2, pipes: [0.0094, 0.0033, 0.0056], res: [[96, 65], [300, 130], [1050, 420], [2300, 900]], rasp: 0.45, als: 0, pops: 0.4, flutter: 1, whine: 0.25,
+    turbo: { f0: 900, f1: 2300, k: 0.3, hiss: 0.45 }, twin: 0.25, muffle: 1.35, gain: 1.8, bulkhead: 0.3 },
 };
 let SPEC = SPEC_I20;
 // The cars: each its model (beside the game in Modeleaut/, like the arms) and how its parts are found there. Both models
@@ -325,7 +325,9 @@ export async function createCar(world, spawn, carId = 'i20') {
     let wSum = 0, nW = 0, slipD = 0; for (const w of wheels) if (drives(w)) { wSum += w.w; nW++; slipD = Math.max(slipD, (w.w * w.R - (w.vx || 0)) / Math.max(Math.abs(w.vx || 0), 3)); }
     const inGear = ratio !== 0 && nW > 0;
     // (traction control: past a little wheelspin the engine's drive is eased back, quickly, as a modern system does)
-    if (SPEC.tc) st.tc = (st.tc ?? 1) + (clamp(1 - (slipD - (SPEC.tcSlip ?? 0.12)) * 4, 0.25, 1) - (st.tc ?? 1)) * Math.min(1, h * 30);
+    // (its slip allowed: with the wheel straight, about the tyre's best — a launch, a straight exit; turning, as much as
+    // the car's own measure lets a power slide through)
+    if (SPEC.tc) { const tcS = lerp(0.09, SPEC.tcSlip ?? 0.12, clamp(Math.abs(st.steer) * 5 - 0.25, 0, 1)); st.tc = (st.tc ?? 1) + (clamp(1 - (slipD - tcS) * 4, 0.25, 1) - (st.tc ?? 1)) * Math.min(1, h * 30); }
     const rpmW = nW ? Math.max(0, wSum / nW * Gt) * 60 / (2 * Math.PI) : 0, thr = (st.shiftT > 0 ? 0 : st.throttle) * (SPEC.tc ? st.tc : 1);
     let Tw = 0; st.locked = false;
     // (turbo lag: the boost builds with the throttle above its revs, over its own time, and falls away quicker)

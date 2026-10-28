@@ -57,7 +57,7 @@ class RallyCar extends AudioWorkletProcessor {
     this.evs = []; // knocks: { t, len, a, exc, res: [[Reso, gain]], thud }
     this.n1 = 0; this.n2 = 0; this.seed = 12345;
   }
-  setVoice(v) { const sr = this.sr, V = this.V = Object.assign({ cyl: 4, fires: 2, banks: 1, pipes: [0.0108, 0.0037, 0.0061], res: [[92, 60], [330, 120], [1250, 500], [2900, 900]], rasp: 0.35, als: 1, pops: 0, flutter: 0, whine: 1, muffle: 1 }, v);
+  setVoice(v) { const sr = this.sr, V = this.V = Object.assign({ cyl: 4, fires: 2, banks: 1, pipes: [0.0108, 0.0037, 0.0061], res: [[92, 60], [330, 120], [1250, 500], [2900, 900]], rasp: 0.35, als: 1, pops: 0, flutter: 0, whine: 1, muffle: 1, gain: 1, bulkhead: 1, twin: 0.2 }, v);
     V.turbo = Object.assign({ f0: 1900, f1: 5200, k: 1, hiss: 1 }, v.turbo || {});
     this.cylAmp = Array.from({ length: V.cyl }, (_, i) => 1 + 0.13 * Math.sin(i * 2.39 + 0.7)); // (each cylinder a little its own)
     const [a, b, c] = V.pipes; this.pipeA = new Pipe(Math.round(sr * a), -0.62); this.pipeA2 = new Pipe(Math.round(sr * a * 1.13), -0.6); this.pipeB = new Pipe(Math.round(sr * b), -0.5); this.pipeC = new Pipe(Math.round(sr * c), -0.55);
@@ -118,8 +118,8 @@ class RallyCar extends AudioWorkletProcessor {
       // ---- the turbo: boost after a lag; its whistle and the intake's hiss
       const bt = on * Math.min(1, Math.max(0, (rpm - 2600) / 3400)) * Math.min(1, s.thr * 1.3) * (1 - s.cut);
       if (p.boost >= 0) this.boost += (p.boost * on - this.boost) * kf; else this.boost += (bt - this.boost) * dt / (bt > this.boost ? 0.45 : 0.18); // (the car's own boost, when its physics has one)
-      const TV = V.turbo, tf = TV.f0 + (TV.f1 - TV.f0) * this.boost + rpm * 0.12; this.tph += tf * dt; this.tph2 += tf * (V.banks > 1 ? 1.027 : 1.51) * dt; // (two turbos a hair apart: they beat)
-      let turbo = (Math.sin(TAU * this.tph) * 0.7 + Math.sin(TAU * this.tph2) * (V.banks > 1 ? 0.6 : 0.2)) * this.boost * this.boost * 0.05 * TV.k * (1 + 0.6 * s.cockpit) + this.hiss.run(this.nz()) * this.boost * 0.09 * TV.hiss;
+      const TV = V.turbo, tf = TV.f0 + (TV.f1 - TV.f0) * this.boost + rpm * 0.12; this.tph += tf * dt; this.tph2 += tf * (V.banks > 1 ? 1.027 : 1.51) * dt; // (two turbos a hair apart: they beat — V.twin how loud the second)
+      let turbo = (Math.sin(TAU * this.tph) * 0.7 + Math.sin(TAU * this.tph2) * V.twin) * this.boost * this.boost * 0.05 * TV.k * (1 + 0.6 * s.cockpit) + this.hiss.run(this.nz()) * this.boost * 0.09 * TV.hiss;
       // the wastegates' flutter: the throttle lifted on boost, the compressor surging — a chatter of puffs, then a sigh
       if (this.flut > 0.002) { this.flutT += dt; this.flutPh += (17 + 9 * this.flutT) * dt; const ch = (this.flutPh % 1) < 0.42 ? 1 : 0.12, e = this.flut * Math.exp(-this.flutT / 0.32);
         turbo += (this.flutR.run(this.nz()) * 1.3 * ch + this.flutR2.run(this.nz()) * 0.8 * Math.exp(-this.flutT / 0.12)) * e * (0.5 + 0.3 * s.cockpit); if (e < 0.002) this.flut = 0; }
@@ -152,7 +152,9 @@ class RallyCar extends AudioWorkletProcessor {
         const th = e.lp2.run(e.lp.run(x * 6, 0.004), 0.004) * e.thud; // (the thud: what reaches the seat through the floor)
         evo += (y * 0.5 + th) * (1 - smoothstep01(e.t / e.len)); }
       // ---- mixed: the exhaust a touch to the back, the stones round the car
-      const eng = (ex + als) * (0.8 - 0.25 * s.cockpit) + turbo, mid = eng + whine + road + wind * 0.6 + evo;
+      // (the exhaust as loud as the car's own (V.gain); through the bulkhead in the cockpit — less of a wall for an engine
+      // right behind the driver's head, V.bulkhead)
+      const eng = (ex + als) * V.gain * (0.8 - 0.25 * s.cockpit * V.bulkhead) + turbo, mid = eng + whine + road + wind * 0.6 + evo;
       let l = mid + stL, r = mid + stR;
       this.dc += ((l + r) * 0.5 - this.dc) * 0.0005; l -= this.dc; r -= this.dc; // (no DC drift)
       L[i] = Math.tanh(l * 1.4) * 0.6 * p.vol; R[i] = Math.tanh(r * 1.4) * 0.6 * p.vol;
