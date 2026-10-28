@@ -457,11 +457,6 @@ function snowBanks(P, T, N, left, DROP, AMT, bankH, base) {
   return mesh;
 }
 
-// a W-beam guardrail section len long (along z), its two ridges toward -x (turned to face the road where it stands)
-function wBeam(len) {
-  const sh = new THREE.Shape([[0, -0.155], [-0.025, -0.155], [-0.08, -0.105], [-0.08, -0.055], [-0.035, 0], [-0.08, 0.055], [-0.08, 0.105], [-0.025, 0.155], [0, 0.155], [0, 0.11], [-0.05, 0.075], [-0.05, 0.035], [-0.012, 0], [-0.05, -0.035], [-0.05, -0.075], [0, -0.11]].map(([x, y]) => new THREE.Vector2(x, y)));
-  return new THREE.ExtrudeGeometry(sh, { depth: len, bevelEnabled: false }).translate(0, 0, -len / 2);
-}
 
 const UPV = new THREE.Vector3(0, 1, 0);
 const packColor = c => Math.round(clamp(c[0], 0, 1) * 255) * 65536 + Math.round(clamp(c[1], 0, 1) * 255) * 256 + Math.round(clamp(c[2], 0, 1) * 255);
@@ -482,7 +477,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const tapeTex = canvasTex(128, 16, (g, w, h) => { for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#fff' : '#d01a20'; g.fillRect(i * 16, 0, 16, h); } }); tapeTex.wrapS = THREE.RepeatWrapping;
   const tapeM = new THREE.MeshStandardMaterial({ map: tapeTex, roughness: 0.7, side: THREE.DoubleSide }), poleM = new THREE.MeshStandardMaterial({ color: 0xdedad0, roughness: 0.8 });
   const mountain = cfg.profile === 'mountain';
-  const items = { board: [], post: [], back: [], bale: [], pole: [], marker: [], guard: [], guardPost: [], reflector: [], wall: [] }, tapePos = [], tapeUv = [];
+  const items = { board: [], post: [], back: [], bale: [], pole: [], marker: [], guardPost: [], reflector: [] }, tapePos = [], tapeUv = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), S1 = new THREE.Vector3(1, 1, 1);
   const at = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, hf.groundAt(x, z) + y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
   const atY = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
@@ -495,20 +490,46 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const fall = new Uint8Array(N), railed = new Uint8Array(N);
   if (mountain || cfg.walls) { for (let i = startI + 10; i < finishI - 10; i += 4) { const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], y = hf.groundAt(px, pz); fall[i] = wide[i] || y - hf.groundAt(px + lx * s * 7, pz + lz * s * 7) > (cfg.walls ? 1.4 : 2.2) ? 1 : 0; }
     for (let i = startI + 10; i < finishI - 10; i += 4) for (let k = i - 16; k <= i + 16; k += 4) if (fall[k]) { railed[i] = 1; break; } }
-  if (mountain) for (let i = startI + 10; i < finishI - 10; i += 4) {
-    if (!railed[i]) continue; // (where the hill falls away; elsewhere the road's edge is its stones and its posts)
-    const [px, pz] = P[i], [lx, lz] = left(i), yaw = Math.atan2(T[i][0], T[i][1]);
-    // (a little way off the edge, further round the switchbacks, where the car sweeps wide; the posts down to the ground)
-    const side = DROP[i], rd = 2.5 + 0.7 * wide[i], x = px + lx * side * rd, z = pz + lz * side * rd, y = hf.groundAt(px, pz), gx = x + lx * side * 0.08, gz = z + lz * side * 0.08, gy = Math.min(y, hf.groundAt(gx, gz)), ph = y + 0.75 - gy + 0.25;
-    items.guard.push(atY(x, y + 0.6, z, yaw + (side > 0 ? 0 : Math.PI))); items.guardPost.push(m4.compose(new THREE.Vector3(gx, gy - 0.25 + ph / 2, gz), q.setFromAxisAngle(UP, yaw), new THREE.Vector3(1, ph, 1)).clone()); addBox(x, z, 0.1, 2.1, yaw, y - 0.2, y + 0.95);
-    if ((i - startI) % 20 < 4) items.reflector.push(atY(x - lx * side * 0.02, y + 0.9, z - lz * side * 0.02, yaw));
+  // the guardrail and the walls run unbroken: one section swept along each stretch where the hill falls away (a change of
+  // side starts a new run), set back from the edge by an offset that eases out round the switchbacks, its height smoothed
+  // along the run. A rail's ends turn down and away into the ground; a wall's are closed off with its own stone.
+  const wideS = new Float32Array(N); for (let i = 0; i < N; i++) { let a = 0, c = 0; for (let k = Math.max(0, i - 14); k <= Math.min(N - 1, i + 14); k += 2) { a += wide[k]; c++; } wideS[i] = a / c; }
+  const isRailed = i => i >= startI + 10 && i < finishI - 10 && railed[i - (i - startI - 10) % 4] === 1;
+  const runs = []; if (mountain || cfg.walls) { let cur = null; for (let i = startI + 10; i < finishI - 10; i += 2) { if (isRailed(i) && (!cur || DROP[i] === cur.side)) { if (!cur) runs.push(cur = { side: DROP[i], idx: [] }); cur.idx.push(i); } else cur = null; } }
+  const line = (run, rd0, base) => { const pts = run.idx.map(i => { const [px, pz] = P[i], [lx, lz] = left(i), s = run.side, rd = rd0 + 0.75 * wideS[i], x = px + lx * s * rd, z = pz + lz * s * rd;
+      return { x, z, y: base(px, pz, x, z), rx: -lx * s, rz: -lz * s }; });
+    for (let pass = 0; pass < 3; pass++) for (let k = 1; k + 1 < pts.length; k++) pts[k].y = (pts[k - 1].y + 2 * pts[k].y + pts[k + 1].y) / 4;
+    return pts; };
+  // (a closed profile [u toward the road, v up] swept along the points; uv: metres along, metres round the profile)
+  const sweep = (pts, prof, out, cap) => { const np = prof.length, perim = [0]; for (let j = 1; j <= np; j++) perim.push(perim[j - 1] + Math.hypot(prof[j % np][0] - prof[j - 1][0], prof[j % np][1] - prof[j - 1][1]));
+    let along = 0, v0 = out.pos.length / 3;
+    pts.forEach((p, k) => { if (k) along += Math.hypot(p.x - pts[k - 1].x, p.z - pts[k - 1].z);
+      for (let j = 0; j <= np; j++) { const [u, v] = prof[j % np]; out.pos.push(p.x + p.rx * u, p.y + v, p.z + p.rz * u); out.uv.push(along / 1.4, perim[j] / 1.4); } });
+    for (let k = 0; k + 1 < pts.length; k++) for (let j = 0; j < np; j++) { const a = v0 + k * (np + 1) + j, b = a + np + 1; out.idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    if (cap) for (const k of [0, pts.length - 1]) { const p = pts[k], c = out.pos.length / 3; out.pos.push(p.x, p.y + 0.15, p.z); out.uv.push(0, 0);
+      for (let j = 0; j < np; j++) { const a = v0 + k * (np + 1) + j; out.idx.push(c, a, a + 1); } } };
+  const rails = { pos: [], uv: [], idx: [] }, walls = { pos: [], uv: [], idx: [] };
+  if (mountain) {
+    const W = [[0, -0.155], [0.025, -0.155], [0.08, -0.105], [0.08, -0.055], [0.035, 0], [0.08, 0.055], [0.08, 0.105], [0.025, 0.155], [0, 0.155], [0, 0.11], [0.05, 0.075], [0.05, 0.035], [0.012, 0], [0.05, -0.035], [0.05, -0.075], [0, -0.11]];
+    for (const run of runs) { if (run.idx.length < 3) continue;
+      const pts = line(run, 2.5, (px, pz) => hf.groundAt(px, pz) + 0.6);
+      // (the ends: on along the road another 4 m, down into the ground and turned away from the road)
+      for (const [e, f] of [[0, 1], [pts.length - 1, pts.length - 2]]) { const a = pts[e], b = pts[f], dx = a.x - b.x, dz = a.z - b.z, l = Math.hypot(dx, dz) || 1, ext = [];
+        for (const t of [1.5, 3, 4.2]) { const x = a.x + dx / l * t - a.rx * t * 0.09, z = a.z + dz / l * t - a.rz * t * 0.09; ext.push({ x, z, y: lerp(a.y, hf.groundAt(x, z) + 0.05, t / 4.2), rx: a.rx, rz: a.rz }); }
+        if (e === 0) pts.unshift(...ext.reverse()); else pts.push(...ext); }
+      sweep(pts, W, rails, false);
+      pts.forEach((p, k) => { if (k < 3 || k > pts.length - 4) return; const gx = p.x - p.rx * 0.11, gz = p.z - p.rz * 0.11, gy = Math.min(p.y - 0.6, hf.groundAt(gx, gz)), ph = p.y + 0.15 - gy + 0.25;
+        if (k % 2 === 0) items.guardPost.push(m4.compose(new THREE.Vector3(gx, gy - 0.25 + ph / 2, gz), q.setFromAxisAngle(UP, Math.atan2(p.rx, p.rz)), new THREE.Vector3(1, ph, 1)).clone());
+        if (k % 10 === 5) items.reflector.push(atY(gx, p.y + 0.3, gz, Math.atan2(p.rx, p.rz)));
+        const n = pts[k + 1]; if (n) { const mx = (p.x + n.x) / 2, mz = (p.z + n.z) / 2, l = Math.hypot(n.x - p.x, n.z - p.z); addBox(mx, mz, 0.1, l / 2 + 0.15, Math.atan2(n.x - p.x, n.z - p.z), p.y - 0.8, p.y + 0.35); } }); }
   }
-  // dry-stone walls along the drops (the old southern mountain roads have them instead of steel): knee high, a little
-  // way off the edge (further round the hairpins), in 3 m courses following the road
-  if (cfg.walls) for (let i = startI + 10; i < finishI - 10; i += 3) {
-    if (!railed[i - (i - startI - 10) % 4]) continue;
-    const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], yaw = Math.atan2(T[i][0], T[i][1]), rd = 2.55 + 0.8 * wide[i], x = px + lx * s * rd, z = pz + lz * s * rd, y = Math.min(hf.groundAt(px, pz) - 0.05, hf.groundAt(x, z));
-    items.wall.push(m4.compose(new THREE.Vector3(x, y - 0.25, z), q.setFromAxisAngle(UP, yaw + (rng() - 0.5) * 0.02), new THREE.Vector3(1, 1, 1)).clone()); addBox(x, z, 0.24, 1.55, yaw, y - 0.3, y + 0.7); }
+  if (cfg.walls) {
+    const Wp = [[-0.24, -0.35], [0.24, -0.35], [0.24, 0.48], [0.17, 0.62], [-0.17, 0.62], [-0.24, 0.48]];
+    for (const run of runs) { if (run.idx.length < 3) continue;
+      const pts = line(run, 2.79, (px, pz, x, z) => Math.min(hf.groundAt(px, pz) - 0.05, hf.groundAt(x, z)));
+      sweep(pts, Wp.map(([u, v]) => [-u, v]), walls, true);
+      for (let k = 0; k + 1 < pts.length; k++) { const p = pts[k], n = pts[k + 1], l = Math.hypot(n.x - p.x, n.z - p.z); addBox((p.x + n.x) / 2, (p.z + n.z) / 2, 0.24, l / 2 + 0.1, Math.atan2(n.x - p.x, n.z - p.z), p.y - 0.3, p.y + 0.62); } }
+  }
   for (const c of corners) {
     if (c.R > 60) continue; // (chevrons only where a bend can catch you out)
     const out = i => { const [lx, lz] = left(i); return [-lx * c.dir, -lz * c.dir]; }; // (the corner's outside)
@@ -540,17 +561,17 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const markerBand = inst(new THREE.BoxGeometry(0.09, 0.22, 0.09).translate(0, 0.72, 0), markerRed, items.marker, false);
   if (markerBase) markerBase.name = 'rally-marker-posts'; if (markerBand) markerBand.name = 'rally-marker-bands';
   if (mountain) {
-    const steel = new THREE.MeshStandardMaterial({ color: 0xaeb6ba, roughness: 0.48, metalness: 0.72 }), darkSteel = new THREE.MeshStandardMaterial({ color: 0x70787c, roughness: 0.62, metalness: 0.5 }), orange = new THREE.MeshStandardMaterial({ color: 0xff8b18, emissive: 0x6b2300, emissiveIntensity: 0.35, roughness: 0.55 });
-    const rails = inst(wBeam(4.2), steel, items.guard); if (rails) rails.name = 'rally-mountain-guardrails';
+    const steel = new THREE.MeshStandardMaterial({ color: 0xaeb6ba, roughness: 0.48, metalness: 0.72, side: THREE.DoubleSide }), darkSteel = new THREE.MeshStandardMaterial({ color: 0x70787c, roughness: 0.62, metalness: 0.5 }), orange = new THREE.MeshStandardMaterial({ color: 0xff8b18, emissive: 0x6b2300, emissiveIntensity: 0.35, roughness: 0.55 });
+    if (rails.idx.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(rails.pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(rails.uv, 2)); g.setIndex(rails.idx); g.computeVertexNormals();
+      const m = new THREE.Mesh(g, steel); m.name = 'rally-mountain-guardrails'; m.castShadow = m.receiveShadow = true; group.add(m); }
     const posts = inst(new THREE.BoxGeometry(0.1, 1, 0.15), darkSteel, items.guardPost); if (posts) posts.name = 'rally-mountain-guardrail-posts';
     const reflectors = inst(new THREE.BoxGeometry(0.16, 0.12, 0.05), orange, items.reflector, false); if (reflectors) reflectors.name = 'rally-mountain-reflectors';
   }
-  if (items.wall.length) { // (the stone photo laid on in metres, so the courses keep their size on every face)
-    const g = new THREE.BoxGeometry(0.46, 0.92, 3.08).translate(0, 0.46, 0), pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv;
-    for (let k = 0; k < pa.count; k++) { const x = pa.getX(k), y = pa.getY(k), z = pa.getZ(k), nx = Math.abs(na.getX(k)), ny = Math.abs(na.getY(k)); ua.setXY(k, (nx > 0.5 ? z : x) / 1.4 + (ny > 0.5 ? 0 : 0), (ny > 0.5 ? z : y) / 1.4); }
-    const sw = new THREE.MeshStandardMaterial({ map: phTex('japanese_stone_wall', 'diff', '1k', true), normalMap: phTex('japanese_stone_wall', 'nor_gl', '1k', false, NFLAT), roughness: 0.95, color: 0xe2d8c6 });
+  if (walls.idx.length) { // (the stone photo laid on in metres along the wall and round it, so the courses keep their size)
+    const sw = new THREE.MeshStandardMaterial({ map: phTex('japanese_stone_wall', 'diff', '1k', true), normalMap: phTex('japanese_stone_wall', 'nor_gl', '1k', false, NFLAT), roughness: 0.95, color: 0xe2d8c6, side: THREE.DoubleSide });
     for (const t of [sw.map, sw.normalMap]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    const walls = inst(g, sw, items.wall); if (walls) walls.name = 'rally-stone-walls'; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(walls.pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(walls.uv, 2)); g.setIndex(walls.idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, sw); m.name = 'rally-stone-walls'; m.castShadow = m.receiveShadow = true; group.add(m); }
   if (tapePos.length) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(tapePos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(tapeUv, 2)); g.computeVertexNormals(); group.add(new THREE.Mesh(g, tapeM)); }
   const chq = canvasTex(512, 64, (g, w, h) => { for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#f2f2ee' : '#1a1a1a'; g.fillRect(i * 16, j * 16, 16, 16); } });
   const archM = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.6, metalness: 0.3 });
