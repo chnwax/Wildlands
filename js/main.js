@@ -203,7 +203,7 @@ function setting(id, key, def, apply, fmt) {
 }
 setting('sSlider', 'wl_sens', 1, v => player.sens = v, v => v.toFixed(2));
 setting('fSlider', 'wl_fov', 72, v => { camera.fov = v; camera.updateProjectionMatrix(); }, v => v + '°');
-const carFov = { v: 75 }; setting('cfSlider', 'wl_carfov', 75, v => { carFov.v = v; if (car) car.fov = v; }, v => v + '°'); // (the car's cameras: cockpit, bonnet, chase)
+const carFov = { v: 62 }; setting('cfSlider', 'wl_carfov2', 62, v => { carFov.v = v; if (car) car.fov = v; }, v => v + '°'); // (the car's cameras: cockpit, bonnet, chase)
 setting('vSlider', 'wl_volume', 0.8, v => audio.setVolume(v), v => Math.round(v * 100) + '%');
 $('qSel').addEventListener('change', e => setQuality(e.target.value));
 { const cs = $('carSel'); try { cs.value = localStorage.getItem('wl_car') || ''; } catch (e) {} cs.addEventListener('change', () => { try { localStorage.setItem('wl_car', cs.value); } catch (e) {} toastMsg('Car: from the next stage you load'); }); }

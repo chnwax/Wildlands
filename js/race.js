@@ -6,7 +6,7 @@
 // follows. Each rival is a box in the world's colliders, so the player's car bumps into it; a rival bumped slows a little
 // and edges away. The race's order is by distance down the stage; the results are taken as each car crosses the line.
 import { THREE, scene, gltfLoader, clamp, lerp, colInsert, colRemove } from './core.js';
-import { CAR_DEFS } from './car.js';
+import { CAR_DEFS, dressMaterials } from './car.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 // what a rival's car can do: grip (m/s² in a bend), engine (W at the wheels, the most it can push), top speed, braking
@@ -15,7 +15,7 @@ const PERF = { f40: { grip: 10.5, power: 330000, mass: 1260, acc: 7.6, top: 85, 
 export async function createRace(world, { rivals, grid, startI, finishI, lanes, RW, clock }) {
   const { P, T, N } = world.track, half = RW / 2;
   // ---- the cars: each model loaded once, a copy per rival (its paint recoloured), its wheels on pivots of their own
-  const models = {}; for (const r of rivals) if (!models[r.car]) models[r.car] = gltfLoader.loadAsync(CAR_DEFS[r.car].model).then(g => g.scene).catch(() => null);
+  const models = {}; for (const r of rivals) if (!models[r.car]) models[r.car] = gltfLoader.loadAsync(CAR_DEFS[r.car].model).then(g => { dressMaterials(g.scene, CAR_DEFS[r.car].mats); return g.scene; }).catch(() => null);
   const cars = [];
   for (const [k, r] of rivals.entries()) {
     const src = await models[r.car]; if (!src) continue;

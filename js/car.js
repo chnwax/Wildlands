@@ -60,8 +60,33 @@ export const CAR_DEFS = {
     wheel: (id, find) => ({ node: find('WHEEL_' + id), susp: find('SUSP_' + id) }), gear: [0.03, 0.08] },
   f40: { name: 'Ferrari F40 LB-Works', model: 'Modeleaut/lb-works_ferrari_f40texture4k.glb', credit: 'LB-Works Ferrari F40 by vecarz (CC BY-NC-SA 4.0)', spec: SPEC_F40,
     wheel: (id, find) => { const node = find({ LF: 'Tire001', RF: 'Tire003', LR: 'Tire002', RR: 'Tire004' }[id]); return { node, susp: node && node.children.find(c => /^Brake(?!Disc)/.test(c.name)) }; },
-    steerCut: { c: [0.32, 0.6, 0.55], eye: [0.32, 0.95, 0.0], ring: [0.12, 0.25], rim: /^InteriorBlack$/, skip: /Dials|Glass|Window|Display|Mirror/, ahead: 0.07, behind: 0.03 }, gear: [0.02, 0.28], brakeLights: /^RearLights$/ },
+    steerCut: { c: [0.33, 0.63, 0.38], rim: /^InteriorBlack$/, skip: /Dials|Glass|Window|Display|Mirror/, ahead: 0.06, behind: 0.09 }, gear: [0.02, 0.28], brakeLights: /^RearLights$/,
+    // (its own gear lever: a thin chrome-less stalk and a black ball in the open gate, cut out of the cabin and worked as
+    // the lever; it turns about a ball joint under the gate. Its gate is a short one)
+    lever: { box: [-0.03, 0.3, 0.3, 0.06, 0.5, 0.39], mat: /^InteriorBlack$/, pivot: 0.07, gate: 0.62 },
+    eye: [0.3, -0.55], // (the eyes from the wheel's hub: up, and back toward the seat)
+    // (the seats' red cloth is one material with the headliner and the panel across the passenger's side of the dash:
+    // those are grey felt in the car)
+    trim: { mat: /^Leather$/, at: p => p.y > 0.95 || p.z > 0.32, c: '#2d2d30', r: 0.96 },
+    // the model's materials come from another renderer: nearly all of them mirror metal, which in the cabin — where little
+    // sky reaches to be reflected — renders black. Each gets what it is made of: felt, leather, plastic, carbon and glass
+    // are not metals; the brakes and the engine's alloy partly. (m metalness, r roughness, k the colour scaled, c a colour)
+    mats: { Alcantara: { m: 0, r: 0.96, k: 1.7 }, Black: { m: 0, r: 0.5, c: '#2a2a2b' }, InteriorBlack: { m: 0, r: 0.72, c: '#2e2e30' }, Carbon: { m: 0.05, r: 0.32, c: '#2c2d30' },
+      Leather: { m: 0, r: 0.62, c: '#8f2a26' }, Cockpit: { m: 0, r: 0.42 }, CockpitStuff: { m: 0.15, r: 0.5 }, Grid: { m: 0.2, r: 0.55 }, Mechanics: { m: 0.35, r: 0.45 },
+      Dials: { m: 0, r: 0.06, map: null, c: '#d8dde2', o: 0.1 }, Paint: { m: 0.3, r: 0.36, cc: 0.85, ccr: 0.07 }, Tires: { m: 0, r: 0.9 }, material: { m: 0.35, r: 0.38 },
+      Brake: { m: 0.6, r: 0.35 }, BrakeDisc1: { m: 0.85, r: 0.38 }, Logos: { m: 0.2, r: 0.3 }, RearLights: { m: 0.1, r: 0.25 },
+      GlassBack: { m: 0, r: 0.04, o: 0.3 }, Windows: { m: 0, r: 0.02, c: '#dfe8e6', o: 0.08 }, Glass: { m: 0, r: 0.03, c: '#e6ecee', o: 0.1 }, 'Glass.front': { m: 0, r: 0.02, c: '#eef2f2', o: 0.06 }, RearLightsGlass: { m: 0, r: 0.05, o: 0.35 } } },
 };
+// a model's materials made what they are (see the F40's): and no glass refracting the scene behind it — that takes a
+// second render of the whole scene each frame, for a tint
+export function dressMaterials(root, mats) {
+  root.traverse(o => { if (!o.isMesh) return; for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (!m || m.userData.dressed) continue; m.userData.dressed = true;
+    if (m.transmission) { m.transmission = 0; m.transparent = true; }
+    const f = mats && mats[m.name]; if (!f) continue;
+    if (f.m !== undefined) m.metalness = f.m; if (f.r !== undefined) m.roughness = f.r; if (f.k) m.color.multiplyScalar(f.k); if (f.c) m.color.set(f.c);
+    if (f.map === null) m.map = null; if (f.o !== undefined) { m.opacity = f.o; m.transparent = true; } if (f.cc !== undefined) { m.clearcoat = f.cc; m.clearcoatRoughness = f.ccr; }
+    m.needsUpdate = true; } });
+}
 // (tuned to drive well rather than to the letter: grippy, quick to answer the wheel, and holding on in a slide)
 // (gravel: a gravel tyre's grip, about 1 g, peaking at larger slip angles and falling away gently past them — the car
 // moves about under you and drifts a little through the bends; asphalt stays grippy and precise)
@@ -90,6 +115,9 @@ export async function createCar(world, spawn, carId = 'i20') {
   const boxOf = o => new THREE.Box3().setFromObject(o);
   const vertsOf = (o, every = 1) => { const pts = []; o.updateMatrixWorld(true); o.traverse(m => { if (!m.isMesh) return; const pa = m.geometry.attributes.position; for (let i = 0; i < pa.count; i += every) pts.push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(m.matrixWorld)); }); return pts; };
   model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && m.map) m.map.anisotropy = 8; } });
+  dressMaterials(model, def.mats);
+  if (def.trim) { const T = def.trim, felt = new THREE.MeshStandardMaterial({ color: T.c, roughness: T.r, metalness: 0, name: 'felt' }), part = carve(model, o => T.mat.test(o.material.name), T.at, 'TRIM');
+    if (part) part.traverse(o => { if (o.isMesh) o.material = felt; }); }
   // (the handbrake: its foot and its grip from its own vertices. The steering wheel: its rim found
   // from its own vertices — the outer ring, in 24 sectors, each sector's centroid a point on the rim's centre line — and
   // the circle through those points gives the hub, the axis the wheel turns about, the rim's radius and its thickness)
@@ -140,22 +168,31 @@ export async function createCar(world, spawn, carId = 'i20') {
   // behind the wheel. Each gear a place of the knob: across the gate (toward the driver: R, 1-2, 3-4, 5-6) and along it
   // (forward: R, 1, 3, 5; back: 2, 4, 6); neutral in the middle of the 3-4 lane
   if (shiftNode) shiftNode.visible = false;
-  const GL = (() => { const at = (x, z) => { const cock = find('COCKPIT_HR') || model, o = model.localToWorld(new THREE.Vector3(x, 0.6, z)), rc = new THREE.Raycaster(o, model.localToWorld(new THREE.Vector3(x, 0, z)).sub(o).normalize(), 0, 1.2);
+  const GL = (() => { const g = new THREE.Group(); g.name = 'gearLever'; model.add(g); const stick = new THREE.Group(); g.add(stick); // (the lever: up its own y)
+    const Lv = def.lever, part = Lv && carve(model, o => Lv.mat.test(o.material.name), p => p.x > Lv.box[0] && p.y > Lv.box[1] && p.z > Lv.box[2] && p.x < Lv.box[3] && p.y < Lv.box[4] && p.z < Lv.box[5], 'LEVER_CUT');
+    if (part) { // (the model's own: its top and its foot where it goes down through the gate, the ball at its top)
+      const pts = vertsOf(part).map(p => model.worldToLocal(p)), y1 = Math.max(...pts.map(p => p.y)), y0 = Math.min(...pts.map(p => p.y)), mean = f => { const q = pts.filter(f); return q.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / q.length); };
+      const top = mean(p => p.y > y1 - 0.004), foot = mean(p => p.y < y0 + 0.012), d0 = top.clone().sub(foot).normalize(), base = foot.clone().addScaledVector(d0, -Lv.pivot), len = top.distanceTo(base);
+      const ball = pts.filter(p => p.y > y1 - 0.05), R = Math.max(...ball.map(p => _v.subVectors(p, base).projectOnPlane(d0).length()));
+      g.position.copy(base); stick.quaternion.setFromUnitVectors(UP, d0); g.updateMatrixWorld(true); stick.attach(part);
+      return { g, stick, base, len, d0, R, top0: top, gate: Lv.gate };
+    }
+    // (otherwise one of its own: a short stalk, a leather knob with a red ring, a boot and the gate's plate on the tunnel)
+    const at = (x, z) => { const cock = find('COCKPIT_HR') || model, o = model.localToWorld(new THREE.Vector3(x, 0.6, z)), rc = new THREE.Raycaster(o, model.localToWorld(new THREE.Vector3(x, 0, z)).sub(o).normalize(), 0, 1.2);
       const h = cock ? rc.intersectObject(cock, true)[0] : null; return h ? model.worldToLocal(h.point.clone()).y : 0.39; };
-    const base = new THREE.Vector3(def.gear[0], at(def.gear[0], def.gear[1]), def.gear[1]), len = 0.31, d0 = new THREE.Vector3(0.05, 0.3, 0.03).normalize(), R = 0.019;
-    const g = new THREE.Group(); g.name = 'gearLever'; g.position.copy(base); model.add(g);
+    const base = new THREE.Vector3(def.gear[0], at(def.gear[0], def.gear[1]), def.gear[1]), len = 0.235, d0 = new THREE.Vector3(0.05, 0.3, 0.03).normalize(), R = 0.0165;
+    g.position.copy(base); stick.quaternion.setFromUnitVectors(UP, d0);
     const metal = new THREE.MeshStandardMaterial({ color: 0xc4c8ce, metalness: 0.9, roughness: 0.28 }), leather = new THREE.MeshStandardMaterial({ color: 0x18181a, metalness: 0, roughness: 0.62 });
     const red = new THREE.MeshStandardMaterial({ color: 0xc8241c, metalness: 0.2, roughness: 0.45 }), boot = new THREE.MeshStandardMaterial({ color: 0x111112, metalness: 0, roughness: 0.92 });
-    const stick = new THREE.Group(); g.add(stick); stick.quaternion.setFromUnitVectors(UP, d0); // (the lever: up its own y)
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0095, len - 0.04, 14), metal); rod.position.y = (len - 0.04) / 2; stick.add(rod);
-    const knob = new THREE.Mesh(new THREE.CapsuleGeometry(R, 0.042, 6, 20), leather); knob.position.y = len - 0.03; stick.add(knob);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.0005, 0.0022, 8, 28), red); ring.rotation.x = Math.PI / 2; ring.position.y = len - 0.008; stick.add(ring);
-    const gaiter = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.05, 0.07, 18, 1, true), boot); gaiter.position.y = 0.03; g.add(gaiter);
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.008, 0.16), metal); plate.position.y = 0.002; g.add(plate);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0085, len - 0.03, 14), metal); rod.position.y = (len - 0.03) / 2; stick.add(rod);
+    const knob = new THREE.Mesh(new THREE.CapsuleGeometry(R, 0.026, 6, 20), leather); knob.position.y = len - 0.025; stick.add(knob);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.0005, 0.0018, 8, 28), red); ring.rotation.x = Math.PI / 2; ring.position.y = len - 0.006; stick.add(ring);
+    const gaiter = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.04, 0.05, 18, 1, true), boot); gaiter.position.y = 0.022; g.add(gaiter);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.006, 0.11), metal); plate.position.y = 0.002; g.add(plate);
     for (const o of [rod, knob, ring, gaiter, plate]) { o.castShadow = true; o.receiveShadow = true; }
-    return { g, stick, base, len, d0, R, top0: base.clone().addScaledVector(d0, len) };
+    return { g, stick, base, len, d0, R, top0: base.clone().addScaledVector(d0, len), gate: 0.8 };
   })();
-  const slotOf = (gr, out) => { out[0] = gr === 0 ? 0.09 : gr === 1 ? 0 : gr < 4 ? 0.045 : gr < 6 ? 0 : -0.045; out[1] = gr === 1 ? 0 : gr % 2 === 0 ? 0.055 : -0.055; return out; };
+  const slotOf = (gr, out) => { out[0] = GL.gate * (gr === 0 ? 0.09 : gr === 1 ? 0 : gr < 4 ? 0.045 : gr < 6 ? 0 : -0.045); out[1] = GL.gate * (gr === 1 ? 0 : gr % 2 === 0 ? 0.055 : -0.055); return out; };
   // the dash's shift lights and the brake lights (each its own material, so each lights alone)
   const glow = (node, color) => { const ms = []; if (node) node.traverse(o => { if (!o.isMesh) return; o.material = o.material.clone(); o.material.emissive = new THREE.Color(color); o.material.emissiveIntensity = 0; ms.push(o.material); }); return ms; };
   const leds = []; for (let i = 0; i < 21; i++) { const n = find('LED_' + i + '_'); if (n) leds.push(glow(n, i < 7 ? 0x30ff40 : i < 14 ? 0xff2a1a : 0x3a6bff)); }
@@ -163,7 +200,7 @@ export async function createCar(world, spawn, carId = 'i20') {
     : [...glow(find('LIGHT_REAR_BRAKE'), 0xff1a10), ...glow(find('LIGHT_REAR00'), 0xff1a10), ...glow(find('LIGHT_REAR01'), 0xff1a10)];
   // ---- the driver: the first-person arms, their chest set so the shoulders sit below and either side of the eyes
   const driver = new THREE.Group(); driver.name = 'driver'; model.add(driver);
-  const eye = new THREE.Vector3(steerHub.x, steerHub.y + 0.33, steerHub.z - 0.53); // (the driver's eyes)
+  const [eyeUp, eyeBack] = def.eye || [0.33, -0.53], eye = new THREE.Vector3(steerHub.x, steerHub.y + eyeUp, steerHub.z + eyeBack); // (the driver's eyes)
   if (ag) suitUp(ag.scene); // (full-fingered gloves and the race suit's sleeves)
   const rig = ag ? armsRig(ag.scene, driver, eye.clone().add(new THREE.Vector3(0, -0.237, -0.09)), 0.0118) : null;
   cabinLight(model, driver, ag && ag.scene);
@@ -174,7 +211,7 @@ export async function createCar(world, spawn, carId = 'i20') {
     steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, handEff: 0, gear: 2, rpm: SPEC.engine.idle, shiftT: 0, auto: true, revT: 0, locked: false,
     accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
   const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC, id: carId, def,
-    look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0, t: 0, bump: 0, kick: new THREE.Vector3() }, fov: 75, anim: { hb: 0, hbGrip: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
+    look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0, t: 0, bump: 0, kick: new THREE.Vector3() }, fov: 62, anim: { hb: 0, hbGrip: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
   car.gearLever = GL; car.tune = { HB, ASSIST, SURF, LOOSE }; // (live handling tuning from the console)
   // (a box for the walker to bump into while the car stands; out of the car's own way)
   const col = { t: 1, x: 0, z: 0, hx: 0.95, hz: 2.05, c: 1, s: 0, y0: -1e9, y1: 1e9 }; let colIn = false;
@@ -232,7 +269,7 @@ export async function createCar(world, spawn, carId = 'i20') {
   const F = new THREE.Vector3(), T = new THREE.Vector3(), R3 = new THREE.Matrix3(), Rt = new THREE.Matrix3();
   const addForce = (f, at) => { F.add(f); T.add(_t.subVectors(at, st.pos).cross(f)); };
   const ground = (x, z) => world.groundAt(x, z) + (world.bumpAt ? world.bumpAt(x, z) : 0);
-  const up = new THREE.Vector3(), fwd = new THREE.Vector3(), down = new THREE.Vector3(), anchor = new THREE.Vector3(), wf = new THREE.Vector3(), wl = new THREE.Vector3(), r = new THREE.Vector3(), vp = new THREE.Vector3(), fv = new THREE.Vector3(), pr = { x: 0, y: 0, z: 0 };
+  const up = new THREE.Vector3(), fwd = new THREE.Vector3(), down = new THREE.Vector3(), anchor = new THREE.Vector3(), wf = new THREE.Vector3(), wl = new THREE.Vector3(), r = new THREE.Vector3(), vp = new THREE.Vector3(), fv = new THREE.Vector3(), gn = new THREE.Vector3(), gt = new THREE.Vector3(), tax = new THREE.Vector3(), pr = { x: 0, y: 0, z: 0 };
   let hbT = 0; const CORNERS = bodyPoints(CORNERS0, SPEC), SIDES = bodyPoints(SIDES0, SPEC);
   function stepPhys(h) {
     const { susp } = SPEC, q = st.q;
@@ -242,11 +279,13 @@ export async function createCar(world, spawn, carId = 'i20') {
     for (const w of wheels) {
       anchor.copy(w.hub).applyQuaternion(q).add(st.pos).addScaledVector(up, S0);
       const dy = Math.max(0.3, -down.y); let t = (anchor.y - ground(anchor.x, anchor.z)) / dy; t = (anchor.y - ground(anchor.x + down.x * t, anchor.z + down.z * t)) / dy;
-      const s = t - w.R, comp = susp.rest - s, c = clamp(comp, 0, susp.travel + 0.08);
-      w.cv = (c - w.c) / h; w.c = c; w.contact = comp > 0; w.s = clamp(s, susp.rest - susp.travel, susp.rest);
+      // (ground well past the bump stop is no ground under the tyre but a face it has run into — a bank, a rock wall: the
+      // tyre does not climb it on its spring; the body's corners meet it, pushed out along its normal)
+      const s = t - w.R, comp = susp.rest - s, face = comp > susp.travel + 0.12, c = face ? 0 : clamp(comp, 0, susp.travel + 0.08);
+      w.cv = (c - w.c) / h; w.c = c; w.contact = comp > 0 && !face; w.s = clamp(s, susp.rest - susp.travel, susp.rest);
       w.cp.copy(anchor).addScaledVector(down, t);
       const cv = Math.abs(w.cv) < 0.12 ? w.cv : Math.sign(w.cv) * (0.12 + (Math.abs(w.cv) - 0.12) * 0.35); // (digressive: soft over sharp bumps)
-      let fs = w.contact ? susp.k * c + (w.cv > 0 ? susp.bump : susp.rebound) * cv : 0; if (c > susp.travel) fs += (c - susp.travel) * 450000;
+      let fs = w.contact ? susp.k * c + (w.cv > 0 ? susp.bump : susp.rebound) * cv : 0; if (c > susp.travel) fs += (c - susp.travel) * (w.cv >= 0 ? 450000 : 90000); // (the bump stop: rubber, giving back little of what it took)
       w.fs = fs;
     }
     for (const [a, b, k] of [[0, 1, susp.arbF], [2, 3, susp.arbR]]) { const wa = wheels[a], wb = wheels[b], d = (wa.contact ? wa.c : 0) - (wb.contact ? wb.c : 0); if (wa.contact) wa.fs += k * d; if (wb.contact) wb.fs -= k * d; }
@@ -320,15 +359,22 @@ export async function createCar(world, spawn, carId = 'i20') {
         if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * ASSIST.side * on);
       } }
     // ---- the body against the ground (its corners, its roof) and against the world (its sides)
+    // (pushed out along the ground's normal, and damped hard on the way in: a corner run into a bank is stopped by it and
+    // slides along it, not thrown up into the air as a push straight up would throw it)
     for (const [bx, by, bz] of CORNERS) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos), d = world.groundAt(p.x, p.z) - p.y; if (d <= 0) continue;
-      r.subVectors(p, st.pos); vp.crossVectors(st.ang, r).add(st.vel); const fn = Math.max(0, 250000 * d - 9000 * vp.y), l = Math.hypot(vp.x, vp.z);
-      fv.set(l > 1e-3 ? -vp.x / l * 0.6 * fn : 0, fn, l > 1e-3 ? -vp.z / l * 0.6 * fn : 0); addForce(fv, p); }
+      world.normalAt(p.x, p.z, gn); if (gn.y < 0.55) { gn.y = 0; gn.normalize(); } r.subVectors(p, st.pos); /* (a face steeper than ~57°: a wall, met side-on) */ vp.crossVectors(st.ang, r).add(st.vel); const vn = vp.dot(gn), fn = clamp(250000 * d * gn.y - 16000 * vn, 0, 9 * m);
+      gt.copy(vp).addScaledVector(gn, -vn); const l = gt.length(); fv.copy(gn).multiplyScalar(fn); if (l > 1e-3) fv.addScaledVector(gt, -0.6 * fn / l); addForce(fv, p); }
     if (colIn) col.y1 = -1e9; // (not against its own box)
     for (const [bx, by, bz] of SIDES) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos); pr.x = p.x; pr.y = p.y - 0.45; pr.z = p.z; collide(pr, 0.22, 1.1);
       const dx = pr.x - p.x, dz = pr.z - p.z, d = Math.hypot(dx, dz); if (d < 1e-4) continue;
       const nx = dx / d, nz = dz / d; r.subVectors(p, st.pos); vp.crossVectors(st.ang, r).add(st.vel); const vn = vp.x * nx + vp.z * nz, fn = Math.max(0, 320000 * d - 24000 * vn);
       const tx = vp.x - vn * nx, tz = vp.z - vn * nz, tl = Math.hypot(tx, tz); fv.set(nx * fn - (tl > 1e-3 ? tx / tl * 0.35 * fn : 0), 0, nz * fn - (tl > 1e-3 ? tz / tl * 0.35 * fn : 0)); addForce(fv, p); }
     if (colIn) col.y1 = 1e9;
+    // ---- forgiving: tipped past ~25° (on two wheels along a bank, rolled by a rock) the car is eased back onto its
+    // wheels, firmly as the tilt grows, its roll damped on the way — a moment off the road ends on the wheels, not the roof
+    const tilt = Math.acos(clamp(up.y, -1, 1));
+    if (tilt > 0.44) { tax.set(-up.z, 0, up.x); const tl = tax.length(); /* (up × the vertical: about it, up turns to the vertical) */ if (tl > 1e-4) { tax.multiplyScalar(1 / tl); const I = (Ib.x + Ib.z) / 2, k = Math.min(1, (tilt - 0.44) / 0.6);
+      T.addScaledVector(tax, I * (14 * k - 4 * k * st.ang.dot(tax))); } }
     // ---- integrate (the angular part in the body's frame: its inertia is diagonal there)
     st.vel.addScaledVector(F, h / m); st.pos.addScaledVector(st.vel, h);
     R3.setFromMatrix4(_m.makeRotationFromQuaternion(q)); Rt.copy(R3).transpose();
@@ -616,7 +662,7 @@ export async function createCar(world, spawn, carId = 'i20') {
     level.setFromUnitVectors(_v.set(0, 1, 0).applyQuaternion(st.q), UP); qH.identity().slerp(level, cab ? 0.12 : 0.1).multiply(st.q);
     // (the lens: the field of view set by the player, a little wider with the speed)
     car.fovK = lerp(car.fovK || 0, clamp((sp - 8) / 40, 0, 1), 1 - Math.exp(-dt * 2));
-    cam.position.copy(eyeB); cam.quaternion.copy(qH).multiply(qLook); setLens(cam, 0.035, Math.round((car.fov + (cab ? 0 : 4) + car.fovK * 8) * 4) / 4);
+    cam.position.copy(eyeB); cam.quaternion.copy(qH).multiply(qLook); setLens(cam, 0.035, Math.round((car.fov + (cab ? 0 : 4) + car.fovK * 5) * 4) / 4);
   };
   const setLens = (cam, near, fov) => { if (cam.near !== near || cam.fov !== fov) { cam.near = near; cam.fov = fov; cam.updateProjectionMatrix(); } };
   car.leave = () => { car.driving = false; const side = _v.set(1.7, 0, -0.1).applyQuaternion(st.q).add(st.pos); return { x: side.x, z: side.z }; };
@@ -805,40 +851,55 @@ function suitUp(arms) {
 }
 
 
-// Cut a part out of a model's meshes — the F40's steering wheel, which is no node of its own: its rim (the points of the
-// rim's material round the given centre) gives the wheel's plane (its axis the direction they spread least along, by
-// inverse iteration on their covariance) and its middle; every triangle within the rim's radius and a few centimetres
-// either side of that plane (toward the driver more than toward the dash, where the dials are) moves into meshes of its
-// own under a new group, which the car turns as the wheel.
-function cutOut(model, { c, eye, ring, rim, skip, ahead, behind }) {
+// Cut a part out of a model's meshes — the F40's steering wheel, which is no node of its own: its rim is the largest
+// connected piece of the rim's material round the given centre; its middle and its plane (the axis the direction its
+// points spread least along, by inverse iteration on their covariance) give a cylinder, and every connected piece of the
+// cabin wholly inside it — the rim, the spokes, the boss and its bolts, not the dials beyond or the column's shroud
+// reaching through — moves into meshes of its own under a new group, which the car turns as the wheel.
+function cutOut(model, { c, rim, skip, ahead, behind }) {
   model.updateMatrixWorld(true);
-  const inv = model.matrixWorld.clone().invert(), v = new THREE.Vector3(), all = [];
-  model.traverse(o => { if (!o.isMesh || Array.isArray(o.material) || !rim.test(o.material.name)) return; const M = inv.clone().multiply(o.matrixWorld), pa = o.geometry.attributes.position;
-    for (let i = 0; i < pa.count; i++) all.push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(M)); });
-  // (a first guess: the wheel faces the driver's eyes; then the ring of rim points in that plane, its middle and its own
-  // plane, three times over)
-  const hub = new THREE.Vector3(...c), axis = hub.clone().sub(new THREE.Vector3(...eye)).normalize(), cov = new THREE.Matrix3(), e = cov.elements; let pts = [];
-  for (let round = 0; round < 4; round++) {
-    pts = all.filter(p => { v.subVectors(p, hub); const a = v.dot(axis), rr = v.projectOnPlane(axis).length(); return Math.abs(a) < 0.045 && rr > ring[0] && rr < ring[1]; });
-    if (pts.length < 20) return null;
-    hub.copy(pts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length)); e.fill(0);
-    for (const p of pts) { const d = [p.x - hub.x, p.y - hub.y, p.z - hub.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) e[i * 3 + j] += d[i] * d[j]; }
-    for (let i = 0; i < 3; i++) e[i * 4] += 1e-6; const ci = cov.clone().invert(), ax = axis.clone();
-    for (let k = 0; k < 40; k++) ax.applyMatrix3(ci).normalize(); if (ax.dot(axis) < 0) ax.negate(); axis.copy(ax); }
-  const R = pts.reduce((a, p) => a + v.subVectors(p, hub).projectOnPlane(axis).length(), 0) / pts.length + 0.03;
-  const group = new THREE.Group(); group.name = 'STEER_CUT'; model.add(group);
-  const cuts = []; model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && !skip.test(o.material.name) && o !== group) cuts.push(o); });
+  const inv = model.matrixWorld.clone().invert(), C = new THREE.Vector3(...c), v = new THREE.Vector3(); let best = null;
+  model.traverse(o => { if (!o.isMesh || Array.isArray(o.material) || !rim.test(o.material.name)) return; const M = inv.clone().multiply(o.matrixWorld), pa = o.geometry.attributes.position, { id, n } = pieces(o.geometry);
+    const ps = Array.from({ length: n }, () => []); for (let i = 0; i < pa.count; i++) ps[id[i]].push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(M));
+    for (const q of ps) { if (q.length < 100) continue; const b = new THREE.Box3().setFromPoints(q); if (b.getCenter(v).distanceTo(C) < 0.12 && b.getSize(v).length() > 0.25 && (!best || q.length > best.length)) best = q; } });
+  if (!best) return null;
+  const hub = best.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / best.length), cov = new THREE.Matrix3(), e = cov.elements; e.fill(0);
+  for (const p of best) { const d = [p.x - hub.x, p.y - hub.y, p.z - hub.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) e[i * 3 + j] += d[i] * d[j]; }
+  for (let i = 0; i < 3; i++) e[i * 4] += 1e-6; const ci = cov.clone().invert(), axis = new THREE.Vector3(0, 0, 1);
+  for (let k = 0; k < 60; k++) axis.applyMatrix3(ci).normalize(); if (axis.z < 0) axis.negate(); // (toward the dash)
+  const R = Math.max(...best.map(p => v.subVectors(p, hub).projectOnPlane(axis).length())) + 0.012, w = new THREE.Vector3();
+  return carve(model, o => !skip.test(o.material.name), p => { w.subVectors(p, hub); const a = w.dot(axis); return a > -behind && a < ahead && w.projectOnPlane(axis).length() < R; }, 'STEER_CUT', true);
+}
+// a geometry's connected pieces: its vertices welded where they meet (the same place to 0.1 mm), then joined along the
+// triangles' edges
+function pieces(g) {
+  const pa = g.attributes.position, n = pa.count, idx = g.index ? g.index.array : null, nt = (idx ? idx.length : n) / 3, weld = new Int32Array(n), at = new Map(), q = x => Math.round(x * 1e4) + 30000;
+  for (let i = 0; i < n; i++) { const k = (q(pa.getX(i)) * 60000 + q(pa.getY(i))) * 60000 + q(pa.getZ(i)); let j = at.get(k); if (j === undefined) at.set(k, j = at.size); weld[i] = j; }
+  const par = Int32Array.from({ length: at.size }, (_, i) => i), root = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; }, join = (a, b) => { a = root(a); b = root(b); if (a !== b) par[a] = b; };
+  for (let t = 0; t < nt; t++) { const a = weld[idx ? idx[t * 3] : t * 3], b = weld[idx ? idx[t * 3 + 1] : t * 3 + 1], c = weld[idx ? idx[t * 3 + 2] : t * 3 + 2]; join(a, b); join(b, c); }
+  const id = new Int32Array(n), num = new Map(); for (let i = 0; i < n; i++) { const r = root(weld[i]); let k = num.get(r); if (k === undefined) num.set(r, k = num.size); id[i] = k; }
+  return { id, n: num.size };
+}
+// move the triangles of a model's meshes (those picked) that lie wholly inside a region of the model's own space into
+// meshes of their own under a new group: a part that moves, from geometry that has no node for it (whole: only the
+// connected pieces that lie wholly inside)
+function carve(model, pick, inside, name, whole = false) {
+  model.updateMatrixWorld(true);
+  const inv = model.matrixWorld.clone().invert(), v = new THREE.Vector3(), group = new THREE.Group(); group.name = name;
+  const cuts = []; model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && pick(o)) cuts.push(o); });
   for (const o of cuts) { const g = o.geometry, pa = g.attributes.position, M = inv.clone().multiply(o.matrixWorld), n = g.index ? g.index.count : pa.count, idx = g.index ? g.index.array : null;
-    const keep = [], take = [], inside = new Uint8Array(pa.count);
-    for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(M).sub(hub); const a = v.dot(axis); inside[i] = a > -ahead && a < behind && v.projectOnPlane(axis).length() < R ? 1 : 0; }
-    for (let t = 0; t < n; t += 3) { const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, d = idx ? idx[t + 2] : t + 2; (inside[a] && inside[b] && inside[d] ? take : keep).push(a, b, d); }
+    const keep = [], take = [], ins = new Uint8Array(pa.count);
+    for (let i = 0; i < pa.count; i++) ins[i] = inside(v.fromBufferAttribute(pa, i).applyMatrix4(M)) ? 1 : 0;
+    if (whole) { if (!ins.includes(1)) continue; const { id, n: np } = pieces(g), out = new Uint8Array(np); for (let i = 0; i < pa.count; i++) if (!ins[i]) out[id[i]] = 1; for (let i = 0; i < pa.count; i++) ins[i] = out[id[i]] ? 0 : 1; } // (only pieces wholly inside)
+    for (let t = 0; t < n; t += 3) { const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, d = idx ? idx[t + 2] : t + 2; (ins[a] && ins[b] && ins[d] ? take : keep).push(a, b, d); }
     if (!take.length) continue;
-    // (the part keeps only the vertices its triangles use: bounds and the rim's fit read every vertex of a geometry)
+    // (the part keeps only the vertices its triangles use: bounds and fits read every vertex of a geometry)
     const map = new Map(), gp = new THREE.BufferGeometry(), ni = take.map(i => { if (!map.has(i)) map.set(i, map.size); return map.get(i); });
-    for (const [name, att] of Object.entries(g.attributes)) { const k = att.itemSize, arr = new att.array.constructor(map.size * k); for (const [i, j] of map) for (let c = 0; c < k; c++) arr[j * k + c] = att.array[i * k + c]; gp.setAttribute(name, new THREE.BufferAttribute(arr, k, att.normalized)); }
+    for (const [nm, att] of Object.entries(g.attributes)) { const k = att.itemSize, arr = new att.array.constructor(map.size * k); for (const [i, j] of map) for (let c = 0; c < k; c++) arr[j * k + c] = att.array[i * k + c]; gp.setAttribute(nm, new THREE.BufferAttribute(arr, k, att.normalized)); }
     gp.setIndex(ni); const part = new THREE.Mesh(gp, o.material); part.castShadow = o.castShadow; part.receiveShadow = o.receiveShadow;
-    g.setIndex(keep); part.matrixAutoUpdate = false; part.matrix.copy(M); part.matrixWorld.copy(o.matrixWorld); group.add(part); part.matrixAutoUpdate = true; part.matrix.decompose(part.position, part.quaternion, part.scale); }
-  return group.children.length ? group : null;
+    g.setIndex(keep); M.decompose(part.position, part.quaternion, part.scale); group.add(part); }
+  if (!group.children.length) return null;
+  model.add(group); group.updateMatrixWorld(true); return group;
 }
 // the first-person arms: a skinned rig (a chest; each side an arm, an elbow, a wrist, a thumb and four fingers of three
 // joints) posed in the car model's space.

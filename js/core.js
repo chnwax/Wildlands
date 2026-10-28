@@ -122,9 +122,12 @@ if (depthReversed) {
   // three r170 enables reversed depth with the wrong clip-control mode and keeps a cached depth-clear of 1: set the
   // [0,1] clip range (full float precision) and a depth clear of 0 (the far plane) ourselves
   applyReversedDepth();
-  // polygon offsets are written for standard depth (negative = toward the camera): flip them for reversed depth
-  const setPO = renderer.state.setPolygonOffset;
-  renderer.state.setPolygonOffset = (on, factor, units) => setPO(on, -factor, -units);
+  // polygon offsets are written for standard depth (negative = toward the camera): flip them for reversed depth. (three
+  // sets a material's offset from inside state.setMaterial with its own closure, so it is set again here, flipped:
+  // unflipped, every offset surface — the road, its markings, decals — was pushed away from the eye, and at a glancing
+  // angle a few metres off the ground behind it showed through)
+  const gl = renderer.getContext(), setMat = renderer.state.setMaterial;
+  renderer.state.setMaterial = (material, frontFaceCW) => { setMat(material, frontFaceCW); if (material.polygonOffset) gl.polygonOffset(-material.polygonOffsetFactor, -material.polygonOffsetUnits); };
 }
 // shadow maps store standard [0,1] depth even when the view is rendered reversed (the lookup side uses the unreversed
 // shadow matrix)
