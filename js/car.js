@@ -746,18 +746,17 @@ function dashDisplay(mesh, model) {
     tex.needsUpdate = true; } };
 }
 
-// The driver's kit, painted over the arms' own texture once: the model's fingerless gloves become full-fingered FIA
-// gloves (graphite leather backs with their seams, the bare fingers and nails grey suede, the knuckles' creases kept as
-// its folds — the values are sRGB: a near-black there is no glove at all under the cabin's light), and the sleeves
-// the dark blue of the team's race suit. Skin is told by its hue; the sleeve is the cloth region of the sheet.
+// The driver's kit, painted over the arms' own texture once: the model's fingerless gloves get graphite leather backs
+// with their seams kept (the values are sRGB: a near-black there is no glove at all under the cabin's light), the
+// fingers keep their own skin, and the sleeves take the dark blue of the team's race suit. Skin is told by its place on
+// the sheet and its hue; the sleeve is the cloth region of the sheet.
 function suitUp(arms) {
   arms.traverse(o => { if (!o.isSkinnedMesh) return; const m = o.material; if (!m || !m.map || !m.map.image || m.userData.suited) return; m.userData.suited = true;
     const img = m.map.image, S = Math.min(2048, img.width || 2048), cv = document.createElement('canvas'); cv.width = cv.height = S;
     const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, S, S); const id = g.getImageData(0, 0, S, S), a = id.data;
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const k = (y * S + x) * 4, r = a[k] / 255, gg = a[k + 1] / 255, b = a[k + 2] / 255, L = 0.3 * r + 0.55 * gg + 0.15 * b, sat = Math.max(r, gg, b) - Math.min(r, gg, b);
       const fingers = x < S * 0.7 && y < S * 0.35 && L > 0.1, skin = fingers ? 1 : clamp((r - gg) * 6 - 0.15, 0, 1) * clamp((gg - b) * 8, 0, 1) * clamp((r - 0.25) * 4, 0, 1); // (the sheet's finger region, nails and all)
-      if (skin > 0) { const f = 0.215 + 0.13 * clamp(L * 1.3 - 0.45, -0.45, 0.5); // (the gloved fingers: grey suede, its folds from the skin's shading)
-        a[k] = lerp(a[k], f * 255, skin); a[k + 1] = lerp(a[k + 1], f * 255, skin); a[k + 2] = lerp(a[k + 2], f * 1.03 * 255, skin); continue; }
+      if (skin > 0.5) continue; // (the fingers: bare skin, as the model's fingerless gloves leave them)
       if (x >= S * 0.6) { const f = clamp(0.155 + (L - 0.07) * 1.3, 0.09, 0.3); // (the back of the glove: graphite leather, its seams and stitching kept)
         a[k] = f * 255; a[k + 1] = f * 1.02 * 255; a[k + 2] = f * 1.08 * 255; continue; }
       if (x < S * 0.6 && y > S * 0.34 && sat < 0.08) { const f = clamp(L / 0.12, 0.35, 1.8); // (the sleeve: the suit's navy Nomex)
