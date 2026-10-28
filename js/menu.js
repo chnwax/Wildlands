@@ -19,8 +19,8 @@ export const CITIES = [
     tags: ['1.5 km', 'gravel', 'forest stage'] },
   { id: 'alpine', map: 'rally2', name: 'Alpine Pass', kanji: '02', blurb: 'A 1.6 km paved climb through tight mountain bends',
     tags: ['1.6 km', 'asphalt', 'mountain stage'] },
-  { id: 'hillcrest', map: 'rally3', name: 'Hill Crest', kanji: '03', blurb: 'A 1.8 km asphalt stage climbing through hillside switchbacks',
-    tags: ['1.8 km', 'asphalt', 'hill stage'] },
+  { id: 'hillcrest', map: 'rally3', name: 'Hill Crest', kanji: '03', blurb: 'A 1.8 km asphalt mountain road cut into a snowy slope',
+    tags: ['1.8 km', 'asphalt', 'snowy mountain'] },
   { id: 'shiomi', map: null, name: 'Shiomi', kanji: '潮見', blurb: 'A seaside harbour town' },
 ];
 const UNLISTED = { nature: { name: 'Wildlands', kanji: '' }, assetmap: { name: 'Asset Garden', kanji: '庭' } };

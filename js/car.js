@@ -35,13 +35,14 @@ const SPEC = {
   wheelI: 1.1, steerMax: 0.56, steerLock: 4.7, // (rad at the front wheels; the steering wheel turns ±270°)
   engine: { idle: 1000, limiter: 8200, inertia: 0.2, braking: 55, curve: [[0, 120], [1000, 190], [2000, 310], [3000, 430], [4000, 475], [5000, 485], [6000, 470], [7000, 430], [8000, 370], [9000, 260]] },
   gears: [-3.3, 0, 3.25, 2.38, 1.88, 1.53, 1.27, 1.07], final: 4.3, eff: 0.88, shiftTime: 0.1, // (0 reverse, 1 neutral, 2.. first..)
-  brake: { front: 1650, rear: 720, hand: 980 }, lsd: 300, center: 420,
+  brake: { front: 1650, rear: 720, hand: 2600 }, lsd: 300, center: 420,
   aero: { cda: 0.78, cla: 1.1, front: 0.45 }, crr: 0.016, rollCentre: 0.12,
 };
 // (tuned to drive well rather than to the letter: grippy, quick to answer the wheel, and holding on in a slide)
 const SURF = { gravel: { mu: 1.4, kp: 0.11, ap: 0.115, slide: 0.98 }, grass: { mu: 1.08, kp: 0.13, ap: 0.14, slide: 0.96 }, forest: { mu: 1.05, kp: 0.13, ap: 0.14, slide: 0.96 },
-  asphalt: { mu: 1.52, kp: 0.085, ap: 0.1, slide: 0.98 }, concrete: { mu: 1.48, kp: 0.085, ap: 0.1, slide: 0.98 } };
+  asphalt: { mu: 1.52, kp: 0.085, ap: 0.1, slide: 0.98 }, concrete: { mu: 1.48, kp: 0.085, ap: 0.1, slide: 0.98 }, snow: { mu: 0.72, kp: 0.16, ap: 0.18, slide: 0.94 } };
 const ASSIST = { yaw: 3.8, beta: 0.14, k: 12.5, side: 3.2 }; // (arcade stability: responsive turn-in, a catch before a slide becomes a spin, and gentle lateral recovery)
+const HB = { rise: 7, catch: 1.5, yawK: 32, yawMin: 0.8, yawMax: 2.6, yawGain: 0.5, beta: 1.15, side: 0.98 }; // (the handbrake turn: see the stability help)
 const pac = s => Math.sin(1.3 * Math.atan(2.64 * s)); // (1 at s = 1)
 const torqueAt = rpm => { const C = SPEC.engine.curve; for (let i = 0; i + 1 < C.length; i++) if (rpm <= C[i + 1][0]) return lerp(C[i][1], C[i + 1][1], (rpm - C[i][0]) / (C[i + 1][0] - C[i][0])); return C[C.length - 1][1]; };
 // the tyre: normalised slips (sk = κ/κpeak, sa = tan α/tan αpeak) on one curve, the force split along them
@@ -143,7 +144,7 @@ export async function createCar(world, spawn) {
     accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
   const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC,
     look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0, t: 0, bump: 0, kick: new THREE.Vector3() }, fov: 75, anim: { hb: 0, hbGrip: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
-  car.gearLever = GL;
+  car.gearLever = GL; car.tune = { HB, ASSIST, SURF }; // (live handling tuning from the console)
   // (a box for the walker to bump into while the car stands; out of the car's own way)
   const col = { t: 1, x: 0, z: 0, hx: 0.95, hz: 2.05, c: 1, s: 0, y0: -1e9, y1: 1e9 }; let colIn = false;
   const place = (x, z, yaw) => { st.pos.set(x, world.groundAt(x, z) + SPEC.cg[1] + 0.01, z); st.q.setFromAxisAngle(UP, yaw); st.vel.set(0, 0, 0); st.ang.set(0, 0, 0); for (const w of wheels) { w.w = 0; w.c = SPEC.susp.rest - S0; } st.gear = 2; st.rpm = SPEC.engine.idle; Object.assign(car.anim, { gq: null, slot: 2, gMove: 0 }); };
@@ -177,7 +178,7 @@ export async function createCar(world, spawn) {
       else if (st.gear === 0 && v > -0.5 && thr > 0.5 && brk < 0.1) { st.revT += dt; if (st.revT > 0.2) { car.selectGear(2); st.revT = 0; } } else st.revT = 0; }
     let t = thr, b = brk; if (st.gear === 0) { t = brk; b = thr; }
     const ramp = (x, y, up, down) => x + clamp(y - x, -down * dt, up * dt);
-    st.throttle = analog ? t : ramp(st.throttle, t, 6, 10); st.brake = analog ? b : ramp(st.brake, b, 6, 10); st.hand = ramp(st.hand, hb, 10, 6);
+    st.throttle = analog ? t : ramp(st.throttle, t, 6, 10); st.brake = analog ? b : ramp(st.brake, b, 6, 10); st.hand = ramp(st.hand, hb, 16, 12);
   };
   // a gear chosen: the right hand takes the lever there (handsSteer), and the gear is in when the knob is in its slot
   const chosen = () => { const A = car.anim; return A.gq !== null ? A.gq : A.gMove ? A.gTo : A.slot; };
@@ -219,7 +220,8 @@ export async function createCar(world, spawn) {
     }
     for (const [a, b, k] of [[0, 1, susp.arbF], [2, 3, susp.arbR]]) { const wa = wheels[a], wb = wheels[b], d = (wa.contact ? wa.c : 0) - (wb.contact ? wb.c : 0); if (wa.contact) wa.fs += k * d; if (wb.contact) wb.fs -= k * d; }
     // ---- the drivetrain: the engine's speed from the driven wheels, the clutch slipping below the launch revs
-    const hand = st.handEff, hb = hand > 0.3, ratio = SPEC.gears[st.gear], Gt = ratio * SPEC.final, inGear = ratio !== 0; // (the handbrake releases the rear drive, while the front wheels keep pulling the car through an arcade slide)
+    st.handEff += (st.hand - st.handEff) * Math.min(1, h * 35); // (the hydraulic line: the rear calipers follow the lever within a few hundredths of a second)
+    const hand = st.handEff, hb = hand > 0.15, ratio = SPEC.gears[st.gear], Gt = ratio * SPEC.final, inGear = ratio !== 0; // (the handbrake releases the rear drive, while the front wheels keep pulling the car through an arcade slide)
     let wSum = 0, nW = 0; for (const w of wheels) if (!hb || w.front) { wSum += w.w; nW++; }
     const rpmW = Math.max(0, wSum / nW * Gt) * 60 / (2 * Math.PI), thr = st.shiftT > 0 ? 0 : st.throttle;
     let Tw = 0; st.locked = false;
@@ -243,7 +245,7 @@ export async function createCar(world, spawn) {
         wf.copy(fwd).applyAxisAngle(up, steerA); wf.addScaledVector(_n, -_n.dot(wf)).normalize(); wl.crossVectors(_n, wf);
         r.subVectors(w.cp, st.pos); vp.crossVectors(st.ang, r).add(st.vel);
         const vx = vp.dot(wf), vy = vp.dot(wl); w.vx = vx;
-        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) * (w.front ? 1 : 1 - 0.18 * clamp(hand, 0, 1)); // the locked rear tyres keep a believable amount of lateral grip
+        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURF[w.surf] || SURF.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) ; // (a locked rear tyre loses its side grip by itself: all its force goes against the way it slides)
         const Fz = Math.max(0, w.fs); w.Fz = Fz;
         const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 0.95));
         w.slip = tyre(S, mu, Fz, kappa / S.kp, sa, F2); fx = F2[0]; let fy = F2[1];
@@ -265,17 +267,20 @@ export async function createCar(world, spawn) {
     if (sp > 0.1) { addForce(_v.copy(st.vel).multiplyScalar(-0.5 * 1.225 * SPEC.aero.cda * sp), st.pos);
       const dfz = 0.5 * 1.225 * SPEC.aero.cla * vF * vF; addForce(_v.copy(down).multiplyScalar(dfz * SPEC.aero.front), _w.copy(fwd).multiplyScalar(1.25).add(st.pos)); addForce(_v.copy(down).multiplyScalar(dfz * (1 - SPEC.aero.front)), _w.copy(fwd).multiplyScalar(-1.25).add(st.pos)); }
     // ---- the stability help (an arcade car's): the yaw drawn toward the one the steering asks for (the wheels' own
-    // geometry, as fast as the grip allows), and a slide pulled back past a body slip — eased off for the handbrake, so
-    // it still swings the tail round
-    { const vL = st.vel.dot(fwd), sideV = _v.crossVectors(up, fwd), vLat = st.vel.dot(sideV), spd = Math.abs(vL), on = clamp((spd - 3) / 6, 0, 1) * (wheels.filter(w => w.contact).length >= 3 ? 1 : 0);
-      if (on > 0) { hbT = hand > 0.12 ? Math.min(1, hbT + h * 5) : Math.max(0, hbT - h * 4); const hbMix = smoothstep(0.08, 0.85, hand) * smoothstep(3, 9, spd), free = 1 - 0.12 * hbT;
+    // geometry, as fast as the grip allows), and a slide pulled back past a body slip. The handbrake opens it up: while
+    // the lever is up the locked rear swings out and the car turns as fast as the steering asks of a handbrake turn
+    // (quicker at hairpin speeds than fast; with the wheel straight it slides on straight), never past a body slip it
+    // could not drive out of; let go, the slide is caught over a moment as the rear tyres find their grip again
+    { const vL = st.vel.dot(fwd), sideV = _v.crossVectors(up, fwd), vLat = st.vel.dot(sideV), spd = Math.abs(vL), sp2 = Math.hypot(vL, vLat), on = clamp((sp2 - 3) / 6, 0, 1) * (wheels.filter(w => w.contact).length >= 3 ? 1 : 0);
+      hbT = hand > 0.12 ? Math.min(1, hbT + h * HB.rise) : Math.max(0, hbT - h * HB.catch);
+      if (on > 0) { const held = smoothstep(0.12, 0.6, hand), hbMix = hbT * smoothstep(2.5, 7, sp2), pull = held * hbMix;
         const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
-        const lim = 11 / Math.max(spd, 1), roadWant = clamp(vL * Math.tan(d) / wb, -lim, lim), hbWant = st.steer * lerp(0.5, 0.88, clamp(spd / 28, 0, 1)), want = lerp(roadWant, hbWant, hbMix * 0.8), beta = Math.atan2(vLat, spd), betaLim = lerp(ASSIST.beta, 0.24, hbMix);
-        let ty = -(yawNow - want) * ASSIST.yaw * free; if (Math.abs(beta) > betaLim) ty += Math.sign(beta) * (Math.abs(beta) - betaLim) * ASSIST.k * free;
+        const lim = 11 / Math.max(spd, 1), roadWant = clamp(vL * Math.tan(d) / wb, -lim, lim), hbWant = st.steer * clamp(HB.yawK / (sp2 + 3), HB.yawMin, HB.yawMax);
+        const want = lerp(roadWant, hbWant, pull), beta = Math.atan2(vLat, Math.max(vL, 0.5)), betaLim = lerp(ASSIST.beta, HB.beta, hbMix);
+        let ty = -(yawNow - want) * ASSIST.yaw * lerp(1, HB.yawGain, pull); if (Math.abs(beta) > betaLim) ty += Math.sign(beta) * (Math.abs(beta) - betaLim) * ASSIST.k;
         T.addScaledVector(up, ty * Ib.y * on);
-        const sideFree = spd * lerp(0.085, 0.16, hbMix), excess = Math.max(0, Math.abs(vLat) - sideFree); // permit a useful rally slide while held; catch it quickly as soon as the lever is released
-        if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * ASSIST.side * on * free);
-        if (hb && st.throttle > 0.05) F.addScaledVector(fwd, m * G * 0.18 * hand * st.throttle); // the front axle can still pull the car through the slide
+        const sideFree = sp2 * lerp(0.085, HB.side, hbMix), excess = Math.max(0, Math.abs(vLat) - sideFree);
+        if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * ASSIST.side * on);
       } }
     // ---- the body against the ground (its corners, its roof) and against the world (its sides)
     for (const [bx, by, bz] of CORNERS) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos), d = world.groundAt(p.x, p.z) - p.y; if (d <= 0) continue;
@@ -403,17 +408,18 @@ export async function createCar(world, spawn) {
   const gp = [[0, 0], [0, 0], [0, 0], [0, 0]], gsA = [0, 0], gsB = [0, 0];
   const gateAt = (u, out) => { let L = u * car.anim.gLen; for (let i = 0; i < 3; i++) { const a = gp[i], b = gp[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L <= l || i === 2) { const t = l > 1e-6 ? clamp(L / l, 0, 1) : 1; out[0] = lerp(a[0], b[0], t); out[1] = lerp(a[1], b[1], t); return out; } L -= l; } return out; };
   car.handsSteer = (want, dt) => { const A = car.anim, lock = SPEC.steerLock; let rot = st.steer * lock;
-    if (!car.driving) { st.handEff = st.hand; A.reach = 0; A.at = A.want = null; A.gMove = 0; A.gq = null; A.slot = st.gear; slotOf(A.slot, A.knob); for (const side of ['L', 'R']) { const h = hs[side]; h.fly = 0; h.phi = TH0[side] - want * lock; } return want; }
+    if (!car.driving) { A.hbGrip = st.hand; A.reach = 0; A.at = A.want = null; A.gMove = 0; A.gq = null; A.slot = st.gear; slotOf(A.slot, A.knob); for (const side of ['L', 'R']) { const h = hs[side]; h.fly = 0; h.phi = TH0[side] - want * lock; } return want; }
     // the right hand's errands: to the gear lever while a gear is to be put in (a gear on its way in is seen through
     // first), to the handbrake while it is pulled. A.at: the errand it is on, or coming back from; A.reach: 0 on the rim
     // .. 1 there. Turned to another errand on the way, it goes on from where it is
     const job = A.gMove ? 'gear' : st.hand > 0.08 && hbL ? 'hb' : A.gq !== null || A.linger > 0 ? 'gear' : null; A.want = job;
     if (job && job !== A.at) { if (A.reach > 0) A.snap = true; A.reach = 0; A.at = job; }
-    A.reach = clamp(A.reach + (job ? 1 : -1) * dt / (A.at === 'hb' ? 0.3 : job ? 0.15 : 0.17), 0, 1); if (A.reach === 0 && !job) A.at = null;
-    const hbTouch = A.at === 'hb' && A.want === 'hb' && A.reach >= 0.985; // first reach the lever at rest; only then close the grip and pull it
-    A.hbGrip = lerp(A.hbGrip, hbTouch ? st.hand : 0, 1 - Math.exp(-dt * (hbTouch ? 22 : 30)));
-    if (!hbTouch && A.hbGrip < 0.001) A.hbGrip = 0;
-    st.handEff = hbL ? A.hbGrip : st.hand;
+    A.reach = clamp(A.reach + (job ? 1 : -1) * dt / (A.at === 'hb' ? 0.16 : job ? 0.15 : 0.17), 0, 1); if (A.reach === 0 && !job) A.at = null;
+    // (the lever as the eye sees it: the hand first reaches it at rest, then closes on it and pulls it. The brake itself
+    // does not wait for the arm — its hydraulics answer the button at once, in stepPhys)
+    const hbTouch = A.at === 'hb' && A.want === 'hb' && A.reach >= 0.985;
+    A.hbGrip = lerp(A.hbGrip, hbL ? (hbTouch ? st.hand : 0) : st.hand, 1 - Math.exp(-dt * (hbTouch || !hbL ? 26 : 30)));
+    if (A.hbGrip < 0.001) A.hbGrip = 0;
     // the lever: through the gate from the gear it is in to the one chosen, by neutral (the engine's drive let go while it
     // moves); the gear is in as the knob comes into its slot
     if (A.at === 'gear' && A.reach >= 1) {
@@ -463,7 +469,7 @@ export async function createCar(world, spawn) {
     GL.stick.quaternion.setFromUnitVectors(UP, kDir);
     // the handbrake: worked by the driver's hand in the cockpit — it is pulled as the hand closes on it (its rest place
     // is beyond a seated arm's reach) and let go of as the hand opens; otherwise it follows the brake itself
-    A.hb = st.handEff;
+    A.hb = A.hbGrip;
     const HB_PULL = -0.32, hbA = HB_PULL * A.hb;
     if (hbPivot) hbPivot.quaternion.setFromAxisAngle(XAX, hbA); A.hbVis = hbA;
     // the shift lights and the brake lights
@@ -535,6 +541,7 @@ export async function createCar(world, spawn) {
       const tgt = _a.copy(st.pos).addScaledVector(UP, 0.85), want = _b.copy(tgt).add(_w.set(-Math.sin(car.chaseYaw) * 6.3, 1.45 + Lk.pitch * 2.5, -Math.cos(car.chaseYaw) * 6.3));
       want.y = Math.max(want.y, world.groundAt(want.x, want.z) + 0.6);
       car.chasePos = car.chasePos ? car.chasePos.lerp(want, 1 - Math.exp(-dt * 10)) : want.clone();
+      car.chasePos.y = Math.max(car.chasePos.y, world.groundAt(car.chasePos.x, car.chasePos.z) + 0.4); // (never through a bank on the way)
       cam.position.copy(car.chasePos); cam.up.set(0, 1, 0); cam.lookAt(tgt); setLens(cam, 0.15, 64); return; }
     // the head on a spring, pushed by the car's acceleration (local: x left, y up, z forward), a little loose so it
     // sways and settles; jolted by the suspension hitting bumps and landings; shaken finely by the gravel at speed and
@@ -991,7 +998,7 @@ function engineSound(car) {
       for (const w of car.wheels) { wsum += Math.abs(w.w); if (!w.contact) continue; nC++; if (w.surf === 'asphalt' || w.surf === 'concrete') tm++; else if (w.surf === 'gravel') gr++; jolt += Math.max(0, w.cv - 0.3); } // (stones only off the gravel road itself, not off grass)
       rough = rough * 0.9 + Math.min(1, jolt * 0.4) * 0.1;
       if (jolt > 0.9 && sp > 2) send({ ev: 'bump', k: Math.min(1.5, jolt * 0.35) });
-      const hb = st.handEff > 0.5 && car.driving; if (hb !== hbOn) { hbOn = hb; if (!knock('hb', hb)) send({ ev: 'hb', on: hb }); }
+      const hb = car.anim.hb > 0.5 && car.driving; if (hb !== hbOn) { hbOn = hb; if (!knock('hb', hb)) send({ ev: 'hb', on: hb }); }
       // (heard from where the camera is: in the cockpit, or outside — fading with the distance when you walk away)
       const cam = audio.lp, d = Math.hypot(cam.x - st.pos.x, cam.y - st.pos.y, cam.z - st.pos.z), cockpit = car.driving && car.view === 0;
       const slipK = clamp((st.slipMax - 0.9) / 1.5, 0, 1);
@@ -1018,7 +1025,7 @@ function carHud(car) {
   document.head.appendChild(css);
   const el = document.createElement('div'); el.id = 'carHud'; el.innerHTML = '<div><span class="spd">0</span><span class="u">km/h</span><span class="gear">N</span></div><div class="bar"><i></i></div><div class="mode"></div>'; document.body.appendChild(el);
   const help = document.createElement('div'); help.id = 'carHelp';
-  help.innerHTML = '<b>W</b><b>S</b> throttle, brake · <b>A</b><b>D</b> steer · <b>Space</b> handbrake<br><b>E</b><b>Q</b> / <b>Shift</b> / mouse buttons: gears · <b>X</b> auto / manual<br><b>C</b> camera · <b>R</b> reset · <b>V</b> get out / in'; document.body.appendChild(help);
+  help.innerHTML = '<b>W</b><b>S</b> throttle, brake · <b>A</b><b>D</b> steer · <b>Space</b> handbrake (tap: a flick, hold + steer: a hairpin)<br><b>E</b><b>Q</b> / <b>Shift</b> / mouse buttons: gears · <b>X</b> auto / manual<br><b>C</b> camera · <b>R</b> reset · <b>V</b> get out / in'; document.body.appendChild(help);
   const cr = document.createElement('div'); cr.id = 'carCredit'; cr.textContent = 'WRC Hyundai i20 2017 by vecarz (CC BY-NC-SA 4.0) · First Person Arms by DJMaesen (CC BY 4.0)'; document.body.appendChild(cr);
   const spd = el.querySelector('.spd'), gear = el.querySelector('.gear'), bar = el.querySelector('.bar i'), mode = el.querySelector('.mode');
   let n = 0;
