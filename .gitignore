@@ -1,13 +1,13 @@
-AssetsToUse/
-
-# model libraries built from the owned Unity packs (tools/packs-import.mjs): licensed for use in the game,
-# not for redistribution in this public repository
-UnityAssets/
-assets/packs/
-assets/models/assetmap/
-ModeleZPaczek/
-Modeleaut/
-assets/packs-fix/
+# The repository is PRIVATE: the model libraries built from the owned Unity packs (tools/packs-import.mjs), the car
+# models, the arms and the sounds are kept in it for the game's own use — licensed for use in the game, not for
+# redistribution; never make this repository public again while they are in it.
+# (the three raw Unity packages over 100 MB stay out: GitHub refuses files that size without LFS, and the game only
+# needs what was built from them)
+UnityAssets/Idyllic Anime Japan v1.1.1.unitypackage
+UnityAssets/Idyllic Woodlands - Stylized Fantasy RPG Environment v1.2.unitypackage
+UnityAssets/The Illustrated Nature v1.9.unitypackage
+# (the cars' downloads, duplicates of their .glb files)
+Modeleaut/*.zip
 
 # desktop app (Electron): its packages and builds
 node_modules/
