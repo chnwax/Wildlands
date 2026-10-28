@@ -1068,7 +1068,7 @@ const CLIPS = {
   hb: [[5.16, 0.9]], // (the handbrake: the pull at the end of the recording)
 };
 function engineSound(car) {
-  let node = null, loading = false, rough = 0, hbOn = false, rec = null;
+  let node = null, loading = false, rough = 0, hbOn = false, rec = null, lastBump = 0;
   let grv = null; // (the gravel loop: { src, gain, lp })
   const startGravel = (ctx, buf) => { // (the steady part of the recording, its end crossfaded into its start so the loop has no seam)
     const sr = buf.sampleRate, a = Math.floor(1.2 * sr), b = Math.floor(9.4 * sr), X = Math.floor(0.35 * sr), n = b - a - X, out = ctx.createBuffer(buf.numberOfChannels, n, sr);
@@ -1098,7 +1098,8 @@ function engineSound(car) {
       const st = car.st, A = car.anim, sp = st.vel.length(); let gr = 0, tm = 0, nC = 0, wsum = 0, jolt = 0;
       for (const w of car.wheels) { wsum += Math.abs(w.w); if (!w.contact) continue; nC++; if (w.surf === 'asphalt' || w.surf === 'concrete') tm++; else if (w.surf === 'gravel') gr++; jolt += Math.max(0, w.cv - 0.3); } // (stones only off the gravel road itself, not off grass)
       rough = rough * 0.9 + Math.min(1, jolt * 0.4) * 0.1;
-      if (jolt > 0.9 && sp > 2) send({ ev: 'bump', k: Math.min(1.5, jolt * 0.35) });
+      const now = performance.now(); // (a knock only for a real hit — a pothole, a landing, a kerb — and not a rattle of them)
+      if (jolt > 1.8 && sp > 2 && now - lastBump > 180) { lastBump = now; send({ ev: 'bump', k: Math.min(1.3, (jolt - 1.2) * 0.3) }); }
       const hb = car.anim.hb > 0.5 && car.driving; if (hb !== hbOn) { hbOn = hb; if (!knock('hb', hb)) send({ ev: 'hb', on: hb }); }
       // (heard from where the camera is: in the cockpit, or outside — fading with the distance when you walk away)
       const cam = audio.lp, d = Math.hypot(cam.x - st.pos.x, cam.y - st.pos.y, cam.z - st.pos.z), cockpit = car.driving && car.view === 0;

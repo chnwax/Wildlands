@@ -81,7 +81,11 @@ function trackLine(cfg) {
   const jump = (s, c, h) => { const d = s - c; if (d < -18 || d > 7) return 0; return d <= 0 ? h * Math.pow((d + 18) / 18, 1.18) : h * (1 - d / 7); };
   // (a hillside road is graded: it follows the land smoothed along its way, cutting into the rises and built up over the
   // hollows, so the slopes beside it keep their own shape)
-  const graded = mountain || cfg.verge === 'cut' || cfg.grade, L0 = pts.map(([x, z]) => land(x, z)), LS = graded ? L0.map((_, i) => { let a = 0, c = 0; for (let k = Math.max(0, i - (cfg.grade || 60)); k <= Math.min(L0.length - 1, i + (cfg.grade || 60)); k += 3) { a += L0[k]; c++; } return a / c; }) : L0;
+  // (two passes of a true moving average, every station in its window: sampling every third one shifted the sample set
+  // with each station and left a centimetre of ripple every metre, which the wheels hammered on)
+  const graded = mountain || cfg.verge === 'cut' || cfg.grade, L0 = pts.map(([x, z]) => land(x, z)), box = (A, r) => { const S = new Float64Array(A.length + 1); for (let i = 0; i < A.length; i++) S[i + 1] = S[i] + A[i];
+      return A.map((_, i) => { const a = Math.max(0, i - r), b = Math.min(A.length - 1, i + r); return (S[b + 1] - S[a]) / (b - a + 1); }); };
+  const LS = graded ? box(box(L0, Math.round((cfg.grade || 60) * 0.6)), Math.round((cfg.grade || 60) * 0.6)) : L0;
   const Y = pts.map(([x, z], i) => LS[i]
     + (cfg.land ? Math.sin(i / 70) * 0.5 : mountain ? Math.sin(i / 180 + 0.5) * 2.4 + Math.sin(i / 80) * 0.8 : Math.sin(i / (cfg.roadType === 'asphalt' ? 210 : 260) + 0.5) * (cfg.roadType === 'asphalt' ? 3.8 : 2.8) + Math.sin(i / 92) * 1.7)
     + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
@@ -134,7 +138,9 @@ export async function buildStage(progress, cfg) {
   // beside the road: in the woods a drainage ditch each side, then the forest floor; on a hillside the road is cut into
   // the slope — a steep bank with a gutter at its foot above it, a longer embankment of fill below — and the hill goes on
   const terrainHeight = (x, z) => { const base = line.land(x, z), o = project(x, z, PT); if (!o) return base;
-    const d = o.d; if (d <= ED) return roadY(o) - 0.035;
+    // (under the opaque middle of the ribbon the ground is sunk 30 cm: a few centimetres there z-fought the road in bands on
+    // a GPU with less depth precision, and caught the road's shadow as stripes; at the fading edge it stays just below)
+    const d = o.d; if (d <= ED) return roadY(o) - 0.035 - 0.3 * (1 - smoothstep(0.7, 1.25, d));
     const edgeY = roadY(o, o.w < 0 ? -ED : ED) - 0.035, roadH = lerp(Y[o.k], Y[o.k + 1], o.t);
     // (ground rising above the road starts only past BANK0: a terrain triangle reaches 2.8 m, and one touching the road's
     // edge must not stand over it)
@@ -205,7 +211,7 @@ export async function buildStage(progress, cfg) {
   buildLogs(floor.logs);
   progress('Grading the road', 0.68); await tick();
   const road = roadRibbon(P, T, K, N, surfY, corners, cfg);
-  const startI = 14, finishI = N - 28, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP);
+  const startI = 14, finishI = N - 28, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP, surfY);
   progress('Dressing the roadside', 0.76); await tick();
   roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, mulberry32(cfg.seed + 23), packsReady());
   const crowd = spectators(sites, await peopleP, hf, P);
@@ -217,7 +223,7 @@ export async function buildStage(progress, cfg) {
   const carSpawn = { x: sx, z: sz, yaw: Math.atan2(tx, tz) };
   const spawn = { x: sx + lx2 * 5, z: sz + lz2 * 5, yaw: Math.atan2(-tx, -tz), pitch: -0.05 };
   const PG = { k: 0, t: 0, w: 0, d: 0 };
-  const groundBase = (x, z, o) => { if (o.d > ED + 0.4) return hf.groundAt(x, z); const r = roadY(o) + 0.02; return o.d <= SHOULDER ? r : lerp(r, hf.groundAt(x, z), smoothstep(SHOULDER, ED + 0.4, o.d)); };
+  const groundBase = (x, z, o) => { if (o.d > ED + 0.4) return hf.groundAt(x, z); const r = roadY(o) + 0.02; return o.d <= SHOULDER ? r : lerp(r, Math.max(hf.groundAt(x, z), r - 0.12), smoothstep(SHOULDER, ED + 0.4, o.d)); }; // (not into the sunk ground under the road)
   if (BANKAMT.some(v => v > 0.01)) snowBanks(P, T, N, left, DROP, BANKAMT, bankH, (x, z) => { const o = project(x, z, PB); return o ? groundBase(x, z, o) : hf.groundAt(x, z); });
   const clock = stageClock(N, nearAt, distAt, corners, line.features, startI, finishI, carSpawn, cfg, P);
   const world = {
@@ -228,10 +234,12 @@ export async function buildStage(progress, cfg) {
     groundAt(x, z) { const o = project(x, z, PG); if (!o || o.d > 3.5) return hf.groundAt(x, z); return groundBase(x, z, o) + snowBank(o); },
     normalAt(x, z, out) { const o = project(x, z, PG); if (!o || o.d > 3.7) return hf.normalAt(x, z, out); const e = 0.3, hx = world.groundAt(x + e, z) - world.groundAt(x - e, z), hz = world.groundAt(x, z + e) - world.groundAt(x, z - e), l = Math.hypot(hx, 2 * e, hz); return out.set(-hx / l, 2 * e / l, -hz / l); },
     surfaceAt(x, z) { const d = distAt(x, z); if (d < SHOULDER) return cfg.roadType; if (d < 3.5) { const o = project(x, z, PG); if (o && snowBank(o) > 0.08) return 'snow'; } return FOREST[hf.idx(x, z)] > 0.5 ? 'forest' : 'grass'; },
-    // (the car feels the road's surface: corrugations and the odd pothole on the gravel, a softer roll on the grass)
+    // (the car feels the road's surface: on gravel corrugations and the odd pothole, the same ones the road shows dark and
+    // wet; on asphalt only the faintest undulation and no holes at all; a softer roll on the grass)
     bumpAt(x, z) { const d = distAt(x, z), g = 1 - smoothstep(ROAD, SHOULDER + 1, d);
       const b = Math.sin(x * 1.1 + z * 0.5) * Math.sin(z * 0.9 - x * 0.3) * 0.003 + Math.sin(x * 0.37 - z * 0.41) * Math.sin(z * 0.29 + x * 0.19) * 0.012;
-      const pot = -0.045 * smoothstep(0.975, 0.995, Math.sin(x * 0.173 + 1.3) * Math.sin(z * 0.151 + 0.4));
+      if (asphalt && d < SHOULDER + 0.3) return b * 0.25;
+      const pot = -0.03 * smoothstep(0.982, 0.997, Math.sin(x * 0.173 + 1.3) * Math.sin(z * 0.151 + 0.4));
       return b * (0.45 + 0.55 * g) + pot * g; },
     gripAt(x, z) { const d = distAt(x, z); return d < ROAD || d > SHOULDER + 1 ? 1 : lerp(1, 0.93, clamp((d - ROAD) / (SHOULDER - ROAD), 0, 1)); }, // (the loose gravel at the edges)
     ambience(x, z) { return { forest: FOREST[hf.idx(clamp(x, -HALF, HALF), clamp(z, -HALF, HALF))], water: 0, town: 0, insects: 0.4 }; },
@@ -284,7 +292,7 @@ function roadRibbon(P, T, K, N, surfY, corners, cfg) {
         a = 1 - smoothstep(edge, edge + 0.45, aw);
         const track = Math.exp(-(((aw - 0.8) / 0.25) ** 2)), berm = Math.exp(-((w / 0.3) ** 2)), loose = smoothstep(1.0, 1.35, aw) * (1 - smoothstep(1.5, 1.9, aw));
         v = tone * (1 - 0.26 * track) * (1 + 0.14 * berm + 0.16 * loose * (1 + throwV)) * (1 - 0.22 * damp * (1 - berm));
-        const pot = smoothstep(0.96, 0.99, Math.sin(x * 0.173 + 1.3) * Math.sin(z * 0.151 + 0.4)) * (1 - smoothstep(ROAD, SHOULDER + 1, aw));
+        const pot = smoothstep(0.975, 0.995, Math.sin(x * 0.173 + 1.3) * Math.sin(z * 0.151 + 0.4)) * (1 - smoothstep(ROAD, SHOULDER + 1, aw));
         e = Math.max(smoothstep(1.3, 1.85, aw - rag * 0.5) * 0.85, cutV * smoothstep(1.5 - 1.1 * cutV, 1.6, aw), pot * 0.8); v *= 1 - 0.3 * pot;
       }
       col[o * 4] = col[o * 4 + 1] = col[o * 4 + 2] = v; col[o * 4 + 3] = a; dirt[o] = e; } }
@@ -294,7 +302,7 @@ function roadRibbon(P, T, K, N, surfY, corners, cfg) {
   const tex = asphalt ? 'asphalt_pit_lane' : 'bicolour_gravel';
   const mat = new THREE.MeshStandardMaterial({ map: phTex(tex, 'diff', asphalt ? '2k' : '1k', true), normalMap: phTex(tex, 'nor_gl', '1k', false, NFLAT),
     roughnessMap: asphalt ? phTex('asphalt_pit_lane', 'rough', '1k', false, [210, 210, 210]) : null, normalScale: new THREE.Vector2(asphalt ? 0.85 : 0.65, asphalt ? 0.85 : 0.65),
-    roughness: asphalt ? 1 : 0.97, metalness: 0, vertexColors: true, alphaHash: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    roughness: asphalt ? 1 : 0.97, metalness: 0, vertexColors: true, alphaHash: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
   const dirtTex = asphalt ? phTex('bicolour_gravel', 'diff', '1k', true) : phTex('brown_mud', 'diff', '1k', true), dirtTint = asphalt ? new THREE.Color(1.9, 1.72, 1.42) : new THREE.Color(2.3, 2.0, 1.6);
   mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, { tDirt: { value: dirtTex }, uDirtTint: { value: dirtTint } });
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aDirt; varying float vDirt; varying vec2 vDirtUv;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvDirt = aDirt; vDirtUv = uv * 1.3;');
@@ -462,7 +470,7 @@ const UPV = new THREE.Vector3(0, 1, 0);
 const packColor = c => Math.round(clamp(c[0], 0, 1) * 255) * 65536 + Math.round(clamp(c[1], 0, 1) * 255) * 256 + Math.round(clamp(c[2], 0, 1) * 255);
 
 // roadside marker posts, boards, bales, tape and the start arch
-function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP) {
+function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP, surfY) {
   const group = new THREE.Group(); group.name = 'rally-dressing'; scene.add(group);
   const canvasTex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, maxAniso); return t; };
   // chevron boards (red, white arrows toward the turn)
@@ -488,7 +496,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   }
   const wide = new Float32Array(N); for (const c of corners) if (c.R < 40) for (let i = Math.max(0, c.s - 10); i <= Math.min(N - 1, c.e + 10); i++) wide[i] = 1;
   const fall = new Uint8Array(N), railed = new Uint8Array(N);
-  if (mountain || cfg.walls) { for (let i = startI + 10; i < finishI - 10; i += 4) { const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], y = hf.groundAt(px, pz); fall[i] = wide[i] || y - hf.groundAt(px + lx * s * 7, pz + lz * s * 7) > (cfg.walls ? 1.4 : 2.2) ? 1 : 0; }
+  if (mountain || cfg.walls) { for (let i = startI + 10; i < finishI - 10; i += 4) { const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], y = surfY(i, 0); fall[i] = wide[i] || y - hf.groundAt(px + lx * s * 7, pz + lz * s * 7) > (cfg.walls ? 1.4 : 2.2) ? 1 : 0; }
     for (let i = startI + 10; i < finishI - 10; i += 4) for (let k = i - 16; k <= i + 16; k += 4) if (fall[k]) { railed[i] = 1; break; } }
   // the guardrail and the walls run unbroken: one section swept along each stretch where the hill falls away (a change of
   // side starts a new run), set back from the edge by an offset that eases out round the switchbacks, its height smoothed
@@ -497,7 +505,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const isRailed = i => i >= startI + 10 && i < finishI - 10 && railed[i - (i - startI - 10) % 4] === 1;
   const runs = []; if (mountain || cfg.walls) { let cur = null; for (let i = startI + 10; i < finishI - 10; i += 2) { if (isRailed(i) && (!cur || DROP[i] === cur.side)) { if (!cur) runs.push(cur = { side: DROP[i], idx: [] }); cur.idx.push(i); } else cur = null; } }
   const line = (run, rd0, base) => { const pts = run.idx.map(i => { const [px, pz] = P[i], [lx, lz] = left(i), s = run.side, rd = rd0 + 0.75 * wideS[i], x = px + lx * s * rd, z = pz + lz * s * rd;
-      return { x, z, y: base(px, pz, x, z), rx: -lx * s, rz: -lz * s }; });
+      return { x, z, y: base(px, pz, x, z, i), rx: -lx * s, rz: -lz * s }; });
     for (let pass = 0; pass < 3; pass++) for (let k = 1; k + 1 < pts.length; k++) pts[k].y = (pts[k - 1].y + 2 * pts[k].y + pts[k + 1].y) / 4;
     return pts; };
   // (a closed profile [u toward the road, v up] swept along the points; uv: metres along, metres round the profile)
@@ -512,7 +520,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   if (mountain) {
     const W = [[0, -0.155], [0.025, -0.155], [0.08, -0.105], [0.08, -0.055], [0.035, 0], [0.08, 0.055], [0.08, 0.105], [0.025, 0.155], [0, 0.155], [0, 0.11], [0.05, 0.075], [0.05, 0.035], [0.012, 0], [0.05, -0.035], [0.05, -0.075], [0, -0.11]];
     for (const run of runs) { if (run.idx.length < 3) continue;
-      const pts = line(run, 2.5, (px, pz) => hf.groundAt(px, pz) + 0.6);
+      const pts = line(run, 2.5, (px, pz, x, z, i) => surfY(i, 0) + 0.6);
       // (the ends: on along the road another 4 m, down into the ground and turned away from the road)
       for (const [e, f] of [[0, 1], [pts.length - 1, pts.length - 2]]) { const a = pts[e], b = pts[f], dx = a.x - b.x, dz = a.z - b.z, l = Math.hypot(dx, dz) || 1, ext = [];
         for (const t of [1.5, 3, 4.2]) { const x = a.x + dx / l * t - a.rx * t * 0.09, z = a.z + dz / l * t - a.rz * t * 0.09; ext.push({ x, z, y: lerp(a.y, hf.groundAt(x, z) + 0.05, t / 4.2), rx: a.rx, rz: a.rz }); }
@@ -526,7 +534,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   if (cfg.walls) {
     const Wp = [[-0.24, -0.35], [0.24, -0.35], [0.24, 0.48], [0.17, 0.62], [-0.17, 0.62], [-0.24, 0.48]];
     for (const run of runs) { if (run.idx.length < 3) continue;
-      const pts = line(run, 2.79, (px, pz, x, z) => Math.min(hf.groundAt(px, pz) - 0.05, hf.groundAt(x, z)));
+      const pts = line(run, 2.79, (px, pz, x, z, i) => Math.min(surfY(i, 0) - 0.05, hf.groundAt(x, z)));
       sweep(pts, Wp.map(([u, v]) => [-u, v]), walls, true);
       for (let k = 0; k + 1 < pts.length; k++) { const p = pts[k], n = pts[k + 1], l = Math.hypot(n.x - p.x, n.z - p.z); addBox((p.x + n.x) / 2, (p.z + n.z) / 2, 0.24, l / 2 + 0.1, Math.atan2(n.x - p.x, n.z - p.z), p.y - 0.3, p.y + 0.62); } }
   }
@@ -578,12 +586,12 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const archAt = (i0, label, gold) => { const [px, pz] = P[i0], [tx, tz] = T[i0], [lx, lz] = left(i0), yaw = Math.atan2(tx, tz);
     const banner = canvasTex(1024, 128, (g, w, h) => { g.fillStyle = gold ? '#6e1719' : '#10161f'; g.fillRect(0, 0, w, h); for (let i = 0; i < 16; i++) for (let j = 0; j < 4; j++) { g.fillStyle = (i + j) % 2 ? '#fff' : '#111'; g.fillRect(i * 8, j * 32, 8, 32); g.fillRect(w - 128 + i * 8, j * 32, 8, 32); }
       g.fillStyle = '#fff'; g.font = '700 68px "Segoe UI", system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, w / 2, h / 2 + 2); g.fillStyle = gold ? '#ffe06a' : '#e2b13c'; g.fillRect(140, h - 10, w - 280, 4); });
-    const bannerM = new THREE.MeshStandardMaterial({ map: banner, roughness: 0.7 }), arch = new THREE.Group(), gy = hf.groundAt(px, pz); arch.position.set(px, gy, pz); arch.rotation.y = yaw; group.add(arch);
+    const bannerM = new THREE.MeshStandardMaterial({ map: banner, roughness: 0.7 }), arch = new THREE.Group(), gy = surfY(i0, 0); arch.position.set(px, gy, pz); arch.rotation.y = yaw; group.add(arch);
     for (const sd of [-1, 1]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5.4, 0.35), archM); post.position.set(sd * 6.2, 2.7, 0); post.castShadow = true; arch.add(post); const x = px + lx * sd * 6.2, z = pz + lz * sd * 6.2, py = hf.groundAt(x, z); addBox(x, z, 0.25, 0.25, yaw, py, py + 5.4); }
     const beam = new THREE.Mesh(new THREE.BoxGeometry(12.8, 0.3, 0.3), archM); beam.position.set(0, 5.3, 0); beam.castShadow = true; arch.add(beam);
     for (const sd of [-1, 1]) { const ban = new THREE.Mesh(new THREE.PlaneGeometry(11.6, 1.45), bannerM); ban.position.set(0, 4.45, sd * 0.16); ban.rotation.y = sd < 0 ? Math.PI : 0; ban.castShadow = true; arch.add(ban); }
     const line = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 0.95).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: chq, roughness: 0.85, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
-    line.position.set(0, 0.02, 0); line.receiveShadow = true; arch.add(line); arch.updateMatrixWorld(true); };
+    line.position.set(0, 0.045, 0); line.receiveShadow = true; arch.add(line); arch.updateMatrixWorld(true); };
   archAt(startI, 'START', false); archAt(finishI, 'FINISH', true);
   let update = null;
   if (mountain) {
@@ -608,7 +616,7 @@ function coDriver() {
   const norm = s => s.toLocaleLowerCase('pl-PL').replace(/[.!?]+$/g, '').replace(/\s+/g, ' ').trim();
   const fallback = text => { if (!text || !('speechSynthesis' in window)) return; const u = new SpeechSynthesisUtterance(text), vs = speechSynthesis.getVoices(); u.voice = vs.find(v => /^pl\b/i.test(v.lang)) || null; u.lang = 'pl-PL'; u.rate = 1.22; u.pitch = 0.86; u.volume = 0.92; speechSynthesis.speak(u); };
   const ready = async () => { if (!audio.ctx) return null; if (buffer && data) return { data, buffer }; if (!decode) decode = raw.then(async ([m, bytes]) => { data = m; buffer = await audio.ctx.decodeAudioData(bytes.slice(0)); return { data, buffer }; }).catch(e => { console.warn('rally pilot:', e); return null; }); return decode; };
-  const stop = () => { serial++; for (const s of active) try { s.stop(); } catch (e) {} active = []; if ('speechSynthesis' in window) speechSynthesis.cancel(); };
+  const stop = () => { serial++; api.until = 0; for (const s of active) try { s.stop(); } catch (e) {} active = []; if ('speechSynthesis' in window) speechSynthesis.cancel(); };
   const keysFor = (text, clips) => {
     const byName = new Map(Object.keys(clips).map(k => [norm(k), k])), get = s => byName.get(norm(s));
     const out = [], push = s => { const k = get(s); if (k) out.push(k); return !!k; };
@@ -636,9 +644,9 @@ function coDriver() {
     let at = ctx.currentTime + 0.025, left = keys.length;
     for (const key of keys) { let [offset, duration] = pack.data.clips[key]; if (key === 'Trzy') duration = Math.min(duration, 0.48); else if (key === 'Dwa') duration = Math.min(duration, 0.74); else if (key === 'Jeden') duration = Math.min(duration, 0.55); // countdown words end before the next word in the source recording
       const src = ctx.createBufferSource(); src.buffer = pack.buffer; src.connect(bus); src.start(at, offset, duration); src.onended = () => { const i = active.indexOf(src); if (i >= 0) active.splice(i, 1); if (--left === 0) bus.disconnect(); }; active.push(src); at += Math.max(0.25, duration - 0.04); }
-    api.last = text; api.keys = keys; api.loaded = true;
+    api.last = text; api.keys = keys; api.loaded = true; api.until = at;
   };
-  const api = { say, stop, loaded: false, last: '', keys: [] };
+  const api = { say, stop, loaded: false, last: '', keys: [], until: 0, speaking: () => (audio.ctx && audio.ctx.currentTime < api.until - 0.05) || ('speechSynthesis' in window && speechSynthesis.speaking) };
   raw.then(() => { api.fetched = true; }).catch(() => {});
   return api;
 }
@@ -729,19 +737,16 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
   const phrase = c => grade(c.R) === 0 ? `${c.dir > 0 ? 'Lewy' : 'Prawy'} nawrót` : `${c.dir > 0 ? 'Lewy' : 'Prawy'} ${grade(c.R)}${c.e - c.s > 42 ? ' długi' : ''}`;
   const raw = corners.filter(c => c.apex > startI + 70 && c.apex < finishI - 35).map(c => ({ at: c.apex, end: c.e, text: phrase(c), dir: c.dir, grade: grade(c.R), long: c.e - c.s > 42, kind: 'turn' }));
   for (const f of features) if (f.at > startI + 70 && f.at < finishI - 35) raw.push(f); raw.sort((a, b) => a.at - b.at);
-  const notes = [];
-  for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[i + 1];
-    if (a.kind === 'turn' && b && b.kind === 'turn' && b.at - a.end < 85) { const tail = a.dir === b.dir && b.grade !== a.grade && a.grade > 0 && b.grade > 0 ? `${b.grade < a.grade ? 'zaciska' : 'otwiera'} ${b.grade}${b.long ? ' długi' : ''}` : `w ${b.text.toLowerCase()}`; notes.push({ at: a.at, end: b.end, text: `${a.text}, ${tail}`, dir: a.dir, grade: a.grade, linked: true, kind: 'turn', parts: [a, b], link: tail.split(' ')[0] }); i++; }
-    else notes.push(a);
-  }
+  const notes = raw; // (one call per bend or feature, read one after another: see the queue in update)
   const checkpoints = []; for (let i = startI + 300; i < finishI - 120; i += 300) checkpoints.push(i);
   const map = stageMap(host, P, startI, finishI, checkpoints);
-  const st = { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 };
+  const st = { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, noteAge: 9, result: 0, newBest: false, frame: 0 };
   const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
   const pilot = coDriver(), say = text => pilot.say(text), stopVoice = () => pilot.stop();
   const lockAtStart = car => { const cs = car.st; cs.pos.set(spawn.x, car.world.groundAt(spawn.x, spawn.z) + car.spec.cg[1] + 0.01, spawn.z); cs.q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.yaw); cs.vel.set(0, 0, 0); cs.ang.set(0, 0, 0); cs.throttle = 0; cs.brake = 1; cs.hand = cs.handEff = 0; for (const w of car.wheels) w.w = 0; };
-  const reset = () => { stopVoice(); Object.assign(st, { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 }); };
-  const showNote = (n, distance) => { const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; noteEl.innerHTML = paceCard(n, distance); say(lead + n.text); };
+  const reset = () => { stopVoice(); queue.length = 0; Object.assign(st, { phase: 'waiting', t: 0, progress: startI, countdown: 3.8, countSaid: 4, checkpoint: 0, note: 0, noteText: '', noteT: 0, result: 0, newBest: false, frame: 0 }); };
+  const queue = [], busy = () => (pilot.speaking() && st.noteAge < 3) || st.noteAge < 0.9; // (never held up longer than a call takes, whatever the audio does)
+  const showNote = (n, distance) => { st.noteAge = 0; const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; noteEl.innerHTML = paceCard(n, distance); say(lead + n.text); };
   const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem(cfg.bestKey, String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
   const api = { state: st, notes, checkpoints, pilot, reset, card: paceCard, map,
     update(dt, car) {
@@ -756,10 +761,14 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
         while (st.checkpoint < checkpoints.length && st.progress >= checkpoints[st.checkpoint] - 18) st.checkpoint++;
         const speed = car.st.vel.length(), lead = clamp(72 + speed * 2.15, 72, 155);
         while (st.note < notes.length && st.progress > notes[st.note].end + 70) st.note++;
-        if (st.note < notes.length && notes[st.note].at - st.progress <= lead) { showNote(notes[st.note], notes[st.note].at - st.progress); st.note++; }
+        // (a call comes due at its distance; while the co-driver is still reading the last one it waits its turn, and one
+        // the car has already reached is dropped)
+        while (st.note < notes.length && notes[st.note].at - st.progress <= lead) queue.push(notes[st.note++]);
+        while (queue.length && st.progress > queue[0].at - 8) queue.shift();
+        if (queue.length && !busy()) { const n = queue.shift(); showNote(n, n.at - st.progress); }
         if (onRoad && i >= finishI - 5 && st.checkpoint === checkpoints.length) finish();
       }
-      if (st.noteT > 0) st.noteT -= dt;
+      if (st.noteT > 0) st.noteT -= dt; st.noteAge += dt;
       noteEl.style.opacity = st.noteT > 0 && st.phase === 'running' ? '1' : '0';
       const cd = st.phase === 'countdown' ? Math.min(3, Math.max(1, Math.ceil(st.countdown))) : st.phase === 'running' && st.t < 0.7 ? 'START!' : '';
       countEl.style.display = cd ? '' : 'none'; countEl.textContent = cd;
