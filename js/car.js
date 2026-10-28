@@ -26,17 +26,41 @@ import { THREE, scene, renderer, gltfLoader, collide, colInsert, colRemove, clam
 import { audio } from './audio.js';
 import { toastMsg } from './ui.js';
 
-const MODEL = 'Modeleaut/wrc_hyundai_i20_2017texture4k.glb', ARMS = 'Modeleaut/first_person_arms.glb';
+const ARMS = 'Modeleaut/first_person_arms.glb';
 const G = 9.81;
 // ---------------------------------------------------------------- the car (model space: front +z, left +x, ground y 0)
-const SPEC = {
+const SPEC_I20 = {
   mass: 1230, cg: [0, 0.47, 0.05], dims: [1.85, 1.25, 4.05], // (dims: the box its inertia is taken from)
   susp: { rest: 0.3, k: 34000, bump: 3000, rebound: 4400, travel: 0.22, arbF: 15000, arbR: 10000 },
   wheelI: 1.1, steerMax: 0.56, steerLock: 4.7, // (rad at the front wheels; the steering wheel turns ±270°)
   engine: { idle: 1000, limiter: 8200, inertia: 0.2, braking: 55, curve: [[0, 120], [1000, 190], [2000, 310], [3000, 430], [4000, 475], [5000, 485], [6000, 470], [7000, 430], [8000, 370], [9000, 260]] },
   gears: [-3.3, 0, 3.25, 2.38, 1.88, 1.53, 1.27, 1.07], final: 4.3, eff: 0.88, shiftTime: 0.1, // (0 reverse, 1 neutral, 2.. first..)
   brake: { front: 1650, rear: 720, hand: 2600 }, lsd: 300, center: 420,
-  aero: { cda: 0.78, cla: 1.1, front: 0.45 }, crr: 0.016, rollCentre: 0.12,
+  aero: { cda: 0.78, cla: 1.1, front: 0.45 }, crr: 0.016, rollCentre: 0.12, drive: 'awd', fires: 2,
+};
+// the LB-Works F40: a mid-engined twin-turbo V8 driving the rear wheels through a five-speed gated box; light, low and
+// stiff, its big rear wing pressing it down at speed; a mild traction control keeps 480 hp from just spinning the tyres
+const SPEC_F40 = {
+  mass: 1180, cg: [0, 0.42, -0.2], dims: [1.98, 1.12, 4.45],
+  susp: { rest: 0.22, k: 52000, bump: 3800, rebound: 5400, travel: 0.13, arbF: 24000, arbR: 15000 },
+  wheelI: 1.2, steerMax: 0.5, steerLock: 3.6,
+  engine: { idle: 950, limiter: 7800, inertia: 0.18, braking: 48, curve: [[0, 150], [1000, 230], [2000, 340], [3000, 470], [4000, 580], [5000, 575], [6000, 545], [7000, 500], [7800, 440], [8500, 300]] },
+  gears: [-3.2, 0, 2.23, 1.53, 1.13, 0.92, 0.81], final: 3.7, eff: 0.9, shiftTime: 0.12,
+  brake: { front: 2100, rear: 1300, hand: 1600 }, lsd: 380, center: 0,
+  aero: { cda: 0.66, cla: 1.9, front: 0.42 }, crr: 0.014, rollCentre: 0.08, drive: 'rwd', tc: true, fires: 4,
+};
+let SPEC = SPEC_I20;
+// The cars: each its model (beside the game in Modeleaut/, like the arms) and how its parts are found there. Both models
+// share the car's frame (front +z, left +x, ground at y 0, the driver on the left) — the code is the same for both.
+//  - i20: named nodes (WHEEL_/SUSP_ per wheel, STEER_HR the wheel, handbrake, LCD, LEDs, the brake lights)
+//  - f40: the wheels are its four tyre groups (their brake calipers kept off the spin); its steering wheel is not a node of
+//    its own and is cut out of the cockpit's meshes round the rim (see cutOut); no handbrake lever or dash screen
+export const CAR_DEFS = {
+  i20: { name: 'Hyundai i20 WRC', model: 'Modeleaut/wrc_hyundai_i20_2017texture4k.glb', credit: 'WRC Hyundai i20 2017 by vecarz (CC BY-NC-SA 4.0)', spec: SPEC_I20,
+    wheel: (id, find) => ({ node: find('WHEEL_' + id), susp: find('SUSP_' + id) }), gear: [0.03, 0.08] },
+  f40: { name: 'Ferrari F40 LB-Works', model: 'Modeleaut/lb-works_ferrari_f40texture4k.glb', credit: 'LB-Works Ferrari F40 by vecarz (CC BY-NC-SA 4.0)', spec: SPEC_F40,
+    wheel: (id, find) => { const node = find({ LF: 'Tire001', RF: 'Tire003', LR: 'Tire002', RR: 'Tire004' }[id]); return { node, susp: node && node.children.find(c => /^Brake(?!Disc)/.test(c.name)) }; },
+    steerCut: { c: [0.32, 0.6, 0.55], eye: [0.32, 0.95, 0.0], ring: [0.12, 0.25], rim: /^InteriorBlack$/, skip: /Dials|Glass|Window|Display|Mirror/, ahead: 0.07, behind: 0.03 }, gear: [0.02, 0.28], brakeLights: /^RearLights$/ },
 };
 // (tuned to drive well rather than to the letter: grippy, quick to answer the wheel, and holding on in a slide)
 // (gravel: a gravel tyre's grip, about 1 g, peaking at larger slip angles and falling away gently past them — the car
@@ -58,8 +82,9 @@ const UP = new THREE.Vector3(0, 1, 0), XAX = new THREE.Vector3(1, 0, 0);
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _t = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4(), _e = new THREE.Euler();
 const F2 = [0, 0], F3 = [0, 0];
 
-export async function createCar(world, spawn) {
-  const [g, ag] = await Promise.all([gltfLoader.loadAsync(MODEL), gltfLoader.loadAsync(ARMS).catch(() => null)]);
+export async function createCar(world, spawn, carId = 'i20') {
+  const def = CAR_DEFS[carId] || CAR_DEFS.i20; SPEC = def.spec;
+  const [g, ag] = await Promise.all([gltfLoader.loadAsync(def.model), gltfLoader.loadAsync(ARMS).catch(() => null)]);
   const model = g.scene; model.updateMatrixWorld(true);
   const find = name => { let f = null; model.traverse(o => { if (!f && o.name && o.name.startsWith(name)) f = o; }); return f; };
   const boxOf = o => new THREE.Box3().setFromObject(o);
@@ -68,7 +93,7 @@ export async function createCar(world, spawn) {
   // (the handbrake: its foot and its grip from its own vertices. The steering wheel: its rim found
   // from its own vertices — the outer ring, in 24 sectors, each sector's centroid a point on the rim's centre line — and
   // the circle through those points gives the hub, the axis the wheel turns about, the rim's radius and its thickness)
-  const steerNode = find('STEER_HR'), shiftNode = find('shift_paddle'), handNode = find('handbrake');
+  const steerNode = def.steerCut ? cutOut(model, def.steerCut) : find('STEER_HR'), shiftNode = find('shift_paddle'), handNode = find('handbrake');
   const ends = node => { if (!node) return null; const pts = vertsOf(node), b = boxOf(node), lo = new THREE.Vector3(), hi = new THREE.Vector3(); let nl = 0, nh = 0;
     for (const p of pts) { if (p.y < b.min.y + 0.03) { lo.add(p); nl++; } if (p.y > b.max.y - 0.04) { hi.add(p); nh++; } } return nl && nh ? { base: lo.multiplyScalar(1 / nl), top: hi.multiplyScalar(1 / nh) } : null; };
   const hbL = ends(handNode);
@@ -97,14 +122,14 @@ export async function createCar(world, spawn) {
     const clean = ext.filter(e => e[0] > -0.03 && e[1] > e[0]), med = f => { const v = clean.map(f).sort((x, y) => x - y); return v[v.length >> 1]; };
     if (clean.length > 4) { steerR += med(e => (e[0] + e[1]) / 2); rimTube = med(e => Math.max(e[1] - e[0], e[3] - e[2]) / 2); }
   }
-  const wheelBox = {}; for (const id of ['LF', 'RF', 'LR', 'RR']) wheelBox[id] = boxOf(find('WHEEL_' + id)); // (in the model's own space, before it is placed)
+  const wheelParts = {}, wheelBox = {}; for (const id of ['LF', 'RF', 'LR', 'RR']) { wheelParts[id] = def.wheel(id, find); wheelBox[id] = boxOf(wheelParts[id].node); } // (in the model's own space, before it is placed)
   const root = new THREE.Group(); root.name = 'car'; root.userData.dynamic = true; root.userData.dynamicCaster = true; scene.add(root); // (dynamicCaster: its shadow drawn afresh every frame, not cached with the scenery's)
   const body = new THREE.Group(); body.position.set(-SPEC.cg[0], -SPEC.cg[1], -SPEC.cg[2]); root.add(body); body.add(model);
   model.updateMatrixWorld(true);
   const pivotAt = (node, at) => { const p = new THREE.Object3D(); p.position.copy(at); model.add(p); p.updateMatrixWorld(true); p.attach(node); return p; };
   const S0 = SPEC.susp.rest - SPEC.mass * G / 4 / SPEC.susp.k; // (the spring's length at the static load: the wheels where the model has them)
   const wheels = ['LF', 'RF', 'LR', 'RR'].map(id => {
-    const node = find('WHEEL_' + id), susp = find('SUSP_' + id), bb = wheelBox[id], hub = bb.getCenter(new THREE.Vector3());
+    const { node, susp } = wheelParts[id], bb = wheelBox[id], hub = bb.getCenter(new THREE.Vector3());
     const travel = new THREE.Object3D(); travel.position.copy(hub); model.add(travel); travel.updateMatrixWorld(true);
     const spin = new THREE.Object3D(); travel.add(spin); spin.updateMatrixWorld(true); spin.attach(node); if (susp) travel.attach(susp);
     return { id, front: id[1] === 'F', travel, spin, hubModel: hub.clone(), R: (bb.max.y - bb.min.y) / 2, hub: new THREE.Vector3(hub.x - SPEC.cg[0], hub.y - SPEC.cg[1], hub.z - SPEC.cg[2]),
@@ -115,9 +140,9 @@ export async function createCar(world, spawn) {
   // behind the wheel. Each gear a place of the knob: across the gate (toward the driver: R, 1-2, 3-4, 5-6) and along it
   // (forward: R, 1, 3, 5; back: 2, 4, 6); neutral in the middle of the 3-4 lane
   if (shiftNode) shiftNode.visible = false;
-  const GL = (() => { const at = (x, z) => { const cock = find('COCKPIT_HR'), o = model.localToWorld(new THREE.Vector3(x, 0.6, z)), rc = new THREE.Raycaster(o, model.localToWorld(new THREE.Vector3(x, 0, z)).sub(o).normalize(), 0, 1.2);
+  const GL = (() => { const at = (x, z) => { const cock = find('COCKPIT_HR') || model, o = model.localToWorld(new THREE.Vector3(x, 0.6, z)), rc = new THREE.Raycaster(o, model.localToWorld(new THREE.Vector3(x, 0, z)).sub(o).normalize(), 0, 1.2);
       const h = cock ? rc.intersectObject(cock, true)[0] : null; return h ? model.worldToLocal(h.point.clone()).y : 0.39; };
-    const base = new THREE.Vector3(0.03, at(0.03, 0.08), 0.08), len = 0.31, d0 = new THREE.Vector3(0.05, 0.3, 0.03).normalize(), R = 0.019;
+    const base = new THREE.Vector3(def.gear[0], at(def.gear[0], def.gear[1]), def.gear[1]), len = 0.31, d0 = new THREE.Vector3(0.05, 0.3, 0.03).normalize(), R = 0.019;
     const g = new THREE.Group(); g.name = 'gearLever'; g.position.copy(base); model.add(g);
     const metal = new THREE.MeshStandardMaterial({ color: 0xc4c8ce, metalness: 0.9, roughness: 0.28 }), leather = new THREE.MeshStandardMaterial({ color: 0x18181a, metalness: 0, roughness: 0.62 });
     const red = new THREE.MeshStandardMaterial({ color: 0xc8241c, metalness: 0.2, roughness: 0.45 }), boot = new THREE.MeshStandardMaterial({ color: 0x111112, metalness: 0, roughness: 0.92 });
@@ -134,7 +159,8 @@ export async function createCar(world, spawn) {
   // the dash's shift lights and the brake lights (each its own material, so each lights alone)
   const glow = (node, color) => { const ms = []; if (node) node.traverse(o => { if (!o.isMesh) return; o.material = o.material.clone(); o.material.emissive = new THREE.Color(color); o.material.emissiveIntensity = 0; ms.push(o.material); }); return ms; };
   const leds = []; for (let i = 0; i < 21; i++) { const n = find('LED_' + i + '_'); if (n) leds.push(glow(n, i < 7 ? 0x30ff40 : i < 14 ? 0xff2a1a : 0x3a6bff)); }
-  const brakeLights = [...glow(find('LIGHT_REAR_BRAKE'), 0xff1a10), ...glow(find('LIGHT_REAR00'), 0xff1a10), ...glow(find('LIGHT_REAR01'), 0xff1a10)];
+  const brakeLights = def.brakeLights ? (() => { const ms = []; model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && def.brakeLights.test(o.material.name)) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0xff1a10); o.material.emissiveIntensity = 0; ms.push(o.material); } }); return ms; })()
+    : [...glow(find('LIGHT_REAR_BRAKE'), 0xff1a10), ...glow(find('LIGHT_REAR00'), 0xff1a10), ...glow(find('LIGHT_REAR01'), 0xff1a10)];
   // ---- the driver: the first-person arms, their chest set so the shoulders sit below and either side of the eyes
   const driver = new THREE.Group(); driver.name = 'driver'; model.add(driver);
   const eye = new THREE.Vector3(steerHub.x, steerHub.y + 0.33, steerHub.z - 0.53); // (the driver's eyes)
@@ -147,7 +173,7 @@ export async function createCar(world, spawn) {
   const st = { pos: new THREE.Vector3(), q: new THREE.Quaternion(), vel: new THREE.Vector3(), ang: new THREE.Vector3(),
     steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, handEff: 0, gear: 2, rpm: SPEC.engine.idle, shiftT: 0, auto: true, revT: 0, locked: false,
     accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
-  const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC,
+  const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC, id: carId, def,
     look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0, t: 0, bump: 0, kick: new THREE.Vector3() }, fov: 75, anim: { hb: 0, hbGrip: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
   car.gearLever = GL; car.tune = { HB, ASSIST, SURF, LOOSE }; // (live handling tuning from the console)
   // (a box for the walker to bump into while the car stands; out of the car's own way)
@@ -207,7 +233,7 @@ export async function createCar(world, spawn) {
   const addForce = (f, at) => { F.add(f); T.add(_t.subVectors(at, st.pos).cross(f)); };
   const ground = (x, z) => world.groundAt(x, z) + (world.bumpAt ? world.bumpAt(x, z) : 0);
   const up = new THREE.Vector3(), fwd = new THREE.Vector3(), down = new THREE.Vector3(), anchor = new THREE.Vector3(), wf = new THREE.Vector3(), wl = new THREE.Vector3(), r = new THREE.Vector3(), vp = new THREE.Vector3(), fv = new THREE.Vector3(), pr = { x: 0, y: 0, z: 0 };
-  let hbT = 0;
+  let hbT = 0; const CORNERS = bodyPoints(CORNERS0, SPEC), SIDES = bodyPoints(SIDES0, SPEC);
   function stepPhys(h) {
     const { susp } = SPEC, q = st.q;
     F.set(0, -m * G, 0); T.set(0, 0, 0);
@@ -226,19 +252,25 @@ export async function createCar(world, spawn) {
     for (const [a, b, k] of [[0, 1, susp.arbF], [2, 3, susp.arbR]]) { const wa = wheels[a], wb = wheels[b], d = (wa.contact ? wa.c : 0) - (wb.contact ? wb.c : 0); if (wa.contact) wa.fs += k * d; if (wb.contact) wb.fs -= k * d; }
     // ---- the drivetrain: the engine's speed from the driven wheels, the clutch slipping below the launch revs
     st.handEff += (st.hand - st.handEff) * Math.min(1, h * 35); // (the hydraulic line: the rear calipers follow the lever within a few hundredths of a second)
-    const hand = st.handEff, hb = hand > 0.15, ratio = SPEC.gears[st.gear], Gt = ratio * SPEC.final, inGear = ratio !== 0; // (the handbrake releases the rear drive, while the front wheels keep pulling the car through an arcade slide)
-    let wSum = 0, nW = 0; for (const w of wheels) if (!hb || w.front) { wSum += w.w; nW++; }
-    const rpmW = Math.max(0, wSum / nW * Gt) * 60 / (2 * Math.PI), thr = st.shiftT > 0 ? 0 : st.throttle;
+    // (the driven wheels: all four, or the rear two; the handbrake releases the rear drive — an AWD car's front axle keeps
+    // pulling it through an arcade slide, a RWD car's engine runs free)
+    const hand = st.handEff, hb = hand > 0.15, ratio = SPEC.gears[st.gear], Gt = ratio * SPEC.final, rwd = SPEC.drive === 'rwd';
+    const drives = w => (!rwd || !w.front) && !(hb && !w.front);
+    let wSum = 0, nW = 0, slipD = 0; for (const w of wheels) if (drives(w)) { wSum += w.w; nW++; slipD = Math.max(slipD, (w.w * w.R - (w.vx || 0)) / Math.max(Math.abs(w.vx || 0), 3)); }
+    const inGear = ratio !== 0 && nW > 0;
+    // (traction control: past a little wheelspin the engine's drive is eased back, quickly, as a modern system does)
+    if (SPEC.tc) st.tc = (st.tc ?? 1) + (clamp(1 - (slipD - 0.12) * 4, 0.25, 1) - (st.tc ?? 1)) * Math.min(1, h * 30);
+    const rpmW = nW ? Math.max(0, wSum / nW * Gt) * 60 / (2 * Math.PI) : 0, thr = (st.shiftT > 0 ? 0 : st.throttle) * (SPEC.tc ? st.tc : 1);
     let Tw = 0; st.locked = false;
     if (inGear) { const launch = SPEC.engine.idle + 3200 * thr;
       if (rpmW < launch) { st.rpm += (launch - st.rpm) * Math.min(1, h * 9); Tw = torqueAt(st.rpm) * thr * Gt * SPEC.eff; }
       else { st.locked = true; st.rpm = rpmW; const tq = st.rpm > SPEC.engine.limiter ? 0 : thr; Tw = (torqueAt(st.rpm) * tq - SPEC.engine.braking * (1 - tq) * clamp(st.rpm / 6000, 0.2, 1)) * Gt * SPEC.eff; } }
     else st.rpm += (Math.min(SPEC.engine.limiter, SPEC.engine.idle + st.throttle * 7400) - st.rpm) * Math.min(1, h * (st.throttle > 0.05 ? 7 : 3));
-    const Ie = st.locked ? SPEC.engine.inertia * Gt * Gt / nW : 0;
+    const Ie = st.locked && nW ? SPEC.engine.inertia * Gt * Gt / nW : 0;
     // (the couplings: across each axle, and between the axles unless the handbrake has opened the rear)
     const fa = (wheels[0].w + wheels[1].w) / 2, ra = (wheels[2].w + wheels[3].w) / 2;
-    for (const w of wheels) { const other = wheels[w.front ? (w === wheels[0] ? 1 : 0) : (w === wheels[2] ? 3 : 2)], connected = !hb || w.front;
-      w.Td = (connected ? Tw / nW : 0) + clamp((other.w - w.w) * SPEC.lsd, -800, 800) + (hb ? 0 : clamp(((w.front ? ra : fa) - (w.front ? fa : ra)) * SPEC.center * 0.5, -800, 800));
+    for (const w of wheels) { const other = wheels[w.front ? (w === wheels[0] ? 1 : 0) : (w === wheels[2] ? 3 : 2)], connected = drives(w);
+      w.Td = (connected ? Tw / nW : 0) + (rwd && w.front ? 0 : clamp((other.w - w.w) * SPEC.lsd, -800, 800)) + (hb || rwd ? 0 : clamp(((w.front ? ra : fa) - (w.front ? fa : ra)) * SPEC.center * 0.5, -800, 800));
       w.I = SPEC.wheelI + (connected ? Ie : 0); }
     // ---- the tyres
     let slipMax = 0, nLoose = 0, nOn = 0;
@@ -596,10 +628,13 @@ export async function createCar(world, spawn) {
   return car;
 }
 // the body's corners (against the ground) and sides (against the world), body frame (the centre of mass at 0)
-const CORNERS = [];
-for (const x of [-0.88, 0.88]) for (const z of [-1.92, 1.98]) for (const y of [-0.32, 0.88]) CORNERS.push([x, y, z]);
-CORNERS.push([0, 1.28, -0.3], [0.62, 1.2, -0.3], [-0.62, 1.2, -0.3], [0.9, 0.55, 0], [-0.9, 0.55, 0]);
-const SIDES = [[0.92, 0, 1.9], [-0.92, 0, 1.9], [0.95, 0, 0.65], [-0.95, 0, 0.65], [0.95, 0, -0.65], [-0.95, 0, -0.65], [0.92, 0, -1.85], [-0.92, 0, -1.85], [0, 0, 2.1], [0.5, 0, 2.05], [-0.5, 0, 2.05], [0, 0, -2.0], [0.5, 0, -1.98], [-0.5, 0, -1.98]];
+// (laid out for the i20's 1.85 x 1.25 x 4.05 m and stretched to another car's size: see bodyPoints)
+const CORNERS0 = [];
+for (const x of [-0.88, 0.88]) for (const z of [-1.92, 1.98]) for (const y of [-0.32, 0.88]) CORNERS0.push([x, y, z]);
+CORNERS0.push([0, 1.28, -0.3], [0.62, 1.2, -0.3], [-0.62, 1.2, -0.3], [0.9, 0.55, 0], [-0.9, 0.55, 0]);
+const SIDES0 = [[0.92, 0, 1.9], [-0.92, 0, 1.9], [0.95, 0, 0.65], [-0.95, 0, 0.65], [0.95, 0, -0.65], [-0.95, 0, -0.65], [0.92, 0, -1.85], [-0.92, 0, -1.85], [0, 0, 2.1], [0.5, 0, 2.05], [-0.5, 0, 2.05], [0, 0, -2.0], [0.5, 0, -1.98], [-0.5, 0, -1.98]];
+const bodyPoints = (pts, spec) => { const ref = SPEC_I20, sx = spec.dims[0] / ref.dims[0], sy = spec.dims[1] / ref.dims[1], sz = spec.dims[2] / ref.dims[2];
+  return pts.map(([x, y, z]) => [x * sx, (y + ref.cg[1]) * sy - spec.cg[1], (z + ref.cg[2]) * sz - spec.cg[2]]); };
 
 // ---------------------------------------------------------------- the cabin's light
 // A closed cabin is lit by what comes in through its windows: without that, the sky's light reaches every surface inside
@@ -769,6 +804,42 @@ function suitUp(arms) {
     m.map = tx; m.roughness = 0.74; m.needsUpdate = true; });
 }
 
+
+// Cut a part out of a model's meshes — the F40's steering wheel, which is no node of its own: its rim (the points of the
+// rim's material round the given centre) gives the wheel's plane (its axis the direction they spread least along, by
+// inverse iteration on their covariance) and its middle; every triangle within the rim's radius and a few centimetres
+// either side of that plane (toward the driver more than toward the dash, where the dials are) moves into meshes of its
+// own under a new group, which the car turns as the wheel.
+function cutOut(model, { c, eye, ring, rim, skip, ahead, behind }) {
+  model.updateMatrixWorld(true);
+  const inv = model.matrixWorld.clone().invert(), v = new THREE.Vector3(), all = [];
+  model.traverse(o => { if (!o.isMesh || Array.isArray(o.material) || !rim.test(o.material.name)) return; const M = inv.clone().multiply(o.matrixWorld), pa = o.geometry.attributes.position;
+    for (let i = 0; i < pa.count; i++) all.push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(M)); });
+  // (a first guess: the wheel faces the driver's eyes; then the ring of rim points in that plane, its middle and its own
+  // plane, three times over)
+  const hub = new THREE.Vector3(...c), axis = hub.clone().sub(new THREE.Vector3(...eye)).normalize(), cov = new THREE.Matrix3(), e = cov.elements; let pts = [];
+  for (let round = 0; round < 4; round++) {
+    pts = all.filter(p => { v.subVectors(p, hub); const a = v.dot(axis), rr = v.projectOnPlane(axis).length(); return Math.abs(a) < 0.045 && rr > ring[0] && rr < ring[1]; });
+    if (pts.length < 20) return null;
+    hub.copy(pts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length)); e.fill(0);
+    for (const p of pts) { const d = [p.x - hub.x, p.y - hub.y, p.z - hub.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) e[i * 3 + j] += d[i] * d[j]; }
+    for (let i = 0; i < 3; i++) e[i * 4] += 1e-6; const ci = cov.clone().invert(), ax = axis.clone();
+    for (let k = 0; k < 40; k++) ax.applyMatrix3(ci).normalize(); if (ax.dot(axis) < 0) ax.negate(); axis.copy(ax); }
+  const R = pts.reduce((a, p) => a + v.subVectors(p, hub).projectOnPlane(axis).length(), 0) / pts.length + 0.03;
+  const group = new THREE.Group(); group.name = 'STEER_CUT'; model.add(group);
+  const cuts = []; model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && !skip.test(o.material.name) && o !== group) cuts.push(o); });
+  for (const o of cuts) { const g = o.geometry, pa = g.attributes.position, M = inv.clone().multiply(o.matrixWorld), n = g.index ? g.index.count : pa.count, idx = g.index ? g.index.array : null;
+    const keep = [], take = [], inside = new Uint8Array(pa.count);
+    for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(M).sub(hub); const a = v.dot(axis); inside[i] = a > -ahead && a < behind && v.projectOnPlane(axis).length() < R ? 1 : 0; }
+    for (let t = 0; t < n; t += 3) { const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, d = idx ? idx[t + 2] : t + 2; (inside[a] && inside[b] && inside[d] ? take : keep).push(a, b, d); }
+    if (!take.length) continue;
+    // (the part keeps only the vertices its triangles use: bounds and the rim's fit read every vertex of a geometry)
+    const map = new Map(), gp = new THREE.BufferGeometry(), ni = take.map(i => { if (!map.has(i)) map.set(i, map.size); return map.get(i); });
+    for (const [name, att] of Object.entries(g.attributes)) { const k = att.itemSize, arr = new att.array.constructor(map.size * k); for (const [i, j] of map) for (let c = 0; c < k; c++) arr[j * k + c] = att.array[i * k + c]; gp.setAttribute(name, new THREE.BufferAttribute(arr, k, att.normalized)); }
+    gp.setIndex(ni); const part = new THREE.Mesh(gp, o.material); part.castShadow = o.castShadow; part.receiveShadow = o.receiveShadow;
+    g.setIndex(keep); part.matrixAutoUpdate = false; part.matrix.copy(M); part.matrixWorld.copy(o.matrixWorld); group.add(part); part.matrixAutoUpdate = true; part.matrix.decompose(part.position, part.quaternion, part.scale); }
+  return group.children.length ? group : null;
+}
 // the first-person arms: a skinned rig (a chest; each side an arm, an elbow, a wrist, a thumb and four fingers of three
 // joints) posed in the car model's space.
 //  - The hand's own frame is read from its rest pose: F from the wrist to the middle knuckle, T across the knuckles
@@ -1107,7 +1178,7 @@ function engineSound(car) {
       if (grv) { const t = audio.ctx.currentTime, on = nC ? (gr / nC) : 0, v = clamp(sp / 36, 0, 1); // individual stones merge into a brighter, denser roar as wheel speed rises
         grv.gain.gain.setTargetAtTime(on * Math.pow(v, 0.72) * (0.68 + 0.72 * slipK) * (cockpit ? 0.58 : 0.84) * (car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1)), t, 0.055);
         grv.src.playbackRate.setTargetAtTime(0.66 + 0.88 * v + 0.08 * slipK, t, 0.085); grv.lp.frequency.setTargetAtTime(cockpit ? 2200 + 2600 * v : 4800 + 6500 * v, t, 0.09); }
-      send({ gravelRec: grv ? 1 : 0, rpm: st.rpm, thr: car.driving ? st.throttle : 0, load: car.driving ? st.throttle : 0, speed: sp, wheel: wsum / 4, slip: clamp((st.slipMax - 0.9) / 1.5, 0, 1),
+      send({ fires: car.spec.fires || 2, gravelRec: grv ? 1 : 0, rpm: st.rpm, thr: car.driving ? st.throttle : 0, load: car.driving ? st.throttle : 0, speed: sp, wheel: wsum / 4, slip: clamp((st.slipMax - 0.9) / 1.5, 0, 1),
         gravel: nC ? gr / nC : 0, tarmac: nC ? tm / nC : 0, rough, cut: st.shiftT > 0 || A.gMove ? 1 : 0, limiter: SPEC.engine.limiter, cockpit: cockpit ? 1 : 0, on: 1, gear: st.gear,
         vol: car.driving ? 1 : clamp(1.4 / Math.max(1, d * 0.35), 0, 1) }); },
     event(ev, k) { if (!knock(ev)) send({ ev, k }); },
@@ -1128,7 +1199,7 @@ function carHud(car) {
   const el = document.createElement('div'); el.id = 'carHud'; el.innerHTML = '<div><span class="spd">0</span><span class="u">km/h</span><span class="gear">N</span></div><div class="bar"><i></i></div><div class="mode"></div>'; document.body.appendChild(el);
   const help = document.createElement('div'); help.id = 'carHelp';
   help.innerHTML = '<b>W</b><b>S</b> throttle, brake · <b>A</b><b>D</b> steer · <b>Space</b> handbrake (tap: a flick, hold + steer: a hairpin)<br><b>E</b><b>Q</b> / <b>Shift</b> / mouse buttons: gears · <b>X</b> auto / manual<br><b>C</b> camera · <b>R</b> reset · <b>V</b> get out / in'; document.body.appendChild(help);
-  const cr = document.createElement('div'); cr.id = 'carCredit'; cr.textContent = 'WRC Hyundai i20 2017 by vecarz (CC BY-NC-SA 4.0) · First Person Arms by DJMaesen (CC BY 4.0)'; document.body.appendChild(cr);
+  const cr = document.createElement('div'); cr.id = 'carCredit'; cr.textContent = car.def.credit + ' · First Person Arms by DJMaesen (CC BY 4.0)'; document.body.appendChild(cr);
   const spd = el.querySelector('.spd'), gear = el.querySelector('.gear'), bar = el.querySelector('.bar i'), mode = el.querySelector('.mode');
   let n = 0;
   return { update() { if (++n % 3) return; const st = car.st, show = car.driving; el.style.display = help.style.display = show ? '' : 'none'; if (!show) return;

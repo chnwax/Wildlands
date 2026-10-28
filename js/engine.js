@@ -8,7 +8,7 @@ import { flattenPhotoMaterials } from './toon.js';
 import { perf } from './perf.js';
 import { setPaint } from './terrain.js';
 
-export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js'), rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js') };
+export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js'), rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js'), rally4: () => import('./rally4.js') };
 // ?map=<name>; Sakuragawa when missing or unknown (the Wildlands valley, 'nature', opens only when asked for by name)
 export const mapFromURL = () => { const m = new URLSearchParams(location.search).get('map'); return MAPS[m] ? m : 'town'; };
 

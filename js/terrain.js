@@ -619,8 +619,8 @@ export async function buildTerrainMeshes(hf, mat, { outer = true, farForest = tr
   const edgeH = (i, j) => {
     const onX = i === 0 || i === GRID, onZ = j === 0 || j === GRID;
     if (!outer || !(onX || onZ)) return H[j * HN + i];
-    if (onZ && i % kEdge) { const i0 = i - i % kEdge, t = (i % kEdge) / kEdge; return lerp(H[j * HN + i0], H[j * HN + i0 + kEdge], t); }
-    if (onX && j % kEdge) { const j0 = j - j % kEdge, t = (j % kEdge) / kEdge; return lerp(H[j0 * HN + i], H[(j0 + kEdge) * HN + i], t); }
+    if (onZ && i % kEdge) { const i0 = i - i % kEdge, t = (i % kEdge) / kEdge; return lerp(H[j * HN + i0], H[j * HN + Math.min(i0 + kEdge, GRID)], t); } // (min: a grid the ring's step does not divide)
+    if (onX && j % kEdge) { const j0 = j - j % kEdge, t = (j % kEdge) / kEdge; return lerp(H[j0 * HN + i], H[Math.min(j0 + kEdge, GRID) * HN + i], t); }
     return H[j * HN + i];
   };
   // normals at the heightfield's border sample the height function past it (clamping would halve the slope there)
