@@ -1,6 +1,6 @@
 // Game boot, UI, player, audio and the main loop. The city is picked on the title screen (menu.js); ?map=town|nature
 // skips the title and loads that map at once. World loading and rendering are shared with the world editor (engine.js).
-import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, tick, wind, skipStaticWalk, renderScale } from './core.js';
+import { THREE, renderer, scene, camera, S, Q, QUALITY, loadState, manager, scatters, clamp, tick, wind, skipStaticWalk, renderScale, fx } from './core.js';
 import { time, updateSky, env } from './sky.js';
 import { post } from './post.js';
 import { audio } from './audio.js';
@@ -92,12 +92,14 @@ function step(dt, t) {
   perf.begin(P_PLAYER);
   player.boost = boostNow();
   const driving = car && car.driving;
+  // (an impact frame: for a moment the world nearly stops — the car, the race, the life — while the camera shakes on)
+  const realDt = dt; if (fx.stop > 0) { fx.stop -= dt; dt *= 0.04; }
   if (car) { car.inputOn = locked && started; car.control(driving && locked && started ? keys : null, dt); car.update(dt); }
   if (locked && started && !driving) updatePlayer(world, dt);
   if (world.shops && started) world.shops.update(player, camera, dt);
   if (!started && !dbgState.pause && !driving) player.yaw += dt * 0.02;
   if (driving) { // (the walker rides along: the grass, the ambience and the audio follow the car)
-    car.applyCamera(camera, dt); player.pos.set(car.st.pos.x, world.groundAt(car.st.pos.x, car.st.pos.z), car.st.pos.z);
+    car.applyCamera(camera, realDt); player.pos.set(car.st.pos.x, world.groundAt(car.st.pos.x, car.st.pos.z), car.st.pos.z);
     const d = camera.getWorldDirection(_dir); player.yaw = Math.atan2(-d.x, -d.z);
   } else updateCamera(world);
   if (colliderView.on) colliderView.update(player.pos, (x, z) => world.groundAt(x, z));
@@ -111,6 +113,7 @@ function step(dt, t) {
     const wl = world.waterAt(camera.position.x, camera.position.z);
     under = camera.position.y < wl - 0.05 && world.groundAt(camera.position.x, camera.position.z) < wl;
     post.grade.uniforms.uTime.value = t; post.grade.uniforms.uUnder.value = under ? 1 : 0;
+    post.grade.uniforms.uImpact.value = fx.flash; fx.flash = fx.stop > 0.05 ? Math.max(0, fx.flash - realDt * 0.9) : fx.flash > 0.01 ? fx.flash * Math.exp(-realDt / 0.085) : 0; // (held near its peak while the world is stopped: a few stark frames)
     const cockpit = driving && car.view === 0; // (in the cockpit: its dark trim not tinted blue, and the eye opened to the cabin's light — the windows read brighter)
     post.grade.uniforms.uLift.value.set(...(cockpit ? [0.006, 0.0065, 0.008] : [0.012, 0.016, 0.035])); if (cockpit) post.exposure.value *= 1.6;
     perf.begin(P_AUDIO);
@@ -123,7 +126,7 @@ function step(dt, t) {
     perf.end(P_AUDIO);
   } });
   perf.frameEnd();
-  fpsAcc += dt; fpsN++;
+  fpsAcc += realDt; fpsN++;
   if (fpsAcc > 0.5) {
     $('fps').textContent = Math.round(fpsN / fpsAcc) + ' fps · ' + Q.name;
     fpsAcc = 0; fpsN = 0;

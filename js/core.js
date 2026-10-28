@@ -7,6 +7,9 @@ export { THREE };
 export const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// a hard hit's impact frame (race.js sets it, main.js and post.js play it): stop, seconds the world holds still (a
+// hit-stop); flash 0..1, the frame's flash (a stark black-and-white frame at its peak, then colour back with a split)
+export const fx = { stop: 0, flash: 0 };
 export function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 // yield to the browser between build steps. A message-channel task, not setTimeout: timers in a background tab are
 // throttled to once a minute, which would stall a load the player switched away from

@@ -3,9 +3,13 @@
 // positive), its speed planned from the road — at each station the fastest the bend there allows at the rival's grip,
 // and back from every bend the speed it can brake down from (a backward pass) — and limited by what its engine can give
 // at that speed. It keeps to a lane, moves to the other to pass a slower car ahead when that lane is clear, and else
-// follows. Each rival is a box in the world's colliders, so the player's car bumps into it; a rival bumped slows a little
-// and edges away. The race's order is by distance down the stage; the results are taken as each car crosses the line.
-import { THREE, scene, gltfLoader, clamp, lerp, colInsert, colRemove } from './core.js';
+// follows. The cars meet as boxes (their footprints, turned with them): overlapping, they are pushed apart by an impulse
+// along the axis they overlap least on, at the point between them, with a little bounce and the rub of one along the
+// other — the player's car takes it in its own physics (its speed and its spin), a rival as a shove along and across
+// its lane and a spin it recovers from. A hard hit is an impact frame: the world holds still for a moment, the picture
+// flashes stark, the camera shakes, sparks fly and the panels crunch. (On foot, a rival is a box in the colliders.)
+// The race's order is by distance down the stage; the results are taken as each car crosses the line.
+import { THREE, scene, gltfLoader, clamp, lerp, colInsert, colRemove, fx } from './core.js';
 import { CAR_DEFS, dressMaterials } from './car.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -29,8 +33,9 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
     for (const id of ['LF', 'RF', 'LR', 'RR']) { const { node, susp } = CAR_DEFS[r.car].wheel(id, find); if (!node) continue;
       const bb = new THREE.Box3().setFromObject(node), hub = bb.getCenter(new THREE.Vector3()), pv = new THREE.Object3D(); pv.position.copy(hub); m.add(pv); pv.updateMatrixWorld(true);
       const spin = new THREE.Object3D(); pv.add(spin); spin.updateMatrixWorld(true); spin.attach(node); if (susp) pv.attach(susp); spins.push({ spin, pv, front: id[1] === 'F', R: (bb.max.y - bb.min.y) / 2 }); }
-    const g = grid[k], pf = PERF[r.car] || PERF.i20;
-    cars.push({ ...r, pf, root, spins, s: g.s, w: g.w, wT: g.w, v: 0, yawOff: 0, angle: 0, done: 0, hit: 0, col: { t: 1, x: 0, z: 0, hx: 0.98, hz: 2.2, c: 1, s: 0, y0: -1e9, y1: 1e9 }, colIn: false, grid: g });
+    const g = grid[k], pf = PERF[r.car] || PERF.i20, [dw, , dl] = CAR_DEFS[r.car].spec.dims;
+    cars.push({ ...r, pf, root, spins, s: g.s, w: g.w, wT: g.w, v: 0, yawOff: 0, angle: 0, done: 0, hit: 0, vw: 0, spin: 0, spinV: 0, hx: dw / 2, hz: dl / 2, I: pf.mass * (dw * dw + dl * dl) / 12,
+      vel: new THREE.Vector3(), col: { t: 1, x: 0, z: 0, hx: dw / 2, hz: dl / 2, c: 1, s: 0, y0: -1e9, y1: 1e9 }, colIn: false, grid: g });
   }
   // ---- the speed each rival may carry at each station: the bend's limit, and the braking back from the next ones
   const R = new Float32Array(N); for (let i = 0; i < N; i++) { const a = P[Math.max(0, i - 8)], b = P[i], c = P[Math.min(N - 1, i + 8)];
@@ -43,12 +48,71 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
     out.x = lerp(P[i][0], P[i + 1][0], f) + tz / l * w; out.z = lerp(P[i][1], P[i + 1][1], f) - tx / l * w; out.tx = tx / l; out.tz = tz / l; return out; };
   const onRoad = (x, z) => { const i = world.track.nearAt(x, z); if (i < 0) return null; const [px, pz] = P[i], [tx, tz] = T[i]; return { s: i + (x - px) * tx + (z - pz) * tz, w: (x - px) * tz - (z - pz) * tx }; };
   const q = new THREE.Quaternion(), qy = new THREE.Quaternion(), n = new THREE.Vector3(), A = {};
-  const place = (c, dt) => { at(c.s, c.w, A); const y = world.groundAt(A.x, A.z), yaw = Math.atan2(A.tx, A.tz) + c.yawOff; world.normalAt(A.x, A.z, n);
+  let onFoot = true; // (the player out of the car: the rivals are boxes in the colliders for the walker)
+  const place = (c, dt) => { at(c.s, c.w, A); const y = world.groundAt(A.x, A.z), yaw = Math.atan2(A.tx, A.tz) + c.yawOff + c.spin; world.normalAt(A.x, A.z, n);
     q.setFromUnitVectors(UP, n); qy.setFromAxisAngle(UP, yaw); c.root.position.set(A.x, y, A.z); c.root.quaternion.copy(q).multiply(qy); c.root.updateMatrixWorld(true);
     c.angle += c.v * dt; for (const w of c.spins) w.spin.rotation.x = c.angle / w.R;
-    // (its box among the colliders, where the player's car meets it)
-    const col = c.col; if (c.colIn) colRemove(col); col.x = A.x; col.z = A.z; col.c = Math.cos(yaw); col.s = Math.sin(yaw); col.y0 = y - 0.5; col.y1 = y + 1.4; colInsert(col); c.colIn = true; };
-  const reset = () => { for (const c of cars) { Object.assign(c, { s: c.grid.s, w: c.grid.w, wT: c.grid.w, v: 0, yawOff: 0, done: 0, hit: 0 }); place(c, 0); } results.length = 0; };
+    c.yaw = yaw; c.tx = A.tx; c.tz = A.tz; // (its heading, and the road's there: for the contacts)
+    c.vel.set(A.tx * c.v + A.tz * c.vw, 0, A.tz * c.v - A.tx * c.vw); // (along the lane at its speed, across at its drift)
+    const col = c.col; if (c.colIn) { colRemove(col); c.colIn = false; }
+    if (onFoot) { col.x = A.x; col.z = A.z; col.c = Math.cos(yaw); col.s = Math.sin(yaw); col.y0 = y - 0.5; col.y1 = y + 1.4; colInsert(col); c.colIn = true; } };
+  const reset = () => { for (const c of cars) { Object.assign(c, { s: c.grid.s, w: c.grid.w, wT: c.grid.w, v: 0, yawOff: 0, done: 0, hit: 0, vw: 0, spin: 0, spinV: 0 }); c.vel.set(0, 0, 0); place(c, 0); } results.length = 0; };
+
+  // ---- contact: two boxes on the ground (centre, heading, half width and length): do they overlap, and if so the axis
+  // they overlap least on (from the first to the second), how far, and the point between them (each one's corners
+  // inside the other, averaged)
+  const sat = (a, b) => {
+    const dx = b.x - a.x, dz = b.z - a.z, ax = [[a.fx, a.fz], [a.fz, -a.fx], [b.fx, b.fz], [b.fz, -b.fx]]; let best = 1e9, nx = 0, nz = 0;
+    for (const [ux, uz] of ax) { const ra = a.hz * Math.abs(ux * a.fx + uz * a.fz) + a.hx * Math.abs(ux * a.fz - uz * a.fx), rb = b.hz * Math.abs(ux * b.fx + uz * b.fz) + b.hx * Math.abs(ux * b.fz - uz * b.fx);
+      const d = dx * ux + dz * uz, o = ra + rb - Math.abs(d); if (o <= 0) return null; if (o < best) { best = o; const sg = d < 0 ? -1 : 1; nx = ux * sg; nz = uz * sg; } }
+    let px = 0, pz = 0, k = 0; const inside = (o, x, z) => { const ex = x - o.x, ez = z - o.z; return Math.abs(ex * o.fx + ez * o.fz) <= o.hz && Math.abs(ex * o.fz - ez * o.fx) <= o.hx; };
+    for (const [o, p] of [[a, b], [b, a]]) for (const sf of [-1, 1]) for (const sl of [-1, 1]) { const x = o.x + o.fx * o.hz * sf + o.fz * o.hx * sl, z = o.z + o.fz * o.hz * sf - o.fx * o.hx * sl; if (inside(p, x, z)) { px += x; pz += z; k++; } }
+    if (k) { px /= k; pz /= k; } else { px = (a.x + b.x) / 2; pz = (a.z + b.z) / 2; }
+    return { nx, nz, d: best, px, pz }; };
+  const boxOf = c => ({ x: c.root.position.x, z: c.root.position.z, fx: Math.sin(c.yaw), fz: Math.cos(c.yaw), hx: c.hx, hz: c.hz });
+  // a rival shoved: J (N s) at the point — along its lane (its speed), across it (a sideways drift it steers out of) and
+  // a spin; a hard enough shove and it has lost it for a moment
+  const shove = (c, Jx, Jz, px, pz) => { const m = c.pf.mass, along = (Jx * c.tx + Jz * c.tz) / m, across = (Jx * c.tz - Jz * c.tx) / m;
+    c.v = Math.max(0, c.v + along); c.vw += across; const rx = px - c.root.position.x, rz = pz - c.root.position.z; c.spinV += (rz * Jx - rx * Jz) / c.I;
+    const dv = Math.hypot(Jx, Jz) / m; if (dv > 1.5) c.hit = Math.max(c.hit, Math.min(2.5, dv * 0.3)); };
+  // sparks: a pool of points thrown from the contact, falling and dimming
+  const SP = 240, spPos = new Float32Array(SP * 3), spVel = new Float32Array(SP * 3), spLife = new Float32Array(SP), spCol = new Float32Array(SP * 3); let spNext = 0;
+  const spGeo = new THREE.BufferGeometry(); spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3)); spGeo.setAttribute('color', new THREE.BufferAttribute(spCol, 3));
+  const sparks = new THREE.Points(spGeo, new THREE.PointsMaterial({ size: 0.07, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sparks.frustumCulled = false; sparks.name = 'race-sparks'; scene.add(sparks); sparks.updateMatrixWorld(true);
+  const spark = (x, y, z, nx, nz, vx, vz, count) => { for (let i = 0; i < count; i++) { const k = spNext = (spNext + 1) % SP, sp = 2 + Math.random() * 7, a = (Math.random() - 0.5) * 2.4, c = Math.cos(a), s = Math.sin(a);
+      spPos.set([x, y + 0.2 + Math.random() * 0.4, z], k * 3); spVel.set([vx * 0.8 + (nx * c - nz * s) * sp, 1 + Math.random() * 4, vz * 0.8 + (nz * c + nx * s) * sp], k * 3); spLife[k] = 0.25 + Math.random() * 0.5; } };
+  const sparksUpdate = dt => { let any = false; for (let k = 0; k < SP; k++) { if (spLife[k] <= 0) { spCol[k * 3] = spCol[k * 3 + 1] = spCol[k * 3 + 2] = 0; continue; } any = true; spLife[k] -= dt;
+      spVel[k * 3 + 1] -= 9.8 * dt; for (let j = 0; j < 3; j++) spPos[k * 3 + j] += spVel[k * 3 + j] * dt; const f = Math.max(0, Math.min(1, spLife[k] * 3));
+      spCol[k * 3] = 2.6 * f; spCol[k * 3 + 1] = 1.5 * f * f; spCol[k * 3 + 2] = 0.4 * f * f * f; }
+    sparks.visible = any; if (any) { spGeo.attributes.position.needsUpdate = true; spGeo.attributes.color.needsUpdate = true; } };
+  const contacts = (player, dt) => {
+    const st = player && player.driving ? player.st : null, now = performance.now() / 1000;
+    let P = null; if (st) { const sp = player.spec, cg = sp.cg, f = new THREE.Vector3(0, 0, 1).applyQuaternion(st.q), o = new THREE.Vector3(-cg[0], 0, -cg[2]).applyQuaternion(st.q).add(st.pos);
+      P = { x: o.x, z: o.z, fx: f.x, fz: f.z, hx: sp.dims[0] / 2, hz: sp.dims[2] / 2 }; const l = Math.hypot(P.fx, P.fz) || 1; P.fx /= l; P.fz /= l; }
+    for (const c of cars) {
+      // the player's car against this one
+      if (P && Math.abs(c.root.position.y - st.pos.y) < 1.6) { const R = boxOf(c), hit = sat(R, P);
+        if (hit) { const mP = player.spec.mass, mR = c.pf.mass, rx = hit.px - st.pos.x, rz = hit.pz - st.pos.z, wy = st.ang.y;
+          const vPx = st.vel.x + wy * rz, vPz = st.vel.z - wy * rx, vrx = vPx - c.vel.x, vrz = vPz - c.vel.z, vn = vrx * hit.nx + vrz * hit.nz; // (the player's point's velocity, relative to the rival's)
+          // (out of each other first: the overlap shared by their masses)
+          const shareP = mR / (mP + mR); st.pos.x += hit.nx * hit.d * shareP; st.pos.z += hit.nz * hit.d * shareP; c.w += -(hit.nx * c.tz - hit.nz * c.tx) * hit.d * (1 - shareP); c.s += -(hit.nx * c.tx + hit.nz * c.tz) * hit.d * (1 - shareP);
+          if (vn < 0) { const rn = rz * hit.nx - rx * hit.nz, j = -(1 + 0.22) * vn / (1 / mP + 1 / mR + rn * rn / player.inertia.y);
+            const tx = vrx - vn * hit.nx, tz = vrz - vn * hit.nz, tl = Math.hypot(tx, tz), jt = tl > 1e-3 ? Math.min(0.35 * j, tl / (1 / mP + 1 / mR)) : 0; // (the rub: friction against the slide along each other)
+            const Jx = hit.nx * j - (tl > 1e-3 ? tx / tl * jt : 0), Jz = hit.nz * j - (tl > 1e-3 ? tz / tl * jt : 0), dv = Math.hypot(Jx, Jz) / mP;
+            const big = dv > 2.2 && now - (c.lastBig || 0) > 0.45, k = clamp(dv / 4, 0, 2);
+            player.impact(new THREE.Vector3(Jx, 0, Jz), new THREE.Vector3(hit.px, st.pos.y, hit.pz), dv > 0.7 ? (big ? k : k * 0.4) : 0);
+            shove(c, -Jx, -Jz, hit.px, hit.pz);
+            spark(hit.px, world.groundAt(hit.px, hit.pz), hit.pz, -hit.nz, hit.nx, (vPx + c.vel.x) / 2, (vPz + c.vel.z) / 2, Math.round(clamp(dv * 9, 4, 70)));
+            if (big) { c.lastBig = now; fx.stop = clamp(0.035 + 0.011 * dv, 0.045, 0.12); fx.flash = clamp(0.62 + dv * 0.05, 0.62, 1); } } } }
+      // the rivals against each other
+      for (const o of cars) { if (o === c || cars.indexOf(o) < cars.indexOf(c)) continue; const hit = sat(boxOf(c), boxOf(o)); if (!hit) continue;
+        c.w -= (hit.nx * c.tz - hit.nz * c.tx) * hit.d * 0.5; o.w += (hit.nx * o.tz - hit.nz * o.tx) * hit.d * 0.5;
+        const vn = (o.vel.x - c.vel.x) * hit.nx + (o.vel.z - c.vel.z) * hit.nz; if (vn >= 0) continue;
+        const j = -(1 + 0.2) * vn / (1 / c.pf.mass + 1 / o.pf.mass); shove(c, -hit.nx * j, -hit.nz * j, hit.px, hit.pz); shove(o, hit.nx * j, hit.nz * j, hit.px, hit.pz);
+        if (j / c.pf.mass > 1) spark(hit.px, world.groundAt(hit.px, hit.pz), hit.pz, hit.nz, -hit.nx, c.vel.x, c.vel.z, Math.round(clamp(j / c.pf.mass * 8, 3, 40))); }
+    }
+  };
   const results = [];
   for (const c of cars) place(c, 0);
 
@@ -60,7 +124,7 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
   let frame = 0;
   const api = { cars, results, reset,
     update(dt, player) {
-      const phase = clock.state.phase, show = player && player.driving; box.style.display = show ? '' : 'none';
+      const phase = clock.state.phase, show = player && player.driving; box.style.display = show ? '' : 'none'; onFoot = !show;
       const me = player ? onRoad(player.st.pos.x, player.st.pos.z) : null, meV = player ? player.st.vel.length() : 0, ms = phase === 'finished' ? finishI + 0.5 : me ? me.s : 0;
       if (phase === 'running') for (const c of cars) {
         if (c.done) { c.v = Math.max(0, c.v - 6 * dt); c.s = Math.min(N - 3, c.s + c.v * dt); place(c, dt); continue; }
@@ -76,14 +140,16 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
           if (free && lanes > 1 && R[i] > 120) lane = other; else target = Math.min(target, ahead.v + (gap - 7) * 0.5); }
         c.wT = lane;
         if (c.v < target) c.v = Math.min(target, c.v + aMax * dt); else c.v = Math.max(target, c.v - c.pf.brake * dt);
-        if (c.hit > 0) { c.hit -= dt; c.v *= 1 - dt * 0.8; }
-        const dw = clamp(c.wT - c.w, -1.6 * dt, 1.6 * dt); c.w += dw; c.yawOff = lerp(c.yawOff, -dw / Math.max(c.v * dt, 1e-3) * 0.8, 0.2);
+        // (shoved: it has lost speed and drifts across, spinning, while it gathers the car up — the harder the hit the longer)
+        if (c.hit > 0) { c.hit -= dt; c.v = Math.max(0, c.v - dt * 4 * Math.min(1, c.hit)); if (c.v > target) c.v = Math.max(target, c.v - c.pf.brake * dt); }
+        c.w += c.vw * dt; c.vw *= Math.exp(-dt * 2.2); c.w = clamp(c.w, -RW - 1.2, RW + 1.2);
+        c.spin += c.spinV * dt; c.spinV *= Math.exp(-dt * 2.5); c.spin *= Math.exp(-dt * (c.hit > 0 ? 0.9 : 2.4));
+        const dw = clamp(c.wT - c.w, -1.6 * dt, 1.6 * dt) * (c.hit > 0 ? 0.3 : 1); c.w += dw; c.yawOff = lerp(c.yawOff, -dw / Math.max(c.v * dt, 1e-3) * 0.8, 0.2);
         c.s += c.v * dt;
-        // (bumped by the player: it slows and edges away)
-        if (player) { const dx = player.st.pos.x - c.root.position.x, dz = player.st.pos.z - c.root.position.z; if (Math.hypot(dx, dz) < 3.4) { c.hit = 0.6; const side = me && me.w > c.w ? -1 : 1; c.w = clamp(c.w + side * dt * 1.2, -RW + 0.9, RW - 0.9); } }
         if (c.s >= finishI) { c.done = 1; results.push({ name: c.name, car: c.car, t: clock.state.t }); }
         place(c, dt);
       } else if (phase !== 'finished') for (const c of cars) place(c, 0);
+      if (dt > 0) contacts(player, dt); sparksUpdate(dt);
       if (phase === 'finished' && player && !results.some(r => r.me)) results.push({ name: 'Ty', me: true, t: clock.state.result });
       if (++frame % 4) return;
       // (the order: by distance down the stage; finishers first, by their times)
