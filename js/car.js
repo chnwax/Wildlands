@@ -22,7 +22,8 @@
 // dash's shift lights count up the revs, the brake lights glow. C: cockpit / chase / bonnet view.
 // Models: WRC Hyundai i20 2017 by vecarz (CC BY-NC-SA 4.0), First Person Arms by DJMaesen (CC BY 4.0); kept in
 // Modeleaut/ next to the game (not in the repository).
-import { THREE, scene, renderer, gltfLoader, collide, colInsert, colRemove, clamp, lerp, smoothstep } from './core.js';
+import { THREE, scene, renderer, collide, colInsert, colRemove, clamp, lerp, smoothstep } from './core.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { audio } from './audio.js';
 import { toastMsg } from './ui.js';
 
@@ -111,7 +112,6 @@ const ASSIST = { yaw: 3.8, beta: 0.14, k: 12.5, side: 3.2 }; // (arcade stabilit
 const LOOSE = { yaw: 0.72, beta: 0.24, side: 0.16 }; // (on loose ground the help lets the car rotate and drift more before it steps in)
 const HB = { rise: 7, catch: 1.5, yawK: 32, yawMin: 0.8, yawMax: 2.6, yawGain: 0.5, beta: 1.15, side: 0.98 }; // (the handbrake turn: see the stability help)
 const pac = s => Math.sin(1.3 * Math.atan(2.64 * s)); // (1 at s = 1)
-const torqueAt = rpm => { const C = SPEC.engine.curve; for (let i = 0; i + 1 < C.length; i++) if (rpm <= C[i + 1][0]) return lerp(C[i][1], C[i + 1][1], (rpm - C[i][0]) / (C[i + 1][0] - C[i][0])); return C[C.length - 1][1]; };
 // the tyre: normalised slips (sk = κ/κpeak, sa = tan α/tan αpeak) on one curve, the force split along them
 function tyre(S, mu, Fz, sk, sa, out) {
   const sl = Math.hypot(sk, sa); if (sl < 1e-6 || Fz <= 0) { out[0] = out[1] = 0; return 0; }
@@ -122,10 +122,197 @@ const UP = new THREE.Vector3(0, 1, 0), XAX = new THREE.Vector3(1, 0, 0);
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _t = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4(), _e = new THREE.Euler();
 const F2 = [0, 0], F3 = [0, 0];
 
+// The vehicle simulation, one per car: a rigid body on four ray-cast wheels, tyres, drivetrain, aero, the stability help and
+// the body's contacts with the ground and the world (see the head of this file). The player's car (createCar) dresses it
+// with its cockpit, arms, sound and cameras; a rival (race.js) drives the very same simulation through st.steer, st.throttle,
+// st.brake and st.hand, so every car on the road answers to the same physics. wheels: [{id, front, hub (from the centre of
+// mass, metres), R}] — the physics state is added to these objects. hooks.ownCol(): the car's own walker box, kept out of
+// its side contacts.
+export function makeVehicle(world, SPEC, wheels, hooks = {}) {
+  const torqueAt = rpm => { const C = SPEC.engine.curve; for (let i = 0; i + 1 < C.length; i++) if (rpm <= C[i + 1][0]) return lerp(C[i][1], C[i + 1][1], (rpm - C[i][0]) / (C[i + 1][0] - C[i][0])); return C[C.length - 1][1]; };
+  const S0 = SPEC.susp.rest - SPEC.mass * G / 4 / SPEC.susp.k;
+  for (const w of wheels) Object.assign(w, { w: 0, angle: 0, c: 0, cv: 0, s: S0, Fz: 0, fs: 0, slip: 0, contact: false, surf: 'gravel', cp: w.cp || new THREE.Vector3(), vx: 0, Td: 0, I: 1, rr: 0 });
+  const feel = SPEC.feel || {}, tyF = feel.tyre || {}, asF = feel.assist || {};
+  const SURFC = Object.fromEntries(Object.entries(SURF).map(([k, S]) => [k, { ...S, mu: S.mu * (S.loose ? tyF.loose ?? 1 : tyF.tarmac ?? 1), kp: S.kp * (tyF.kp ?? 1), ap: S.ap * (tyF.ap ?? 1), slide: S.slide - (S.loose ? 0 : tyF.fall ?? 0) }]));
+  const AS = { ...ASSIST, free: 0.085 }; for (const k in asF) AS[k] *= asF[k];
+  const m = SPEC.mass, [W, H, L] = SPEC.dims, Ib = new THREE.Vector3(m / 12 * (H * H + L * L), m / 12 * (W * W + L * L) * 0.9, m / 12 * (W * W + H * H)); // (pitch, yaw, roll)
+  const st = { pos: new THREE.Vector3(), q: new THREE.Quaternion(), vel: new THREE.Vector3(), ang: new THREE.Vector3(),
+    steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, handEff: 0, boost: 0, gear: 2, rpm: SPEC.engine.idle, shiftT: 0, auto: true, revT: 0, locked: false,
+    accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
+  const F = new THREE.Vector3(), T = new THREE.Vector3(), R3 = new THREE.Matrix3(), Rt = new THREE.Matrix3();
+  const addForce = (f, at) => { F.add(f); T.add(_t.subVectors(at, st.pos).cross(f)); };
+  const ground = (x, z) => world.groundAt(x, z) + (world.bumpAt ? world.bumpAt(x, z) : 0);
+  const up = new THREE.Vector3(), fwd = new THREE.Vector3(), down = new THREE.Vector3(), anchor = new THREE.Vector3(), wf = new THREE.Vector3(), wl = new THREE.Vector3(), r = new THREE.Vector3(), vp = new THREE.Vector3(), fv = new THREE.Vector3(), gn = new THREE.Vector3(), gt = new THREE.Vector3(), tax = new THREE.Vector3(), pr = { x: 0, y: 0, z: 0 };
+  let hbT = 0; const CORNERS = bodyPoints(CORNERS0, SPEC), SIDES = bodyPoints(SIDES0, SPEC);
+  function stepPhys(h) {
+    const { susp } = SPEC, q = st.q;
+    F.set(0, -m * G, 0); T.set(0, 0, 0);
+    up.set(0, 1, 0).applyQuaternion(q); fwd.set(0, 0, 1).applyQuaternion(q); down.copy(up).negate();
+    // ---- the suspension: each wheel's ray down from the spring's top to the ground
+    for (const w of wheels) {
+      anchor.copy(w.hub).applyQuaternion(q).add(st.pos).addScaledVector(up, S0);
+      const dy = Math.max(0.3, -down.y); let t = (anchor.y - ground(anchor.x, anchor.z)) / dy; t = (anchor.y - ground(anchor.x + down.x * t, anchor.z + down.z * t)) / dy;
+      // (ground well past the bump stop is no ground under the tyre but a face it has run into — a bank, a rock wall: the
+      // tyre does not climb it on its spring; the body's corners meet it, pushed out along its normal)
+      const s = t - w.R, comp = susp.rest - s, face = comp > susp.travel + 0.12, c = face ? 0 : clamp(comp, 0, susp.travel + 0.08);
+      w.cv = (c - w.c) / h; w.c = c; w.contact = comp > 0 && !face; w.s = clamp(s, susp.rest - susp.travel, susp.rest);
+      w.cp.copy(anchor).addScaledVector(down, t);
+      const cv = Math.abs(w.cv) < 0.12 ? w.cv : Math.sign(w.cv) * (0.12 + (Math.abs(w.cv) - 0.12) * 0.35); // (digressive: soft over sharp bumps)
+      let fs = w.contact ? susp.k * c + (w.cv > 0 ? susp.bump : susp.rebound) * cv : 0; if (c > susp.travel) fs += (c - susp.travel) * (w.cv >= 0 ? 450000 : 90000); // (the bump stop: rubber, giving back little of what it took)
+      w.fs = fs;
+    }
+    for (const [a, b, k] of [[0, 1, susp.arbF], [2, 3, susp.arbR]]) { const wa = wheels[a], wb = wheels[b], d = (wa.contact ? wa.c : 0) - (wb.contact ? wb.c : 0); if (wa.contact) wa.fs += k * d; if (wb.contact) wb.fs -= k * d; }
+    // ---- the drivetrain: the engine's speed from the driven wheels, the clutch slipping below the launch revs
+    st.handEff += (st.hand - st.handEff) * Math.min(1, h * 35); // (the hydraulic line: the rear calipers follow the lever within a few hundredths of a second)
+    // (the driven wheels: all four, or the rear two; the handbrake releases the rear drive — an AWD car's front axle keeps
+    // pulling it through an arcade slide, a RWD car's engine runs free)
+    const hand = st.handEff, hb = hand > 0.15, ratio = SPEC.gears[st.gear], Gt = ratio * SPEC.final, rwd = SPEC.drive === 'rwd';
+    const drives = w => (!rwd || !w.front) && !(hb && !w.front);
+    let wSum = 0, nW = 0, slipD = 0; for (const w of wheels) if (drives(w)) { wSum += w.w; nW++; slipD = Math.max(slipD, (w.w * w.R - (w.vx || 0)) / Math.max(Math.abs(w.vx || 0), 3)); }
+    const inGear = ratio !== 0 && nW > 0;
+    // (traction control: past a little wheelspin the engine's drive is eased back, quickly, as a modern system does)
+    // (its slip allowed: with the wheel straight, about the tyre's best — a launch, a straight exit; turning, as much as
+    // the car's own measure lets a power slide through)
+    if (SPEC.tc) { const tcS = lerp(0.09, SPEC.tcSlip ?? 0.12, clamp(Math.abs(st.steer) * 5 - 0.25, 0, 1)); st.tc = (st.tc ?? 1) + (clamp(1 - (slipD - tcS) * 4, 0.25, 1) - (st.tc ?? 1)) * Math.min(1, h * 30); }
+    const rpmW = nW ? Math.max(0, wSum / nW * Gt) * 60 / (2 * Math.PI) : 0, thr = (st.shiftT > 0 ? 0 : st.throttle) * (SPEC.tc ? st.tc : 1);
+    let Tw = 0; st.locked = false;
+    // (turbo lag: the boost builds with the throttle above its revs, over its own time, and falls away quicker)
+    const TB = SPEC.turbo; if (TB) { const want = st.throttle * smoothstep(TB.lo, TB.hi, st.rpm); st.boost += (want - st.boost) * Math.min(1, h / (want > st.boost ? TB.up : TB.down)); }
+    const boostK = TB ? TB.floor + (1 - TB.floor) * st.boost : 1;
+    if (inGear) { const launch = SPEC.engine.idle + 3200 * thr;
+      if (rpmW < launch) { st.rpm += (launch - st.rpm) * Math.min(1, h * 9); Tw = torqueAt(st.rpm) * boostK * thr * Gt * SPEC.eff; }
+      else { st.locked = true; st.rpm = rpmW; const tq = st.rpm > SPEC.engine.limiter ? 0 : thr; Tw = (torqueAt(st.rpm) * boostK * tq - SPEC.engine.braking * (1 - tq) * clamp(st.rpm / 6000, 0.2, 1)) * Gt * SPEC.eff; } }
+    else st.rpm += (Math.min(SPEC.engine.limiter, SPEC.engine.idle + st.throttle * 7400) - st.rpm) * Math.min(1, h * (st.throttle > 0.05 ? 7 : 3));
+    const Ie = st.locked && nW ? SPEC.engine.inertia * Gt * Gt / nW : 0;
+    // (the couplings: across each axle, and between the axles unless the handbrake has opened the rear)
+    const fa = (wheels[0].w + wheels[1].w) / 2, ra = (wheels[2].w + wheels[3].w) / 2;
+    for (const w of wheels) { const other = wheels[w.front ? (w === wheels[0] ? 1 : 0) : (w === wheels[2] ? 3 : 2)], connected = drives(w);
+      w.Td = (connected ? Tw / nW : 0) + (rwd && w.front ? 0 : clamp((other.w - w.w) * SPEC.lsd, -800, 800)) + (hb || rwd ? 0 : clamp(((w.front ? ra : fa) - (w.front ? fa : ra)) * SPEC.center * 0.5, -800, 800));
+      w.I = SPEC.wheelI + (connected ? Ie : 0); }
+    // ---- the tyres
+    let slipMax = 0, nLoose = 0, nOn = 0;
+    for (const w of wheels) {
+      const steerA = w.front ? st.steer * SPEC.steerMax : 0, bh = w.front ? 0 : SPEC.brake.hand * hand; let bt = (w.front ? SPEC.brake.front : SPEC.brake.rear) * st.brake;
+      let fx = 0, dfdw = 0; w.slip = 0; w.Fz = 0; w.rr = 0;
+      if (w.contact) {
+        world.normalAt(w.cp.x, w.cp.z, _n);
+        wf.copy(fwd).applyAxisAngle(up, steerA); wf.addScaledVector(_n, -_n.dot(wf)).normalize(); wl.crossVectors(_n, wf);
+        r.subVectors(w.cp, st.pos); vp.crossVectors(st.ang, r).add(st.vel);
+        const vx = vp.dot(wf), vy = vp.dot(wl); w.vx = vx;
+        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURFC[w.surf] || SURFC.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) ; // (a locked rear tyre loses its side grip by itself: all its force goes against the way it slides)
+        const Fz = Math.max(0, w.fs); w.Fz = Fz; nOn++; if (S.loose) nLoose++;
+        const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 0.95));
+        w.slip = tyre(S, mu, Fz, kappa / S.kp, sa, F2); fx = F2[0]; let fy = F2[1];
+        if (st.assist && bt > 0 && vx > 2) bt *= clamp(1 - (-kappa / S.kp - 0.9) * 1.6, 0.25, 1);
+        tyre(S, mu, Fz, (kappa + 0.002) / S.kp, sa, F3); dfdw = (F3[0] - fx) / 0.002 * w.R / den;
+        const spd = Math.hypot(vx, vy); if (spd < 1.2) fy -= vy * Fz * 0.9 * (1 - spd / 1.2); // (at a crawl the tyre holds: no creep sideways)
+        slipMax = Math.max(slipMax, w.slip);
+        fv.copy(up).multiplyScalar(Fz).addScaledVector(wf, fx).addScaledVector(wl, fy);
+        addForce(fv, _a.copy(w.cp).addScaledVector(up, SPEC.rollCentre));
+        w.rr = SPEC.crr * Fz * w.R;
+      }
+      // the wheel's spin (implicit in the tyre's own stiffness), then the brakes and rolling resistance as friction
+      w.w += h * (w.Td - fx * w.R) / (w.I + h * w.R * Math.max(0, dfdw));
+      const dw = (bt + bh + w.rr) * h / w.I; w.w = Math.abs(w.w) <= dw ? 0 : w.w - Math.sign(w.w) * dw;
+    }
+    st.slipMax = slipMax; st.loose = nOn ? nLoose / nOn : st.loose || 0;
+    // ---- the air
+    const vF = st.vel.dot(fwd), sp = st.vel.length();
+    if (sp > 0.1) { addForce(_v.copy(st.vel).multiplyScalar(-0.5 * 1.225 * SPEC.aero.cda * (1 - (st.draft || 0)) * sp), st.pos); // (draft: the slipstream of a car ahead, race.js)
+      const dfz = 0.5 * 1.225 * SPEC.aero.cla * vF * vF; addForce(_v.copy(down).multiplyScalar(dfz * SPEC.aero.front), _w.copy(fwd).multiplyScalar(1.25).add(st.pos)); addForce(_v.copy(down).multiplyScalar(dfz * (1 - SPEC.aero.front)), _w.copy(fwd).multiplyScalar(-1.25).add(st.pos)); }
+    // ---- the stability help (an arcade car's): the yaw drawn toward the one the steering asks for (the wheels' own
+    // geometry, as fast as the grip allows), and a slide pulled back past a body slip. The handbrake opens it up: while
+    // the lever is up the locked rear swings out and the car turns as fast as the steering asks of a handbrake turn
+    // (quicker at hairpin speeds than fast; with the wheel straight it slides on straight), never past a body slip it
+    // could not drive out of; let go, the slide is caught over a moment as the rear tyres find their grip again
+    { const vL = st.vel.dot(fwd), sideV = _v.crossVectors(up, fwd), vLat = st.vel.dot(sideV), spd = Math.abs(vL), sp2 = Math.hypot(vL, vLat), on = clamp((sp2 - 3) / 6, 0, 1) * (wheels.filter(w => w.contact).length >= 3 ? 1 : 0);
+      hbT = hand > 0.12 ? Math.min(1, hbT + h * HB.rise) : Math.max(0, hbT - h * HB.catch);
+      if (on > 0) { const held = smoothstep(0.12, 0.6, hand), hbMix = hbT * smoothstep(2.5, 7, sp2), pull = held * hbMix;
+        const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
+        const lim = 11 / Math.max(spd, 1), roadWant = clamp(vL * Math.tan(d) / wb, -lim, lim), hbWant = st.steer * clamp(HB.yawK / (sp2 + 3), HB.yawMin, HB.yawMax);
+        const lo = st.loose || 0, want = lerp(roadWant, hbWant, pull), beta = Math.atan2(vLat, Math.max(vL, 0.5)), betaLim = lerp(lerp(AS.beta, LOOSE.beta, lo), HB.beta, hbMix);
+        let ty = -(yawNow - want) * AS.yaw * lerp(1, LOOSE.yaw, lo) * lerp(1, HB.yawGain, pull); if (Math.abs(beta) > betaLim) ty += Math.sign(beta) * (Math.abs(beta) - betaLim) * AS.k;
+        T.addScaledVector(up, ty * Ib.y * on);
+        const sideFree = sp2 * lerp(lerp(AS.free, LOOSE.side, lo), HB.side, hbMix), excess = Math.max(0, Math.abs(vLat) - sideFree);
+        if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * AS.side * on);
+      } }
+    // ---- the body against the ground (its corners, its roof) and against the world (its sides)
+    // (pushed out along the ground's normal, and damped hard on the way in: a corner run into a bank is stopped by it and
+    // slides along it, not thrown up into the air as a push straight up would throw it)
+    for (const [bx, by, bz] of CORNERS) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos), d = world.groundAt(p.x, p.z) - p.y; if (d <= 0) continue;
+      world.normalAt(p.x, p.z, gn); if (gn.y < 0.55) { gn.y = 0; gn.normalize(); } r.subVectors(p, st.pos); /* (a face steeper than ~57°: a wall, met side-on) */ vp.crossVectors(st.ang, r).add(st.vel); const vn = vp.dot(gn), fn = clamp(250000 * d * gn.y - 16000 * vn, 0, 9 * m);
+      gt.copy(vp).addScaledVector(gn, -vn); const l = gt.length(); fv.copy(gn).multiplyScalar(fn); if (l > 1e-3) fv.addScaledVector(gt, -0.6 * fn / l); addForce(fv, p); }
+    const oc = hooks.ownCol ? hooks.ownCol() : null; if (oc) oc.y1 = -1e9; // (not against its own box)
+    for (const [bx, by, bz] of SIDES) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos); pr.x = p.x; pr.y = p.y - 0.45; pr.z = p.z; collide(pr, 0.22, 1.1);
+      const dx = pr.x - p.x, dz = pr.z - p.z, d = Math.hypot(dx, dz); if (d < 1e-4) continue;
+      const nx = dx / d, nz = dz / d; r.subVectors(p, st.pos); vp.crossVectors(st.ang, r).add(st.vel); const vn = vp.x * nx + vp.z * nz, fn = Math.max(0, 320000 * d - 24000 * vn);
+      const tx = vp.x - vn * nx, tz = vp.z - vn * nz, tl = Math.hypot(tx, tz); fv.set(nx * fn - (tl > 1e-3 ? tx / tl * 0.35 * fn : 0), 0, nz * fn - (tl > 1e-3 ? tz / tl * 0.35 * fn : 0)); addForce(fv, p); }
+    if (oc) oc.y1 = 1e9;
+    // ---- forgiving: tipped past ~25° (on two wheels along a bank, rolled by a rock) the car is eased back onto its
+    // wheels, firmly as the tilt grows, its roll damped on the way — a moment off the road ends on the wheels, not the roof
+    const tilt = Math.acos(clamp(up.y, -1, 1));
+    if (tilt > 0.44) { tax.set(-up.z, 0, up.x); const tl = tax.length(); /* (up × the vertical: about it, up turns to the vertical) */ if (tl > 1e-4) { tax.multiplyScalar(1 / tl); const I = (Ib.x + Ib.z) / 2, k = Math.min(1, (tilt - 0.44) / 0.6);
+      T.addScaledVector(tax, I * (14 * k - 4 * k * st.ang.dot(tax))); } }
+    // ---- integrate (the angular part in the body's frame: its inertia is diagonal there)
+    st.vel.addScaledVector(F, h / m); st.pos.addScaledVector(st.vel, h);
+    R3.setFromMatrix4(_m.makeRotationFromQuaternion(q)); Rt.copy(R3).transpose();
+    const wb = _a.copy(st.ang).applyMatrix3(Rt), Lb = _b.set(wb.x * Ib.x, wb.y * Ib.y, wb.z * Ib.z), tb = _c.copy(T).applyMatrix3(Rt).sub(_w.crossVectors(wb, Lb));
+    wb.x += tb.x / Ib.x * h; wb.y += tb.y / Ib.y * h; wb.z += tb.z / Ib.z * h; st.ang.copy(wb.applyMatrix3(R3));
+    const ax = st.ang.x * h * 0.5, ay = st.ang.y * h * 0.5, az = st.ang.z * h * 0.5, qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    q.set(qx + ax * qw + ay * qz - az * qy, qy - ax * qz + ay * qw + az * qx, qz + ax * qy - ay * qx + az * qw, qw - ax * qx - ay * qy - az * qz).normalize();
+    if (st.shiftT > 0) st.shiftT -= h;
+    // (at rest with nothing pressed, the last creep taken out)
+    if (st.vel.lengthSq() < 0.01 && st.ang.lengthSq() < 0.004 && st.throttle < 0.02 && wheels.every(w => w.contact)) { st.vel.multiplyScalar(0.98); st.ang.multiplyScalar(0.98); }
+  }
+  // a blow from outside (another car): an impulse J (N s, the world's frame) at a point, taken by the body at once
+  const impulse = (J, at) => { st.vel.addScaledVector(J, 1 / m);
+    const qi = _q.copy(st.q).invert(), rb = _a.subVectors(at, st.pos).applyQuaternion(qi), Jb = _b.copy(J).applyQuaternion(qi), tb = _c.crossVectors(rb, Jb);
+    st.ang.add(tb.set(tb.x / Ib.x, tb.y / Ib.y, tb.z / Ib.z).applyQuaternion(st.q)); return Jb; };
+  const place = (x, z, yaw) => { st.pos.set(x, world.groundAt(x, z) + SPEC.cg[1] + 0.01, z); st.q.setFromAxisAngle(UP, yaw); st.vel.set(0, 0, 0); st.ang.set(0, 0, 0); for (const w of wheels) { w.w = 0; w.c = SPEC.susp.rest - S0; } st.gear = 2; st.rpm = SPEC.engine.idle; st.shiftT = 0; st.boost = 0; };
+  // the frame's end: the body's own-frame velocity and smoothed acceleration (the camera, the sound, a driver read them)
+  const settle = dt => { const inv = _m.makeRotationFromQuaternion(st.q).invert(); st.velLocal.copy(st.vel).applyMatrix4(inv); st.angLocalY = _w.copy(st.ang).applyMatrix4(inv).y;
+    if (dt > 0) { const a = _v.subVectors(st.vel, st.lastVel).multiplyScalar(1 / dt).applyMatrix4(inv); st.accLocal.lerp(a, 1 - Math.exp(-dt * 7)); } st.lastVel.copy(st.vel); };
+  // a gearbox worked directly (a rival's: no lever to move): up near the limiter, down as the revs fall away, the drive cut for the shift
+  let gT = 0; const rvAt = g => Math.abs(st.velLocal.z) / wheels[0].R * SPEC.gears[g] * SPEC.final * 60 / (2 * Math.PI);
+  const gearbox = dt => { gT += dt; if (st.shiftT > 0 || gT < 0.45) return; if (st.gear < 2) { if (st.throttle > 0.1 && st.gear === 1) { st.gear = 2; gT = 0; } return; }
+    if (rvAt(st.gear) > SPEC.engine.limiter - 450 && st.gear < SPEC.gears.length - 1 && st.throttle > 0.2) { st.gear++; st.shiftT = SPEC.shiftTime; gT = 0; }
+    else if (st.gear > 2 && rvAt(st.gear) < (st.brake > 0.2 ? 4900 : 3600) && rvAt(st.gear - 1) < SPEC.engine.limiter - 700) { st.gear--; st.shiftT = SPEC.shiftTime * 0.8; gT = 0; } };
+  let acc = 0;
+  const update = dt => { acc += Math.min(dt, 0.05); let n = 0; const h = 1 / 480; while (acc >= h && n < 30) { stepPhys(h); acc -= h; n++; } settle(dt); };
+  return { st, wheels, m, Ib, S0, SURFC, AS, spec: SPEC, stepPhys, impulse, place, settle, gearbox, update, torqueAt };
+}
+
+// ---------------------------------------------------------------- the models, loaded once a session
+// A car's model is parsed once and kept (a shared resource: the preloader fetches it before a race, every race after
+// reuses it, and leaving a race never frees it). Rivals draw clones of it — its geometry and textures shared, only their
+// paint their own; the player's car takes a copy with geometry and materials of its own, since the cockpit is carved out
+// of it (cutOut, carve) and its cabin shaded apart. The arms are skinned, so their file's bytes are kept and parsed for
+// each car that needs them.
+const modelLoader = new GLTFLoader(); // (not the loading screen's manager: these load in the background too)
+const carModels = new Map();
+let armsBytes = null;
+export function loadCarModel(id) {
+  const def = CAR_DEFS[id] || CAR_DEFS.i20;
+  if (!carModels.has(def)) carModels.set(def, modelLoader.loadAsync(def.model).then(g => { g.scene.traverse(o => { if (!o.isMesh) return; o.castShadow = true; o.receiveShadow = true;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && m.map) m.map.anisotropy = 8; }); dressMaterials(g.scene, def.mats); g.scene.updateMatrixWorld(true); g.scene.userData.shared = true; return g; })
+    .catch(e => { carModels.delete(def); throw e; }));
+  return carModels.get(def);
+}
+export const loadedCarModels = () => { const out = []; for (const p of carModels.values()) p.then(g => out.push(g.scene), () => {}); return out; };
+export const carModelRoots = async () => (await Promise.all([...carModels.values()].map(p => p.catch(() => null)))).filter(Boolean).map(g => g.scene);
+export function loadArms() { if (!armsBytes) armsBytes = fetch(ARMS).then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error('arms ' + r.status))).catch(e => { armsBytes = null; throw e; }); return armsBytes; }
+const parseArms = () => loadArms().then(b => modelLoader.parseAsync(b, new URL('Modeleaut/', location.href).href)).catch(() => null);
+// a copy that owns its geometry and materials (the textures stay shared)
+function ownCopy(src) {
+  const c = src.clone(true), mats = new Map(), own = m => { if (!mats.has(m)) { const k = m.clone(); k.userData = { ...m.userData }; mats.set(m, k); } return mats.get(m); };
+  c.traverse(o => { if (!o.isMesh) return; o.geometry = o.geometry.clone(); o.material = Array.isArray(o.material) ? o.material.map(own) : own(o.material); });
+  return c;
+}
+
 export async function createCar(world, spawn, carId = 'i20') {
   const def = CAR_DEFS[carId] || CAR_DEFS.i20; SPEC = def.spec;
-  const [g, ag] = await Promise.all([gltfLoader.loadAsync(def.model), gltfLoader.loadAsync(ARMS).catch(() => null)]);
-  const model = g.scene; model.updateMatrixWorld(true);
+  const [g, ag] = await Promise.all([loadCarModel(carId), parseArms()]);
+  const model = ownCopy(g.scene); model.userData.shared = false; model.updateMatrixWorld(true);
   const find = name => { let f = null; model.traverse(o => { if (!f && o.name && o.name.startsWith(name)) f = o; }); return f; };
   const boxOf = o => new THREE.Box3().setFromObject(o);
   const vertsOf = (o, every = 1) => { const pts = []; o.updateMatrixWorld(true); o.traverse(m => { if (!m.isMesh) return; const pa = m.geometry.attributes.position; for (let i = 0; i < pa.count; i += every) pts.push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(m.matrixWorld)); }); return pts; };
@@ -221,14 +408,8 @@ export async function createCar(world, spawn, carId = 'i20') {
   cabinLight(model, driver, ag && ag.scene);
   const dash = (() => { let q = null; const n = find('LCD001'); if (n) n.traverse(o => { if (o.isMesh && !q) q = o; }); return q ? dashDisplay(q, model) : null; })();
   // (each car on its own tyres and with its own measure of the stability help: SPEC.feel)
-  const feel = SPEC.feel || {}, tyF = feel.tyre || {}, asF = feel.assist || {};
-  const SURFC = Object.fromEntries(Object.entries(SURF).map(([k, S]) => [k, { ...S, mu: S.mu * (S.loose ? tyF.loose ?? 1 : tyF.tarmac ?? 1), kp: S.kp * (tyF.kp ?? 1), ap: S.ap * (tyF.ap ?? 1), slide: S.slide - (S.loose ? 0 : tyF.fall ?? 0) }]));
-  const AS = { ...ASSIST, free: 0.085 }; for (const k in asF) AS[k] *= asF[k];
+  const veh = makeVehicle(world, SPEC, wheels, { ownCol: () => colIn ? col : null }), { st, m, Ib, SURFC, AS } = veh, stepPhys = veh.stepPhys;
   // ---- physics state
-  const m = SPEC.mass, [W, H, L] = SPEC.dims, Ib = new THREE.Vector3(m / 12 * (H * H + L * L), m / 12 * (W * W + L * L) * 0.9, m / 12 * (W * W + H * H)); // (pitch, yaw, roll)
-  const st = { pos: new THREE.Vector3(), q: new THREE.Quaternion(), vel: new THREE.Vector3(), ang: new THREE.Vector3(),
-    steer: 0, steerIn: 0, throttle: 0, brake: 0, hand: 0, handEff: 0, boost: 0, gear: 2, rpm: SPEC.engine.idle, shiftT: 0, auto: true, revT: 0, locked: false,
-    accLocal: new THREE.Vector3(), velLocal: new THREE.Vector3(), lastVel: new THREE.Vector3(), slipMax: 0 };
   const car = { root, st, wheels, rig, cockpit: { steerHub, steerAxis, steerR, rimTube }, driving: true, view: 0, inputOn: false, world, spec: SPEC, id: carId, def,
     look: { yaw: 0, pitch: 0, idle: 9 }, head: { p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0, rv: 0, t: 0, bump: 0, kick: new THREE.Vector3() }, fov: 62, anim: { hb: 0, hbGrip: 0, reach: 0, at: null, want: null, snap: false, gq: null, slot: 2, gMove: 0, gFrom: 2, gTo: 2, gLen: 0, linger: 0, knob: [0, 0] } };
   car.gearLever = GL; car.tune = { HB, ASSIST: AS, SURF: SURFC, LOOSE }; // (live handling tuning from the console)
@@ -287,137 +468,13 @@ export async function createCar(world, spawn, carId = 'i20') {
   };
   car.cycleView = () => { car.view = (car.view + 1) % 3; toastMsg(['Cockpit', 'Chase camera', 'Bonnet camera'][car.view]); };
   car.lookMouse = (dx, dy) => { const Lk = car.look; Lk.yaw = clamp(Lk.yaw - dx * 0.0022, -2.3, 2.3); Lk.pitch = clamp(Lk.pitch - dy * 0.0022, -0.9, 0.7); Lk.idle = 0; };
-  addEventListener('keydown', e => { if (!car.inputOn || !car.driving || e.repeat) return;
+  const listeners = [], listen = (type, fn) => { addEventListener(type, fn); listeners.push([type, fn]); };
+  listen('keydown', e => { if (!car.inputOn || !car.driving || e.repeat) return;
     if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') car.shift(1); else if (e.code === 'KeyQ' || e.code === 'KeyZ') car.shift(-1); });
-  addEventListener('mousedown', e => { if (!car.inputOn || !car.driving || !document.pointerLockElement) return; if (e.button === 0) car.shift(1); else if (e.button === 2) car.shift(-1); });
-  addEventListener('contextmenu', e => { if (car.inputOn && document.pointerLockElement) e.preventDefault(); });
+  listen('mousedown', e => { if (!car.inputOn || !car.driving || !document.pointerLockElement) return; if (e.button === 0) car.shift(1); else if (e.button === 2) car.shift(-1); });
+  listen('contextmenu', e => { if (car.inputOn && document.pointerLockElement) e.preventDefault(); });
 
   // ---------------------------------------------------------------- the simulation
-  const F = new THREE.Vector3(), T = new THREE.Vector3(), R3 = new THREE.Matrix3(), Rt = new THREE.Matrix3();
-  const addForce = (f, at) => { F.add(f); T.add(_t.subVectors(at, st.pos).cross(f)); };
-  const ground = (x, z) => world.groundAt(x, z) + (world.bumpAt ? world.bumpAt(x, z) : 0);
-  const up = new THREE.Vector3(), fwd = new THREE.Vector3(), down = new THREE.Vector3(), anchor = new THREE.Vector3(), wf = new THREE.Vector3(), wl = new THREE.Vector3(), r = new THREE.Vector3(), vp = new THREE.Vector3(), fv = new THREE.Vector3(), gn = new THREE.Vector3(), gt = new THREE.Vector3(), tax = new THREE.Vector3(), pr = { x: 0, y: 0, z: 0 };
-  let hbT = 0; const CORNERS = bodyPoints(CORNERS0, SPEC), SIDES = bodyPoints(SIDES0, SPEC);
-  function stepPhys(h) {
-    const { susp } = SPEC, q = st.q;
-    F.set(0, -m * G, 0); T.set(0, 0, 0);
-    up.set(0, 1, 0).applyQuaternion(q); fwd.set(0, 0, 1).applyQuaternion(q); down.copy(up).negate();
-    // ---- the suspension: each wheel's ray down from the spring's top to the ground
-    for (const w of wheels) {
-      anchor.copy(w.hub).applyQuaternion(q).add(st.pos).addScaledVector(up, S0);
-      const dy = Math.max(0.3, -down.y); let t = (anchor.y - ground(anchor.x, anchor.z)) / dy; t = (anchor.y - ground(anchor.x + down.x * t, anchor.z + down.z * t)) / dy;
-      // (ground well past the bump stop is no ground under the tyre but a face it has run into — a bank, a rock wall: the
-      // tyre does not climb it on its spring; the body's corners meet it, pushed out along its normal)
-      const s = t - w.R, comp = susp.rest - s, face = comp > susp.travel + 0.12, c = face ? 0 : clamp(comp, 0, susp.travel + 0.08);
-      w.cv = (c - w.c) / h; w.c = c; w.contact = comp > 0 && !face; w.s = clamp(s, susp.rest - susp.travel, susp.rest);
-      w.cp.copy(anchor).addScaledVector(down, t);
-      const cv = Math.abs(w.cv) < 0.12 ? w.cv : Math.sign(w.cv) * (0.12 + (Math.abs(w.cv) - 0.12) * 0.35); // (digressive: soft over sharp bumps)
-      let fs = w.contact ? susp.k * c + (w.cv > 0 ? susp.bump : susp.rebound) * cv : 0; if (c > susp.travel) fs += (c - susp.travel) * (w.cv >= 0 ? 450000 : 90000); // (the bump stop: rubber, giving back little of what it took)
-      w.fs = fs;
-    }
-    for (const [a, b, k] of [[0, 1, susp.arbF], [2, 3, susp.arbR]]) { const wa = wheels[a], wb = wheels[b], d = (wa.contact ? wa.c : 0) - (wb.contact ? wb.c : 0); if (wa.contact) wa.fs += k * d; if (wb.contact) wb.fs -= k * d; }
-    // ---- the drivetrain: the engine's speed from the driven wheels, the clutch slipping below the launch revs
-    st.handEff += (st.hand - st.handEff) * Math.min(1, h * 35); // (the hydraulic line: the rear calipers follow the lever within a few hundredths of a second)
-    // (the driven wheels: all four, or the rear two; the handbrake releases the rear drive — an AWD car's front axle keeps
-    // pulling it through an arcade slide, a RWD car's engine runs free)
-    const hand = st.handEff, hb = hand > 0.15, ratio = SPEC.gears[st.gear], Gt = ratio * SPEC.final, rwd = SPEC.drive === 'rwd';
-    const drives = w => (!rwd || !w.front) && !(hb && !w.front);
-    let wSum = 0, nW = 0, slipD = 0; for (const w of wheels) if (drives(w)) { wSum += w.w; nW++; slipD = Math.max(slipD, (w.w * w.R - (w.vx || 0)) / Math.max(Math.abs(w.vx || 0), 3)); }
-    const inGear = ratio !== 0 && nW > 0;
-    // (traction control: past a little wheelspin the engine's drive is eased back, quickly, as a modern system does)
-    // (its slip allowed: with the wheel straight, about the tyre's best — a launch, a straight exit; turning, as much as
-    // the car's own measure lets a power slide through)
-    if (SPEC.tc) { const tcS = lerp(0.09, SPEC.tcSlip ?? 0.12, clamp(Math.abs(st.steer) * 5 - 0.25, 0, 1)); st.tc = (st.tc ?? 1) + (clamp(1 - (slipD - tcS) * 4, 0.25, 1) - (st.tc ?? 1)) * Math.min(1, h * 30); }
-    const rpmW = nW ? Math.max(0, wSum / nW * Gt) * 60 / (2 * Math.PI) : 0, thr = (st.shiftT > 0 ? 0 : st.throttle) * (SPEC.tc ? st.tc : 1);
-    let Tw = 0; st.locked = false;
-    // (turbo lag: the boost builds with the throttle above its revs, over its own time, and falls away quicker)
-    const TB = SPEC.turbo; if (TB) { const want = st.throttle * smoothstep(TB.lo, TB.hi, st.rpm); st.boost += (want - st.boost) * Math.min(1, h / (want > st.boost ? TB.up : TB.down)); }
-    const boostK = TB ? TB.floor + (1 - TB.floor) * st.boost : 1;
-    if (inGear) { const launch = SPEC.engine.idle + 3200 * thr;
-      if (rpmW < launch) { st.rpm += (launch - st.rpm) * Math.min(1, h * 9); Tw = torqueAt(st.rpm) * boostK * thr * Gt * SPEC.eff; }
-      else { st.locked = true; st.rpm = rpmW; const tq = st.rpm > SPEC.engine.limiter ? 0 : thr; Tw = (torqueAt(st.rpm) * boostK * tq - SPEC.engine.braking * (1 - tq) * clamp(st.rpm / 6000, 0.2, 1)) * Gt * SPEC.eff; } }
-    else st.rpm += (Math.min(SPEC.engine.limiter, SPEC.engine.idle + st.throttle * 7400) - st.rpm) * Math.min(1, h * (st.throttle > 0.05 ? 7 : 3));
-    const Ie = st.locked && nW ? SPEC.engine.inertia * Gt * Gt / nW : 0;
-    // (the couplings: across each axle, and between the axles unless the handbrake has opened the rear)
-    const fa = (wheels[0].w + wheels[1].w) / 2, ra = (wheels[2].w + wheels[3].w) / 2;
-    for (const w of wheels) { const other = wheels[w.front ? (w === wheels[0] ? 1 : 0) : (w === wheels[2] ? 3 : 2)], connected = drives(w);
-      w.Td = (connected ? Tw / nW : 0) + (rwd && w.front ? 0 : clamp((other.w - w.w) * SPEC.lsd, -800, 800)) + (hb || rwd ? 0 : clamp(((w.front ? ra : fa) - (w.front ? fa : ra)) * SPEC.center * 0.5, -800, 800));
-      w.I = SPEC.wheelI + (connected ? Ie : 0); }
-    // ---- the tyres
-    let slipMax = 0, nLoose = 0, nOn = 0;
-    for (const w of wheels) {
-      const steerA = w.front ? st.steer * SPEC.steerMax : 0, bh = w.front ? 0 : SPEC.brake.hand * hand; let bt = (w.front ? SPEC.brake.front : SPEC.brake.rear) * st.brake;
-      let fx = 0, dfdw = 0; w.slip = 0; w.Fz = 0; w.rr = 0;
-      if (w.contact) {
-        world.normalAt(w.cp.x, w.cp.z, _n);
-        wf.copy(fwd).applyAxisAngle(up, steerA); wf.addScaledVector(_n, -_n.dot(wf)).normalize(); wl.crossVectors(_n, wf);
-        r.subVectors(w.cp, st.pos); vp.crossVectors(st.ang, r).add(st.vel);
-        const vx = vp.dot(wf), vy = vp.dot(wl); w.vx = vx;
-        w.surf = world.surfaceAt ? world.surfaceAt(w.cp.x, w.cp.z) : 'gravel'; const S = SURFC[w.surf] || SURFC.gravel, mu = S.mu * (world.gripAt ? world.gripAt(w.cp.x, w.cp.z) : 1) ; // (a locked rear tyre loses its side grip by itself: all its force goes against the way it slides)
-        const Fz = Math.max(0, w.fs); w.Fz = Fz; nOn++; if (S.loose) nLoose++;
-        const den = Math.max(Math.abs(vx), 2), kappa = (w.w * w.R - vx) / den, sa = Math.tan(clamp(Math.atan2(vy, Math.max(Math.abs(vx), 0.6)), -1.4, 1.4)) / Math.tan(S.ap * (w.front ? 1 : 0.95));
-        w.slip = tyre(S, mu, Fz, kappa / S.kp, sa, F2); fx = F2[0]; let fy = F2[1];
-        if (st.assist && bt > 0 && vx > 2) bt *= clamp(1 - (-kappa / S.kp - 0.9) * 1.6, 0.25, 1);
-        tyre(S, mu, Fz, (kappa + 0.002) / S.kp, sa, F3); dfdw = (F3[0] - fx) / 0.002 * w.R / den;
-        const spd = Math.hypot(vx, vy); if (spd < 1.2) fy -= vy * Fz * 0.9 * (1 - spd / 1.2); // (at a crawl the tyre holds: no creep sideways)
-        slipMax = Math.max(slipMax, w.slip);
-        fv.copy(up).multiplyScalar(Fz).addScaledVector(wf, fx).addScaledVector(wl, fy);
-        addForce(fv, _a.copy(w.cp).addScaledVector(up, SPEC.rollCentre));
-        w.rr = SPEC.crr * Fz * w.R;
-      }
-      // the wheel's spin (implicit in the tyre's own stiffness), then the brakes and rolling resistance as friction
-      w.w += h * (w.Td - fx * w.R) / (w.I + h * w.R * Math.max(0, dfdw));
-      const dw = (bt + bh + w.rr) * h / w.I; w.w = Math.abs(w.w) <= dw ? 0 : w.w - Math.sign(w.w) * dw;
-    }
-    st.slipMax = slipMax; st.loose = nOn ? nLoose / nOn : st.loose || 0;
-    // ---- the air
-    const vF = st.vel.dot(fwd), sp = st.vel.length();
-    if (sp > 0.1) { addForce(_v.copy(st.vel).multiplyScalar(-0.5 * 1.225 * SPEC.aero.cda * sp), st.pos);
-      const dfz = 0.5 * 1.225 * SPEC.aero.cla * vF * vF; addForce(_v.copy(down).multiplyScalar(dfz * SPEC.aero.front), _w.copy(fwd).multiplyScalar(1.25).add(st.pos)); addForce(_v.copy(down).multiplyScalar(dfz * (1 - SPEC.aero.front)), _w.copy(fwd).multiplyScalar(-1.25).add(st.pos)); }
-    // ---- the stability help (an arcade car's): the yaw drawn toward the one the steering asks for (the wheels' own
-    // geometry, as fast as the grip allows), and a slide pulled back past a body slip. The handbrake opens it up: while
-    // the lever is up the locked rear swings out and the car turns as fast as the steering asks of a handbrake turn
-    // (quicker at hairpin speeds than fast; with the wheel straight it slides on straight), never past a body slip it
-    // could not drive out of; let go, the slide is caught over a moment as the rear tyres find their grip again
-    { const vL = st.vel.dot(fwd), sideV = _v.crossVectors(up, fwd), vLat = st.vel.dot(sideV), spd = Math.abs(vL), sp2 = Math.hypot(vL, vLat), on = clamp((sp2 - 3) / 6, 0, 1) * (wheels.filter(w => w.contact).length >= 3 ? 1 : 0);
-      hbT = hand > 0.12 ? Math.min(1, hbT + h * HB.rise) : Math.max(0, hbT - h * HB.catch);
-      if (on > 0) { const held = smoothstep(0.12, 0.6, hand), hbMix = hbT * smoothstep(2.5, 7, sp2), pull = held * hbMix;
-        const wb = wheels[0].hub.z - wheels[2].hub.z, yawNow = st.ang.dot(up), d = st.steer * SPEC.steerMax;
-        const lim = 11 / Math.max(spd, 1), roadWant = clamp(vL * Math.tan(d) / wb, -lim, lim), hbWant = st.steer * clamp(HB.yawK / (sp2 + 3), HB.yawMin, HB.yawMax);
-        const lo = st.loose || 0, want = lerp(roadWant, hbWant, pull), beta = Math.atan2(vLat, Math.max(vL, 0.5)), betaLim = lerp(lerp(AS.beta, LOOSE.beta, lo), HB.beta, hbMix);
-        let ty = -(yawNow - want) * AS.yaw * lerp(1, LOOSE.yaw, lo) * lerp(1, HB.yawGain, pull); if (Math.abs(beta) > betaLim) ty += Math.sign(beta) * (Math.abs(beta) - betaLim) * AS.k;
-        T.addScaledVector(up, ty * Ib.y * on);
-        const sideFree = sp2 * lerp(lerp(AS.free, LOOSE.side, lo), HB.side, hbMix), excess = Math.max(0, Math.abs(vLat) - sideFree);
-        if (excess > 0) F.addScaledVector(sideV, -Math.sign(vLat) * excess * m * AS.side * on);
-      } }
-    // ---- the body against the ground (its corners, its roof) and against the world (its sides)
-    // (pushed out along the ground's normal, and damped hard on the way in: a corner run into a bank is stopped by it and
-    // slides along it, not thrown up into the air as a push straight up would throw it)
-    for (const [bx, by, bz] of CORNERS) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos), d = world.groundAt(p.x, p.z) - p.y; if (d <= 0) continue;
-      world.normalAt(p.x, p.z, gn); if (gn.y < 0.55) { gn.y = 0; gn.normalize(); } r.subVectors(p, st.pos); /* (a face steeper than ~57°: a wall, met side-on) */ vp.crossVectors(st.ang, r).add(st.vel); const vn = vp.dot(gn), fn = clamp(250000 * d * gn.y - 16000 * vn, 0, 9 * m);
-      gt.copy(vp).addScaledVector(gn, -vn); const l = gt.length(); fv.copy(gn).multiplyScalar(fn); if (l > 1e-3) fv.addScaledVector(gt, -0.6 * fn / l); addForce(fv, p); }
-    if (colIn) col.y1 = -1e9; // (not against its own box)
-    for (const [bx, by, bz] of SIDES) { const p = _v.set(bx, by, bz).applyQuaternion(q).add(st.pos); pr.x = p.x; pr.y = p.y - 0.45; pr.z = p.z; collide(pr, 0.22, 1.1);
-      const dx = pr.x - p.x, dz = pr.z - p.z, d = Math.hypot(dx, dz); if (d < 1e-4) continue;
-      const nx = dx / d, nz = dz / d; r.subVectors(p, st.pos); vp.crossVectors(st.ang, r).add(st.vel); const vn = vp.x * nx + vp.z * nz, fn = Math.max(0, 320000 * d - 24000 * vn);
-      const tx = vp.x - vn * nx, tz = vp.z - vn * nz, tl = Math.hypot(tx, tz); fv.set(nx * fn - (tl > 1e-3 ? tx / tl * 0.35 * fn : 0), 0, nz * fn - (tl > 1e-3 ? tz / tl * 0.35 * fn : 0)); addForce(fv, p); }
-    if (colIn) col.y1 = 1e9;
-    // ---- forgiving: tipped past ~25° (on two wheels along a bank, rolled by a rock) the car is eased back onto its
-    // wheels, firmly as the tilt grows, its roll damped on the way — a moment off the road ends on the wheels, not the roof
-    const tilt = Math.acos(clamp(up.y, -1, 1));
-    if (tilt > 0.44) { tax.set(-up.z, 0, up.x); const tl = tax.length(); /* (up × the vertical: about it, up turns to the vertical) */ if (tl > 1e-4) { tax.multiplyScalar(1 / tl); const I = (Ib.x + Ib.z) / 2, k = Math.min(1, (tilt - 0.44) / 0.6);
-      T.addScaledVector(tax, I * (14 * k - 4 * k * st.ang.dot(tax))); } }
-    // ---- integrate (the angular part in the body's frame: its inertia is diagonal there)
-    st.vel.addScaledVector(F, h / m); st.pos.addScaledVector(st.vel, h);
-    R3.setFromMatrix4(_m.makeRotationFromQuaternion(q)); Rt.copy(R3).transpose();
-    const wb = _a.copy(st.ang).applyMatrix3(Rt), Lb = _b.set(wb.x * Ib.x, wb.y * Ib.y, wb.z * Ib.z), tb = _c.copy(T).applyMatrix3(Rt).sub(_w.crossVectors(wb, Lb));
-    wb.x += tb.x / Ib.x * h; wb.y += tb.y / Ib.y * h; wb.z += tb.z / Ib.z * h; st.ang.copy(wb.applyMatrix3(R3));
-    const ax = st.ang.x * h * 0.5, ay = st.ang.y * h * 0.5, az = st.ang.z * h * 0.5, qx = q.x, qy = q.y, qz = q.z, qw = q.w;
-    q.set(qx + ax * qw + ay * qz - az * qy, qy - ax * qz + ay * qw + az * qx, qz + ax * qy - ay * qx + az * qw, qw - ax * qx - ay * qy - az * qz).normalize();
-    if (st.shiftT > 0) st.shiftT -= h;
-    // (at rest with nothing pressed, the last creep taken out)
-    if (st.vel.lengthSq() < 0.01 && st.ang.lengthSq() < 0.004 && st.throttle < 0.02 && wheels.every(w => w.contact)) { st.vel.multiplyScalar(0.98); st.ang.multiplyScalar(0.98); }
-  }
   // the automatic: up as the car's own speed takes the revs near the limiter (not the revs of wheels spinning at a
   // launch — that only had it hunting between first and second), down as they fall away; never twice within a moment
   let autoT = 0;
@@ -707,8 +764,60 @@ export async function createCar(world, spawn, carId = 'i20') {
   car.near = p => Math.hypot(p.x - st.pos.x, p.z - st.pos.z) < 4;
 
   const sound = car.sound = engineSound(car), hud = carHud(car);
+  // (gone with the race: its model out of the scene, its sound, its HUD and its keys; the shared model stays cached)
+  car.dispose = () => { scene.remove(root); if (colIn) { colRemove(col); colIn = false; } for (const [t, f] of listeners) removeEventListener(t, f); listeners.length = 0; sound.dispose(); hud.dispose(); car.disposed = true; };
   car.update(0);
   return car;
+}
+// A rival's car: the same model (a clone of the cached one: its geometry and textures shared, its paint its own) on the
+// same simulation as the player's (makeVehicle), with only what is seen from outside — the wheels turning, steering and
+// riding their springs, the brake lights — and a voice of its own heard from where the listener is (audio.js 'racecar').
+// Its driver (race.js) works st.steer, st.throttle, st.brake and st.hand, and the gearbox directly.
+export async function createRivalCar(world, carId, { paint = null, tint = null, name = '' } = {}) {
+  const def = CAR_DEFS[carId] || CAR_DEFS.i20, spec = def.spec, src = (await loadCarModel(carId)).scene;
+  const model = src.clone(true), own = [];
+  const mine = m => { const k = m.clone(); k.userData = { ...m.userData }; own.push(k); return k; };
+  model.traverse(o => { if (!o.isMesh || Array.isArray(o.material)) return;
+    const mn = o.material.name || '', pn = o.parent && o.parent.name || '';
+    if (paint && /^Paint$/.test(mn)) { o.material = mine(o.material); o.material.color.set(paint); }
+    if (tint && /body/i.test(mn)) { o.material = mine(o.material); o.material.color.set(tint); }
+    if (/Interior|Alcantara|Leather|Cockpit|Dials|Display|COCKPIT/i.test(mn) || /COCKPIT|STEER/.test(pn)) o.castShadow = false; });
+  model.updateMatrixWorld(true);
+  const find = n => { let f = null; model.traverse(o => { if (!f && o.name && o.name.startsWith(n)) f = o; }); return f; };
+  const wheels = []; // (found in the model's own space, before it is placed in the car's frame)
+  for (const id of ['LF', 'RF', 'LR', 'RR']) { const { node, susp } = def.wheel(id, find); if (!node) continue;
+    const bb = new THREE.Box3().setFromObject(node), hub = bb.getCenter(new THREE.Vector3());
+    const travel = new THREE.Object3D(); travel.position.copy(hub); model.add(travel); travel.updateMatrixWorld(true);
+    const spin = new THREE.Object3D(); travel.add(spin); spin.updateMatrixWorld(true); spin.attach(node); if (susp) travel.attach(susp);
+    wheels.push({ id, front: id[1] === 'F', travel, spin, hubModel: hub.clone(), R: (bb.max.y - bb.min.y) / 2, hub: new THREE.Vector3(hub.x - spec.cg[0], hub.y - spec.cg[1], hub.z - spec.cg[2]) }); }
+  const root = new THREE.Group(); root.name = 'rival:' + name; root.userData.dynamic = true; root.userData.dynamicCaster = true;
+  const body = new THREE.Group(); body.position.set(-spec.cg[0], -spec.cg[1], -spec.cg[2]); root.add(body); body.add(model);
+  // (the brake lights: their own material, lit with the brake)
+  const lights = [], lightUp = o => { o.material = mine(o.material); o.material.emissive = new THREE.Color(0xff1a10); o.material.emissiveIntensity = 0; lights.push(o.material); };
+  if (def.brakeLights) model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && def.brakeLights.test(o.material.name)) lightUp(o); });
+  else for (const n of ['LIGHT_REAR_BRAKE', 'LIGHT_REAR00', 'LIGHT_REAR01']) { const q = find(n); if (q) q.traverse(o => { if (o.isMesh && !Array.isArray(o.material)) lightUp(o); }); }
+  // (a box for the walker while the player is out of the car, out of the car's own side contacts)
+  const col = { t: 1, x: 0, z: 0, hx: spec.dims[0] / 2, hz: spec.dims[2] / 2, c: 1, s: 0, y0: -1e9, y1: 1e9 }; let colIn = false;
+  const veh = makeVehicle(world, spec, wheels, { ownCol: () => colIn ? col : null }), st = veh.st;
+  st.assist = true; st.auto = false; // (the brakes kept from locking, the gearbox worked by veh.gearbox)
+  scene.add(root);
+  const S0 = veh.S0, fwd = new THREE.Vector3();
+  let lit = -1;
+  const rival = { id: carId, def, spec, root, veh, st, wheels, name, col,
+    place(x, z, yaw) { veh.place(x, z, yaw); rival.sync(0, true); },
+    // the model where the simulation has the car (the wheels only while it is near enough to see them turn)
+    sync(dt, near = true) { root.position.copy(st.pos); root.quaternion.copy(st.q);
+      if (near) for (const w of wheels) { w.angle = (w.angle + w.w * dt) % (Math.PI * 2);
+        w.travel.position.set(w.hubModel.x, w.hubModel.y + S0 - (w.contact ? w.s : spec.susp.rest), w.hubModel.z);
+        w.travel.quaternion.setFromAxisAngle(UP, w.front ? st.steer * spec.steerMax : 0); w.spin.quaternion.setFromAxisAngle(XAX, w.angle); }
+      const b = st.brake > 0.05 ? 1 : 0; if (b !== lit) { lit = b; for (const m of lights) m.emissiveIntensity = b ? 2.4 : 0; }
+      root.updateMatrixWorld(true); },
+    // the walker's box: in the colliders only while the player is on foot
+    walkerBox(on) { if (colIn) { colRemove(col); colIn = false; } if (!on) return; fwd.set(0, 0, 1).applyQuaternion(st.q);
+      col.x = st.pos.x; col.z = st.pos.z; col.c = Math.cos(Math.atan2(fwd.x, fwd.z)); col.s = Math.sin(Math.atan2(fwd.x, fwd.z)); col.y0 = st.pos.y - 0.6; col.y1 = st.pos.y + 1.2; colInsert(col); colIn = true; },
+    dispose() { scene.remove(root); if (colIn) { colRemove(col); colIn = false; } for (const m of own) m.dispose(); own.length = 0; },
+  };
+  return rival;
 }
 // the body's corners (against the ground) and sides (against the world), body frame (the centre of mass at 0)
 // (laid out for the i20's 1.85 x 1.25 x 4.05 m and stretched to another car's size: see bodyPoints)
@@ -1236,8 +1345,11 @@ const CLIPS = {
   out: [[8.71, 0.22], [9.33, 0.18], [17.49, 0.18], [18.75, 0.2], [25.13, 0.24], [36.21, 0.22]], // (the lever leaving its slot: the quiet ones)
   hb: [[5.16, 0.9]], // (the handbrake: the pull at the end of the recording)
 };
+// (the engine's processor registered once per audio context: a second registration under the same name would fail)
+let workletP = null, workletCtx = null;
+const workletModule = ctx => { if (workletCtx !== ctx) { workletCtx = ctx; workletP = fetch('js/carAudio.worklet.js').then(r => r.text()).then(src => ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })))); } return workletP; };
 function engineSound(car) {
-  let node = null, loading = false, rough = 0, hbOn = false, rec = null, lastBump = 0, voiced = false;
+  let gone = false, node = null, loading = false, rough = 0, hbOn = false, rec = null, lastBump = 0, voiced = false;
   let grv = null; // (the gravel loop: { src, gain, lp })
   const startGravel = (ctx, buf) => { // (the steady part of the recording, its end crossfaded into its start so the loop has no seam)
     const sr = buf.sampleRate, a = Math.floor(1.2 * sr), b = Math.floor(9.4 * sr), X = Math.floor(0.35 * sr), n = b - a - X, out = ctx.createBuffer(buf.numberOfChannels, n, sr);
@@ -1258,10 +1370,10 @@ function engineSound(car) {
   const knock = (ev, on) => { if (!audio.ctx || !rec) return false; const r = 0.96 + Math.random() * 0.08, out = car.driving && car.view === 0 ? 1 : 0.6;
     if (ev === 'gear') play(rec.gears, pick(rec.in), 0.42 * out, r); else if (ev === 'lever') play(rec.gears, pick(rec.out), 0.16 * out, r); else if (ev === 'hb') { if (!on) return true; play(rec.hb, rec.hbc[0], 0.45 * out, r); } else return false;
     return true; };
-  const init = () => { const ctx = audio.ctx; if (!ctx || !audio.master || loading || !ctx.audioWorklet) return; loading = true; loadClips(ctx);
-    fetch('js/carAudio.worklet.js').then(r => r.text()).then(src => ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })))).then(() => { node = new AudioWorkletNode(ctx, 'rally-car', { numberOfInputs: 0, outputChannelCount: [2] }); node.connect(audio.master); })
+  const init = () => { const ctx = audio.ctx; if (!ctx || !audio.master || loading || !ctx.audioWorklet || gone) return; loading = true; loadClips(ctx);
+    workletModule(ctx).then(() => { if (gone) return; node = new AudioWorkletNode(ctx, 'rally-car', { numberOfInputs: 0, outputChannelCount: [2] }); node.connect(audio.master); })
       .catch(e => console.warn('car audio: ' + (e && e.message || e))); };
-  const send = o => { if (node) node.port.postMessage(o); };
+  const send = o => { if (node && !gone) node.port.postMessage(o); };
   return {
     update() { if (!node) { init(); return; }
       const st = car.st, A = car.anim, sp = st.vel.length(); let gr = 0, tm = 0, nC = 0, wsum = 0, jolt = 0;
@@ -1283,6 +1395,7 @@ function engineSound(car) {
     event(ev, k) { if (!knock(ev)) send({ ev, k }); },
     click() { if (!knock('gear')) send({ ev: 'gear' }); },
     get node() { return node; }, get clips() { return !!rec; }, get gravel() { return !!grv; },
+    dispose() { gone = true; if (node) { try { node.port.postMessage({ on: 0, vol: 0 }); node.disconnect(); } catch (e) {} node = null; } if (grv) { try { grv.src.stop(); grv.gain.disconnect(); } catch (e) {} grv = null; } rec = null; },
   };
 }
 
@@ -1303,5 +1416,6 @@ function carHud(car) {
   let n = 0;
   return { update() { if (++n % 3) return; const st = car.st, show = car.driving; el.style.display = help.style.display = show ? '' : 'none'; if (!show) return;
     spd.textContent = Math.round(Math.abs(st.velLocal.z) * 3.6); gear.textContent = st.gear === 0 ? 'R' : st.gear === 1 ? 'N' : String(st.gear - 1);
-    bar.style.width = (clamp(st.rpm / 8500, 0, 1) * 100).toFixed(1) + '%'; mode.textContent = (st.auto ? 'AUTO' : 'MANUAL') + ' · ' + Math.round(st.rpm) + ' RPM'; } };
+    bar.style.width = (clamp(st.rpm / 8500, 0, 1) * 100).toFixed(1) + '%'; mode.textContent = (st.auto ? 'AUTO' : 'MANUAL') + ' · ' + Math.round(st.rpm) + ' RPM'; },
+    dispose() { for (const e of [css, el, help, cr]) e.remove(); } };
 }

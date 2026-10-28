@@ -143,7 +143,8 @@ export class Emitter {
     const ctx = audio.ctx;
     this.pan = ctx.createPanner(); this.pan.panningModel = 'equalpower'; this.pan.distanceModel = 'inverse';
     this.pan.refDistance = this.kind === 'engine' ? 4 : this.kind === 'bell' ? 8 : 12; this.pan.rolloffFactor = this.kind === 'bell' ? 1.6 : 1.1; this.pan.maxDistance = 2000;
-    this.range = { bell: [120, 320], train: [500, 900], engine: [60, 95] }[this.kind] || [300, 600];
+    this.range = { bell: [120, 320], train: [500, 900], engine: [60, 95], racecar: [90, 320] }[this.kind] || [300, 600];
+    if (this.kind === 'racecar') this.pan.refDistance = 6;
     this.out = ctx.createGain(); this.out.gain.value = 0; this.out.connect(this.pan).connect(audio.master);
     if (this.kind === 'bell') { this.lpf = ctx.createBiquadFilter(); this.lpf.type = 'lowpass'; this.lpf.frequency.value = 2600; this.lpf.connect(this.out); }
     if (this.kind === 'train') {
@@ -166,8 +167,19 @@ export class Emitter {
       const tf = ctx.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 600; tf.Q.value = 0.5;
       this.tyreG = ctx.createGain(); this.tyreG.gain.value = 0; tyre.connect(tf).connect(this.tyreG).connect(this.out);
     }
+    else if (this.kind === 'racecar') { // (a rival's engine: its firing note and an octave over it through a filter the throttle opens, and its tyres)
+      this.osc = ctx.createOscillator(); this.osc.type = 'sawtooth'; this.osc2 = ctx.createOscillator(); this.osc2.type = 'square';
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600; lp.Q.value = 2.2; this.lp = lp;
+      this.oscG = ctx.createGain(); this.oscG.gain.value = 0.2; const g2 = ctx.createGain(); g2.gain.value = 0.35;
+      this.osc.connect(lp); this.osc2.connect(g2).connect(lp); lp.connect(this.oscG).connect(this.out); this.osc.start(); this.osc2.start();
+      const tyre = ctx.createBufferSource(); tyre.buffer = audio.brown; tyre.loop = true; tyre.start(0, Math.random() * 3);
+      const tf = ctx.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 700; tf.Q.value = 0.6;
+      this.tyreG = ctx.createGain(); this.tyreG.gain.value = 0; tyre.connect(tf).connect(this.tyreG).connect(this.out); this.srcs = [this.osc, this.osc2, tyre];
+    }
     this.nextStrike = 0;
   }
+  // gone with its world: its nodes stopped and let go, out of the mix
+  dispose() { audio.emitters.delete(this); if (!this.out) return; try { for (const s of this.srcs || []) s.stop(); if (this.osc && !this.srcs) this.osc.stop(); this.out.disconnect(); } catch (e) {} this.out = null; this.pan = null; }
   set(x, y, z, params) {
     this.x = x; this.y = y; this.z = z; Object.assign(this.p, params);
     if (!audio.ctx || !this.pan) return;
@@ -216,6 +228,13 @@ export class Emitter {
           for (const d of [0, 2.1 / Math.max(v, 1)]) this.clack(t + d, Math.min(1, v / 15));
         }
       }
+    } else if (this.kind === 'racecar') {
+      const rpm = p.rpm || 900, thr = p.thr || 0, f = rpm / 60 * (p.fires || 2) * 0.5;
+      this.out.gain.setTargetAtTime(this.on ? fade * (p.gain || 1) : 0, t, 0.1);
+      this.osc.frequency.setTargetAtTime(f, t, 0.03); this.osc2.frequency.setTargetAtTime(f * 2, t, 0.03);
+      this.lp.frequency.setTargetAtTime(380 + rpm * 0.12 + thr * 1500, t, 0.05);
+      this.oscG.gain.setTargetAtTime(0.09 + thr * 0.2, t, 0.06);
+      this.tyreG.gain.setTargetAtTime(Math.min(1, (p.speed || 0) / 30) * 0.35 + (p.slip || 0) * 0.4, t, 0.1);
     } else if (this.kind === 'engine') {
       const v = p.speed || 0;
       this.out.gain.setTargetAtTime(this.on ? fade : 0, t, 0.3);

@@ -22,6 +22,12 @@ export const meta = {
   vehicle: true,
 };
 
+// the race the registry has for a stage opened by itself (?map=): its field drawn, the player in the race's own car
+async function defaultRace(map) {
+  const { raceOfMap, fieldFor } = await import('./races.js'), race = raceOfMap(map);
+  return race ? { field: fieldFor(race), car: race.car, id: race.id } : null;
+}
+
 // (the road's widths, set per stage as it is built: RW the asphalt's or the gravel's half width — 1.4 m, one car, unless a stage
 // asks for more — and EX how much wider than that one-car road it is; ROAD the clean middle, SHOULDER the edge's end)
 let ROAD = 1.3, SHOULDER = 1.6, CLEAR = 3.45, RW = 1.4, EX = 0, LANES = 1;
@@ -33,8 +39,8 @@ function pineLand(x, z) {
 }
 
 export const PINE_STAGE = {
-  id: 'pine', name: 'Pine Forest', target: 1500, roadType: 'gravel', seed: 4471,
-  bestKey: 'wl_rally_pine_best_v2', forestMin: 0.86, forestSeed: 99, floorSeed: 5, forestNear: 2.6, stony: 0.22, land: pineLand, grade: 30,
+  id: 'pine', name: 'Pine Forest', target: 1500, roadType: 'gravel', seed: 4471, half: 2.5, // (a forest road two cars wide: room to race side by side)
+  bestKey: 'wl_rally_pine_best_v3', forestMin: 0.86, forestSeed: 99, floorSeed: 5, forestNear: 2.6, stony: 0.22, land: pineLand, grade: 30,
   // (a northern wood: dark spruce, needle litter and moss up to the ditches, grey granite, the grass short and dull)
   paint: { gDeep: '#2e452b', gLush: '#47592f', gLight: '#878a51', gDry: '#9f915b', forest: '#3f3b27', canopy: '#25362a', rockL: '#a5a197', rockD: '#5a5753' },
   way: [[-355, -360], [-365, -300], [-340, -245], [-360, -185], [-335, -125], [-300, -70], [-280, -5], [-230, 55], [-170, 82], [-120, 62], [-100, 112], [-62, 78], [-18, 112], [35, 102], [82, 62], [118, 20], [168, -5], [225, -18], [272, -58], [294, -118], [310, -190], [350, -255], [382, -325]],
@@ -73,6 +79,8 @@ function trackLine(cfg) {
   for (let i = 0; i <= n; i++) { const p = curve.getPointAt(i / n); pts.push([p.x, p.z]); }
   const sampled = pts.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0), exact = cfg.target / sampled;
   for (const p of pts) { p[0] *= exact; p[1] *= exact; }
+  const nComp = pts.length; // (the competitive road: the stations up to here; the run-off after the finish follows)
+  pts.push(...runoff(pts, cfg.runoff ?? 260, cfg.world || 2048));
   const mountain = cfg.profile === 'mountain';
   const land = cfg.land || (mountain
     ? (x, z) => 68 + z * 0.105 + x * 0.006 + Math.sin(x * 0.007 + 0.4) * 3.2 + Math.sin(z * 0.008 + 1.1) * 2.4 + Math.sin((x - z) * 0.014) * 1.1 + Math.sin(x * 0.013 - z * 0.004 + 2.1) * 5 + Math.sin(x * 0.031 + z * 0.017) * 2.2
@@ -93,12 +101,27 @@ function trackLine(cfg) {
     + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
   const features = jumpSpecs.map(j => ({ at: Math.round(j.f * n), end: Math.round(j.f * n) + 12, text: j.text, kind: 'feature', dir: 0 }));
   for (const f of cfg.features || []) features.push({ at: Math.round(n * f.f), end: Math.round(n * f.f) + 10, text: f.text, kind: 'feature', dir: 0 });
-  return { pts, Y, features, land, length: cfg.target };
+  return { pts, Y, features, land, length: cfg.target, nComp };
+}
+// The road goes on past the finish: a run-off where the cars slow down and stop at the stop control, as a stage has. It
+// leaves the finish straight on and eases into a gentle bend, whichever way keeps it clear of the road already laid and
+// inside the map.
+function runoff(pts, len, world) {
+  if (len <= 0) return [];
+  const n = pts.length - 1, [ex, ez] = pts[n], [px, pz] = pts[n - 4], h0 = Math.atan2(ex - px, ez - pz), lim = world / 2 - 90;
+  const trial = c => { const out = []; let x = ex, z = ez, h = h0;
+    for (let i = 1; i <= len; i++) { h += c * smoothstep(0, 50, i); x += Math.sin(h); z += Math.cos(h); if (Math.abs(x) > lim || Math.abs(z) > lim) return null; out.push([x, z]); }
+    for (let k = 0; k < out.length; k += 4) for (let j = 0; j < n - 70; j += 3) if (Math.hypot(out[k][0] - pts[j][0], out[k][1] - pts[j][1]) < 42) return null;
+    return out; };
+  for (const c of [0, 1 / 420, -1 / 420, 1 / 250, -1 / 250, 1 / 160, -1 / 160, 1 / 110, -1 / 110]) { const r = trial(c); if (r) return r; }
+  return trial(0) || [];
 }
 
-export async function build(progress) { return buildStage(progress, PINE_STAGE); }
+export async function build(progress, opts) { return buildStage(progress, PINE_STAGE, opts); }
 
-export async function buildStage(progress, cfg) {
+// opts.race: { field: [{name, car, paint?, ...driver}], car: the player's } for a race with rivals, false for a run alone
+// against the clock; missing: the race the registry has for this stage, its field drawn at random
+export async function buildStage(progress, cfg, opts = {}) {
   // Start loading the same owned Idyllic Woodlands / Illustrated Nature library used by Wildlands. trees.js will
   // automatically use tree02/tree03 and their LODs once it is ready, while installations without the local pack
   // retain the procedural fallback.
@@ -106,7 +129,7 @@ export async function buildStage(progress, cfg) {
   RW = cfg.half || 1.4; EX = RW - 1.4; LANES = cfg.lanes || 1; ROAD = RW - 0.1; SHOULDER = RW + 0.2; CLEAR = RW + 2.05;
   const packsP = loadPacks(), peopleP = loadPeople().catch(e => { console.warn('rally spectators: ' + e.message); return null; });
   progress('Laying out the stage', 0.05); await tick();
-  const line = trackLine(cfg), P = line.pts, Y = line.Y, N = P.length;
+  const line = trackLine(cfg), P = line.pts, Y = line.Y, N = P.length, finishAt = line.nComp - 28;
   const T = P.map((_, i) => { const a = P[Math.max(0, i - 2)], b = P[Math.min(N - 1, i + 2)], l = Math.hypot(b[0] - a[0], b[1] - a[1]); return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; });
   // signed curvature (left positive: the car's left is +x when it faces +z) over ±6 m
   const K = P.map((_, i) => { const a = T[Math.max(0, i - 6)], b = T[Math.min(N - 1, i + 6)]; return (a[1] * b[0] - a[0] * b[1]) / 12; });
@@ -153,7 +176,7 @@ export async function buildStage(progress, cfg) {
     const far = lerp(base, roadH, 1 - smoothstep(10, FAR - 3, d)), dip = (cfg.ditch ?? 0.32) * smoothstep(ED + 0.25, ED + 1.2, d) * (1 - smoothstep(ED + 1.5, ED + 3.0, d));
     return lerp(edgeY, far, smoothstep(far > edgeY ? BANK0 : ED + 1, ED + 8, d)) - dip; };
   // where the spectators stand and the timber is stacked: kept clear of trees
-  const corners = findCorners(K, N, 14, N - 28), sites = crowdSites(P, T, K, N, left, corners, line.features, distAt, cfg, mulberry32(cfg.seed + 11)), piles = cut ? [] : logPiles(P, T, K, N, left, distAt, mulberry32(cfg.seed + 17));
+  const corners = findCorners(K, N, 14, finishAt), sites = crowdSites(P, T, K, N, left, corners, line.features, distAt, cfg, mulberry32(cfg.seed + 11)), piles = cut ? [] : logPiles(P, T, K, N, left, distAt, mulberry32(cfg.seed + 17));
   const keepClear = (x, z, pad) => { for (const c of sites) if (Math.hypot(x - c.x, z - c.z) < c.r + pad) return true; for (const p of piles) if (Math.hypot(x - p.x, z - p.z) < 4 + pad) return true; return false; };
   const hf = new Heightfield({ world: WORLD, grid: 1024, height: terrainHeight });
   await hf.generate(p => progress('Grading the ground', 0.18 + 0.06 * p));
@@ -215,24 +238,22 @@ export async function buildStage(progress, cfg) {
   buildLogs(floor.logs);
   progress('Grading the road', 0.68); await tick();
   const road = roadRibbon(P, T, K, N, surfY, corners, cfg);
-  const startI = 14, finishI = N - 28, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP, surfY);
+  // ---- the start: a race lines its field up two by two, 9 m apart, before the start line; the player's place on the grid
+  // is drawn. Alone, the car waits on the line.
+  let field = null, grid = null, slot = null;
+  const raceOpt = opts.race === false ? null : opts.race || await defaultRace(opts.map);
+  if (raceOpt && raceOpt.field && raceOpt.field.length) { field = raceOpt.field; const n = field.length, slots = [], rows = Math.ceil((n + 1) / 2);
+    for (let r = 0; r < rows; r++) for (const sd of [1, -1]) if (slots.length < n + 1) slots.push({ s: 6 + 9 * (rows - 1 - r), w: sd * Math.min(RW / 2, RW - 1.15) });
+    slot = slots.splice(Math.floor(Math.random() * slots.length), 1)[0]; grid = slots; }
+  const startI = field ? 6 + 9 * (Math.ceil((field.length + 1) / 2) - 1) + 9 : 14, finishI = finishAt, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP, surfY);
   progress('Dressing the roadside', 0.76); await tick();
   roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, mulberry32(cfg.seed + 23), packsReady());
   const crowd = spectators(sites, await peopleP, hf, P);
   progress('Sowing the meadows', 0.8); await tick();
   const grass = buildGrass(hf, layers.grass.d, { water: -60, snow: terrainSnow, reeds: false, shore: 0.01 });
   progress('Opening the stage', 0.95); await tick();
-  // ---- the start: the car on the line facing down the road, the walker beside it
-  // (a race starts from a grid: the player on the second row in the right-hand lane, the rivals round about)
-  // (a race: its field drawn from the stage's pool of drivers, a different one each time, lined up two by two 8 m apart;
-  // the player's place on the grid drawn too)
-  let field = null, grid = null, slot = null;
-  if (cfg.race) { const pool = [...(cfg.race.pool || cfg.race.rivals)], n = Math.min(cfg.race.count || pool.length, pool.length);
-    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-    field = pool.slice(0, n); const slots = [], rows = Math.ceil((n + 1) / 2);
-    for (let r = 0; r < rows; r++) for (const sd of [1, -1]) if (slots.length < n + 1) slots.push({ s: 4 + 8 * (rows - 1 - r), w: sd * RW / 2 });
-    slot = slots.splice(Math.floor(Math.random() * slots.length), 1)[0]; grid = slots; }
-  const s0 = cfg.race ? slot.s : 8, lane0 = cfg.race ? slot.w : 0, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);
+  // ---- the car on its place, facing down the road; the walker beside it
+  const s0 = field ? slot.s : 8, lane0 = field ? slot.w : 0, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);
   const carSpawn = { x: sx + lx2 * lane0, z: sz + lz2 * lane0, yaw: Math.atan2(tx, tz) };
   const spawn = { x: sx + lx2 * 5, z: sz + lz2 * 5, yaw: Math.atan2(-tx, -tz), pitch: -0.05 };
   const PG = { k: 0, t: 0, w: 0, d: 0 };
@@ -240,7 +261,7 @@ export async function buildStage(progress, cfg) {
   if (BANKAMT.some(v => v > 0.01)) snowBanks(P, T, N, left, DROP, BANKAMT, bankH, (x, z) => { const o = project(x, z, PB); return o ? groundBase(x, z, o) : hf.groundAt(x, z); });
   const clock = stageClock(N, nearAt, distAt, corners, line.features, startI, finishI, carSpawn, cfg, P);
   const world = {
-    hf, grass, terrain, road, spawn, carSpawn, track: { P, T, N, distAt, nearAt, length: line.length, sites, piles }, race: clock, stage: cfg,
+    hf, grass, terrain, road, spawn, carSpawn, track: { P, T, N, Y, K, RW, distAt, nearAt, length: line.length, sites, piles, startI, finishI }, race: clock, stage: cfg, raceOpt,
     bounds: { minX: -HALF + 30, maxX: HALF - 30, minZ: -HALF + 30, maxZ: HALF - 30 },
     waterLevel: -60, waterAt: () => -60,
     // (on and beside the road the exact surface, blended into the ground past its edge; elsewhere the terrain)
@@ -259,8 +280,10 @@ export async function buildStage(progress, cfg) {
     restartStage() { clock.reset(); world.raceAI && world.raceAI.reset(); },
     update(dt) { clock.update(dt, world.vehicle); world.raceAI && world.raceAI.update(dt, world.vehicle); dressing.update && dressing.update(dt); crowd && crowd.update(dt, world.vehicle); },
   };
-  if (cfg.race) { progress('Lining up the grid', 0.97); await tick();
+  if (field) { progress('Lining up the grid', 0.97); await tick();
     world.raceAI = await (await import('./race.js')).createRace(world, { rivals: field, grid, startI, finishI, lanes: LANES, RW, clock }); }
+  // (leaving the stage: its HUD, its voice and its rivals go with it; the scene's objects are released by the session)
+  world.dispose = () => { clock.dispose(); if (world.raceAI) world.raceAI.dispose(); world.raceAI = null; };
   return world;
 }
 
@@ -508,20 +531,20 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const at = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, hf.groundAt(x, z) + y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
   const atY = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
   // Frequent red/white delineators make the narrow road readable through the dense tree corridor, as on real stages.
-  for (let i = startI + 18; i < finishI - 12; i += 22) {
+  for (let i = startI + 18; i < N - 14; i += 22) {
     const [px, pz] = P[i], [lx, lz] = left(i), wobble = (rng() - 0.5) * 0.12;
     for (const side of [-1, 1]) { const d = RW + 0.78 + wobble, x = px + lx * d * side, z = pz + lz * d * side; items.marker.push(at(x, 0, z, Math.atan2(T[i][0], T[i][1]))); }
   }
   const wide = new Float32Array(N); for (const c of corners) if (c.R < 40) for (let i = Math.max(0, c.s - 10); i <= Math.min(N - 1, c.e + 10); i++) wide[i] = 1;
   const fall = new Uint8Array(N), railed = new Uint8Array(N);
-  if (mountain || cfg.walls || cfg.rails) { for (let i = startI + 10; i < finishI - 10; i += 4) { const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], y = surfY(i, 0); fall[i] = wide[i] || y - hf.groundAt(px + lx * s * (7 + EX), pz + lz * s * (7 + EX)) > (cfg.walls ? 1.4 : 2.2) ? 1 : 0; }
-    for (let i = startI + 10; i < finishI - 10; i += 4) for (let k = i - 16; k <= i + 16; k += 4) if (fall[k]) { railed[i] = 1; break; } }
+  if (mountain || cfg.walls || cfg.rails) { for (let i = startI + 10; i < N - 14; i += 4) { const [px, pz] = P[i], [lx, lz] = left(i), s = DROP[i], y = surfY(i, 0); fall[i] = wide[i] || y - hf.groundAt(px + lx * s * (7 + EX), pz + lz * s * (7 + EX)) > (cfg.walls ? 1.4 : 2.2) ? 1 : 0; }
+    for (let i = startI + 10; i < N - 14; i += 4) for (let k = i - 16; k <= i + 16; k += 4) if (fall[k]) { railed[i] = 1; break; } }
   // the guardrail and the walls run unbroken: one section swept along each stretch where the hill falls away (a change of
   // side starts a new run), set back from the edge by an offset that eases out round the switchbacks, its height smoothed
   // along the run. A rail's ends turn down and away into the ground; a wall's are closed off with its own stone.
   const wideS = new Float32Array(N); for (let i = 0; i < N; i++) { let a = 0, c = 0; for (let k = Math.max(0, i - 14); k <= Math.min(N - 1, i + 14); k += 2) { a += wide[k]; c++; } wideS[i] = a / c; }
-  const isRailed = i => i >= startI + 10 && i < finishI - 10 && railed[i - (i - startI - 10) % 4] === 1;
-  const runs = []; if (mountain || cfg.walls || cfg.rails) { let cur = null; for (let i = startI + 10; i < finishI - 10; i += 2) { if (isRailed(i) && (!cur || DROP[i] === cur.side)) { if (!cur) runs.push(cur = { side: DROP[i], idx: [] }); cur.idx.push(i); } else cur = null; } }
+  const isRailed = i => i >= startI + 10 && i < N - 14 && railed[i - (i - startI - 10) % 4] === 1;
+  const runs = []; if (mountain || cfg.walls || cfg.rails) { let cur = null; for (let i = startI + 10; i < N - 14; i += 2) { if (isRailed(i) && (!cur || DROP[i] === cur.side)) { if (!cur) runs.push(cur = { side: DROP[i], idx: [] }); cur.idx.push(i); } else cur = null; } }
   const line = (run, rd0, base) => { const pts = run.idx.map(i => { const [px, pz] = P[i], [lx, lz] = left(i), s = run.side, rd = rd0 + 0.75 * wideS[i], x = px + lx * s * rd, z = pz + lz * s * rd;
       return { x, z, y: base(px, pz, x, z, i), rx: -lx * s, rz: -lz * s }; });
     for (let pass = 0; pass < 3; pass++) for (let k = 1; k + 1 < pts.length; k++) pts[k].y = (pts[k - 1].y + 2 * pts[k].y + pts[k + 1].y) / 4;
@@ -610,7 +633,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
     for (const sd of [-1, 1]) { const ban = new THREE.Mesh(new THREE.PlaneGeometry(11.6 + 2 * EX, 1.45), bannerM); ban.position.set(0, 4.45, sd * 0.16); ban.rotation.y = sd < 0 ? Math.PI : 0; ban.castShadow = true; arch.add(ban); }
     const line = new THREE.Mesh(new THREE.PlaneGeometry(7.6 + 2 * EX, 0.95).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: chq, roughness: 0.85, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
     line.position.set(0, 0.045, 0); line.receiveShadow = true; arch.add(line); arch.updateMatrixWorld(true); };
-  archAt(startI, 'START', false); archAt(finishI, 'FINISH', true);
+  archAt(startI, 'START', false); archAt(finishI, 'FINISH', true); if (N - finishI > 120) archAt(N - 24, 'STOP', false);
   let update = null;
   if (mountain && cfg.snowfall) {
     const count = 1100, pos = new Float32Array(count * 3), drift = new Float32Array(count);
@@ -766,7 +789,7 @@ function stageClock(N, nearAt, distAt, corners, features, startI, finishI, spawn
   const queue = [], busy = () => (pilot.speaking() && st.noteAge < 3) || st.noteAge < 0.9; // (never held up longer than a call takes, whatever the audio does)
   const showNote = (n, distance) => { st.noteAge = 0; const lead = distance > 115 ? 'Za sto, ' : distance > 88 ? 'Za osiemdziesiąt, ' : ''; st.noteText = n.text; st.noteT = 3.4; noteEl.innerHTML = paceCard(n, distance); say(lead + n.text); };
   const finish = () => { st.phase = 'finished'; st.result = st.t; st.newBest = !best || st.result < best; if (st.newBest) { best = st.result; try { localStorage.setItem(cfg.bestKey, String(best)); } catch (e) {} } stopVoice(); say(st.newBest ? 'Nowy rekord' : 'Meta'); st.noteText = ''; st.noteT = 0; };
-  const api = { state: st, notes, checkpoints, pilot, reset, card: paceCard, map,
+  const api = { state: st, notes, checkpoints, pilot, reset, card: paceCard, map, dispose() { stopVoice(); host.remove(); },
     update(dt, car) {
       if (!car) { host.style.display = 'none'; return; }
       host.style.display = car.driving ? '' : 'none';

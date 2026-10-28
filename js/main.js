@@ -94,7 +94,7 @@ function step(dt, t) {
   const driving = car && car.driving;
   // (an impact frame: for a moment the world nearly stops — the car, the race, the life — while the camera shakes on)
   const realDt = dt; if (fx.stop > 0) { fx.stop -= dt; dt *= 0.04; }
-  if (car) { car.inputOn = locked && started; car.control(driving && locked && started ? keys : null, dt); car.update(dt); }
+  if (car) { car.inputOn = locked && started; if (car.autopilot && driving) car.autopilot(dt); else car.control(driving && locked && started ? keys : null, dt); car.update(dt); }
   if (locked && started && !driving) updatePlayer(world, dt);
   if (world.shops && started) world.shops.update(player, camera, dt);
   if (!started && !dbgState.pause && !driving) player.yaw += dt * 0.02;
@@ -228,7 +228,7 @@ async function main(hour = null) {
   if (world.meta.vehicle) { // (the car's models live in Modeleaut/ beside the game; without them the stage is walked)
     progress('Bringing the car', 0.96);
     // (the car: ?car= in the address, else the one picked in the settings, else the stage's own)
-    let carId = new URLSearchParams(location.search).get('car') || ''; if (!carId) try { carId = localStorage.getItem('wl_car') || ''; } catch (e) {}
+    let carId = new URLSearchParams(location.search).get('car') || (world.raceOpt && world.raceOpt.car) || ''; if (!carId) try { carId = localStorage.getItem('wl_car') || ''; } catch (e) {}
     try { car = await (await import('./car.js')).createCar(world, world.carSpawn || world.spawn, carId || world.meta.car || 'i20'); world.vehicle = car; car.fov = carFov.v; }
     catch (e) { console.warn('car: ' + (e && e.message || e)); car = null; setTimeout(() => toastMsg('Car models not found (Modeleaut/) — on foot'), 3000); }
   }

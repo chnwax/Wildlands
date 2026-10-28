@@ -41,7 +41,7 @@ function land(x, z) {
 // hairpins (true half circles of ~11 m: a hairpin built on a landing, not a corner turned on a point), then a last
 // traverse under the rock band to the col
 function route() {
-  const R = 12, pts = [[-620, -402], [-540, -398], [-470, -404], [-405, -397]], xa = -360, xb = -120;
+  const R = 14.5, pts = [[-620, -402], [-540, -398], [-470, -404], [-405, -397]], xa = -360, xb = -120;
   let z = -392, dir = 1;
   for (let k = 0; k < 5; k++) {
     const x0 = dir > 0 ? xa : xb, x1 = dir > 0 ? xb : xa, rise = 6, b = k % 2 ? 4 : -5; // (each leg with a gentle double bend)
@@ -52,8 +52,8 @@ function route() {
 }
 
 export const HILL_STAGE = {
-  id: 'hillcrest', name: 'Hill Crest', target: 1800, roadType: 'asphalt', profile: 'mountain', snowLine: 760, seed: 6317,
-  bestKey: 'wl_rally_hillcrest_best_v2', forestMin: 0, forestSeed: 271, floorSeed: 83, hairpin: 11, land,
+  id: 'hillcrest', name: 'Hill Crest', target: 1800, roadType: 'asphalt', profile: 'mountain', snowLine: 760, seed: 6317, half: 2.9, lanes: 2,
+  bestKey: 'wl_rally_hillcrest_best_v3', forestMin: 0, forestSeed: 271, floorSeed: 83, hairpin: 13.5, land,
   // (the trees: spruce and larch in stands on the gentler ground, thinning out to dwarf pine on the rock above)
   eco: { alpine: [330, 520], lowland: [0, 120], snow: 700, step: 5.6, logs: 40, twigs: 400, shrubs: 520, woods: 0.5 }, stony: 0.7, stoneGround: [0.76, 0.96, 1.3], stoneNorm: 0.24, // (the photo rock is warm sandstone: greyed to the massif's limestone)
   paint: { gDeep: '#4f5a35', gLush: '#68713f', gLight: '#a6a06a', gDry: '#b8a571', forest: '#3d4a33', canopy: '#2f3f31', rockL: '#bcb2a3', rockD: '#6d665c', snow: '#eef2f6', sand: '#b9ab90', sandWet: '#857660' },
@@ -62,4 +62,4 @@ export const HILL_STAGE = {
   features: [{ f: 0.07, text: 'Uwaga' }, { f: 0.93, text: 'Ślepy szczyt' }],
 };
 
-export async function build(progress) { return buildStage(progress, HILL_STAGE); }
+export async function build(progress, opts) { return buildStage(progress, HILL_STAGE, opts); }

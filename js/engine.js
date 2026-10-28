@@ -8,7 +8,11 @@ import { flattenPhotoMaterials } from './toon.js';
 import { perf } from './perf.js';
 import { setPaint } from './terrain.js';
 
-export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js'), rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js'), rally4: () => import('./rally4.js') };
+export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js'), rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js'), rally4: () => import('./rally4.js'),
+  canyon: () => import('./canyon.js'), coastal: () => import('./coastal.js') };
+// ?norender: build and simulate everything but draw nothing (automated tests of the physics, the AI and the switching on
+// machines without a real GPU); shaders are not compiled ahead either
+export const NORENDER = /[?&]norender\b/.test(location.search);
 // ?map=<name>; Sakuragawa when missing or unknown (the Wildlands valley, 'nature', opens only when asked for by name)
 export const mapFromURL = () => { const m = new URLSearchParams(location.search).get('map'); return MAPS[m] ? m : 'town'; };
 
@@ -58,12 +62,12 @@ export function setQuality(name, world) {
 
 // ---------------------------------------------------------------- loading
 // progress(label, fraction) is called while the map builds; opts.editor builds the map for the editor (no simulation)
-export async function loadWorld(mapName, { progress = () => {}, editor = false } = {}) {
+export async function loadWorld(mapName, { progress = () => {}, editor = false, race } = {}) {
   progress('Preparing', 0.02); await tick();
   const mod = await MAPS[mapName]();
   setPaint(); // (the default palette: a map that wants its own sets it as it builds)
   time.hour = mod.meta.startHour; env.azimuth = mod.meta.sunAzimuth ?? env.azimuth;
-  const world = await mod.build(progress, { editor, map: mapName });
+  const world = await mod.build(progress, { editor, map: mapName, race });
   world.meta = mod.meta; world.mapName = mapName;
   return world;
 }
@@ -78,6 +82,7 @@ export async function prepareWorld(world, progress = () => {}) {
   for (const s of scatters) s.update(camera.position.x, camera.position.z);
   indexInstanced(scene); shareShadowDepth(scene); singlePassFlat(scene); ownInstanceGeometry(scene); freezeStatic(scene); prepareShadowCache(scene);
   progress('Compiling shaders', 1); await tick();
+  if (NORENDER) return;
   // KHR_parallel_shader_compile: the GPU process compiles every program side by side instead of one blocking call each
   await compileScene();
   await warmup(world);
@@ -157,7 +162,7 @@ export function renderWorld(world, dt, t, { yaw = camera.rotation.y, still = fal
   updateRays(S.uSunDir.value, S.uSunCol.value, env.day);
   scene.updateMatrixWorld(); // once per frame for every pass (scene.matrixWorldAutoUpdate is off, core.js freezeStatic)
   perf.push(P_IDS.render);
-  post.composer.render(dt);
+  if (!NORENDER) post.composer.render(dt);
   perf.pop();
   if (afterRender) afterRender();
   if (failedPrograms.size) repairShaders();

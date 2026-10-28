@@ -24,8 +24,8 @@ function land(x, z) {
 }
 
 export const ALPINE_STAGE = {
-  id: 'alpine', name: 'Alpine Pass', target: 1600, roadType: 'asphalt', seed: 8297,
-  bestKey: 'wl_rally_alpine_best_v2', forestMin: 0.12, forestSeed: 173, floorSeed: 41, verge: 'cut', land, grade: 80, walls: true,
+  id: 'alpine', name: 'Alpine Pass', target: 1600, roadType: 'asphalt', seed: 8297, half: 3.0, lanes: 2,
+  bestKey: 'wl_rally_alpine_best_v3', forestMin: 0.12, forestSeed: 173, floorSeed: 41, verge: 'cut', land, grade: 80, walls: true,
   stony: 0.75, stoneGround: [1.0, 1.2, 1.45], // (the warm photo rock lifted to pale limestone)
   eco: { alpine: [40, 110], lowland: [0, 20], step: 6.2, logs: 60, twigs: 900, shrubs: 2600, woods: 0.42 },
   paint: { gDeep: '#5c5e36', gLush: '#7a7746', gLight: '#c2b476', gDry: '#cfb67e', forest: '#4f4a34', canopy: '#34412f', rockL: '#cdc4b2', rockD: '#7a7164', sand: '#d1c29e', sandWet: '#9a8a6c' },
@@ -34,4 +34,4 @@ export const ALPINE_STAGE = {
   features: [{ f: 0.43, text: 'Ślepy szczyt' }, { f: 0.61, text: 'Mocna kompresja' }],
 };
 
-export async function build(progress) { return buildStage(progress, ALPINE_STAGE); }
+export async function build(progress, opts) { return buildStage(progress, ALPINE_STAGE, opts); }
