@@ -162,7 +162,9 @@ export function* stageGeometry(cfg, pre = null) {
   // ---- tunnels and galleries: where the road runs under rock the ground above keeps its own shape (the tube itself is
   // the builder's); the hill is not cut down to the road there
   const tunnels = spans(cfg.tunnels, P, line.nComp), galleries = spans(cfg.galleries, P, line.nComp);
-  const TUN = new Float32Array(N); for (const [a, b] of tunnels) for (let i = Math.max(0, a - 16); i <= Math.min(N - 1, b + 16); i++) TUN[i] = Math.max(TUN[i], i < a ? smoothstep(a - 16, a, i) : i > b ? 1 - smoothstep(b, b + 16, i) : 1);
+  // (the hill stands whole over the tube's full length, portal to portal — it ends at the headwalls, not on a slope through
+  // the tube's mouth; the stage builder leaves the ground inside the tube's outline undrawn)
+  const TUN = new Float32Array(N); for (const [a, b] of tunnels) for (let i = Math.max(0, a - 10); i <= Math.min(N - 1, b + 10); i++) TUN[i] = 1; // (from 4 m inside the portals: the step in the ground's grid falls in the tube, behind the headwall)
   const PT = { k: 0, t: 0, w: 0, d: 0 };
   // beside the road: in the woods a drainage ditch each side, then the forest floor; on a hillside the road is cut into
   // the slope — a steep bank with a gutter at its foot above it, a longer embankment of fill below — and the hill goes on

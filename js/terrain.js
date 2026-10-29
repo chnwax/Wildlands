@@ -585,6 +585,18 @@ export function terrainMaterial(hf, L, opt = {}) {
       .replace('#include <fog_fragment>', leafFog('wForest'));
   };
   mat.customProgramCacheKey = () => (opt.lite ? 'terrainLite' : 'terrain') + (opt.riverBed ? '|bed' : '');
+  // holes: where a tunnel runs under the hill, the ground inside the tube's outline between the road and the roof is not
+  // drawn (the heightfield has one height a point: at a portal it rose through the tube's mouth). opt.holes: segments
+  // [x0, z0, x1, z1, radius, yLow, yHigh], at most 32
+  if (opt.holes && opt.holes.length) { const n = Math.min(32, opt.holes.length), base = mat.onBeforeCompile, key0 = mat.customProgramCacheKey;
+    const seg = opt.holes.slice(0, n).map(h => new THREE.Vector4(h[0], h[1], h[2], h[3])), hh = opt.holes.slice(0, n).map(h => new THREE.Vector3(h[4], h[5], h[6]));
+    mat.defines.TERRAIN_HOLES = ''; mat.defines.HOLES = n;
+    mat.onBeforeCompile = (sh, r) => { base(sh, r); sh.uniforms.uHoleSeg = { value: seg }; sh.uniforms.uHoleH = { value: hh };
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec4 uHoleSeg[HOLES]; uniform vec3 uHoleH[HOLES];')
+        .replace('#include <clipping_planes_fragment>', `for (int i = 0; i < HOLES; i++) { vec4 s = uHoleSeg[i]; vec2 ab = s.zw - s.xy, p = vWPos.xz - s.xy; float t = clamp(dot(p, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+          vec3 h = uHoleH[i]; if (length(p - ab * t) < h.x && vWPos.y > h.y && vWPos.y < h.z) discard; }
+        #include <clipping_planes_fragment>`); };
+    mat.customProgramCacheKey = () => key0() + '|holes' + n; }
   // drawn after everything standing on it (core.js draw order) with a strict depth test: it loses exact ties, as it did
   // when it was drawn first, so coplanar surfaces keep showing over it
   mat.userData.drawClass = 3; mat.depthFunc = THREE.LessDepth;

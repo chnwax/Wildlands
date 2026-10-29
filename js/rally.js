@@ -121,7 +121,13 @@ export async function buildStage(progress0, cfg, opts = {}) {
       : { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.08, 0.98, 0.84], norm: 0.5 },
   };
   const terrainSnow = cfg.snowLine ?? 5000;
-  const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: WL, snow: terrainSnow, shore: SHORE, conifer: 0.7 }));
+  // (the tunnels' tubes cut out of the ground: segments along each tube, portal to portal, between the road and the roof)
+  const holes = [], tunLen = G.tunnels.reduce((t, [a0, b0]) => t + b0 - a0 + 28, 0), hStep = Math.max(6, Math.ceil(tunLen / 30));
+  for (const [a0, b0] of G.tunnels) { const a = Math.max(0, a0 - 14), b = Math.min(N - 1, b0 + 14), hw = RW + 1.25, H = cfg.tunnelH || 7.2;
+    let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (let i = a; i <= b; i++) { x0 = Math.min(x0, P[i][0]); z0 = Math.min(z0, P[i][1]); x1 = Math.max(x1, P[i][0]); z1 = Math.max(z1, P[i][1]); }
+    hf.paintPave(x0 - hw - 2, z0 - hw - 2, x1 + hw + 2, z1 + hw + 2, (x, z) => { const k = nearAt(x, z); return k >= a && k <= b && distAt(x, z) < hw + 1 ? 1 : 0; }); if (hf.U.tPave.value) hf.U.tPave.value.needsUpdate = true; // (no grass in the tube)
+    for (let i = a; i < b; i += hStep) { const j = Math.min(b, i + hStep), y0 = Math.min(surfY(i, 0), surfY(j, 0)), y1 = Math.max(surfY(i, 0), surfY(j, 0)); holes.push([P[i][0], P[i][1], P[j][0], P[j][1], hw + 0.5, y0 + 0.25, y1 + H + 0.8]); } }
+  const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: WL, snow: terrainSnow, shore: SHORE, conifer: 0.7, holes }));
   progress('Growing the woods', 0.55); await tick();
   await packsP;
   buildTrees([...trees, ...saplings]);
