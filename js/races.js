@@ -41,9 +41,9 @@ export const RACES = [
     blurb: 'Przełęcz wśród monumentalnych wapiennych skał, kamienne murki nad urwiskami.', tags: ['asfalt', 'przełęcz', 'skały'] },
   { id: 'pine', map: 'rally', name: 'Pine Forest', kanji: '04', surface: 'gravel', length: 1500, field: 4, car: 'i20', hour: 15.4,
     blurb: 'Szutrowa leśna droga przez ciemny północny bór: hopy, kompresje, kamienie i korzenie.', tags: ['szuter', 'las', 'hopy'] },
-  { id: 'canyon', map: 'canyon', name: 'Canyon Ridge', kanji: '05', surface: 'asphalt', length: 4600, field: 5, car: 'f40', hour: 17.1,
+  { id: 'canyon', map: 'canyon', name: 'Canyon Ridge', kanji: '05', surface: 'asphalt', length: 4300, field: 5, car: 'f40', hour: 17.1,
     blurb: 'Długi asfalt przez czerwone kaniony: szybkie odcinki na krawędzi, serpentyny w dół doliny, tunel w skalnej płycie.', tags: ['asfalt', 'kanion', 'tunel'] },
-  { id: 'coastal', map: 'coastal', name: 'Coastal Highway', kanji: '06', surface: 'asphalt', length: 4800, field: 5, car: 'f40', hour: 11.2,
+  { id: 'coastal', map: 'coastal', name: 'Coastal Highway', kanji: '06', surface: 'asphalt', length: 4850, field: 5, car: 'f40', hour: 11.2,
     blurb: 'Droga wykuta wysoko w klifach nad morzem: długie łuki, ciasne zakręty, skalne galerie i otwarte widoki.', tags: ['asfalt', 'klify', 'morze'] },
 ];
 export const raceById = id => RACES.find(r => r.id === id) || null;

@@ -915,7 +915,7 @@ export function decimate(geo, res = 10) {
 // ---------------------------------------------------------------- misc shader helpers
 // Makes pow() bases strictly positive (ANGLE/D3D returns NaN for pow(0,y)) — use when patching three chunks.
 export function onResize(fn) { resizeFns.push(fn); }
-const resizeFns = [];
+export const resizeFns = []; // (a map's own are recorded with it and leave with it: session.js)
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setPixelRatio(pixelRatio()); renderer.setSize(innerWidth, innerHeight);

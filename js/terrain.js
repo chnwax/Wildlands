@@ -1368,6 +1368,7 @@ export function buildWater(hf, { level = 0, normals, hide = [], deep = '#15508e'
   water.userData.resize = () => { const rw = Math.max(256, Math.round(Math.min(innerWidth, 1920) * Q.refl)); reflRT.setSize(rw, Math.round(rw * innerHeight / innerWidth)); };
   water.userData.resize(); onResize(water.userData.resize);
   water.userData.hide = hide; water.userData.reflRT = reflRT; water.userData.mirrorY = mirrorY; // (inspection)
+  water.userData.dispose = () => { reflRT.dispose(); reflDepth.dispose(); mat.dispose(); }; // (with its map: session.js)
   scene.add(water);
   return water;
 }

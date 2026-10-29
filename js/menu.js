@@ -23,6 +23,10 @@ export const CITIES = [
     tags: ['1.8 km', 'asphalt', 'hairpins & drops'] },
   { id: 'valley', map: 'rally4', name: 'Valley Run', kanji: '04', blurb: 'A 4.3 km race on a fast two-lane country road against three rivals, in an F40',
     tags: ['4.3 km', 'asphalt', 'race · 4 cars'] },
+  { id: 'canyon', map: 'canyon', name: 'Canyon Ridge', kanji: '05', blurb: 'A 4.3 km asphalt race through red-rock canyons: the rim, a hairpin ladder down a scree ramp, the floor and a tunnel',
+    tags: ['4.3 km', 'asphalt', 'canyon · tunnel'] },
+  { id: 'coastal', map: 'coastal', name: 'Coastal Highway', kanji: '06', blurb: 'A 4.8 km asphalt race on a road cut into sea cliffs: long arcs, an inlet, galleries and a tunnel',
+    tags: ['4.8 km', 'asphalt', 'cliffs · sea'] },
   { id: 'shiomi', map: null, name: 'Shiomi', kanji: '潮見', blurb: 'A seaside harbour town' },
 ];
 const UNLISTED = { nature: { name: 'Wildlands', kanji: '' }, assetmap: { name: 'Asset Garden', kanji: '庭' } };

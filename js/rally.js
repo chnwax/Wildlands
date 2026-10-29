@@ -5,8 +5,8 @@
 // and how far round the stage the car has come (the stage clock). The road is graded into the terrain and receives
 // either a gravel ribbon with wheel ruts or painted asphalt. Wildlands woods border a readable low verge; chevron boards mark the
 // tight corners, straw bales and tape at the hairpins and the chicane, the start and finish arch with its line.
-import { THREE, scene, camera, clamp, lerp, smoothstep, mulberry32, tick, phTex, NFLAT, maxAniso, addCircle, addBox, Scatter, withScatterMeta, erosion, fbm, decimate } from './core.js';
-import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, setPaint } from './terrain.js';
+import { THREE, scene, camera, clamp, lerp, smoothstep, mulberry32, tick, phTex, loadTex, NFLAT, maxAniso, addCircle, addBox, Scatter, withScatterMeta, erosion, fbm, decimate } from './core.js';
+import { Heightfield, terrainMaterial, buildTerrainMeshes, buildGrass, buildWater, setPaint } from './terrain.js';
 import { buildTrees, buildBushes, buildLogs } from './trees.js';
 import { plantForest, forestFloor } from './ecology.js';
 import { audio } from './audio.js';
@@ -56,6 +56,10 @@ export async function buildStage(progress, cfg, opts = {}) {
   const pre = opts.prepared || null, step = async gen => { for (;;) { const r = gen.next(); if (r.done) return r.value; progress(...r.value); await tick(); } };
   const G = await step(stageGeometry(cfg, pre)), { line, P, Y, N, T, K, left, finishAt, distAt, nearAt, rng, project, roadY, surfY, corners, sites, piles, keepClear, clearAt, TUN } = G;
   const { WORLD, HALF, ED, BANK0 } = G.D, mountain = G.mountain, asphalt = G.asphalt, cut = G.cut, eco = cfg.eco || {};
+  // (under rock: the tunnels' stations and their approaches (2), the galleries' (1); none of the roadside is set there)
+  const COVER = new Uint8Array(N); for (const [a, b] of G.tunnels) for (let i = Math.max(0, a - 16); i <= Math.min(N - 1, b + 16); i++) COVER[i] = 2;
+  for (const [a, b] of G.galleries) for (let i = Math.max(0, a - 3); i <= Math.min(N - 1, b + 3); i++) COVER[i] = COVER[i] || 1;
+  const covered = i => COVER[clamp(Math.round(i), 0, N - 1)] > 0, WL = cfg.sea ? 0 : -60; // (WL: the water's level — the sea's, or none)
   progress('Grading the ground', 0.18); await tick();
   const F = pre && pre.H ? pre : await step(stageFields(G));
   const PB = { k: 0, t: 0, w: 0, d: 0 };
@@ -97,7 +101,7 @@ export async function buildStage(progress, cfg, opts = {}) {
       : { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.08, 0.98, 0.84], norm: 0.5 },
   };
   const terrainSnow = cfg.snowLine ?? 5000;
-  const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: -60, snow: terrainSnow, shore: 0.01, conifer: 0.7 }));
+  const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: WL, snow: terrainSnow, shore: cfg.sea ? 1.6 : 0.01, conifer: 0.7 }));
   progress('Growing the woods', 0.55); await tick();
   await packsP;
   buildTrees([...trees, ...saplings]);
@@ -105,7 +109,8 @@ export async function buildStage(progress, cfg, opts = {}) {
   buildTrees(floor.twigs, { colliders: false });
   buildLogs(floor.logs);
   progress('Grading the road', 0.68); await tick();
-  const road = roadRibbon(P, T, K, N, surfY, corners, cfg);
+  const road = roadRibbon(P, T, K, N, surfY, corners, cfg, COVER);
+  const covers = buildCovers(P, T, N, left, surfY, G.tunnels, G.galleries, cfg);
   // ---- the start: a race lines its field up two by two, 9 m apart, before the start line; the player's place on the grid
   // is drawn. Alone, the car waits on the line.
   let field = null, grid = null, slot = null;
@@ -113,28 +118,34 @@ export async function buildStage(progress, cfg, opts = {}) {
   if (raceOpt && raceOpt.field && raceOpt.field.length) { field = raceOpt.field; const n = field.length, slots = [], rows = Math.ceil((n + 1) / 2);
     for (let r = 0; r < rows; r++) for (const sd of [1, -1]) if (slots.length < n + 1) slots.push({ s: 6 + 9 * (rows - 1 - r), w: sd * Math.min(RW / 2, RW - 1.15) });
     slot = slots.splice(Math.floor(Math.random() * slots.length), 1)[0]; grid = slots; }
-  const startI = field ? 6 + 9 * (Math.ceil((field.length + 1) / 2) - 1) + 9 : 14, finishI = finishAt, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP, surfY);
+  const startI = field ? 6 + 9 * (Math.ceil((field.length + 1) / 2) - 1) + 9 : 14, finishI = finishAt, dressing = dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites.filter(c => !covered(c.i)), DROP, surfY, covered);
   progress('Dressing the roadside', 0.76); await tick();
-  roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, mulberry32(cfg.seed + 23), packsReady());
-  const crowd = spectators(sites, await peopleP, hf, P);
+  roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, mulberry32(cfg.seed + 23), packsReady(), covered);
+  const crowd = spectators(sites.filter(c => !covered(c.i)), await peopleP, hf, P);
   progress('Sowing the meadows', 0.8); await tick();
-  const grass = buildGrass(hf, layers.grass.d, { water: -60, snow: terrainSnow, reeds: false, shore: 0.01 });
+  const grass = buildGrass(hf, layers.grass.d, { water: WL, snow: terrainSnow, reeds: false, shore: cfg.sea ? 1.6 : 0.01 });
+  // (the sea: the town's planar-reflection water, at level 0, its surf on the rocks at the cliffs' feet)
+  const water = cfg.sea ? buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], deep: '#0e3a5e', mid: '#1c6f8c', shallow: '#4fb0aa', waves: 5, strength: 0.42 }) : null;
   progress('Opening the stage', 0.95); await tick();
   // ---- the car on its place, facing down the road; the walker beside it
   const s0 = field ? slot.s : 8, lane0 = field ? slot.w : 0, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);
   const carSpawn = { x: sx + lx2 * lane0, z: sz + lz2 * lane0, yaw: Math.atan2(tx, tz) };
   const spawn = { x: sx + lx2 * 5, z: sz + lz2 * 5, yaw: Math.atan2(-tx, -tz), pitch: -0.05 };
   const PG = { k: 0, t: 0, w: 0, d: 0 };
-  const groundBase = (x, z, o) => { if (o.d > ED + 0.4) return hf.groundAt(x, z); const r = roadY(o) + 0.02; return o.d <= SHOULDER ? r : lerp(r, Math.max(hf.groundAt(x, z), r - 0.12), smoothstep(SHOULDER, ED + 0.4, o.d)); }; // (not into the sunk ground under the road)
+  // (past the shoulder the road's edge eases down — or up — into the ground over a metre and a half, as wide as a cell of
+  // the ground's grid: read straight off the grid, the ground there dipped toward the cell's far corner, a step of half a
+  // metre at the asphalt's edge that threw a wheel off it on a wide road)
+  const VERGE = ED + Math.max(1.5, hf.CELL * 0.6);
+  const groundBase = (x, z, o) => { if (o.d > VERGE) return hf.groundAt(x, z); const r = roadY(o) + 0.02; return o.d <= SHOULDER ? r : lerp(r, hf.groundAt(x, z), smoothstep(SHOULDER, VERGE, o.d)); };
   if (BANKAMT.some(v => v > 0.01)) snowBanks(P, T, N, left, DROP, BANKAMT, bankH, (x, z) => { const o = project(x, z, PB); return o ? groundBase(x, z, o) : hf.groundAt(x, z); });
   const clock = stageClock(N, nearAt, distAt, corners, line.features, startI, finishI, carSpawn, cfg, P);
   const world = {
-    hf, grass, terrain, road, spawn, carSpawn, track: { P, T, N, Y, K, RW, distAt, nearAt, length: line.length, sites, piles, startI, finishI }, race: clock, stage: cfg, raceOpt,
+    hf, grass, terrain, road, water, covers, spawn, carSpawn, track: { P, T, N, Y, K, RW, distAt, nearAt, length: line.length, sites, piles, startI, finishI }, race: clock, stage: cfg, raceOpt,
     bounds: { minX: -HALF + 30, maxX: HALF - 30, minZ: -HALF + 30, maxZ: HALF - 30 },
-    waterLevel: -60, waterAt: () => -60,
+    waterLevel: WL, waterAt: () => WL,
     // (on and beside the road the exact surface, blended into the ground past its edge; elsewhere the terrain)
-    groundAt(x, z) { const o = project(x, z, PG); if (!o || o.d > 3.5) return hf.groundAt(x, z); return groundBase(x, z, o) + snowBank(o); },
-    normalAt(x, z, out) { const o = project(x, z, PG); if (!o || o.d > 3.7) return hf.normalAt(x, z, out); const e = 0.3, hx = world.groundAt(x + e, z) - world.groundAt(x - e, z), hz = world.groundAt(x, z + e) - world.groundAt(x, z - e), l = Math.hypot(hx, 2 * e, hz); return out.set(-hx / l, 2 * e / l, -hz / l); },
+    groundAt(x, z) { const o = project(x, z, PG); if (!o || o.d > Math.max(VERGE, 3.5 + EX)) return hf.groundAt(x, z); return groundBase(x, z, o) + snowBank(o); },
+    normalAt(x, z, out) { const o = project(x, z, PG); if (!o || o.d > Math.max(VERGE, 3.5 + EX) + 0.3) return hf.normalAt(x, z, out); const e = 0.3, hx = world.groundAt(x + e, z) - world.groundAt(x - e, z), hz = world.groundAt(x, z + e) - world.groundAt(x, z - e), l = Math.hypot(hx, 2 * e, hz); return out.set(-hx / l, 2 * e / l, -hz / l); },
     surfaceAt(x, z) { const d = distAt(x, z); if (d < SHOULDER) return cfg.roadType; if (d < 3.5 + EX) { const o = project(x, z, PG); if (o && snowBank(o) > 0.08) return 'snow'; } return FOREST[hf.idx(x, z)] > 0.5 ? 'forest' : 'grass'; },
     // (the car feels the road's surface: on gravel corrugations and the odd pothole, the same ones the road shows dark and
     // wet; on asphalt only the faintest undulation and no holes at all; a softer roll on the grass)
@@ -161,7 +172,7 @@ export async function buildStage(progress, cfg, opts = {}) {
 // insides of the bends, damp stretches, and dark wet earth in the potholes the car feels (bumpAt); on asphalt a real
 // worn surface with darker rubbered wheel tracks, patched repairs, a crumbling edge with worn edge lines and grit dragged
 // onto the tarmac at the inside of the corners. A second texture (earth, or grit) is mixed in per vertex (aDirt).
-function roadRibbon(P, T, K, N, surfY, corners, cfg) {
+function roadRibbon(P, T, K, N, surfY, corners, cfg, COVER = null) {
   const asphalt = cfg.roadType === 'asphalt';
   const X = asphalt ? (LANES > 1 ? [-1, -0.92, -0.86, -0.8, -0.7, -0.6, -0.5, -0.42, -0.34, -0.25, -0.17, -0.08, 0, 0.08, 0.17, 0.25, 0.34, 0.42, 0.5, 0.6, 0.7, 0.8, 0.86, 0.92, 1].map(f => f * (RW + 0.45))
       : [-1.85, -1.6, -1.42, -1.27, -1.05, -0.8, -0.55, -0.25, 0, 0.25, 0.55, 0.8, 1.05, 1.27, 1.42, 1.6, 1.85])
@@ -202,6 +213,7 @@ function roadRibbon(P, T, K, N, surfY, corners, cfg) {
         const pot = smoothstep(0.975, 0.995, Math.sin(x * 0.173 + 1.3) * Math.sin(z * 0.151 + 0.4)) * (1 - smoothstep(ROAD, SHOULDER + 1, aw));
         e = Math.max(smoothstep(1.3, 1.85, aw - rag * 0.5) * 0.85, cutV * smoothstep(1.5 - 1.1 * cutV, 1.6, aw), pot * 0.8); v *= 1 - 0.3 * pot;
       }
+      if (COVER && COVER[i] === 2) v *= 0.5; // (in a tunnel: the sky's light does not reach the road)
       col[o * 4] = col[o * 4 + 1] = col[o * 4 + 2] = v; col[o * 4 + 3] = a; dirt[o] = e; } }
   for (let m = 0; m < M; m++) for (let k = 0; k < nx - 1; k++) { const a = m * nx + k, b = a + nx; idx.push(a, b, a + 1, a + 1, b, b + 1); } // (wound to face up: k runs to the left)
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.BufferAttribute(col, 4));
@@ -240,7 +252,7 @@ function roadRibbon(P, T, K, N, surfY, corners, cfg) {
 
 // the roadside: stacked timber, and stones — boulders in the woods, rock broken out of the cut bank above a hill road and
 // the odd outcrop standing out of the slope
-function roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, rng, packs) {
+function roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, rng, packs, covered = () => false) {
   // (the timber: straight trunks cut to length, bark on, the sawn ends pale with their rings)
   if (piles.length) {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), mats = [];
@@ -272,6 +284,7 @@ function roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, rng
     if (h * (1 - sink) > 0.35) addCircle(x, z, w * 0.36, y, y + h); };
   const putSmall = (id, x, z, s) => { const M = packs.models[id]; if (!items.has(id)) items.set(id, []); items.get(id).push({ x, y: hf.groundAt(x, z) - M.dims[1] * s * 0.3, z, s, r: rng() * 6.283, tilt: (rng() - 0.5) * 0.6, tilt2: (rng() - 0.5) * 0.6, c: new THREE.Color().setHSL(0.08 + rng() * 0.04, 0.06, 0.42 + rng() * 0.12) }); };
   for (let i = startI + 25; i < finishI - 10; i += cut ? 7 + Math.floor(rng() * 16) : 14 + Math.floor(rng() * 26)) {
+    if (covered(i)) continue;
     const [px, pz] = P[i], [lx, lz] = left(i);
     if (cut) { const up = hf.groundAt(px + lx * (7 + EX), pz + lz * (7 + EX)) > hf.groundAt(px - lx * (7 + EX), pz - lz * (7 + EX)) ? 1 : -1, sd = rng() < 0.82 ? up : -up, d = (sd === up ? 3.2 + rng() * 5 : 4 + rng() * 6) + EX;
       put(ids[Math.floor(rng() * ids.length)], px + lx * sd * d, pz + lz * sd * d, 0.45 + rng() * rng() * 2.2, 0.35);
@@ -280,7 +293,7 @@ function roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, rng
   }
   // (tinted per stone like the town's rocks: the library's stone is pale)
   if (cut) { // (rock fallen from the cut bank into the gutter and the odd stone at the edge; boulders all over the slopes)
-    for (let i = startI + 6; i < finishI - 6; i += 3 + Math.floor(rng() * 6)) { const [px, pz] = P[i], [lx, lz] = left(i), up = hf.groundAt(px + lx * 7, pz + lz * 7) > hf.groundAt(px - lx * 7, pz - lz * 7) ? 1 : -1;
+    for (let i = startI + 6; i < finishI - 6; i += 3 + Math.floor(rng() * 6)) { if (covered(i)) continue; const [px, pz] = P[i], [lx, lz] = left(i), up = hf.groundAt(px + lx * 7, pz + lz * 7) > hf.groundAt(px - lx * 7, pz - lz * 7) ? 1 : -1;
       const edge = rng() < 0.18, d = (edge ? 1.75 + rng() * 0.3 : 2.5 + rng() * 1.4) + EX; putSmall(ids[Math.floor(rng() * ids.length)], px + lx * up * d, pz + lz * up * d, edge ? 0.08 + rng() * 0.1 : 0.14 + rng() * rng() * 0.45); }
     const box = [1e9, 1e9, -1e9, -1e9]; for (const [x, z] of P) { box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], z); box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], z); }
     const n3 = new THREE.Vector3();
@@ -346,8 +359,57 @@ function snowBanks(P, T, N, left, DROP, AMT, bankH, base) {
 const UPV = new THREE.Vector3(0, 1, 0);
 const packColor = c => Math.round(clamp(c[0], 0, 1) * 255) * 65536 + Math.round(clamp(c[1], 0, 1) * 255) * 256 + Math.round(clamp(c[2], 0, 1) * 255);
 
+// Tunnels and galleries: where the road runs under rock. A tunnel is a lined tube — upright walls and an arch over the two
+// lanes and a kerb each side — swept along the road from portal to portal, its portals concrete headwalls with the
+// arch's opening, sodium lamps in a row under its crown; its walls stop the cars. A gallery is a concrete roof on
+// pillars over the road, a wall against the rock on the hill's side and the other side open to the view (the sea's).
+function buildCovers(P, T, N, left, surfY, tunnels, galleries, cfg) {
+  if (!tunnels.length && !galleries.length) return null;
+  const group = new THREE.Group(); group.name = 'rally-covers'; scene.add(group);
+  const ctex = (k, srgb) => { const t = phTex('concrete_wall_008', k, '1k', srgb, srgb ? undefined : NFLAT).clone(); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; return t; };
+  const lining = new THREE.MeshStandardMaterial({ map: ctex('diff', true), normalMap: ctex('nor_gl', false), color: 0xb7b3aa, roughness: 0.93, side: THREE.DoubleSide });
+  const face = new THREE.MeshStandardMaterial({ map: lining.map, normalMap: lining.normalMap, color: 0xd8d2c4, roughness: 0.9, side: THREE.DoubleSide });
+  const hw = RW + 1.25, H = cfg.tunnelH || 7.2, wallH = 4.0;
+  // (a closed or open profile [u to the left, v up] swept along stations a..b; uv in metres)
+  const sweep = (prof, a, b, mat, { closed = false, base = i => surfY(i, 0), step = 2 } = {}) => {
+    const np = prof.length, pos = [], uv = [], idx = [], per = [0]; for (let j = 1; j < np + (closed ? 1 : 0); j++) per.push(per[j - 1] + Math.hypot(prof[j % np][0] - prof[j - 1][0], prof[j % np][1] - prof[j - 1][1]));
+    const cols = np + (closed ? 1 : 0); let rows = 0, along = 0, prev = null;
+    for (let i = Math.max(0, a); i <= Math.min(N - 1, b); i += step) { const [px, pz] = P[i], [lx, lz] = left(i), y = base(i); if (prev) along += Math.hypot(px - prev[0], pz - prev[1]); prev = [px, pz];
+      for (let j = 0; j < cols; j++) { const [u, v] = prof[j % np]; pos.push(px + lx * u, y + v, pz + lz * u); uv.push(per[j] / 3, along / 3); } rows++; }
+    for (let r = 0; r + 1 < rows; r++) for (let j = 0; j + 1 < cols; j++) { const q = r * cols + j; idx.push(q, q + cols, q + 1, q + 1, q + cols, q + cols + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, mat); m.castShadow = m.receiveShadow = true; group.add(m); return m; };
+  const lampM = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb45c, emissiveIntensity: 3.2, roughness: 0.5 }), lamps = [];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
+  for (const [a0, b0] of tunnels) { const a = a0 - 14, b = b0 + 14;
+    // (the lining: the right wall, the arch, the left wall; and the kerbs' raised walkways)
+    const arch = [[-hw, -0.4], [-hw, wallH]]; for (let k = 1; k < 18; k++) { const t = Math.PI * (1 - k / 18); arch.push([hw * Math.cos(t), wallH + (H - wallH) * Math.sin(t)]); } arch.push([hw, wallH], [hw, -0.4]);
+    sweep(arch.map(([u, v]) => [-u, v]), a, b, lining);
+    for (const sd of [-1, 1]) sweep([[sd * (RW + 0.15), 0.02], [sd * (RW + 0.15), 0.2], [sd * hw, 0.2], [sd * hw, 0.02]].map(p => sd > 0 ? p : [p[0], p[1]]).reverse(), a, b, face);
+    // (the lamps under the crown, the walls against the cars)
+    for (let i = a + 6; i < b - 4; i += 9) { const [px, pz] = P[i], [tx, tz] = T[i], y = surfY(i, 0); for (const u of [-1.6, 1.6]) { const [lx, lz] = left(i); m4.compose(new THREE.Vector3(px + lx * u, y + H - 0.55 - Math.abs(u) * 0.05, pz + lz * u), q.setFromAxisAngle(UP, Math.atan2(tx, tz)), one); lamps.push(m4.clone()); } }
+    for (let i = a; i < b; i += 4) { const j = Math.min(N - 1, i + 4), [ax, az] = P[i], [bx, bz] = P[j], y = surfY(i, 0), l = Math.hypot(bx - ax, bz - az), yaw = Math.atan2(bx - ax, bz - az);
+      for (const sd of [-1, 1]) { const [lx, lz] = left(i), u = sd * (hw + 0.25); addBox((ax + bx) / 2 + lx * u, (az + bz) / 2 + lz * u, 0.3, l / 2 + 0.2, yaw, y - 1, y + H); } }
+    // (the portals: a headwall with the arch's opening, at each end, set back into the hill)
+    for (const [i, dir] of [[a, -1], [b, 1]]) { const sh = new THREE.Shape(); const W2 = hw + 5, top = H + 5.5; sh.moveTo(-W2, -1.5); sh.lineTo(W2, -1.5); sh.lineTo(W2, top); sh.lineTo(-W2, top); sh.lineTo(-W2, -1.5);
+      const hole = new THREE.Path(); hole.moveTo(arch[0][0], arch[0][1]); for (const [u, v] of arch.slice(1)) hole.lineTo(u, v); hole.lineTo(arch[0][0], arch[0][1]); sh.holes.push(hole);
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 1.1, bevelEnabled: false, curveSegments: 4 }); g.translate(0, 0, -0.55);
+      const m = new THREE.Mesh(g, face); const [px, pz] = P[i], [tx, tz] = T[i]; m.position.set(px, surfY(i, 0), pz); m.rotation.y = Math.atan2(tx, tz); m.castShadow = m.receiveShadow = true; group.add(m); m.updateMatrixWorld(true); void dir; } }
+  if (lamps.length) { const im = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.12, 1.3), lampM, lamps.length); lamps.forEach((x, k) => im.setMatrixAt(k, x)); im.name = 'rally-tunnel-lamps'; group.add(im); }
+  for (const [a, b, side0] of galleries) { const side = side0 || -1, roofH = 5.9, uo = side * (RW + 1.1), uw = -side * (RW + 1.3), lo = Math.min(uo, uw) - 0.5, hi = Math.max(uo, uw) + 0.5;
+    // (the roof slab, its edge beam on the open side; the wall against the rock; pillars every 6 m)
+    sweep([[lo, roofH], [hi, roofH], [hi, roofH + 0.8], [lo, roofH + 0.8]], a, b, face, { closed: true });
+    sweep([[uw - side * 0.6, -0.5], [uw, -0.5], [uw, roofH], [uw - side * 0.6, roofH]], a, b, face, { closed: true });
+    sweep([[uo - 0.35, roofH - 0.7], [uo + 0.35, roofH - 0.7], [uo + 0.35, roofH], [uo - 0.35, roofH]], a, b, face, { closed: true });
+    const pil = []; for (let i = a; i <= b; i += 6) { const [px, pz] = P[i], [lx, lz] = left(i), [tx, tz] = T[i], y = surfY(i, 0), yaw = Math.atan2(tx, tz);
+      m4.compose(new THREE.Vector3(px + lx * uo, y + roofH / 2 - 0.4, pz + lz * uo), q.setFromAxisAngle(UP, yaw), new THREE.Vector3(0.7, roofH + 0.8, 0.7)); pil.push(m4.clone()); addBox(px + lx * uo, pz + lz * uo, 0.36, 0.36, yaw, y - 1, y + roofH);
+      const j = Math.min(N - 1, i + 6), l = Math.hypot(P[j][0] - px, P[j][1] - pz); addBox((px + P[j][0]) / 2 + lx * (uw - side * 0.3), (pz + P[j][1]) / 2 + lz * (uw - side * 0.3), 0.32, l / 2 + 0.2, Math.atan2(P[j][0] - px, P[j][1] - pz), y - 1, y + roofH); }
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), face, pil.length); pil.forEach((x, k) => im.setMatrixAt(k, x)); im.castShadow = im.receiveShadow = true; im.name = 'rally-gallery-pillars'; group.add(im); }
+  return group;
+}
+
 // roadside marker posts, boards, bales, tape and the start arch
-function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP, surfY) {
+function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, sites, DROP, surfY, covered = () => false) {
   const group = new THREE.Group(); group.name = 'rally-dressing'; scene.add(group);
   const canvasTex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, maxAniso); return t; };
   // chevron boards (red, white arrows toward the turn)
@@ -368,6 +430,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   const atY = (x, y, z, yaw) => m4.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(UP, yaw), S1).clone();
   // Frequent red/white delineators make the narrow road readable through the dense tree corridor, as on real stages.
   for (let i = startI + 18; i < N - 14; i += 22) {
+    if (covered(i)) continue;
     const [px, pz] = P[i], [lx, lz] = left(i), wobble = (rng() - 0.5) * 0.12;
     for (const side of [-1, 1]) { const d = RW + 0.78 + wobble, x = px + lx * d * side, z = pz + lz * d * side; items.marker.push(at(x, 0, z, Math.atan2(T[i][0], T[i][1]))); }
   }
@@ -379,7 +442,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
   // side starts a new run), set back from the edge by an offset that eases out round the switchbacks, its height smoothed
   // along the run. A rail's ends turn down and away into the ground; a wall's are closed off with its own stone.
   const wideS = new Float32Array(N); for (let i = 0; i < N; i++) { let a = 0, c = 0; for (let k = Math.max(0, i - 14); k <= Math.min(N - 1, i + 14); k += 2) { a += wide[k]; c++; } wideS[i] = a / c; }
-  const isRailed = i => i >= startI + 10 && i < N - 14 && railed[i - (i - startI - 10) % 4] === 1;
+  const isRailed = i => i >= startI + 10 && i < N - 14 && railed[i - (i - startI - 10) % 4] === 1 && !covered(i);
   const runs = []; if (mountain || cfg.walls || cfg.rails) { let cur = null; for (let i = startI + 10; i < N - 14; i += 2) { if (isRailed(i) && (!cur || DROP[i] === cur.side)) { if (!cur) runs.push(cur = { side: DROP[i], idx: [] }); cur.idx.push(i); } else cur = null; } }
   const line = (run, rd0, base) => { const pts = run.idx.map(i => { const [px, pz] = P[i], [lx, lz] = left(i), s = run.side, rd = rd0 + 0.75 * wideS[i], x = px + lx * s * rd, z = pz + lz * s * rd;
       return { x, z, y: base(px, pz, x, z, i), rx: -lx * s, rz: -lz * s }; });
@@ -416,7 +479,7 @@ function dressStage(P, T, K, N, left, rng, startI, finishI, hf, cfg, corners, si
       for (let k = 0; k + 1 < pts.length; k++) { const p = pts[k], n = pts[k + 1], l = Math.hypot(n.x - p.x, n.z - p.z); addBox((p.x + n.x) / 2, (p.z + n.z) / 2, 0.24, l / 2 + 0.1, Math.atan2(n.x - p.x, n.z - p.z), p.y - 0.3, p.y + 0.62); } }
   }
   for (const c of corners) {
-    if (c.R > 60) continue; // (chevrons only where a bend can catch you out)
+    if (c.R > 60 || covered(c.apex)) continue; // (chevrons only where a bend can catch you out)
     const out = i => { const [lx, lz] = left(i); return [-lx * c.dir, -lz * c.dir]; }; // (the corner's outside)
     // boards along the outside, facing the road, from before the corner to its exit
     const from = Math.max(0, c.apex - (c.R < 30 ? 10 : 6)), to = Math.min(N - 1, c.apex + (c.R < 30 ? 10 : 6)), n = c.R < 30 ? 3 : 1;

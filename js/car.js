@@ -1359,7 +1359,7 @@ function engineSound(car) {
     const src = ctx.createBufferSource(), gain = ctx.createGain(), lp = ctx.createBiquadFilter(); src.buffer = out; src.loop = true; gain.gain.value = 0; lp.type = 'lowpass'; lp.frequency.value = 8000;
     src.connect(lp).connect(gain).connect(audio.master); src.start(); grv = { src, gain, lp }; };
   const loadClips = ctx => Promise.all(['gears', 'handbrake', 'gravel'].map(f => fetch('Modeleaut/sounds/' + f + '.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then(b => ctx.decodeAudioData(b)).catch(() => null)))
-    .then(([gears, hb, gravel]) => { if (gravel) startGravel(ctx, gravel); if (!gears || !hb) return; // (each knock's loudness evened out: its peak brought to one level)
+    .then(([gears, hb, gravel]) => { if (gone) return; if (gravel) startGravel(ctx, gravel); // (a car gone before its clips came: nothing started) if (!gears || !hb) return; // (each knock's loudness evened out: its peak brought to one level)
       const peakOf = (buf, [t, d]) => { let p = 1e-4; const a = buf.getChannelData(0), i0 = Math.floor(t * buf.sampleRate), i1 = Math.min(a.length, i0 + Math.floor(d * buf.sampleRate)); for (let i = i0; i < i1; i++) p = Math.max(p, Math.abs(a[i])); return p; };
       rec = { gears, hb, in: CLIPS.in.map(c => [...c, 1 / peakOf(gears, c)]), out: CLIPS.out.map(c => [...c, 1 / peakOf(gears, c)]), hbc: CLIPS.hb.map(c => [...c, 1 / peakOf(hb, c)]) }; })
     .catch(() => { rec = null; });

@@ -12,7 +12,7 @@
 //                   shared where they are cached) nor anything another kept map still uses
 // The engine's per-frame systems (the shadow cascades' caster lists, the distance culling) are rebuilt for the scene in
 // play after every switch.
-import { THREE, scene, renderer, scatters, colliders, props, swapMaterials, lampPoints, SHARED } from './core.js';
+import { THREE, scene, renderer, scatters, colliders, props, swapMaterials, lampPoints, SHARED, resizeFns } from './core.js';
 import { post } from './post.js';
 import { audio } from './audio.js';
 import { paintU, turfU } from './terrain.js';
@@ -51,15 +51,15 @@ let mark = null;
 // before a map is built: where each registry stands
 export function begin() {
   mark = { scene: new Set(scene.children), scatters: scatters.length, swaps: swapMaterials.length, lamps: lampPoints.length, before: post.beforeScene.length,
-    emitters: new Set(audio.emitters), props: props.items.length, groups: new Set(props.groups.keys()) };
+    emitters: new Set(audio.emitters), props: props.items.length, groups: new Set(props.groups.keys()), resize: resizeFns.length };
   blankUniforms();
 }
 // after it is built (and its ambient life and car added): everything new is the map's
 export function capture(world, extra = {}) {
-  const m = mark || { scene: new Set(), scatters: 0, swaps: 0, lamps: 0, before: 0, emitters: new Set(), props: 0, groups: new Set() }; mark = null;
+  const m = mark || { scene: new Set(), scatters: 0, swaps: 0, lamps: 0, before: 0, emitters: new Set(), props: 0, groups: new Set(), resize: resizeFns.length }; mark = null;
   const ctx = { world, ...extra, attached: true,
     objects: scene.children.filter(o => !m.scene.has(o) && !persistent(o)),
-    scatters: scatters.slice(m.scatters), swaps: swapMaterials.slice(m.swaps), lamps: lampPoints.slice(m.lamps), before: post.beforeScene.slice(m.before),
+    scatters: scatters.slice(m.scatters), swaps: swapMaterials.slice(m.swaps), lamps: lampPoints.slice(m.lamps), before: post.beforeScene.slice(m.before), resize: resizeFns.slice(m.resize),
     emitters: [...audio.emitters].filter(e => !m.emitters.has(e)), colliders: null, props: null, uniforms: null, hour: time.hour, azimuth: env.azimuth };
   return ctx;
 }
@@ -70,7 +70,7 @@ export function detach(ctx) {
   ctx.hour = time.hour; ctx.azimuth = env.azimuth; ctx.uniforms = uniformState();
   for (const o of ctx.objects) scene.remove(o);
   const drop = (arr, list) => { const s = new Set(list); for (let i = arr.length - 1; i >= 0; i--) if (s.has(arr[i])) arr.splice(i, 1); };
-  drop(scatters, ctx.scatters); drop(swapMaterials, ctx.swaps); drop(lampPoints, ctx.lamps); drop(post.beforeScene, ctx.before);
+  drop(scatters, ctx.scatters); drop(swapMaterials, ctx.swaps); drop(lampPoints, ctx.lamps); drop(post.beforeScene, ctx.before); drop(resizeFns, ctx.resize);
   for (const e of ctx.emitters) { audio.emitters.delete(e); if (e.out && audio.ctx) e.out.gain.setTargetAtTime(0, audio.ctx.currentTime, 0.05); }
   // (the colliders and props are the map's whole: the hash and the prop groups taken over as they are)
   ctx.colliders = new Map(colliders); colliders.clear();
@@ -83,7 +83,7 @@ export function detach(ctx) {
 export function attach(ctx) {
   if (ctx.attached) return;
   for (const o of ctx.objects) scene.add(o);
-  scatters.push(...ctx.scatters); swapMaterials.push(...ctx.swaps); lampPoints.push(...ctx.lamps); post.beforeScene.push(...ctx.before);
+  scatters.push(...ctx.scatters); swapMaterials.push(...ctx.swaps); lampPoints.push(...ctx.lamps); post.beforeScene.push(...ctx.before); resizeFns.push(...ctx.resize); for (const f of ctx.resize) f(); // (the window may have changed meanwhile)
   for (const e of ctx.emitters) audio.emitters.add(e);
   colliders.clear(); for (const [k, v] of ctx.colliders) colliders.set(k, v); ctx.colliders = null;
   props.groups.clear(); for (const [k, v] of ctx.props.groups) props.groups.set(k, v); props.items.length = 0; props.items.push(...ctx.props.items); props.near.length = 0; props.near.push(...ctx.props.near); props.flushed = ctx.props.flushed; ctx.props = null;
@@ -126,7 +126,7 @@ export function dispose(ctx, keep = []) {
   for (const t of mine.tex) if (!kept.tex.has(t) && !shared(t) && !t.isRenderTargetTexture) { t.dispose(); n.tex++; }
   for (const f of ctx.disposers || []) try { f(); } catch (e) { console.warn('dispose: ' + e.message); }
   for (const e of ctx.emitters) e.dispose && e.dispose();
-  ctx.objects.length = 0; ctx.scatters.length = 0; ctx.swaps.length = 0; ctx.lamps.length = 0; ctx.before.length = 0; ctx.emitters.length = 0; ctx.colliders = null; ctx.props = null; ctx.world = null;
+  ctx.objects.length = 0; ctx.scatters.length = 0; ctx.swaps.length = 0; ctx.lamps.length = 0; ctx.before.length = 0; ctx.resize.length = 0; ctx.emitters.length = 0; ctx.colliders = null; ctx.props = null; ctx.world = null;
   ctx.disposed = true;
   return n;
 }

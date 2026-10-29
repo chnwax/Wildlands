@@ -34,18 +34,20 @@ export function fillet(way, R0) {
 export function trackLine(cfg) {
   // Fit each hand-drawn route to its declared competitive distance. Sampling is followed by one final uniform
   // correction, so the polyline used by timing, pace notes and the road itself has the requested length.
+  // (keepScale: a route laid out on the stage's own land — along its canyon, its coast — keeps its place and its own length)
   let way = cfg.way.map(p => p.slice()), curve = new CatmullRomCurve3(way.map(([x, z]) => new Vector3(x, 0, z)), false, 'centripetal');
-  const fit = cfg.target / curve.getLength(); way = fillet(way.map(([x, z]) => [x * fit, z * fit]), cfg.hairpin || 10);
+  const fit = cfg.keepScale ? 1 : cfg.target / curve.getLength(); way = fillet(way.map(([x, z]) => [x * fit, z * fit]), cfg.hairpin || 10);
   curve = new CatmullRomCurve3(way.map(([x, z]) => new Vector3(x, 0, z)), false, 'centripetal');
-  const fit2 = cfg.target / curve.getLength(); way = way.map(([x, z]) => [x * fit2, z * fit2]);
+  const target = cfg.keepScale ? Math.round(curve.getLength()) : cfg.target;
+  const fit2 = target / curve.getLength(); way = way.map(([x, z]) => [x * fit2, z * fit2]);
   curve = new CatmullRomCurve3(way.map(([x, z]) => new Vector3(x, 0, z)), false, 'centripetal');
-  const n = Math.max(2, Math.round(cfg.target)), pts = [];
+  const n = Math.max(2, Math.round(target)), pts = [];
   curve.arcLengthDivisions = n * 8; // (the even 1 m stations need a fine arc-length table: the default 200 steps bunched them up round the hairpins)
   for (let i = 0; i <= n; i++) { const p = curve.getPointAt(i / n); pts.push([p.x, p.z]); }
-  const sampled = pts.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0), exact = cfg.target / sampled;
+  const sampled = pts.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0), exact = cfg.keepScale ? 1 : target / sampled;
   for (const p of pts) { p[0] *= exact; p[1] *= exact; }
   const nComp = pts.length; // (the competitive road: the stations up to here; the run-off after the finish follows)
-  pts.push(...runoff(pts, cfg.runoff ?? 260, cfg.world || 2048));
+  pts.push(...runoff(pts, cfg.runoff ?? 260, cfg.world || 2048, cfg.land));
   const mountain = cfg.profile === 'mountain';
   const land = cfg.land || (mountain
     ? (x, z) => 68 + z * 0.105 + x * 0.006 + Math.sin(x * 0.007 + 0.4) * 3.2 + Math.sin(z * 0.008 + 1.1) * 2.4 + Math.sin((x - z) * 0.014) * 1.1 + Math.sin(x * 0.013 - z * 0.004 + 2.1) * 5 + Math.sin(x * 0.031 + z * 0.017) * 2.2
@@ -60,27 +62,33 @@ export function trackLine(cfg) {
   // with each station and left a centimetre of ripple every metre, which the wheels hammered on)
   const graded = mountain || cfg.verge === 'cut' || cfg.grade, L0 = pts.map(([x, z]) => land(x, z)), box = (A, r) => { const S = new Float64Array(A.length + 1); for (let i = 0; i < A.length; i++) S[i + 1] = S[i] + A[i];
       return A.map((_, i) => { const a = Math.max(0, i - r), b = Math.min(A.length - 1, i + r); return (S[b + 1] - S[a]) / (b - a + 1); }); };
+  // (through a tunnel the road keeps its own grade: the hill over it is not followed, the line runs straight from portal to portal)
+  // (and through a rock cut: the road goes through the rock, not over it)
+  for (const [a, b] of [...spans(cfg.tunnels, pts, nComp), ...spans(cfg.cuts, pts, nComp)]) { const i0 = Math.max(0, a - 30), i1 = Math.min(pts.length - 1, b + 30); for (let i = i0 + 1; i < i1; i++) L0[i] = L0[i0] + (L0[i1] - L0[i0]) * (i - i0) / (i1 - i0); }
   const LS = graded ? box(box(L0, Math.round((cfg.grade || 60) * 0.6)), Math.round((cfg.grade || 60) * 0.6)) : L0;
   const Y = pts.map(([x, z], i) => LS[i]
     + (cfg.land ? Math.sin(i / 70) * 0.5 : mountain ? Math.sin(i / 180 + 0.5) * 2.4 + Math.sin(i / 80) * 0.8 : Math.sin(i / (cfg.roadType === 'asphalt' ? 210 : 260) + 0.5) * (cfg.roadType === 'asphalt' ? 3.8 : 2.8) + Math.sin(i / 92) * 1.7)
     + jumpSpecs.reduce((v, j) => v + jump(i, j.f * n, j.h), 0));
   const features = jumpSpecs.map(j => ({ at: Math.round(j.f * n), end: Math.round(j.f * n) + 12, text: j.text, kind: 'feature', dir: 0 }));
   for (const f of cfg.features || []) features.push({ at: Math.round(n * f.f), end: Math.round(n * f.f) + 10, text: f.text, kind: 'feature', dir: 0 });
-  return { pts, Y, features, land, length: cfg.target, nComp };
+  return { pts, Y, features, land, length: target, nComp };
 }
 
 // The road goes on past the finish: a run-off where the cars slow down and stop at the stop control, as a stage has. It
 // leaves the finish straight on and eases into a gentle bend, whichever way keeps it clear of the road already laid and
 // inside the map.
-export function runoff(pts, len, world) {
+export function runoff(pts, len, world, land = null) {
   if (len <= 0) return [];
   const n = pts.length - 1, [ex, ez] = pts[n], [px, pz] = pts[n - 4], h0 = Math.atan2(ex - px, ez - pz), lim = world / 2 - 90;
   const trial = c => { const out = []; let x = ex, z = ez, h = h0;
     for (let i = 1; i <= len; i++) { h += c * smoothstep(0, 50, i); x += Math.sin(h); z += Math.cos(h); if (Math.abs(x) > lim || Math.abs(z) > lim) return null; out.push([x, z]); }
     for (let k = 0; k < out.length; k += 4) for (let j = 0; j < n - 70; j += 3) if (Math.hypot(out[k][0] - pts[j][0], out[k][1] - pts[j][1]) < 42) return null;
     return out; };
-  for (const c of [0, 1 / 420, -1 / 420, 1 / 250, -1 / 250, 1 / 160, -1 / 160, 1 / 110, -1 / 110]) { const r = trial(c); if (r) return r; }
-  return trial(0) || [];
+  // (of the ways clear of the road, the one over the levellest ground: the cars brake to a stop on it)
+  let best = null, bs = 1e18;
+  for (const c of [0, 1 / 420, -1 / 420, 1 / 250, -1 / 250, 1 / 160, -1 / 160, 1 / 110, -1 / 110]) { const r = trial(c); if (!r) continue; if (!land) return r;
+    const h0 = land(ex, ez); let sc = 0; for (let k = 20; k < r.length; k += 20) sc = Math.max(sc, Math.abs(land(r[k][0], r[k][1]) - h0) / k); sc += Math.abs(c) * 2; if (sc < bs) { bs = sc; best = r; } }
+  return best || trial(0) || [];
 }
 
 // the corners: runs of signed curvature, by their tightest point and direction (also kept for the pace notes)
@@ -153,7 +161,8 @@ export function* stageGeometry(cfg, pre = null) {
   const surfY = (i, w) => Y[i] - CROWN * Math.min((w / RW) ** 2, 2) - BANK[i] * w; // (at a point of the line)
   // ---- tunnels and galleries: where the road runs under rock the ground above keeps its own shape (the tube itself is
   // the builder's); the hill is not cut down to the road there
-  const TUN = new Float32Array(N); for (const t of cfg.tunnels || []) { const a = Math.round(t.f0 * line.nComp), b = Math.round(t.f1 * line.nComp); for (let i = Math.max(0, a - 16); i <= Math.min(N - 1, b + 16); i++) TUN[i] = Math.max(TUN[i], i < a ? smoothstep(a - 16, a, i) : i > b ? 1 - smoothstep(b, b + 16, i) : 1); }
+  const tunnels = spans(cfg.tunnels, P, line.nComp), galleries = spans(cfg.galleries, P, line.nComp);
+  const TUN = new Float32Array(N); for (const [a, b] of tunnels) for (let i = Math.max(0, a - 16); i <= Math.min(N - 1, b + 16); i++) TUN[i] = Math.max(TUN[i], i < a ? smoothstep(a - 16, a, i) : i > b ? 1 - smoothstep(b, b + 16, i) : 1);
   const PT = { k: 0, t: 0, w: 0, d: 0 };
   // beside the road: in the woods a drainage ditch each side, then the forest floor; on a hillside the road is cut into
   // the slope — a steep bank with a gutter at its foot above it, a longer embankment of fill below — and the hill goes on
@@ -178,7 +187,14 @@ export function* stageGeometry(cfg, pre = null) {
   const corners = findCorners(K, N, 14, finishAt), sites = crowdSites(P, T, K, N, left, corners, line.features, distAt, cfg, mulberry32(cfg.seed + 11), EX), piles = cut ? [] : logPiles(P, T, K, N, left, distAt, mulberry32(cfg.seed + 17), EX);
   const keepClear = (x, z, pad) => { for (const c of sites) if (Math.hypot(x - c.x, z - c.z) < c.r + pad) return true; for (const p of piles) if (Math.hypot(x - p.x, z - p.z) < 4 + pad) return true; return false; };
   const clearAt = (x, z) => { const ni = nearAt(x, z); if (mountain) return 9; return ni >= 0 && (ni < 58 || ni > N - 72) ? 7.4 : CLEAR; };
-  return { cfg, D, line, P, Y, N, T, K, left, finishAt, DIST, NEAR, distAt, nearAt, woods, rng, mountain, asphalt, cut, CROWN, BANK, TUN, project, roadY, surfY, terrainHeight, corners, sites, piles, keepClear, clearAt };
+  return { cfg, D, line, P, Y, N, T, K, left, finishAt, DIST, NEAR, distAt, nearAt, woods, rng, mountain, asphalt, cut, CROWN, BANK, TUN, tunnels, galleries, project, roadY, surfY, terrainHeight, corners, sites, piles, keepClear, clearAt };
+}
+// stretches of the road given as fractions of the competitive distance ({f0, f1}) or by where they are ({at: [x, z],
+// len}: centred on the station nearest that point, len metres long, and side for a gallery): [first, last, side] stations
+export function spans(list, P, nComp) {
+  return (list || []).map(t => { if (t.at) { let bi = 0, bd = 1e18; for (let i = 0; i < nComp; i++) { const d = (P[i][0] - t.at[0]) ** 2 + (P[i][1] - t.at[1]) ** 2; if (d < bd) { bd = d; bi = i; } }
+    return [Math.max(0, Math.round(bi - t.len / 2)), Math.min(nComp - 1, Math.round(bi + t.len / 2)), t.side || 0]; }
+    return [Math.round(t.f0 * nComp), Math.round(t.f1 * nComp), t.side || 0]; });
 }
 
 // ---------------------------------------------------------------- the ground and what grows on it
