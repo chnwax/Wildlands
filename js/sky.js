@@ -64,6 +64,7 @@ const skyU = {
 // light pollution over the town: centre (x, z), radius and strength, set by the map; followCamera makes it camera-relative
 const townGlow = { x: 0, z: 0, r: 0, s: 0 };
 export function setTownGlow(x, z, r, s) { Object.assign(townGlow, { x, z, r, s }); }
+export const townGlowState = () => townGlow;
 const skyMat = new THREE.ShaderMaterial({
   uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
   vertexShader: /* glsl */`
@@ -284,7 +285,7 @@ function makeMoonTexture() {
 export const sun = new THREE.DirectionalLight(0xffffff, 3);
 export const cascades = [sun];
 const CSM_D = 2600; // how far up-sun casters are gathered: a low sun behind the hills still shades the valley's near cascades
-function cascadeLight(l) { l.castShadow = true; l.shadow.camera.layers.enableAll(); l.shadow.autoUpdate = false; scene.add(l, l.target); return l; }
+function cascadeLight(l) { l.castShadow = true; l.shadow.camera.layers.enableAll(); l.shadow.autoUpdate = false; l.userData.persistent = l.target.userData.persistent = true; scene.add(l, l.target); return l; }
 cascadeLight(sun);
 export function applyShadowQuality() {
   const spec = Q.csm;
@@ -378,6 +379,8 @@ function makeStand(o, cap) {
   m.frustumCulled = false; m.matrixAutoUpdate = false; m.matrixWorldAutoUpdate = false; m.layers.mask = o.layers.mask; m.renderOrder = o.renderOrder;
   return { m, inst, cap, key: -1, n: -1, place: null, k: 0, used: 0, mw: new Float32Array(16) };
 }
+// a map switched away: every per-instance stand-in let go (they hold the old map's sets), rebuilt for the scene in play
+export function resetShadowStands() { for (const a of stands.values()) for (const st of a) if (st && st.m) freeStand(st); stands.clear(); }
 function freeStand(st) { // its own buffers only: the geometry view shares the source's
   st.m.dispose();
   const g = st.m.geometry, own = {}; for (const k of st.inst) own[k] = g.attributes[k];

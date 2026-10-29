@@ -7,7 +7,7 @@
 //    broadleaf, spreading oak / camphor, airy birch, vase-shaped zelkova, layered maple, weeping willow, sakura, bamboo)
 // Normals are smoothed toward each blob / the whole crown, so every tree reads as a soft painted shape with one bright
 // sunlit side and one cool shaded side.
-import { withScatterMeta, THREE, S, Q, mulberry32, lerp, clamp, phTex, Scatter, addCircle, renderer } from './core.js';
+import { withScatterMeta, THREE, S, Q, mulberry32, lerp, clamp, phTex, Scatter, addCircle, renderer, markShared } from './core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { windPatch } from './terrain.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
@@ -97,7 +97,7 @@ function leafTexture(kind = 'round') {
   g.setTransform(1, 0, 0, 1, 0, 0); if (kind !== 'bamboo') { g.fillStyle = '#fff'; g.fillRect(0, 0, 12, 12); } // (bamboo has no solid crown)
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 4;
-  return (leafTexs[kind] = t);
+  return (leafTexs[kind] = markShared(t));
 }
 
 // a clump of little five-petal blossoms (sakura / hydrangea): white, tinted per tree; darker centres
@@ -122,7 +122,7 @@ function blossomTexture(kind) {
   }
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 4;
-  return (blossomTex[kind] = t);
+  return (blossomTex[kind] = markShared(t));
 }
 
 // painted bark for trunks without a photo scan: white birch with dark lenticels, green bamboo culms with nodes
@@ -148,7 +148,7 @@ function barkTexture(kind) {
   }
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
-  return (barkTexs[kind] = t);
+  return (barkTexs[kind] = markShared(t));
 }
 
 // ---------------------------------------------------------------- geometry helpers
@@ -1008,6 +1008,7 @@ function materials(kind) {
     if (D.noSolid) { M.trunkDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); if (sway) windPatch(M.trunkDepth, 'toonTrunkDepth' + kind, sway); }
   }
   if (M.solid) M.solid.name = kind + '_foliage'; if (M.cards) M.cards.name = kind + '_leaves'; if (M.trunk) M.trunk.name = kind + '_bark'; // (material library names, world/layer.js)
+  for (const k in M) if (M[k] && M[k].isMaterial) markShared(M[k]); // (the species' materials: a library every map shares)
   return (mats[kind] = M);
 }
 
@@ -1140,11 +1141,11 @@ function packTreeParts(id, h, sp, near) {
       foliagePatch(m, 'packTree' + (cut ? 'c' : 's'), sway, cut, true, LEAF_K[sp.mat] ?? 1); // (one program for every pack tree's leaves, one for the bark: the sway is a uniform)
       d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: cut ? m.map : null, alphaTest: cut ? m.alphaTest : 0 });
       windPatch(d, 'packTreeDepth' + (cut ? 'c' : 's'), sway);
-      packTreeCache.set(mk, m); packTreeCache.set(mk + '|d', d);
+      packTreeCache.set(mk, markShared(m)); packTreeCache.set(mk + '|d', markShared(d));
     }
     return { geometry: g, material: m, tint: 'pc', castShadow: true, depth: d, sway: true };
   });
-  packTreeCache.set(key, parts);
+  packTreeCache.set(key, markShared(parts));
   return parts;
 }
 // LOD levels for a species variant from the packs, or null (no library, or a species the packs do not replace). A
@@ -1365,7 +1366,7 @@ function packImpostor(id, h, sp, twin = 0) {
   // (shrubs a metre high cast no shadow worth its cost past 90 m: trees only)
   const parts = [{ geometry: g, material: m, tint: 'pc', castShadow: false, sway: false }];
   if (sp.mat !== 'bush') parts.push({ geometry: impShadowGeo(src.filter(p => !/card/i.test(p.material.name)), h, 6), material: impShadowMat, castShadow: true, shadowOnly: true, sway: false }); // (65 triangles)
-  impCache.set(key, parts);
+  impCache.set(key, markShared(parts));
   return parts;
 }
 // the per-item tint of a pack tree: the procedural foliage colour turned into a gentle brightness / warmth variation
@@ -1471,7 +1472,7 @@ function farCardTexture() {
   broadleaf(W * 5, 13, {});
   broadleaf(W * 6, 17, { n: 30, cy: 0.4, wx: 1.5, wy: 0.45, rad: 0.15, trunk: 0.34 });
   broadleaf(W * 7, 23, { n: 18, cy: 0.38, wx: 0.7, wy: 0.9, rad: 0.12, trunk: 0.4 });
-  farTex = new THREE.CanvasTexture(cv);
+  farTex = markShared(new THREE.CanvasTexture(cv));
   farTex.colorSpace = THREE.NoColorSpace; farTex.wrapS = farTex.wrapT = THREE.ClampToEdgeWrapping; farTex.anisotropy = 4;
   return farTex;
 }
@@ -1516,10 +1517,10 @@ function farCardMaterial(kind) {
         diffuseColor.rgb *= mix(0.35 + 0.75 * ftc.r, 0.86, smoothstep(1.0, 4.0, flod));`);
   };
   m.customProgramCacheKey = () => 'farCard8' + kind;
-  return (farCardMats[kind] = m);
+  return (farCardMats[kind] = markShared(m));
 }
 let farCardGeo = null;
-const cardGeo = () => farCardGeo || (farCardGeo = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0));
+const cardGeo = () => farCardGeo || (farCardGeo = markShared(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0)));
 
 // far forest on the outer terrain: sets[i] = {fir, leaf} per distance ring (items carry v: atlas variant); ring i is
 // drawn while i < Q.far. The first ring shows simple real trees up to ~900 m, then cards; outer rings are cards only.
@@ -1549,7 +1550,7 @@ const twinCache = new Map();
 function twinGeo(g, d) {
   const k = g.uuid + '|' + d; if (twinCache.has(k)) return twinCache.get(k);
   const t = mergeGeometries([g.clone().translate(-d, 0, d * 0.08), g.clone().rotateY(Math.PI * 0.8).translate(d, 0, -d * 0.08)]);
-  t.computeBoundingSphere(); t.computeBoundingBox(); twinCache.set(k, t);
+  t.computeBoundingSphere(); t.computeBoundingBox(); twinCache.set(k, markShared(t));
   return t;
 }
 // The Illustrated Nature's round shrubs for the bush and shrub sets, when the model library is there: [near, middle]

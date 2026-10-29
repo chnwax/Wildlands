@@ -62,12 +62,12 @@ export function setQuality(name, world) {
 
 // ---------------------------------------------------------------- loading
 // progress(label, fraction) is called while the map builds; opts.editor builds the map for the editor (no simulation)
-export async function loadWorld(mapName, { progress = () => {}, editor = false, race } = {}) {
+export async function loadWorld(mapName, { progress = () => {}, editor = false, race, prepared } = {}) {
   progress('Preparing', 0.02); await tick();
   const mod = await MAPS[mapName]();
   setPaint(); // (the default palette: a map that wants its own sets it as it builds)
   time.hour = mod.meta.startHour; env.azimuth = mod.meta.sunAzimuth ?? env.azimuth;
-  const world = await mod.build(progress, { editor, map: mapName, race });
+  const world = await mod.build(progress, { editor, map: mapName, race, prepared });
   world.meta = mod.meta; world.mapName = mapName;
   return world;
 }

@@ -12,6 +12,11 @@ import { colliderView } from './coldebug.js';
 import { mapFromURL, loadWorld, prepareWorld, renderWorld, setQuality as engineQuality } from './engine.js';
 import { title, cityOfMap } from './menu.js';
 import { boostNow } from './items.js';
+import * as session from './session.js';
+import * as preload from './preload.js';
+import { raceById, raceOfMap, fieldFor } from './races.js';
+import { selection, transition, results, showPrompt, saveBest } from './raceui.js';
+import { buildRaceBoard } from './raceboard.js';
 
 const direct = new URLSearchParams(location.search).has('map') ? mapFromURL() : null; // (index.html marks the same: boot-direct)
 let mapName = direct;
@@ -19,6 +24,13 @@ document.body.prepend(renderer.domElement);
 
 let world = null, life = null, started = false, locked = false, hudOn = true;
 let car = null; // (maps with a car to drive: car.js; while it is driven it takes the keys, the mouse and the camera)
+// ---------------------------------------------------------------- Sakuragawa and its races in one session (session.js)
+// home: Sakuragawa's context — detached and kept whole while a race runs, put back as it was after it; raceCtx: the race
+// map's, released after the race. transit: a switch under way (nothing simulated or drawn behind the transition screen)
+let home = null, raceCtx = null, raceInfo = null, board = null, transit = false, resultsShown = false, finishT = 0;
+// the board's place: the open lot beside road B, a few metres behind the spawn, facing the road
+const BOARD_SPOT = { x: 100.6, z: -36.2, yaw: Math.PI / 2 };
+const townPose = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, fly: false };
 // ---------------------------------------------------------------- game -> World Builder, at this exact view (B)
 // The view travels in the editor's URL — exact metres and radians, taken from the rendered camera whatever mode the
 // player is in (walking, flying, third person) — so nothing has to be copied by hand and nothing can overwrite it
@@ -85,7 +97,9 @@ const _dir = new THREE.Vector3();
 const P_PLAYER = perf.id('player/collision'), P_LIFE = perf.id('ambient life'), P_AUDIO = perf.id('audio');
 const audioState = { wind: 0, day: 0, night: 0, fly: false, under: false };
 function step(dt, t) {
+  if (transit) return;
   perf.frameStart();
+  preload.frame(); // (the preloader's one GPU upload, when the frame has time for it)
   if (dbgState.still) t = dbgState.still;
   if (time.running && started) time.hour = (time.hour + dt * time.speed) % 24;
   wind.update(dt, t, !!dbgState.still);
@@ -97,6 +111,8 @@ function step(dt, t) {
   if (car) { car.inputOn = locked && started; if (car.autopilot && driving) car.autopilot(dt); else car.control(driving && locked && started ? keys : null, dt); car.update(dt); }
   if (locked && started && !driving) updatePlayer(world, dt);
   if (world.shops && started) world.shops.update(player, camera, dt);
+  if (board && home && home.attached) boardStep(dt);
+  if (raceCtx && car && world.race) raceStep(dt);
   if (!started && !dbgState.pause && !driving) player.yaw += dt * 0.02;
   if (driving) { // (the walker rides along: the grass, the ambience and the audio follow the car)
     car.applyCamera(camera, realDt); player.pos.set(car.st.pos.x, world.groundAt(car.st.pos.x, car.st.pos.z), car.st.pos.z);
@@ -147,14 +163,15 @@ const enterGame = () => {
 };
 $('play').addEventListener('click', enterGame);
 $('toTitle').addEventListener('click', () => location.assign(location.pathname)); // (a fresh page: the title, no map loaded)
-renderer.domElement.addEventListener('click', () => { if (started && !locked) { if (world && world.shops && world.shops.isOpen()) world.shops.close(); enterGame(); } });
+$('leaveRace').addEventListener('click', e => { e.stopPropagation(); goHome(); });
+renderer.domElement.addEventListener('click', () => { if (started && !locked && !transit && !selection.isOpen() && !results.on) { if (world && world.shops && world.shops.isOpen()) world.shops.close(); enterGame(); } });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
-  $('menu').classList.toggle('hidden', locked || !!(world && world.shops && world.shops.isOpen())); // (a shop or the bag open: no pause menu over it)
+  $('menu').classList.toggle('hidden', locked || transit || selection.isOpen() || results.on || !!(world && world.shops && world.shops.isOpen())); // (a shop, the bag or a race screen open: no pause menu over it)
   if (locked) { started = true; $('play').textContent = 'Resume'; for (const k in keys) keys[k] = false; }
 });
 // pointer lock refused (the browser wants another click): the pause menu offers the button again
-document.addEventListener('pointerlockerror', () => { if (world && !locked) $('menu').classList.remove('hidden'); });
+document.addEventListener('pointerlockerror', () => { if (world && !locked && !transit && !selection.isOpen() && !results.on) $('menu').classList.remove('hidden'); });
 document.addEventListener('mousemove', e => {
   if (!locked) return;
   if (car && car.driving) { car.lookMouse(e.movementX * player.sens, e.movementY * player.sens); return; }
@@ -167,6 +184,8 @@ addEventListener('keydown', e => {
   if (e.code === 'F4' && world) { e.preventDefault(); toastMsg(colliderView.toggle(player.pos, (x, z) => world.groundAt(x, z)) ? 'Colliders shown' : 'Colliders hidden'); }
   // the shop counter (E) and the bag (I / Tab): the cursor is freed while they are open; E, I, Tab or Esc closes them
   const shops = world && world.shops, release = () => { for (const k in keys) keys[k] = false; if (document.pointerLockElement) document.exitPointerLock(); };
+  if (selection.isOpen() || results.on || transit) return; // (the race screens take their own keys)
+  if (board && home && home.attached && locked && e.code === 'KeyE' && !(car && car.driving) && board.near(player.pos)) { e.preventDefault(); openBoard(); return; }
   if (shops && shops.isOpen() && ['Escape', 'KeyE', 'KeyI', 'Tab'].includes(e.code)) { e.preventDefault(); shops.close(); enterGame(); return; }
   if (shops && locked && e.code === 'KeyE' && shops.interact()) { e.preventDefault(); release(); return; }
   if (shops && locked && (e.code === 'KeyI' || e.code === 'Tab')) { e.preventDefault(); if (shops.toggleBag()) release(); return; }
@@ -219,6 +238,7 @@ $('openBuilder').addEventListener('click', e => { e.stopPropagation(); openBuild
 // ---------------------------------------------------------------- boot
 // hour: the arrival time picked on the title screen, null for the map's own start hour
 async function main(hour = null) {
+  session.markPersistent(); session.begin(); // (what the map adds from here on is its own: session.js)
   world = await loadWorld(mapName, { progress });
   $('openBuilder').hidden = world.meta.builder === false;
   const city = cityOfMap(mapName);
@@ -232,6 +252,7 @@ async function main(hour = null) {
     try { car = await (await import('./car.js')).createCar(world, world.carSpawn || world.spawn, carId || world.meta.car || 'i20'); world.vehicle = car; car.fov = carFov.v; }
     catch (e) { console.warn('car: ' + (e && e.message || e)); car = null; setTimeout(() => toastMsg('Car models not found (Modeleaut/) — on foot'), 3000); }
   }
+  if (mapName === 'town') board = buildRaceBoard(world, BOARD_SPOT);
   player.pos.set(world.spawn.x, world.groundAt(world.spawn.x, world.spawn.z), world.spawn.z);
   player.yaw = world.spawn.yaw; player.pitch = world.spawn.pitch ?? -0.03;
   if (hour !== null) time.hour = hour;
@@ -240,6 +261,9 @@ async function main(hour = null) {
   updateCamera(world); camera.updateMatrixWorld();
   await prepareWorld(world, progress);
   skipStaticWalk(scene);
+  const ctx = session.capture(world, { life, car, map: mapName, disposers: car ? [() => car.dispose(), () => world.dispose && world.dispose()] : [] });
+  if (mapName === 'town') { home = ctx; setTimeout(() => preload.warmShared(3), 8000); } // (what any race needs, fetched while the player walks about)
+  else { raceCtx = ctx; const r = raceOfMap(mapName); raceInfo = r ? { race: r, car: car && car.id } : null; $('leaveRace').hidden = false; }
   frame();
   document.documentElement.classList.add('ingame');
   if (direct) {
@@ -248,8 +272,8 @@ async function main(hour = null) {
   } else title.ready(enterGame);
   if (world.layer) world.layer.showProblems();
   let manualT = 0;
-  window.__wl = { THREE, scene, camera, player, renderer, world, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
-    car, step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys, builderQuery,
+  window.__wl = { THREE, scene, camera, player, renderer, get world() { return world; }, time, post, setQuality, updateSky, QUALITY, Q, scatters, S,
+    get car() { return car; }, game: { enterRace, goHome, openBoard, get board() { return board; }, get home() { return home; }, get raceCtx() { return raceCtx; }, get transit() { return transit; }, preload, session, selection, results, transition, get raceInfo() { return raceInfo; } }, step: (n = 1) => { for (let i = 0; i < n; i++) { manualT += 1 / 60; step(1 / 60, manualT); } }, at: t => { manualT = t; }, wind, colliderView, dbg: debugToggles(), perf, toggleOverlay, keys, builderQuery,
     // automated play-testing: act as if the pointer were locked, so keys (keys.KeyW = true ...) drive the walker
     autoplay(on = true) { started = started || on; locked = on; $('menu').classList.toggle('hidden', on); if (on && $('loading')) $('loading').remove(); } }; // console debugging hook
   if (new URLSearchParams(location.search).has('autoplay')) window.__wl.autoplay();
@@ -279,6 +303,105 @@ function debugToggles() {
     dbgState.still = cur.wind ? 0 : (S.uTime.value || 1);
   };
   return { set(o) { Object.assign(cur, o); if ('pause' in o) dbgState.pause = o.pause; apply(); return { ...cur, pause: dbgState.pause }; }, state: () => ({ ...cur, pause: dbgState.pause }) };
+}
+// ---------------------------------------------------------------- the race board, the races, the way home
+// near the board: its prompt; walking up to it starts preparing the races in the background (preload.js)
+let boardWarm = 0;
+function boardStep(dt) {
+  board.update(dt);
+  const d = board.distance(player.pos);
+  showPrompt(locked && d < 4.6 && !(car && car.driving) ? '<b>E</b>Tablica wyścigów — wybierz trasę i samochód' : null);
+  if (d < 90 && boardWarm < 1) { boardWarm = 1; preload.warmShared(2); }
+  if (d < 35 && boardWarm < 2) { boardWarm = 2; let id = null; try { id = localStorage.getItem('wl_raceSel'); } catch (e) {} preload.prepareStage(raceById(id) || raceById('valley'), 2); }
+}
+function openBoard() {
+  for (const k in keys) keys[k] = false; showPrompt(null);
+  if (document.pointerLockElement) document.exitPointerLock();
+  selection.open({ onStart: (r, c) => enterRace(r, c), onCancel: () => enterGame(), onPick: (r, c) => preload.prepareRace(r, { car: c }, 1) }, (r, c) => preload.readiness(r, c));
+}
+// a race map built beside Sakuragawa (kept whole, detached), from what the preloader has made ready
+async function enterRace(race, carId = race.car) {
+  if (transit || !race) return; transit = true; resultsShown = false; results.hide(); showPrompt(null);
+  for (const k in keys) keys[k] = false;
+  if (document.pointerLockElement) document.exitPointerLock();
+  $('menu').classList.add('hidden');
+  const t0 = performance.now();
+  try {
+    await transition.show(race.name.toUpperCase(), race.kanji + ' · ' + (race.surface === 'gravel' ? 'szuter' : 'asfalt') + ' · ' + (race.length / 1000).toFixed(1) + ' km', race);
+    const field = fieldFor(race), prepP = preload.prepareRace(race, { car: carId, field }, 0); // (what is still missing, first in the queue)
+    if (raceCtx) releaseRace();
+    if (home && home.attached) { townPose.pos.copy(player.pos); townPose.yaw = player.yaw; townPose.pitch = player.pitch; townPose.fly = player.fly; session.detach(home); }
+    transition.progress(0.04, 'Kończenie przygotowań trasy');
+    await prepP.catch(e => console.warn('race preparation: ' + e.message)); // (anything not ready is computed by the build itself)
+    const tPrep = performance.now();
+    session.begin();
+    mapName = race.map;
+    world = await loadWorld(race.map, { progress: (l, p) => { transition.progress(0.12 + p * 0.78, l); progress(l, p); }, race: { field, car: carId, id: race.id }, prepared: preload.stageData(race) });
+    life = buildLife(world, world.meta.life || {});
+    transition.progress(0.92, 'Samochód');
+    car = await (await import('./car.js')).createCar(world, world.carSpawn || world.spawn, carId); world.vehicle = car; car.fov = carFov.v;
+    player.fly = false; player.vy = 0; player.pos.set(world.spawn.x, world.groundAt(world.spawn.x, world.spawn.z), world.spawn.z); player.yaw = world.spawn.yaw; player.pitch = world.spawn.pitch ?? -0.03;
+    updateSky(true); post.exposure.value = env.exposure; post.wb.value.copy(env.wb);
+    car.applyCamera(camera, 0); camera.updateMatrixWorld();
+    transition.progress(0.95, 'Kompilacja shaderów');
+    await prepareWorld(world, (l, p) => transition.progress(0.95 + 0.05 * p, l));
+    skipStaticWalk(scene);
+    raceCtx = session.capture(world, { life, car, map: race.map, disposers: [() => car && car.dispose(), () => world && world.dispose && world.dispose()] });
+    raceInfo = { race, car: carId, field, loadMs: Math.round(performance.now() - t0), prepMs: Math.round(tPrep - t0) };
+    console.info(`race ${race.id}: ready in ${raceInfo.loadMs} ms (${raceInfo.prepMs} ms finishing the preparation)`, preload.state());
+    syncMenu();
+  } catch (e) { console.error(e); transit = false; transition.hide(); toastMsg('Wyścig nie wystartował: ' + e.message); if (!raceCtx) goHome(); return; }
+  transit = false;
+  transition.ready(() => { transition.hide(); enterGame(); });
+}
+// the race's end: the results once the player is home, the others still coming in
+function raceStep(dt) {
+  const st = world.race.state;
+  if (st.phase !== 'finished') { resultsShown = false; finishT = 0; return; }
+  finishT += dt; if (resultsShown || finishT < 2.2) return;
+  resultsShown = true;
+  const race = raceInfo && raceInfo.race, rows = world.raceAI ? world.raceAI.classification() : [{ name: 'Ty', me: true, car: car.id, t: st.result }];
+  const newBest = race ? saveBest(race, st.result) : false;
+  if (document.pointerLockElement) document.exitPointerLock();
+  results.show(race || { name: world.meta.name, length: world.track.length, id: mapName }, rows, { newBest, mine: st.result }, {
+    onAgain: () => { car.reset(); resultsShown = false; enterGame(); },
+    onHome: () => goHome() });
+}
+function releaseRace() {
+  if (!raceCtx) return;
+  const n = session.dispose(raceCtx, home ? [home] : []);
+  console.info('race map released: ' + n.geo + ' geometries, ' + n.mat + ' materials, ' + n.tex + ' textures');
+  raceCtx = null; raceInfo = null; car = null;
+}
+// back to Sakuragawa: the race released, the town put back as it was left (built now if the game was opened in a race)
+async function goHome() {
+  if (transit) return; transit = true; results.hide(); resultsShown = false;
+  for (const k in keys) keys[k] = false;
+  if (document.pointerLockElement) document.exitPointerLock();
+  $('menu').classList.add('hidden');
+  try {
+    await transition.show('SAKURAGAWA', '桜川');
+    releaseRace();
+    mapName = 'town';
+    if (home) { session.attach(home); world = home.world; life = home.life; car = home.car;
+      player.pos.copy(townPose.pos); player.yaw = townPose.yaw; player.pitch = townPose.pitch; player.fly = townPose.fly; player.vy = 0; }
+    else { session.begin(); world = await loadWorld('town', { progress: (l, p) => { transition.progress(p, l); progress(l, p); } }); life = buildLife(world, world.meta.life || {}); board = buildRaceBoard(world, BOARD_SPOT);
+      player.pos.set(world.spawn.x, world.groundAt(world.spawn.x, world.spawn.z), world.spawn.z); player.yaw = world.spawn.yaw; player.pitch = world.spawn.pitch ?? -0.03;
+      updateCamera(world); camera.updateMatrixWorld(); await prepareWorld(world, (l, p) => transition.progress(p, l)); skipStaticWalk(scene);
+      home = session.capture(world, { life, car: null, map: 'town' }); }
+    camera.near = 0.2; camera.fov = +$('fSlider').value || 72; camera.updateProjectionMatrix();
+    updateSky(true); post.exposure.value = env.exposure; post.wb.value.copy(env.wb); updateCamera(world); camera.updateMatrixWorld();
+    syncMenu();
+  } catch (e) { console.error(e); toastMsg('Powrót nie powiódł się: ' + e.message); }
+  transit = false;
+  transition.ready(() => { transition.hide(); enterGame(); }, 'Kliknij, aby wrócić do miasta');
+}
+function syncMenu() {
+  const city = cityOfMap(mapName);
+  $('menuCity').textContent = city.name.toUpperCase();
+  $('mapTitle').innerHTML = (city.kanji ? `<span class="k">${city.kanji}</span> · ` : '') + (raceCtx ? 'wyścig' : 'free roam');
+  $('openBuilder').hidden = world.meta.builder === false;
+  $('leaveRace').hidden = !raceCtx;
 }
 function boot(map, hour) {
   mapName = map;

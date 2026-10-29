@@ -9,7 +9,7 @@
 // world objects, packScatter) or place them as instanced props of the world object being built (packProp: they move
 // and hide with it in the World Builder), or take a model's parts for their own instanced sets (packParts).
 // Crops and trees sway in the shared wind (terrain.js windPatch) and take a per-item tint.
-import { THREE, Q, Scatter, withScatterMeta, gltfLoader, addProp } from './core.js';
+import { THREE, Q, Scatter, withScatterMeta, gltfLoader, addProp, markShared } from './core.js';
 import { addCatalog } from './world/catalog.js';
 import { windPatch } from './terrain.js';
 import { CAP } from './world/capture.js';
@@ -62,6 +62,7 @@ export function loadPacks() {
     for (const [id, m] of Object.entries(models)) if (m.kind !== 'lod' && m.category !== 'kit') addCatalog(id, m.kind === 'tree' ? 'tree' : m.kind === 'building' ? 'building' : 'prop', () => ({ parts: m.parts }));
     console.info(`packs: ${Object.keys(models).length} models from ModeleZPaczek (${files.size} files, ${texs.size} textures, ${mats.size} materials)`);
     for (const a of want) if (a.category === 'kit' && models[a.id]) models[a.id].kitOnly = true;
+    for (const m of Object.values(models)) markShared(m.parts); // (a library every map draws from: never released with one)
     return (packs = { models, kits: kits || {}, has: id => !!models[id], dims: id => models[id] && models[id].dims });
   })().catch(e => { console.warn('packs:', e); return null; }));
 }

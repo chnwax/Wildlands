@@ -22,7 +22,7 @@
 // dash's shift lights count up the revs, the brake lights glow. C: cockpit / chase / bonnet view.
 // Models: WRC Hyundai i20 2017 by vecarz (CC BY-NC-SA 4.0), First Person Arms by DJMaesen (CC BY 4.0); kept in
 // Modeleaut/ next to the game (not in the repository).
-import { THREE, scene, renderer, collide, colInsert, colRemove, clamp, lerp, smoothstep } from './core.js';
+import { THREE, scene, renderer, collide, colInsert, colRemove, clamp, lerp, smoothstep, markShared } from './core.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { audio } from './audio.js';
 import { toastMsg } from './ui.js';
@@ -294,7 +294,7 @@ let armsBytes = null;
 export function loadCarModel(id) {
   const def = CAR_DEFS[id] || CAR_DEFS.i20;
   if (!carModels.has(def)) carModels.set(def, modelLoader.loadAsync(def.model).then(g => { g.scene.traverse(o => { if (!o.isMesh) return; o.castShadow = true; o.receiveShadow = true;
-    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && m.map) m.map.anisotropy = 8; }); dressMaterials(g.scene, def.mats); g.scene.updateMatrixWorld(true); g.scene.userData.shared = true; return g; })
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && m.map) m.map.anisotropy = 8; }); dressMaterials(g.scene, def.mats); g.scene.updateMatrixWorld(true); markShared(g.scene); return g; })
     .catch(e => { carModels.delete(def); throw e; }));
   return carModels.get(def);
 }
@@ -312,7 +312,7 @@ function ownCopy(src) {
 export async function createCar(world, spawn, carId = 'i20') {
   const def = CAR_DEFS[carId] || CAR_DEFS.i20; SPEC = def.spec;
   const [g, ag] = await Promise.all([loadCarModel(carId), parseArms()]);
-  const model = ownCopy(g.scene); model.userData.shared = false; model.updateMatrixWorld(true);
+  const model = ownCopy(g.scene); model.updateMatrixWorld(true);
   const find = name => { let f = null; model.traverse(o => { if (!f && o.name && o.name.startsWith(name)) f = o; }); return f; };
   const boxOf = o => new THREE.Box3().setFromObject(o);
   const vertsOf = (o, every = 1) => { const pts = []; o.updateMatrixWorld(true); o.traverse(m => { if (!m.isMesh) return; const pa = m.geometry.attributes.position; for (let i = 0; i < pa.count; i += every) pts.push(new THREE.Vector3().fromBufferAttribute(pa, i).applyMatrix4(m.matrixWorld)); }); return pts; };

@@ -1,6 +1,6 @@
 // Reusable outdoor systems: heightfield terrain with painted splat shading, GPU grass (and rice, reeds, flowers),
 // planar-reflection water, conifer forests (trees.js). Maps configure these and add their own content.
-import { THREE, scene, renderer, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt, onResize, GLSL_WIND } from './core.js';
+import { THREE, scene, renderer, S, Q, MAX_GRASS, clamp, lerp, smoothstep, mulberry32, tick, loadTex, phTex, NFLAT, maxAniso, Scatter, addCircle, scatters, noiseAt, onResize, GLSL_WIND, markShared } from './core.js';
 import { CLOUD_SHADE_GLSL } from './clouds.js';
 import { buildConiferForest, buildFarForest, firColor, coniferColor, broadColor, leafShade, leafFog, LEAF_DECL } from './trees.js';
 import { perf } from './perf.js';
@@ -329,7 +329,7 @@ function layerArray(texs, srgb, fill) {
     if (done.includes(false)) setTimeout(poll, 150);
   };
   poll();
-  arrayCache.set(key, arr);
+  arrayCache.set(key, arr); markShared(arr);
   return arr;
 }
 export function terrainMaterial(hf, L, opt = {}) {
@@ -807,7 +807,7 @@ function grassCardTexture() { // R: blade brightness, G: flower head mask, A: co
   for (let i = 0; i < 16; i++) { const x = rng() * W, top = H * (0.02 + rng() * 0.12), lean = (rng() - 0.5) * 20;
     blade(x, H - top, 3, lean, 0.85);
     for (const dx of [-W, 0, W]) { g.fillStyle = 'rgb(210,0,255)'; g.beginPath(); g.ellipse(x + dx + lean, top + H * 0.07, 3.2, H * 0.08, lean * 0.01, 0, 7); g.fill(); } }
-  cardTex = new THREE.CanvasTexture(cv);
+  cardTex = markShared(new THREE.CanvasTexture(cv));
   cardTex.colorSpace = THREE.NoColorSpace; cardTex.wrapS = THREE.RepeatWrapping; cardTex.wrapT = THREE.ClampToEdgeWrapping; cardTex.anisotropy = 4;
   return cardTex;
 }
@@ -949,6 +949,8 @@ export function buildGrass(hf, grassTex, opt = {}) {
     },
   });
   group.userData.applyQuality = applyQuality;
+  // (released with its map: the bake targets are the grass's own; session.js calls this)
+  group.userData.dispose = () => { for (const ring of rings) if (ring.bake && ring.bake.rts) { ring.bake.rts.forEach(t => t.dispose()); ring.bake.inTex.dispose(); ring.bake.rts = null; } };
   scene.add(group);
   return group;
 }

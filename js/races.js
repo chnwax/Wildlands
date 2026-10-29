@@ -48,7 +48,9 @@ export const RACES = [
 ];
 export const raceById = id => RACES.find(r => r.id === id) || null;
 export const raceOfMap = map => RACES.find(r => r.map === map) || null;
-// the stage's config (route, surface, length) for the board's preview and the preloader, without building it
-const STAGE_EXPORTS = { rally: 'PINE_STAGE', rally2: 'ALPINE_STAGE', rally3: 'HILL_STAGE', rally4: 'VALLEY_STAGE', canyon: 'CANYON_STAGE', coastal: 'COASTAL_STAGE' };
-const STAGE_MODULES = { rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js'), rally4: () => import('./rally4.js'), canyon: () => import('./canyon.js'), coastal: () => import('./coastal.js') };
-export async function stageConfig(race) { const m = await STAGE_MODULES[race.map](); return m[STAGE_EXPORTS[race.map]]; }
+// the stage's config (route, surface, length) for the board's preview and the preloader, without building it: the pure
+// stage module (js/stages/), the same one the preparation worker reads
+const STAGES = { rally: ['./stages/pine.js', 'PINE_STAGE'], rally2: ['./stages/alpine.js', 'ALPINE_STAGE'], rally3: ['./stages/hillcrest.js', 'HILL_STAGE'], rally4: ['./stages/valley.js', 'VALLEY_STAGE'],
+  canyon: ['./stages/canyon.js', 'CANYON_STAGE'], coastal: ['./stages/coastal.js', 'COASTAL_STAGE'] };
+export const stageModule = race => STAGES[race.map];
+export async function stageConfig(race) { const [path, name] = STAGES[race.map]; return (await import(path))[name]; }

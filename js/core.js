@@ -3,62 +3,18 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 export { THREE };
 
-// ---------------------------------------------------------------- math / noise
-export const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
-export const lerp = (a, b, t) => a + (b - a) * t;
-export const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// ---------------------------------------------------------------- math / noise (noise.js: shared with the stage worker)
+import { clamp, lerp, smoothstep, mulberry32, setSeed, hash2, noised, fbm, erosion } from './noise.js';
+export { clamp, lerp, smoothstep, mulberry32, setSeed, hash2, noised, fbm, erosion };
 // a hard hit's impact frame (race.js sets it, main.js and post.js play it): stop, seconds the world holds still (a
 // hit-stop); flash 0..1, the frame's flash (a stark black-and-white frame at its peak, then colour back with a split)
 export const fx = { stop: 0, flash: 0 };
-export function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 // yield to the browser between build steps. A message-channel task, not setTimeout: timers in a background tab are
 // throttled to once a minute, which would stall a load the player switched away from
 // (one long-lived channel: a throwaway channel's ports can be garbage-collected before the message arrives)
 const tickCh = new MessageChannel(), tickQ = [];
 tickCh.port1.onmessage = () => { const r = tickQ.shift(); if (r) r(); };
 export const tick = () => new Promise(r => { let done = false; const go = () => { if (!done) { done = true; r(); } }; tickQ.push(go); tickCh.port2.postMessage(0); setTimeout(go, 50); });
-
-let SEED = 20260926;
-export function setSeed(s) { SEED = s | 0; }
-export function hash2(ix, iy) {
-  let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + SEED) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
-const _n = [0, 0, 0];
-// value noise in [-1,1] with analytic derivatives
-export function noised(x, y) {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10), uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
-  const dux = 30 * fx * fx * (fx * (fx - 2) + 1), duy = 30 * fy * fy * (fy * (fy - 2) + 1);
-  const a = hash2(ix, iy), b = hash2(ix + 1, iy), c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
-  const k1 = b - a, k2 = c - a, k4 = a - b - c + d;
-  _n[0] = 2 * (a + k1 * ux + k2 * uy + k4 * ux * uy) - 1;
-  _n[1] = 2 * dux * (k1 + k4 * uy);
-  _n[2] = 2 * duy * (k2 + k4 * ux);
-  return _n;
-}
-export function fbm(x, y, oct) {
-  let a = 0, b = 0.5, n = 0;
-  for (let i = 0; i < oct; i++) {
-    a += b * noised(x, y)[0]; n += b; b *= 0.5;
-    const nx = 1.6 * x - 1.2 * y, ny = 1.2 * x + 1.6 * y; x = nx + 1.7; y = ny - 3.1;
-  }
-  return a / n;
-}
-// derivative-damped fbm: eroded-looking ridges and valleys
-export function erosion(x, y, oct = 8) {
-  let a = 0, b = 1, dx = 0, dy = 0, n = 0;
-  for (let i = 0; i < oct; i++) {
-    const r = noised(x, y);
-    dx += r[1]; dy += r[2];
-    a += b * r[0] / (1 + dx * dx + dy * dy);
-    n += b; b *= 0.5;
-    const nx = 1.6 * x - 1.2 * y, ny = 1.2 * x + 1.6 * y; x = nx; y = ny;
-  }
-  return a / n;
-}
 
 // ---------------------------------------------------------------- quality presets
 export const QUALITY = {
@@ -272,6 +228,18 @@ export const loadState = { label: '', gen: 0, assets: 0 };
 export const texLoader = new THREE.TextureLoader(manager);
 export const gltfLoader = new GLTFLoader(manager);
 manager.onProgress = (url, a, b) => { loadState.assets = a / b; };
+// Shared resources: what a cache keeps for every map that asks (textures, models, libraries). A map being released
+// (session.js) never frees them; a copy made of one is its own (the mark is not carried by clone()).
+export const SHARED = new WeakSet();
+export function markShared(x) {
+  if (!x) return x;
+  const mat = m => { if (!m || SHARED.has(m)) return; SHARED.add(m); for (const k in m) { const v = m[k]; if (v && v.isTexture) SHARED.add(v); } if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k] && m.uniforms[k].value; if (v && v.isTexture) SHARED.add(v); } };
+  const one = o => { if (!o) return; if (o.isTexture || o.isBufferGeometry) SHARED.add(o); else if (o.isMaterial) mat(o);
+    else if (o.isObject3D) o.traverse(c => { if (c.geometry) SHARED.add(c.geometry); for (const m of Array.isArray(c.material) ? c.material : [c.material]) mat(m); mat(c.customDepthMaterial); });
+    else if (o.geometry || o.material) { if (o.geometry) SHARED.add(o.geometry); mat(o.material); mat(o.depth); } };
+  if (Array.isArray(x)) x.forEach(one); else one(x);
+  return x;
+}
 const texCache = new Map();
 export function loadTex(file, srgb, fallback = [128, 128, 128]) {
   const key = file + (srgb ? '|s' : '');
@@ -284,7 +252,7 @@ export function loadTex(file, srgb, fallback = [128, 128, 128]) {
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = maxAniso;
   if (file.startsWith('tex/')) t.userData.photo = true; // scanned: flattened by the toon look (toon.js)
-  texCache.set(key, t);
+  texCache.set(key, t); SHARED.add(t);
   return t;
 }
 export const NFLAT = [128, 128, 255];
@@ -292,7 +260,7 @@ export const phTex = (name, kind, res, srgb, fb) => loadTex(`tex/${name}_${kind}
 const modelCache = new Map();
 export function loadModel(name) {
   if (!modelCache.has(name)) modelCache.set(name, new Promise(res =>
-    gltfLoader.load(`assets/models/${name}/${name}_1k.gltf`, g => { g.scene.traverse(o => { if (o.material && o.material.map) o.material.map.userData.photo = true; }); res(g.scene); }, undefined, () => res(null))));
+    gltfLoader.load(`assets/models/${name}/${name}_1k.gltf`, g => { g.scene.traverse(o => { if (o.material && o.material.map) o.material.map.userData.photo = true; }); res(markShared(g.scene)); }, undefined, () => res(null))));
   return modelCache.get(name);
 }
 
@@ -795,7 +763,7 @@ export function shareShadowDepth(root) {
     const side = m.shadowSide ?? (m.side === THREE.FrontSide ? THREE.BackSide : m.side === THREE.BackSide ? THREE.FrontSide : THREE.DoubleSide);
     const key = (o.isInstancedMesh ? 1 : 0) + (o.isInstancedMesh && o.instanceColor ? 2 : 0) + (m.map ? 4 : 0) + side * 8; // (three copies map and side onto it per draw)
     let d = depthShare.get(key);
-    if (!d) { d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); d.side = side; depthShare.set(key, d); }
+    if (!d) { d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); d.side = side; depthShare.set(key, d); SHARED.add(d); }
     o.customDepthMaterial = d;
   });
 }

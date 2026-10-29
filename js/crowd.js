@@ -5,12 +5,18 @@
 // times, blended, so a walker eases into a stop or a sit. The models are flat-shaded low poly: the faces' normals come
 // from the screen-space derivatives. Per person: a matrix, the two clips and their times, the blend, and its own shirt,
 // trousers and hair colours.
-import { THREE, scene } from './core.js';
+import { THREE, scene, SHARED } from './core.js';
 
 export const CLIP = { walk: 0, idle: 1, sitdown: 2, sit: 3, run: 4, act: 5, talk: 6 };
 const NC = 7, NAMES = Object.keys(CLIP);
 
-export async function loadPeople(base = 'assets/models/people/') {
+// the people's models: loaded once and kept (every map with people draws from them)
+const peopleCache = new Map();
+export function loadPeople(base = 'assets/models/people/') {
+  if (!peopleCache.has(base)) peopleCache.set(base, loadPeople0(base).then(list => { for (const P of list) { SHARED.add(P.geo); SHARED.add(P.tex); } return list; }).catch(e => { peopleCache.delete(base); throw e; }));
+  return peopleCache.get(base);
+}
+async function loadPeople0(base) {
   const meta = await (await fetch(base + 'people.json', { cache: 'no-cache' })).json();
   const bin = await (await fetch(base + 'people.bin?v=' + meta.hash)).arrayBuffer();
   return meta.models.map(M => {
