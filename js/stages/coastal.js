@@ -67,8 +67,8 @@ export const COASTAL_STAGE = {
   tunnels: [{ at: [coastX(HEAD_Z) + 100, HEAD_Z], len: 250 }],
   galleries: GALLERY_Z.map((z, k) => ({ at: [coastX(z) + roadOff(z), z], len: k ? 80 : 90, side: -1 })),
   // (a Mediterranean coast: pines and holm oaks in the gullies, maquis on the slopes, bare rock on the cliffs)
-  eco: { alpine: [260, 480], lowland: [0, 60], step: 6.5, logs: 20, twigs: 300, shrubs: 6500, woods: 0.8, broad: 0.5, mix: { pine: 2.5, spruce: 0.05, tall: 0.2, old: 0.3 }, boulders: 16000 }, stony: 0.7, stoneGround: [1.12, 1.06, 0.96], stoneNorm: 0.3,
-  paint: { gDeep: '#4d5a32', gLush: '#66713f', gLight: '#a9a465', gDry: '#c4b273', forest: '#454a2f', canopy: '#2f402d', rockL: '#c9c0ad', rockD: '#6f675b', sand: '#d8c7a0', sandWet: '#9d8b6c' },
+  eco: { alpine: [260, 480], lowland: [0, 60], step: 6.5, logs: 20, twigs: 300, shrubs: 6500, woods: 0.8, broad: 0.5, mix: { pine: 2.5, spruce: 0.05, tall: 0.2, old: 0.3 }, boulders: 16000 }, stony: 0.85, stoneGround: [1.12, 1.06, 0.96], stoneNorm: 0.3,
+  paint: { gDeep: '#535d38', gLush: '#6a7044', gLight: '#aca36b', gDry: '#c6af79', forest: '#454a2f', canopy: '#2f402d', rockL: '#c9c0ad', rockD: '#6f675b', sand: '#d8c7a0', sandWet: '#9d8b6c' },
   way: route(),
   jumps: [], features: [],
 };
