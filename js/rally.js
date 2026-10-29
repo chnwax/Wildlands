@@ -77,7 +77,7 @@ export async function buildStage(progress0, cfg, opts = {}) {
   // (under rock: the tunnels' stations and their approaches (2), the galleries' (1); none of the roadside is set there)
   const COVER = new Uint8Array(N); for (const [a, b] of G.tunnels) for (let i = Math.max(0, a - 16); i <= Math.min(N - 1, b + 16); i++) COVER[i] = 2;
   for (const [a, b] of G.galleries) for (let i = Math.max(0, a - 3); i <= Math.min(N - 1, b + 3); i++) COVER[i] = COVER[i] || 1;
-  const covered = i => COVER[clamp(Math.round(i), 0, N - 1)] > 0, WL = cfg.sea ? 0 : -60; // (WL: the water's level — the sea's, or none)
+  const covered = i => COVER[clamp(Math.round(i), 0, N - 1)] > 0, WL = cfg.sea ? 0 : cfg.lake ? cfg.lake.level : -60, SHORE = cfg.sea ? 1.6 : cfg.lake ? 0.9 : 0.01; // (WL: the water's level — the sea's, a lake's, or none)
   progress('Grading the ground', 0.18); await tick();
   const F = pre && pre.H ? pre : await step(stageFields(G));
   const PB = { k: 0, t: 0, w: 0, d: 0 };
@@ -102,10 +102,10 @@ export async function buildStage(progress0, cfg, opts = {}) {
   const blocked = (x, z, pad = 0) => distAt(x, z) < clearAt(x, z) + pad || keepClear(x, z, pad);
   // The same altitude reference and species mix as nature.js: low woodland gets oak/leaf/birch among the conifers.
   const alpine = asphalt, ecologySnow = eco.snow ?? cfg.snowLine ?? 205;
-  const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: cfg.forestSeed, water: 0, snow: ecologySnow, blocked,
+  const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: cfg.forestSeed, water: Math.max(0, WL), snow: ecologySnow, blocked,
     alpine: eco.alpine || (alpine ? [38, 76] : [110, 175]), lowland: eco.lowland || (alpine ? [12, 32] : [22, 60]), meadow: 1100, step: eco.step || (alpine ? 5.4 : 4.5),
     broad: eco.broad ?? 1, mix: eco.mix || {} }); // (a stage's own country: no broadleaves in a desert canyon, pines on a dry coast)
-  const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: cfg.floorSeed, water: 0, blocked,
+  const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: cfg.floorSeed, water: Math.max(0, WL), blocked,
     logs: eco.logs ?? (mountain ? 60 : alpine ? 320 : 650), twigs: eco.twigs ?? (mountain ? 500 : alpine ? 3500 : 7000), shrubs: eco.shrubs ?? (mountain ? 280 : alpine ? 1500 : 3000) });
   hf.paintCanopy(trees);
   hf.uploadHeight(); hf.uploadMasks();
@@ -120,7 +120,7 @@ export async function buildStage(progress0, cfg, opts = {}) {
       : { d: phTex('bicolour_gravel', 'diff', '1k', true), n: phTex('bicolour_gravel', 'nor_gl', '1k', false, NFLAT), s: 2.5, tint: [1.08, 0.98, 0.84], norm: 0.5 },
   };
   const terrainSnow = cfg.snowLine ?? 5000;
-  const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: WL, snow: terrainSnow, shore: cfg.sea ? 1.6 : 0.01, conifer: 0.7 }));
+  const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: WL, snow: terrainSnow, shore: SHORE, conifer: 0.7 }));
   progress('Growing the woods', 0.55); await tick();
   await packsP;
   buildTrees([...trees, ...saplings]);
@@ -142,9 +142,11 @@ export async function buildStage(progress0, cfg, opts = {}) {
   roadside(P, T, K, N, left, startI, finishI, hf, cfg, piles, distAt, mulberry32(cfg.seed + 23), packsReady(), covered);
   const crowd = spectators(sites.filter(c => !covered(c.i)), await peopleP, hf, P);
   progress('Sowing the meadows', 0.8); await tick();
-  const grass = buildGrass(hf, layers.grass.d, { water: WL, snow: terrainSnow, reeds: false, shore: cfg.sea ? 1.6 : 0.01 });
+  const grass = buildGrass(hf, layers.grass.d, { water: WL, snow: terrainSnow, reeds: !!cfg.lake, shore: SHORE });
   // (the sea: the town's planar-reflection water, at level 0, its surf on the rocks at the cliffs' feet)
-  const water = cfg.sea ? buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], deep: '#0e3a5e', mid: '#1c6f8c', shallow: '#4fb0aa', waves: 5, strength: 0.42 }) : null;
+  // (the sea, or a lake in the valley: the same water, calmer and darker inland)
+  const water = cfg.sea ? buildWater(hf, { level: 0, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], deep: '#0e3a5e', mid: '#1c6f8c', shallow: '#4fb0aa', waves: 5, strength: 0.42 })
+    : cfg.lake ? buildWater(hf, { level: WL, normals: loadTex('tex/waternormals.jpg', false, NFLAT), hide: [grass], deep: '#14313c', mid: '#28525a', shallow: '#5f8a80', waves: 2, strength: 0.25 }) : null;
   progress('Opening the stage', 0.95); await tick();
   // ---- the car on its place, facing down the road; the walker beside it
   const s0 = field ? slot.s : 8, lane0 = field ? slot.w : 0, [sx, sz] = P[s0], [tx, tz] = T[s0], [lx2, lz2] = left(s0);

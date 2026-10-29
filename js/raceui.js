@@ -222,9 +222,10 @@ export const results = {
     const pos = rows.findIndex(r => r.me) + 1;
     $r('[data-h]').textContent = pos ? (pos === 1 ? 'ZWYCIĘSTWO' : 'P' + pos + ' / ' + rows.length) : 'WYNIKI';
     $r('[data-s]').innerHTML = `${race.name} · ${(race.length / 1000).toFixed(1)} km · twój czas ${fmt(mine)}${newBest ? ' · <span style="color:var(--accent)">nowy rekord</span>' : best ? ' · rekord ' + fmt(best) : ''}`;
-    const lead = rows[0] && rows[0].t;
-    $r('[data-tb]').innerHTML = rows.map((r, k) => `<tr class="${r.me ? 'me' : ''}"><td>${k + 1}.</td><td>${r.me ? 'Ty' : r.name}</td><td>${r.car === 'f40' ? 'F40' : r.car === 'i20' ? 'i20' : ''}</td><td>${r.t == null ? 'na trasie' : k && lead ? '+' + (r.t - lead).toFixed(2) + ' s' : fmt(r.t)}</td></tr>`).join('');
-    res.classList.add('on'); },
+    results.rows(rows); res.classList.add('on'); },
+  // the classification, kept up to date while the screen is open: those still out on the road come in one by one
+  rows(rows) { const lead = rows[0] && rows[0].t, html = rows.map((r, k) => `<tr class="${r.me ? 'me' : ''}"><td>${k + 1}.</td><td>${r.me ? 'Ty' : r.name}</td><td>${r.car === 'f40' ? 'F40' : r.car === 'i20' ? 'i20' : ''}</td><td>${r.t == null ? 'na trasie' : k && lead ? '+' + (r.t - lead).toFixed(2) + ' s' : fmt(r.t)}</td></tr>`).join('');
+    if (html !== $r('[data-tb]').innerHTML) $r('[data-tb]').innerHTML = html; },
   hide() { res.classList.remove('on'); }, get on() { return res.classList.contains('on'); },
 };
 $r('[data-again]').onclick = () => { results.hide(); resH && resH.onAgain && resH.onAgain(); };

@@ -358,7 +358,9 @@ async function enterRace(race, carId = race.car) {
 function raceStep(dt) {
   const st = world.race.state;
   if (st.phase !== 'finished') { resultsShown = false; finishT = 0; return; }
-  finishT += dt; if (resultsShown || finishT < 2.2) return;
+  finishT += dt;
+  if (resultsShown) { if (results.on && world.raceAI && (finishT % 0.5) < dt) results.rows(world.raceAI.classification()); return; } // (the rivals still out there come in)
+  if (finishT < 2.2) return;
   resultsShown = true;
   const race = raceInfo && raceInfo.race, rows = world.raceAI ? world.raceAI.classification() : [{ name: 'Ty', me: true, car: car.id, t: st.result }];
   const newBest = race ? saveBest(race, st.result) : false;
