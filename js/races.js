@@ -48,7 +48,7 @@ export const RACES = [
   { id: 'canyon', map: 'canyon', name: 'Canyon Ridge', kanji: '05', surface: 'asphalt', length: 4300, field: 5, car: 'f40', hour: 17.1,
     stage: ['./stages/canyon.js', 'CANYON_STAGE'], sun: 2.9, life: { flowers: false, birds: true, fireflies: 0, mist: 0.05 },
     blurb: 'Długi asfalt przez czerwone kaniony: szybkie odcinki na krawędzi, serpentyny w dół doliny, tunel w skalnej płycie.', tags: ['asfalt', 'kanion', 'tunel'] },
-  { id: 'coastal', map: 'coastal', name: 'Coastal Highway', kanji: '06', surface: 'asphalt', length: 4850, field: 5, car: 'f40', hour: 11.2,
+  { id: 'coastal', map: 'coastal', name: 'Coastal Highway', kanji: '06', surface: 'asphalt', length: 4830, field: 5, car: 'f40', hour: 11.2,
     stage: ['./stages/coastal.js', 'COASTAL_STAGE'], sun: 1.4, life: { flowers: false, birds: true, fireflies: 0, mist: 0.12 },
     blurb: 'Droga wykuta wysoko w klifach nad morzem: długie łuki, ciasne zakręty, skalne galerie i otwarte widoki.', tags: ['asfalt', 'klify', 'morze'] },
 ];
