@@ -7,9 +7,11 @@ import { post, buildComposer, updateRays } from './post.js';
 import { flattenPhotoMaterials } from './toon.js';
 import { perf } from './perf.js';
 import { setPaint } from './terrain.js';
+import { RACES, raceMapModule } from './races.js';
 
-export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js'), rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js'), rally4: () => import('./rally4.js'),
-  canyon: () => import('./canyon.js'), coastal: () => import('./coastal.js') };
+export const MAPS = { nature: () => import('./nature.js'), town: () => import('./town.js'), assetmap: () => import('./assetmap.js'), rally: () => import('./rally.js'), rally2: () => import('./rally2.js'), rally3: () => import('./rally3.js'), rally4: () => import('./rally4.js') };
+// (every other race in the registry: built from its stage config by the shared stage builder)
+for (const r of RACES) if (!MAPS[r.map]) MAPS[r.map] = raceMapModule(r);
 // ?norender: build and simulate everything but draw nothing (automated tests of the physics, the AI and the switching on
 // machines without a real GPU); shaders are not compiled ahead either
 export const NORENDER = /[?&]norender\b/.test(location.search);

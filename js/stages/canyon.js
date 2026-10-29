@@ -67,8 +67,10 @@ export const CANYON_STAGE = {
   bestKey: 'wl_race_canyon_best_v1', forestMin: 0, forestSeed: 433, floorSeed: 151, verge: 'cut', land, grade: 150, rails: true, pilot: true, splits: 1000, hairpin: 16,
   keepScale: true, tunnels: [{ at: [FIN_X, canyonZ(FIN_X)], len: 110 }], cuts: [{ at: [BUTTE[0], canyonZ(BUTTE[0]) + BUTTE[1] + 230], len: 150 }], runoff: 170, // (the route keeps its place on the land; the tunnel where it passes the fin)
   // (a dry country: junipers and pines in the hollows, scrub, bare rock)
-  eco: { alpine: [150, 300], lowland: [0, 40], step: 7, logs: 20, twigs: 200, shrubs: 2600, woods: 0.6 }, stony: 0.95, stoneGround: [1.3, 0.92, 0.7], stoneNorm: 0.35,
-  paint: { gDeep: '#6e5434', gLush: '#86683f', gLight: '#c69a62', gDry: '#d8ab70', forest: '#5a4a32', canopy: '#3d4a30', rockL: '#cf8c5c', rockD: '#7c4630', sand: '#dcaa6e', sandWet: '#a06c44' },
+  // (junipers and pinyon pines only, no broadleaf in this country; scree and boulders all down the slopes under the cliffs)
+  eco: { alpine: [150, 300], lowland: [0, 40], step: 7, logs: 20, twigs: 200, shrubs: 2600, woods: 0.6, broad: 0, mix: { pine: 3, old: 0.25, spruce: 0.15, tall: 0, young: 0.5 }, boulders: 22000 }, stony: 0.95, stoneGround: [1.18, 0.95, 0.8], stoneNorm: 0.35,
+  // (dusty: the red of the rock weathered and dulled, the grass bleached straw)
+  paint: { gDeep: '#5c4a35', gLush: '#6f5e40', gLight: '#a38866', gDry: '#b19470', forest: '#4c4232', canopy: '#384431', rockL: '#b47f60', rockD: '#6a4232', sand: '#bb9675', sandWet: '#87654c' },
   way: route(),
   jumps: [], features: [],
 };

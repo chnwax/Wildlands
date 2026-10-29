@@ -36,16 +36,16 @@ function route() {
     pts.push([x0 + (x1 - x0) * 0.33, z + rise * 0.33 + b], [x0 + (x1 - x0) * 0.66, z + rise * 0.66 - b * 0.8], [x1, z + rise]); z += rise;
     if (k < 4) { for (let a = 1; a < 12; a++) { const t = -Math.PI / 2 + a / 12 * Math.PI; pts.push([x1 + dir * R * Math.cos(t), z + R + R * Math.sin(t)]); } z += 2 * R; dir = -dir; }
   }
-  return pts.concat([[-40, z + 3], [60, z + 14], [140, z + 6], [215, z + 18], [290, z + 12]]);
+  return pts.concat([[-40, z - 2], [60, z + 2], [140, z - 4], [215, z + 4], [290, z]]);
 }
 
 export const HILL_STAGE = {
   id: 'hillcrest', name: 'Hill Crest', target: 1800, roadType: 'asphalt', profile: 'mountain', snowLine: 760, seed: 6317, half: 2.9, lanes: 2,
-  bestKey: 'wl_rally_hillcrest_best_v3', forestMin: 0, forestSeed: 271, floorSeed: 83, hairpin: 13.5, land,
+  bestKey: 'wl_rally_hillcrest_best_v4', forestMin: 0, forestSeed: 271, floorSeed: 83, hairpin: 13.5, land,
   // (the trees: spruce and larch in stands on the gentler ground, thinning out to dwarf pine on the rock above)
   eco: { alpine: [330, 520], lowland: [0, 120], snow: 700, step: 5.6, logs: 40, twigs: 400, shrubs: 520, woods: 0.5 }, stony: 0.7, stoneGround: [0.76, 0.96, 1.3], stoneNorm: 0.24, // (the photo rock is warm sandstone: greyed to the massif's limestone)
   paint: { gDeep: '#4f5a35', gLush: '#68713f', gLight: '#a6a06a', gDry: '#b8a571', forest: '#3d4a33', canopy: '#2f3f31', rockL: '#bcb2a3', rockD: '#6d665c', snow: '#eef2f6', sand: '#b9ab90', sandWet: '#857660' },
-  way: route(), grade: 100,
+  way: route(), grade: 150, runoff: 170,
   jumps: [{ f: 0.86, h: 0.45, text: 'Przez szczyt' }],
   features: [{ f: 0.07, text: 'Uwaga' }, { f: 0.93, text: 'Ślepy szczyt' }],
 };

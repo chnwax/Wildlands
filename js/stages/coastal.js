@@ -11,6 +11,10 @@ export const coastX = z => -380 + 130 * Math.sin(z * 0.0019 + 0.6) + 60 * Math.s
 const INLET_Z = -330, INLET_LEN = 470, HEAD_Z = 560;
 const cliffTop = (z, e) => 92 + 38 * Math.sin(z * 0.0021 + 2.0) + 18 * e;
 const COVES = [[110, 70], [1040, 80]];
+// how far in from the shore the road keeps along the cliff tops (a few dozen metres from the edge, the drop in view), and
+// where the mountain stands over it in a crag, the road passing under a rock gallery
+const offN = z => 50 + 12 * Math.sin(z * 0.009), offS = z => 58 + 16 * Math.sin(z * 0.006 + 1) + 64 * (Math.exp(-(((z - 110) / 90) ** 2)) + Math.exp(-(((z - 1040) / 100) ** 2)));
+const GALLERY_Z = [-930, 760], roadOff = z => z < -300 ? offN(z) : offS(z);
 // how far inland a point is from the water: from the open coast, and from the inlet's shores
 // (a soft minimum: where the open coast's distance and the inlet's meet, the ground has no crease)
 const smin = (a, b, k) => Math.min(a, b) - k * Math.log1p(Math.exp(-Math.abs(a - b) / k));
@@ -30,6 +34,8 @@ function land(x, z) {
   const cliff = top * (0.12 * smoothstep(0, 6, sd) + 0.88 * smoothstep(5, 34, sd)) + Math.max(0, sd - 34) * (0.18 + 0.08 * n);
   const beach = 1.5 * smoothstep(0, 40, sd) + Math.max(0, sd - 40) * 0.45;
   let h = cliff * (1 - cove) + beach * cove;
+  // (the crags over the galleries: the hillside behind the road rising sheer for some 25 m)
+  for (const gz of GALLERY_Z) { const k = Math.exp(-(((z - gz) / 62) ** 2)); if (k > 0.01) h += k * 26 * smoothstep(roadOff(gz) + 5, roadOff(gz) + 14, sd); }
   // the mountains behind: steep and bare, ribbed with gullies
   h += smoothstep(430, 1700, sd) * (420 + 260 * e) + 18 * e * smoothstep(80, 300, sd);
   // the headland the road tunnels through: a dome of rock standing over the coast
@@ -44,11 +50,11 @@ function land(x, z) {
 // the route: south along the cliff tops, round the inlet, over the coves, through the headland
 function route() {
   const pts = [], at = (z, off) => [coastX(z) + off, z];
-  for (let z = -1310; z <= -560; z += 75) pts.push(at(z, 92 + 18 * Math.sin(z * 0.009)));
+  for (let z = -1310; z <= -560; z += 75) pts.push(at(z, offN(z)));
   // (round the inlet: in along its north shore, round its head, out along its south shore)
   const iz = INLET_Z, inX = s => coastX(iz) + s;
   for (const [s, dz] of [[120, -170], [200, -150], [300, -146], [400, -144], [490, -128], [560, -70], [585, 0], [560, 72], [490, 128], [400, 146], [300, 150], [200, 158], [124, 182]]) pts.push([inX(s), iz + dz]);
-  for (let z = -60; z <= 1110; z += 72) { const c = Math.exp(-(((z - 110) / 90) ** 2)) + Math.exp(-(((z - 1040) / 100) ** 2)); pts.push(at(z, 96 + 26 * Math.sin(z * 0.006 + 1) + 70 * c)); } // (wide round the coves' heads)
+  for (let z = -60; z <= 1110; z += 72) pts.push(at(z, offS(z))); // (wide round the coves' heads)
   // (and up the mountain to the finish on a col: three legs across the slope and two hairpins between them)
   for (const [z, off] of [[1175, 140], [1225, 190], [1250, 240], [1150, 268], [1030, 296], [920, 322], [872, 342], [880, 366], [940, 380], [1060, 410], [1180, 440], [1262, 464], [1268, 492], [1220, 508], [1110, 528], [1010, 546]]) pts.push(at(z, off));
   return pts;
@@ -59,9 +65,9 @@ export const COASTAL_STAGE = {
   bestKey: 'wl_race_coastal_best_v1', forestMin: 0, forestSeed: 557, floorSeed: 199, verge: 'cut', land, grade: 150, rails: true, walls: false, pilot: true, splits: 1000, hairpin: 14,
   keepScale: true, sea: true, runoff: 220,
   tunnels: [{ at: [coastX(HEAD_Z) + 100, HEAD_Z], len: 250 }],
-  galleries: [{ at: [coastX(-930) + 92, -930], len: 90, side: -1 }, { at: [coastX(760) + 96, 760], len: 80, side: -1 }],
+  galleries: GALLERY_Z.map((z, k) => ({ at: [coastX(z) + roadOff(z), z], len: k ? 80 : 90, side: -1 })),
   // (a Mediterranean coast: pines and holm oaks in the gullies, maquis on the slopes, bare rock on the cliffs)
-  eco: { alpine: [260, 480], lowland: [0, 60], step: 6.5, logs: 30, twigs: 400, shrubs: 3200, woods: 0.5 }, stony: 0.7, stoneGround: [1.12, 1.06, 0.96], stoneNorm: 0.3,
+  eco: { alpine: [260, 480], lowland: [0, 60], step: 6.5, logs: 20, twigs: 300, shrubs: 6500, woods: 0.8, broad: 0.5, mix: { pine: 2.5, spruce: 0.05, tall: 0.2, old: 0.3 }, boulders: 16000 }, stony: 0.7, stoneGround: [1.12, 1.06, 0.96], stoneNorm: 0.3,
   paint: { gDeep: '#4d5a32', gLush: '#66713f', gLight: '#a9a465', gDry: '#c4b273', forest: '#454a2f', canopy: '#2f402d', rockL: '#c9c0ad', rockD: '#6f675b', sand: '#d8c7a0', sandWet: '#9d8b6c' },
   way: route(),
   jumps: [], features: [],

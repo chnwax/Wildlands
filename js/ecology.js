@@ -111,7 +111,7 @@ export function bambooCulm(x, y, z, rng, h, tone, e = 0.5, lean = [0, 0]) {
 //   mix: multipliers on the conifer forms (e.g. more tall cedars in a plantation valley); bamboo: 0..1 share of bamboo
 //   groves in the damp lowland woods; meadowOK(x, z): where the meadow fringe may plant (keeps it out of towns)
 export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e9, blocked = () => false, alpine = [115, 170], lowland = [25, 60],
-  meadow = 900, meadowMaxH = 95, sakura = true, step = 4.5, conifer = 1, mix = {}, bamboo = 0, meadowOK = () => true, edgeBroad = 0, spacing = 1 }) {
+  meadow = 900, meadowMaxH = 95, sakura = true, step = 4.5, conifer = 1, mix = {}, bamboo = 0, meadowOK = () => true, edgeBroad = 0, spacing = 1, broad = 1 }) {
   const { HN, HALF } = hf, rng = mulberry32(seed), nrm = new THREE.Vector3();
   const FB = boxBlur(forest, HN, 8), FW = boxBlur(forest, HN, 26);
   const at = (A, x, z) => A[hf.idx(x, z)];
@@ -149,7 +149,7 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
     if (rng() > Math.pow(f, 0.85) * (0.4 + 0.6 * clump) * (1 - 0.55 * Z.rocky) * 1.3) continue;
     if (blocked(x, z, 2)) continue;
     const pSnag = 0.012 + 0.03 * Z.age * Z.interior + 0.06 * Z.rocky, pBroken = 0.008 + 0.018 * Z.age * Z.interior + 0.03 * Z.rocky;
-    const bl = (Z.mixed * 0.5 + Z.edge * Z.low * (0.22 + edgeBroad) + Z.low * edgeBroad * 0.3 + Z.rocky * 0.05) * (1.15 - conifer * 0.15), r = rng();
+    const bl = (Z.mixed * 0.5 + Z.edge * Z.low * (0.22 + edgeBroad) + Z.low * edgeBroad * 0.3 + Z.rocky * 0.05) * (1.15 - conifer * 0.15) * broad, r = rng();
     let kind;
     if (r < pSnag) kind = 'snag';
     else if (r < pSnag + pBroken) kind = 'broken';
@@ -162,7 +162,7 @@ export function plantForest({ hf, forest, moist, seed = 99, water = 0, snow = 1e
     const k = (kind === 'young' ? 0.6 : kind === 'bamboo' ? 0.9 : lerp(0.72, 0.98, Z.age * Z.interior) + 0.45 * Z.rocky) * spacing;
     if (!place(t, k) && Z.rocky < 0.5 && rng() < 0.5 * (0.3 + Z.interior)) {
       // no room for a canopy tree: a younger one grows up between the big crowns
-      const u = makeTree(Z.mixed > 0.4 && rng() < 0.4 ? 'leaf' : 'young', x, h - 0.2, z, rng, { a: rng() * 0.5, scale: 0.75, cl: Z.cl, br: Z.br });
+      const u = makeTree(Z.mixed > 0.4 && rng() < 0.4 * broad ? 'leaf' : 'young', x, h - 0.2, z, rng, { a: rng() * 0.5, scale: 0.75, cl: Z.cl, br: Z.br });
       place(u, 0.42);
     }
   }

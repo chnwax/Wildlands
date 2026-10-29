@@ -36,6 +36,9 @@ const DRIVER0 = { aggr: 0.5, line: 0.7, def: 0.5, err: 0.3, cons: 0.3, react: 0.
 // driver plans to use: the simulation's stability help and load transfer leave a little short of the peak
 const SURF_MU = { asphalt: 1.52, concrete: 1.48, gravel: 1.12, snow: 0.72 };
 const PLAN_USE = 0.8, BRAKE_USE = 0.78;
+// the hands in a slide: how much of the body's slip angle the wheel is turned into (0.55 left an F40 kicked sideways at
+// 180 km/h to spin; 0.8 catches it, an i20 the same either way)
+export const SLIDE = { beta: 0.8 };
 // the most sideways pull a car is planned for, whatever its tyres: the simulation's stability help holds the yaw to what
 // the wheels' own geometry asks within about 1.1 g (car.js: lim = 11 / speed), so a plan past it would run wide
 const A_LAT = 9.8;
@@ -153,13 +156,13 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
     for (const o of others) { const d = o.s - c.s; if (d > 0 && d < 60 && Math.abs(o.w - myW) < need(o.w, o.wid) && d < gap) { gap = d; ahead = o; }
       if (d < 0 && d > -18 && -d < gapB) { gapB = -d; behind = o; } }
     c.cap = 1e9; c.ahead = ahead; c.gap = gap;
-    const edge = RW - c.wid / 2 - 0.2, myPlan = at(c.plan, c.s + 30);
+    const edge = RW - c.wid / 2 - 0.2, edgeP = edge - 0.25, myPlan = at(c.plan, c.s + 30); // (alongside another car it keeps a hand's width more from the edge: its line wanders)
     if (c.mode === 'pass') { // (alongside or moving out: hold the side until clear ahead of the car being passed)
       const o = c.target, d = o ? o.s - c.s : -99;
       if (!o || d < -(c.len + 3.5) || d > 40) { c.mode = 'merge'; c.target = null; }
       else if (d > c.len * 0.5 && Math.sign(at(KC, c.s + 35)) === -c.side && Math.abs(at(KC, c.s + 35)) > 1 / 200) { c.mode = 'merge'; c.target = null; c.cap = o.v - 0.5; } // (a bend coming the wrong way before it is alongside: it tucks back in)
       else if (d > -c.len * 0.3 && Math.sign(at(KC, c.s + 20)) === -c.side && Math.abs(at(KC, c.s + 20)) > 1 / 160) { c.cap = o.v - 1.2; c.offT = clamp(o.w + c.side * need(o.w, o.wid), -edge, edge); c.mix = 1; } // (alongside round the outside: it lifts and tucks in behind)
-      else { const wantW = clamp(o.w + c.side * need(o.w, o.wid), -edge, edge); c.offT = wantW; c.mix = 1;
+      else { const wantW = clamp(o.w + c.side * need(o.w, o.wid), -edgeP, edgeP); c.offT = wantW; c.mix = 1;
         // (no room left on that side — squeezed, or the road narrows: back out of it and follow)
         if (Math.abs(wantW - (o.w + c.side * need(o.w, o.wid))) > 0.35 && d > 0) { c.mode = 'line'; c.cap = o.v - 0.5; } } }
     if (c.mode === 'merge') { // (back to the line once nothing is beside it on the way across)
@@ -236,7 +239,7 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
     const x = V.x, z = Math.max(0.5, V.z), kap = 2 * x / (x * x + z * z), delta = Math.atan(kap * wb);
     // (a slide caught: the body's slip angle steered into)
     const beta = Math.atan2(st.velLocal.x, Math.max(v, 3));
-    let steer = clamp((delta + beta * 0.55) / spec.steerMax, -1, 1);
+    let steer = clamp((delta + beta * SLIDE.beta) / spec.steerMax, -1, 1);
     const rate = 4.2 + 2 * c.line; c.steer += clamp(steer - c.steer, -rate * dt, rate * dt); st.steer = c.steer * (1 + (Math.random() - 0.5) * 0.02 * c.cons);
     if (c.veh === null) st.steer = c.car.handsSteer(c.steer, dt); // (the player's car: its hands turn the wheel and work the lever)
     // (the speed: the plan a little ahead — braking in time for what is coming — its pace today, the traffic's limit)

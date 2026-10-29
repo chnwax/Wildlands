@@ -41,6 +41,17 @@ Keys: F11 full screen, F5 reload, F12 developer tools.
 WASD to move, mouse to look, Shift to run, Space to jump, C to crouch, F to fly, `[` / `]` to change the time of day,
 T to pause time, H to hide the HUD, M to mute, 1–5 for quality presets (low, medium, high, ultra, extreme — Extreme is for high-end PCs: 8k shadows, supersampling and the densest grass and far forests).
 
+## Races
+
+In Sakuragawa, walk up to the race board by the road and press E: pick one of six races (Valley Run, Hill Crest, Alpine
+Pass, Pine Forest, Canyon Ridge, Coastal Highway) and a car, and start. The race map is prepared in the background while
+you are near the board and is built beside the town; after the finish, "Wróć do Sakuragawa" takes you back to the board.
+
+A race is a stage config in `js/stages/<name>.js` (its land, route, surface, tunnels, palette and plants) and an entry
+in `js/races.js` (name, length, field, car, time of day). The shared stage builder (`js/rally.js`, with the pure data in
+`js/stagedata.js`, computed in a worker by `js/preload.js`) builds it on the same systems as the town; the field is
+driven by `js/race.js`. A new race needs nothing else.
+
 ## World editor
 
 Double-click `Editor.bat` (or run `npm run editor`; needs Node.js 18+). It starts a small local server and opens the

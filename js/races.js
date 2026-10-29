@@ -1,8 +1,8 @@
 // The race registry: every race the board in Sakuragawa offers, the cars a player may take to it and the drivers its
 // field is drawn from. A race is its stage (the map that builds it, engine.js MAPS) and a few words for the board; the
 // stage itself — the route, the land, the surface, the roadside — is its config in the stage's own module, built by the
-// shared stage builder (rally.js) on the same systems as every other map. Adding a race is adding its stage module and an
-// entry here.
+// shared stage builder (rally.js) on the same systems as every other map. Adding a race is adding its stage config
+// (js/stages/) and an entry here.
 export const CARS = {
   f40: { name: 'Ferrari F40 LB-Works', short: 'F40', power: '480 KM', mass: '1180 kg', drive: 'RWD · 5 biegów', top: '320 km/h', grip: { asphalt: 1, gravel: 0.45 },
     note: 'Lekka, niska, turbo V8 za plecami. Na asfalcie najszybsza, na szutrze bardzo nerwowa.' },
@@ -34,23 +34,34 @@ export function fieldFor(race, count = race.field) {
 
 export const RACES = [
   { id: 'valley', map: 'rally4', name: 'Valley Run', kanji: '01', surface: 'asphalt', length: 4300, field: 5, car: 'f40', hour: 15.9,
+    stage: ['./stages/valley.js', 'VALLEY_STAGE'],
     blurb: 'Szybka dwupasmowa droga przez szeroką dolinę: długie proste, szybkie łuki, bariery na nasypach.', tags: ['asfalt', 'szybka', '2 pasy'] },
   { id: 'hillcrest', map: 'rally3', name: 'Hill Crest', kanji: '02', surface: 'asphalt', length: 1800, field: 4, car: 'f40', hour: 9.1,
+    stage: ['./stages/hillcrest.js', 'HILL_STAGE'],
     blurb: 'Asfalt wysoko na stromym zboczu: drabina nawrotów, skalne ściany i przepaść pod barierą.', tags: ['asfalt', 'nawroty', 'przepaść'] },
   { id: 'alpine', map: 'rally2', name: 'Alpine Pass', kanji: '03', surface: 'asphalt', length: 1600, field: 4, car: 'f40', hour: 16.4,
+    stage: ['./stages/alpine.js', 'ALPINE_STAGE'],
     blurb: 'Przełęcz wśród monumentalnych wapiennych skał, kamienne murki nad urwiskami.', tags: ['asfalt', 'przełęcz', 'skały'] },
   { id: 'pine', map: 'rally', name: 'Pine Forest', kanji: '04', surface: 'gravel', length: 1500, field: 4, car: 'i20', hour: 15.4,
+    stage: ['./stages/pine.js', 'PINE_STAGE'],
     blurb: 'Szutrowa leśna droga przez ciemny północny bór: hopy, kompresje, kamienie i korzenie.', tags: ['szuter', 'las', 'hopy'] },
   { id: 'canyon', map: 'canyon', name: 'Canyon Ridge', kanji: '05', surface: 'asphalt', length: 4300, field: 5, car: 'f40', hour: 17.1,
+    stage: ['./stages/canyon.js', 'CANYON_STAGE'], sun: 2.9, life: { flowers: false, birds: true, fireflies: 0, mist: 0.05 },
     blurb: 'Długi asfalt przez czerwone kaniony: szybkie odcinki na krawędzi, serpentyny w dół doliny, tunel w skalnej płycie.', tags: ['asfalt', 'kanion', 'tunel'] },
   { id: 'coastal', map: 'coastal', name: 'Coastal Highway', kanji: '06', surface: 'asphalt', length: 4850, field: 5, car: 'f40', hour: 11.2,
+    stage: ['./stages/coastal.js', 'COASTAL_STAGE'], sun: 1.4, life: { flowers: false, birds: true, fireflies: 0, mist: 0.12 },
     blurb: 'Droga wykuta wysoko w klifach nad morzem: długie łuki, ciasne zakręty, skalne galerie i otwarte widoki.', tags: ['asfalt', 'klify', 'morze'] },
 ];
 export const raceById = id => RACES.find(r => r.id === id) || null;
 export const raceOfMap = map => RACES.find(r => r.map === map) || null;
 // the stage's config (route, surface, length) for the board's preview and the preloader, without building it: the pure
-// stage module (js/stages/), the same one the preparation worker reads
-const STAGES = { rally: ['./stages/pine.js', 'PINE_STAGE'], rally2: ['./stages/alpine.js', 'ALPINE_STAGE'], rally3: ['./stages/hillcrest.js', 'HILL_STAGE'], rally4: ['./stages/valley.js', 'VALLEY_STAGE'],
-  canyon: ['./stages/canyon.js', 'CANYON_STAGE'], coastal: ['./stages/coastal.js', 'COASTAL_STAGE'] };
-export const stageModule = race => STAGES[race.map];
-export async function stageConfig(race) { const [path, name] = STAGES[race.map]; return (await import(path))[name]; }
+// stage module (js/stages/, race.stage), the same one the preparation worker reads
+export const stageModule = race => race.stage;
+export async function stageConfig(race) { const [path, name] = race.stage; return (await import(path))[name]; }
+// the map of a race that has no module of its own (engine.js MAPS): its meta from the entry here, built straight from its
+// stage config by the shared stage builder — a new race needs its stage config and its entry, nothing more
+export function raceMapModule(race) {
+  return async () => { const [{ buildStage }, cfg] = await Promise.all([import('./rally.js'), stageConfig(race)]);
+    const meta = { name: race.name, builder: false, startHour: race.hour, sunAzimuth: race.sun ?? 2.2, life: race.life || { flowers: false, birds: true, fireflies: 0, mist: 0.05 }, vehicle: true, car: race.car };
+    return { meta, build: (progress, opts) => buildStage(progress, cfg, opts) }; };
+}
