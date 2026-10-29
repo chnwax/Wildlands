@@ -105,6 +105,7 @@ export async function buildStage(progress0, cfg, opts = {}) {
   const { trees, saplings } = plantForest({ hf, forest: FOREST, moist: MOIST, seed: cfg.forestSeed, water: Math.max(0, WL), snow: ecologySnow, blocked,
     alpine: eco.alpine || (alpine ? [38, 76] : [110, 175]), lowland: eco.lowland || (alpine ? [12, 32] : [22, 60]), meadow: 1100, step: eco.step || (alpine ? 5.4 : 4.5),
     broad: eco.broad ?? 1, mix: eco.mix || {} }); // (a stage's own country: no broadleaves in a desert canyon, pines on a dry coast)
+  for (const t of saplings) if (t.c && t.c.isColor) t.c.offsetHSL(0.015, -0.2, -0.07); // (the young firs under the canopy dulled: drawn as plain cones, their light green read as teal against the woods)
   const floor = forestFloor({ hf, forest: FOREST, moist: MOIST, trees, seed: cfg.floorSeed, water: Math.max(0, WL), blocked,
     logs: eco.logs ?? (mountain ? 60 : alpine ? 320 : 650), twigs: eco.twigs ?? (mountain ? 500 : alpine ? 3500 : 7000), shrubs: eco.shrubs ?? (mountain ? 280 : alpine ? 1500 : 3000) });
   hf.paintCanopy(trees);
@@ -244,7 +245,7 @@ function roadRibbon(P, T, K, N, surfY, corners, cfg, COVER = null) {
   const tex = asphalt ? 'asphalt_pit_lane' : 'bicolour_gravel';
   const mat = new THREE.MeshStandardMaterial({ map: phTex(tex, 'diff', asphalt ? '2k' : '1k', true), normalMap: phTex(tex, 'nor_gl', '1k', false, NFLAT),
     roughnessMap: asphalt ? phTex('asphalt_pit_lane', 'rough', '1k', false, [210, 210, 210]) : null, normalScale: new THREE.Vector2(asphalt ? 0.85 : 0.65, asphalt ? 0.85 : 0.65),
-    roughness: asphalt ? 1 : 0.97, metalness: 0, vertexColors: true, alphaHash: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+    roughness: asphalt ? 1 : 0.97, metalness: 0, vertexColors: true, alphaHash: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6, color: cfg.roadTint ? new THREE.Color(...cfg.roadTint) : 0xffffff }); // (a stage's own stone: the pale photo gravel darkened in a dark wood)
   const dirtTex = asphalt ? phTex('bicolour_gravel', 'diff', '1k', true) : phTex('brown_mud', 'diff', '1k', true), dirtTint = asphalt ? new THREE.Color(1.9, 1.72, 1.42) : new THREE.Color(2.3, 2.0, 1.6);
   mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, { tDirt: { value: dirtTex }, uDirtTint: { value: dirtTint } });
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aDirt; varying float vDirt; varying vec2 vDirtUv;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvDirt = aDirt; vDirtUv = uv * 1.3;');

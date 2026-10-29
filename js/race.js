@@ -372,7 +372,7 @@ export async function createRace(world, { rivals, grid, startI, finishI, lanes, 
       } else if (phase !== 'finished') for (const c of cars) holdOnGrid(c);
       else for (const c of cars) { proj(c.st.pos.x, c.st.pos.z, c.s, c); c.v = c.st.velLocal.z; drive(c, dt, tR); if (!c.done && c.s >= finishI) { c.done = 1; c.doneT = tR; results.push({ name: c.name, car: c.car.id, t: tR }); } }
       // (the simulation of each, then the contacts between all of them; drawn and heard by how near they are)
-      for (const c of cars) { c.veh.update(dt); const d = camera.position.distanceTo(c.st.pos); c.car.sync(dt, d < 260); c.car.walkerBox(onFoot);
+      for (const c of cars) { c.veh.update(dt); const d = camera.position.distanceTo(c.st.pos); c.car.sync(dt, d); c.car.walkerBox(onFoot);
         c.voice.set(c.st.pos.x, c.st.pos.y, c.st.pos.z, { rpm: c.st.rpm, thr: c.st.throttle, speed: c.st.vel.length(), slip: clamp((c.st.slipMax - 1) / 1.5, 0, 1), fires: c.car.spec.fires || 2, gain: 0.9 });
         if (d < 420) c.voice.update(dt); else if (c.voice.out) c.voice.out.gain.value = 0; }
       if (dt > 0) contacts(player); sparksUpdate(dt);

@@ -783,6 +783,17 @@ export async function createRivalCar(world, carId, { paint = null, tint = null, 
     if (tint && /body/i.test(mn)) { o.material = mine(o.material); o.material.color.set(tint); }
     if (/Interior|Alcantara|Leather|Cockpit|Dials|Display|COCKPIT/i.test(mn) || /COCKPIT|STEER/.test(pn)) o.castShadow = false; });
   model.updateMatrixWorld(true);
+  // (the detail a rival is drawn with by how far it is: the cockpit, the brakes behind the rims and the small fittings only
+  // close by, the rims only within a hundred metres; only the body's big panels cast a shadow. An F40 is 700 000
+  // triangles, 340 000 of them in its wheels: a full grid of them drawn whole, and again into every shadow cascade, was
+  // most of a frame)
+  const detail = []; let detailLv = -1;
+  model.traverse(o => { if (!o.isMesh || Array.isArray(o.material)) return; const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+    const e = o.matrixWorld.elements, sc = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10])), r = g.boundingSphere.radius * sc;
+    const mn = o.material.name || '', pn = o.parent && o.parent.name || '';
+    const inside = /Interior|Alcantara|Leather|Cockpit|Dials|Display|COCKPIT|steer/i.test(mn) || /COCKPIT|STEER/.test(pn), hidden = /brake|caliper|disc|suspension|engine/i.test(mn);
+    o.castShadow = o.castShadow && !inside && r > 0.6;
+    const lv = inside || hidden || r < 0.12 ? 1 : r < 0.4 ? 2 : 0; if (lv) detail.push([o, lv]); });
   const find = n => { let f = null; model.traverse(o => { if (!f && o.name && o.name.startsWith(n)) f = o; }); return f; };
   const wheels = []; // (found in the model's own space, before it is placed in the car's frame)
   for (const id of ['LF', 'RF', 'LR', 'RR']) { const { node, susp } = def.wheel(id, find); if (!node) continue;
@@ -793,7 +804,7 @@ export async function createRivalCar(world, carId, { paint = null, tint = null, 
   const root = new THREE.Group(); root.name = 'rival:' + name; root.userData.dynamic = true; root.userData.dynamicCaster = true;
   const body = new THREE.Group(); body.position.set(-spec.cg[0], -spec.cg[1], -spec.cg[2]); root.add(body); body.add(model);
   // (the brake lights: their own material, lit with the brake)
-  const lights = [], lightUp = o => { o.material = mine(o.material); o.material.emissive = new THREE.Color(0xff1a10); o.material.emissiveIntensity = 0; lights.push(o.material); };
+  const lights = [], lightUp = o => { o.material = mine(o.material); o.material.emissive = new THREE.Color(0xff1a10); o.material.emissiveIntensity = 0; lights.push(o.material); const k = detail.findIndex(d => d[0] === o); if (k >= 0) detail.splice(k, 1); }; // (the brake lights seen from afar)
   if (def.brakeLights) model.traverse(o => { if (o.isMesh && !Array.isArray(o.material) && def.brakeLights.test(o.material.name)) lightUp(o); });
   else for (const n of ['LIGHT_REAR_BRAKE', 'LIGHT_REAR00', 'LIGHT_REAR01']) { const q = find(n); if (q) q.traverse(o => { if (o.isMesh && !Array.isArray(o.material)) lightUp(o); }); }
   // (a box for the walker while the player is out of the car, out of the car's own side contacts)
@@ -806,7 +817,8 @@ export async function createRivalCar(world, carId, { paint = null, tint = null, 
   const rival = { id: carId, def, spec, root, veh, st, wheels, name, col,
     place(x, z, yaw) { veh.place(x, z, yaw); rival.sync(0, true); },
     // the model where the simulation has the car (the wheels only while it is near enough to see them turn)
-    sync(dt, near = true) { root.position.copy(st.pos); root.quaternion.copy(st.q);
+    sync(dt, dist = 0) { root.position.copy(st.pos); root.quaternion.copy(st.q); const near = dist === true || dist < 260;
+      const lv = dist === true ? 0 : dist > 110 ? 2 : dist > 22 ? 1 : 0; if (lv !== detailLv) { detailLv = lv; for (const [o, l] of detail) o.visible = lv < l; }
       if (near) for (const w of wheels) { w.angle = (w.angle + w.w * dt) % (Math.PI * 2);
         w.travel.position.set(w.hubModel.x, w.hubModel.y + S0 - (w.contact ? w.s : spec.susp.rest), w.hubModel.z);
         w.travel.quaternion.setFromAxisAngle(UP, w.front ? st.steer * spec.steerMax : 0); w.spin.quaternion.setFromAxisAngle(XAX, w.angle); }
