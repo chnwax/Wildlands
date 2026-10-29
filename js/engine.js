@@ -71,11 +71,15 @@ export async function loadWorld(mapName, { progress = () => {}, editor = false, 
   world.meta = mod.meta; world.mapName = mapName;
   return world;
 }
+// (who waits for the textures in flight: told once and let go — a callback chained onto the previous one kept every map
+// ever prepared reachable through its closures)
+const loadWaiters = [];
+manager.onLoad = () => { for (const f of loadWaiters.splice(0)) f(); };
 // after the map (and the game's ambient life) is built: textures, composer, scene preparation, shader compilation and
 // the warm-up draw. view: {x, z, yaw} the camera starts from (scatter LOD and shadow cascades are placed for it)
 export async function prepareWorld(world, progress = () => {}) {
   flattenPhotoMaterials();
-  const texDone = new Promise(res => { if (loadState.assets >= 1) res(); const prev = manager.onLoad; manager.onLoad = () => { prev && prev(); res(); }; setTimeout(res, 30000); });
+  const texDone = new Promise(res => { if (loadState.assets >= 1) return res(); loadWaiters.push(res); setTimeout(res, 30000); });
   progress('Finishing', 0.97); await texDone;
   buildComposer();
   camera.updateMatrixWorld();

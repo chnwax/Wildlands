@@ -950,7 +950,10 @@ export function buildGrass(hf, grassTex, opt = {}) {
   });
   group.userData.applyQuality = applyQuality;
   // (released with its map: the bake targets are the grass's own; session.js calls this)
-  group.userData.dispose = () => { for (const ring of rings) if (ring.bake && ring.bake.rts) { ring.bake.rts.forEach(t => t.dispose()); ring.bake.inTex.dispose(); ring.bake.rts = null; } };
+  // (the bake's own materials too: drawn off-screen, never in the scene, and kept by the renderer's shader cache until
+  // disposed — with them the map's height and mask textures)
+  group.userData.dispose = () => { for (const ring of rings) if (ring.bake) { const B = ring.bake; if (B.rts) { B.rts.forEach(t => t.dispose()); B.inTex.dispose(); B.rts = null; } for (const m of B.mats) m.dispose(); }
+    bakeQuad.material = null; bakeQuad.dispose(); };
   scene.add(group);
   return group;
 }
