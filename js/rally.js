@@ -191,7 +191,9 @@ export async function buildStage(progress0, cfg, opts = {}) {
   if (field) { progress('Lining up the grid', 0.97); await tick();
     world.raceAI = await (await import('./race.js')).createRace(world, { rivals: field, grid, startI, finishI, lanes: LANES, RW, clock }); }
   // (leaving the stage: its HUD, its voice and its rivals go with it; the scene's objects are released by the session)
-  world.dispose = () => { clock.dispose(); if (world.raceAI) world.raceAI.dispose(); world.raceAI = null; };
+  world.dispose = () => { clock.dispose(); if (world.raceAI) world.raceAI.dispose(); world.raceAI = null;
+    for (const k of ['tHeight', 'tMask', 'tMask2', 'tPave']) { const t = hf.U[k] && hf.U[k].value; if (t && t.dispose) t.dispose(); }
+    if (hf.outer && hf.outer.tex) hf.outer.tex.dispose(); }; // (the ground's own textures: the session finds them only in compiled programs)
   if (buildLog.length) buildLog[buildLog.length - 1].ms = Math.round(performance.now() - tL); world.buildLog = buildLog; world.buildMs = Math.round(performance.now() - tB);
   return world;
 }

@@ -960,7 +960,7 @@ function dashDisplay(mesh, model) {
   const right = new THREE.Vector3(-1, 0, 0).projectOnPlane(nrm).normalize(), up = new THREE.Vector3().crossVectors(nrm, right).normalize(); if (up.y < 0) up.negate();
   let w = 0, h = 0; for (const p of P) { const d = p.clone().sub(c); w = Math.max(w, Math.abs(d.dot(right))); h = Math.max(h, Math.abs(d.dot(up))); }
   const uv = new Float32Array(n * 2); P.forEach((p, i) => { const d = p.clone().sub(c); uv[i * 2] = d.dot(right) / (2 * w) + 0.5; uv[i * 2 + 1] = d.dot(up) / (2 * h) + 0.5; });
-  const geo = mesh.geometry.clone(); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); mesh.geometry = geo;
+  const old = mesh.geometry, geo = old.clone(); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); mesh.geometry = geo; old.dispose(); // (the car's own copy, already drawn once by the cabin-light bake: released, or it stayed on the GPU with every car)
   const cv = document.createElement('canvas'); cv.width = 320; cv.height = Math.max(64, Math.round(320 * h / w)); const g = cv.getContext('2d'), W = cv.width, H = cv.height;
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
   mesh.material = new THREE.MeshStandardMaterial({ color: 0x030405, roughness: 0.18, metalness: 0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.15 });
