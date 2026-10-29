@@ -65,7 +65,7 @@ function route() {
 export const CANYON_STAGE = {
   id: 'canyon', name: 'Canyon Ridge', target: 4400, roadType: 'asphalt', seed: 5521, half: 3.4, lanes: 2, world: 3072,
   bestKey: 'wl_race_canyon_best_v1', forestMin: 0, forestSeed: 433, floorSeed: 151, verge: 'cut', land, grade: 150, rails: true, pilot: true, splits: 1000, hairpin: 16,
-  keepScale: true, tunnels: [{ at: [FIN_X, canyonZ(FIN_X)], len: 110 }], cuts: [{ at: [BUTTE[0], canyonZ(BUTTE[0]) + BUTTE[1] + 230], len: 150 }], runoff: 170, // (the route keeps its place on the land; the tunnel where it passes the fin)
+  keepScale: true, tunnels: [{ at: [FIN_X, canyonZ(FIN_X)], len: 110, name: 'Skalna Płetwa' }], cuts: [{ at: [BUTTE[0], canyonZ(BUTTE[0]) + BUTTE[1] + 230], len: 150 }], runoff: 170, // (the route keeps its place on the land; the tunnel where it passes the fin)
   // (a dry country: junipers and pines in the hollows, scrub, bare rock)
   // (junipers and pinyon pines only, no broadleaf in this country; scree and boulders all down the slopes under the cliffs)
   eco: { alpine: [150, 300], lowland: [0, 40], step: 7, logs: 20, twigs: 200, shrubs: 2600, woods: 0.6, broad: 0, mix: { pine: 3, old: 0.25, spruce: 0.15, tall: 0, young: 0.5 }, boulders: 22000 }, stony: 0.95, stoneGround: [1.18, 0.95, 0.8], stoneNorm: 0.35,

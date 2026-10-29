@@ -15,6 +15,7 @@ import { loadPeople, crowdMeshes, CLIP } from './crowd.js';
 import { PINE_STAGE } from './stages/pine.js';
 import { stageGeometry, stageFields } from './stagedata.js';
 import { distCull } from './distcull.js';
+import { buildTunnels } from './tunnel.js';
 
 // An instanced set cut into cells along the stage, each cell its own bounds: the frustum drops what is behind the camera
 // and the distance cull (distcull.js, as in the town) what is too far off to see — a set the length of the stage, its
@@ -125,7 +126,7 @@ export async function buildStage(progress0, cfg, opts = {}) {
   const holes = [], tunLen = G.tunnels.reduce((t, [a0, b0]) => t + b0 - a0 + 28, 0), hStep = Math.max(6, Math.ceil(tunLen / 30));
   for (const [a0, b0] of G.tunnels) { const a = Math.max(0, a0 - 14), b = Math.min(N - 1, b0 + 14), hw = RW + 1.25, H = cfg.tunnelH || 7.2;
     let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (let i = a; i <= b; i++) { x0 = Math.min(x0, P[i][0]); z0 = Math.min(z0, P[i][1]); x1 = Math.max(x1, P[i][0]); z1 = Math.max(z1, P[i][1]); }
-    hf.paintPave(x0 - hw - 2, z0 - hw - 2, x1 + hw + 2, z1 + hw + 2, (x, z) => { const k = nearAt(x, z); return k >= a && k <= b && distAt(x, z) < hw + 1 ? 1 : 0; }); if (hf.U.tPave.value) hf.U.tPave.value.needsUpdate = true; // (no grass in the tube)
+    hf.paintPave(x0 - hw - 2, z0 - hw - 2, x1 + hw + 2, z1 + hw + 2, (x, z) => { const k = nearAt(x, z); return (k >= a && k <= a + 8 || k >= b - 8 && k <= b) && distAt(x, z) < hw + 1 ? 1 : 0; }); if (hf.U.tPave.value) hf.U.tPave.value.needsUpdate = true; // (no grass in the tube's mouths, where the ground rises inside it)
     for (let i = a; i < b; i += hStep) { const j = Math.min(b, i + hStep), y0 = Math.min(surfY(i, 0), surfY(j, 0)), y1 = Math.max(surfY(i, 0), surfY(j, 0)); holes.push([P[i][0], P[i][1], P[j][0], P[j][1], hw + 0.5, y0 + 0.25, y1 + H + 0.8]); } }
   const terrain = await buildTerrainMeshes(hf, terrainMaterial(hf, layers, { water: WL, snow: terrainSnow, shore: SHORE, conifer: 0.7, holes }));
   progress('Growing the woods', 0.55); await tick();
@@ -136,7 +137,7 @@ export async function buildStage(progress0, cfg, opts = {}) {
   buildLogs(floor.logs);
   progress('Grading the road', 0.68); await tick();
   const road = roadRibbon(P, T, K, N, surfY, corners, cfg, COVER);
-  const covers = buildCovers(P, T, N, left, surfY, G.tunnels, G.galleries, cfg);
+  const covers = buildCovers(P, T, N, left, surfY, G.tunnels, G.galleries, cfg, (x, z) => hf.groundAt(x, z));
   // ---- the start: a race lines its field up two by two, 9 m apart, before the start line; the player's place on the grid
   // is drawn. Alone, the car waits on the line.
   let field = null, grid = null, slot = null;
@@ -434,45 +435,15 @@ function snowBanks(P, T, N, left, DROP, AMT, bankH, base) {
 const UPV = new THREE.Vector3(0, 1, 0);
 const packColor = c => Math.round(clamp(c[0], 0, 1) * 255) * 65536 + Math.round(clamp(c[1], 0, 1) * 255) * 256 + Math.round(clamp(c[2], 0, 1) * 255);
 
-// Tunnels and galleries: where the road runs under rock. A tunnel is a lined tube — upright walls and an arch over the two
-// lanes and a kerb each side — swept along the road from portal to portal, its portals concrete headwalls with the
-// arch's opening, sodium lamps in a row under its crown; its walls stop the cars. A gallery is a concrete roof on
-// pillars over the road, a wall against the rock on the hill's side and the other side open to the view (the sea's).
-function buildCovers(P, T, N, left, surfY, tunnels, galleries, cfg) {
+// Tunnels and galleries: where the road runs under rock. A tunnel is a lined, lit tube from portal to portal (tunnel.js);
+// a gallery is the road cut into the cliff under a hewn overhang of the rock, open to the view (the sea's) between
+// pillars of rock left standing.
+function buildCovers(P, T, N, left, surfY, tunnels, galleries, cfg, ground) {
   if (!tunnels.length && !galleries.length) return null;
   const group = new THREE.Group(); group.name = 'rally-covers'; scene.add(group);
-  const ctex = (k, srgb) => { const t = phTex('concrete_wall_008', k, '1k', srgb, srgb ? undefined : NFLAT).clone(); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; return t; };
-  const lining = new THREE.MeshStandardMaterial({ map: ctex('diff', true), normalMap: ctex('nor_gl', false), color: 0xc9c5bb, roughness: 0.93, side: THREE.DoubleSide, vertexColors: true });
-  const face = new THREE.MeshStandardMaterial({ map: lining.map, normalMap: lining.normalMap, color: 0xd8d2c4, roughness: 0.9, side: THREE.DoubleSide });
-  const hw = RW + 1.25, H = cfg.tunnelH || 7.2, wallH = 4.0;
-  // (a closed or open profile [u to the left, v up] swept along stations a..b; uv in metres)
-  const sweep = (prof, a, b, mat, { closed = false, base = i => surfY(i, 0), step = 2, shade = null } = {}) => {
-    const np = prof.length, pos = [], uv = [], idx = [], per = [0], col = []; for (let j = 1; j < np + (closed ? 1 : 0); j++) per.push(per[j - 1] + Math.hypot(prof[j % np][0] - prof[j - 1][0], prof[j % np][1] - prof[j - 1][1]));
-    const cols = np + (closed ? 1 : 0); let rows = 0, along = 0, prev = null;
-    for (let i = Math.max(0, a); i <= Math.min(N - 1, b); i += step) { const [px, pz] = P[i], [lx, lz] = left(i), y = base(i); if (prev) along += Math.hypot(px - prev[0], pz - prev[1]); prev = [px, pz];
-      for (let j = 0; j < cols; j++) { const [u, v] = prof[j % np]; pos.push(px + lx * u, y + v, pz + lz * u); uv.push(per[j] / 3, along / 3); if (shade) { const k = shade(v, along); col.push(k, k, k); } } rows++; }
-    for (let r = 0; r + 1 < rows; r++) for (let j = 0; j + 1 < cols; j++) { const q = r * cols + j; idx.push(q, q + cols, q + 1, q + 1, q + cols, q + cols + 1); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); if (shade) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
-    const m = new THREE.Mesh(g, mat); m.castShadow = m.receiveShadow = true; group.add(m); return m; };
-  const lampM = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffb45c, emissiveIntensity: 3.2, roughness: 0.5 }), lamps = [];
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
-  for (const [a0, b0] of tunnels) { const a = a0 - 14, b = b0 + 14;
-    // (the lining: the right wall, the arch, the left wall; and the kerbs' raised walkways)
-    const arch = [[-hw, -0.4], [-hw, wallH]]; for (let k = 1; k < 18; k++) { const t = Math.PI * (1 - k / 18); arch.push([hw * Math.cos(t), wallH + (H - wallH) * Math.sin(t)]); } arch.push([hw, wallH], [hw, -0.4]);
-    // (the lining's wear: road grime up the foot of the walls, a pale painted band at the drivers' eye height, the vault
-    // dulled by the exhaust; the panels' joints every 10 m)
-    sweep(arch.map(([u, v]) => [-u, v]), a, b, lining, { step: 1, shade: (v, al) => (v < 1.1 ? lerp(0.42, 0.7, smoothstep(-0.4, 1.1, v)) : v < 3.4 ? 1 : lerp(0.82, 0.62, smoothstep(3.4, H, v))) * (al % 10 < 0.35 ? 0.72 : 1) });
-    for (const sd of [-1, 1]) sweep([[sd * (RW + 0.15), 0.02], [sd * (RW + 0.15), 0.2], [sd * hw, 0.2], [sd * hw, 0.02]].map(p => sd > 0 ? p : [p[0], p[1]]).reverse(), a, b, face);
-    // (the lamps under the crown, the walls against the cars)
-    for (let i = a + 6; i < b - 4; i += 9) { const [px, pz] = P[i], [tx, tz] = T[i], y = surfY(i, 0); for (const u of [-1.6, 1.6]) { const [lx, lz] = left(i); m4.compose(new THREE.Vector3(px + lx * u, y + H - 0.55 - Math.abs(u) * 0.05, pz + lz * u), q.setFromAxisAngle(UP, Math.atan2(tx, tz)), one); lamps.push(m4.clone()); } }
-    for (let i = a; i < b; i += 4) { const j = Math.min(N - 1, i + 4), [ax, az] = P[i], [bx, bz] = P[j], y = surfY(i, 0), l = Math.hypot(bx - ax, bz - az), yaw = Math.atan2(bx - ax, bz - az);
-      for (const sd of [-1, 1]) { const [lx, lz] = left(i), u = sd * (hw + 0.25); addBox((ax + bx) / 2 + lx * u, (az + bz) / 2 + lz * u, 0.3, l / 2 + 0.2, yaw, y - 1, y + H); } }
-    // (the portals: a headwall with the arch's opening, at each end, set back into the hill)
-    for (const [i, dir] of [[a, -1], [b, 1]]) { const sh = new THREE.Shape(); const W2 = hw + 5, top = H + 5.5; sh.moveTo(-W2, -1.5); sh.lineTo(W2, -1.5); sh.lineTo(W2, top); sh.lineTo(-W2, top); sh.lineTo(-W2, -1.5);
-      const hole = new THREE.Path(); hole.moveTo(arch[0][0], arch[0][1]); for (const [u, v] of arch.slice(1)) hole.lineTo(u, v); hole.lineTo(arch[0][0], arch[0][1]); sh.holes.push(hole);
-      const g = new THREE.ExtrudeGeometry(sh, { depth: 1.1, bevelEnabled: false, curveSegments: 4 }); g.translate(0, 0, -0.55);
-      const m = new THREE.Mesh(g, face); const [px, pz] = P[i], [tx, tz] = T[i]; m.position.set(px, surfY(i, 0), pz); m.rotation.y = Math.atan2(tx, tz); m.castShadow = m.receiveShadow = true; group.add(m); m.updateMatrixWorld(true); void dir; } }
-  chunked(group, new THREE.BoxGeometry(0.5, 0.12, 1.3), lampM, lamps, { shadow: false, receive: false, name: 'rally-tunnel-lamps' });
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
+  // the road tunnels: lined tubes, lit, their portals faced in stone (tunnel.js)
+  buildTunnels(group, tunnels, { P, T, N, left, surfY, RW, cfg, ground, chunked, names: (cfg.tunnels || []).map(t => t.name || '') });
   // the rock galleries: the road cut into the cliff under an overhang of the rock itself, open to the sea through gaps
   // between rough pillars of rock left standing; the ceiling and the back wall hewn, never a smooth slab. At its ends the
   // overhang draws back into the cut face of the cliff

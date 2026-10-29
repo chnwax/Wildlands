@@ -64,7 +64,7 @@ export const COASTAL_STAGE = {
   id: 'coastal', name: 'Coastal Highway', target: 4800, roadType: 'asphalt', seed: 7719, half: 3.4, lanes: 2, world: 3072,
   bestKey: 'wl_race_coastal_best_v1', forestMin: 0, forestSeed: 557, floorSeed: 199, verge: 'cut', land, grade: 150, rails: true, walls: false, pilot: true, splits: 1000, hairpin: 14,
   keepScale: true, sea: true, runoff: 220,
-  tunnels: [{ at: [coastX(HEAD_Z) + 100, HEAD_Z], len: 250 }],
+  tunnels: [{ at: [coastX(HEAD_Z) + 100, HEAD_Z], len: 250, name: 'Cypel' }], tunnelLight: 0xfff0d8, // (white LED light by the sea; the canyon's warmer)
   galleries: GALLERY_Z.map((z, k) => ({ at: [coastX(z) + roadOff(z), z], len: k ? 80 : 90, side: -1 })),
   // (a Mediterranean coast: pines and holm oaks in the gullies, maquis on the slopes, bare rock on the cliffs)
   eco: { alpine: [260, 480], lowland: [0, 60], step: 6.5, logs: 20, twigs: 300, shrubs: 6500, woods: 0.8, broad: 0.5, mix: { pine: 2.5, spruce: 0.05, tall: 0.2, old: 0.3 }, boulders: 16000 }, stony: 0.85, stoneGround: [1.12, 1.06, 0.96], stoneNorm: 0.3,
