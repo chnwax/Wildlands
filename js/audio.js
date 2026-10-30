@@ -19,7 +19,11 @@ export const audio = {
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const ctx = this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    this.master = ctx.createGain(); this.master.gain.value = this.muted ? 0 : this.vol; this.master.connect(ctx.destination);
+    this.master = ctx.createGain(); this.master.gain.value = this.muted ? 0 : this.vol;
+    // (the body camera's microphone, bodycam.js: open while it is off; on, a narrow band and an automatic gain a gunshot pulls down)
+    this.micHP = ctx.createBiquadFilter(); this.micHP.type = 'highpass'; this.micHP.frequency.value = 10; this.micHP.Q.value = 0.5;
+    this.micLP = ctx.createBiquadFilter(); this.micLP.type = 'lowpass'; this.micLP.frequency.value = Math.min(22000, ctx.sampleRate * 0.45); this.micLP.Q.value = 0.5;
+    this.agc = ctx.createGain(); this.master.connect(this.micHP).connect(this.micLP).connect(this.agc).connect(ctx.destination);
     const len = ctx.sampleRate * 4;
     const white = ctx.createBuffer(1, len, ctx.sampleRate), wd = white.getChannelData(0);
     for (let i = 0; i < len; i++) wd[i] = Math.random() * 2 - 1;

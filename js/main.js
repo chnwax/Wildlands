@@ -17,6 +17,7 @@ import * as preload from './preload.js';
 import { raceById, raceOfMap, fieldFor } from './races.js';
 import { selection, transition, results, showPrompt, saveBest } from './raceui.js';
 import { buildRaceBoard } from './raceboard.js';
+import * as bodycam from './bodycam.js';
 
 const direct = new URLSearchParams(location.search).has('map') ? mapFromURL() : null; // (index.html marks the same: boot-direct)
 let mapName = direct;
@@ -117,7 +118,8 @@ function step(dt, t) {
   if (driving) { // (the walker rides along: the grass, the ambience and the audio follow the car)
     car.applyCamera(camera, realDt); player.pos.set(car.st.pos.x, world.groundAt(car.st.pos.x, car.st.pos.z), car.st.pos.z);
     const d = camera.getWorldDirection(_dir); player.yaw = Math.atan2(-d.x, -d.z);
-  } else updateCamera(world);
+  } else if (!bodycam.frame(world, dt)) updateCamera(world); // (the body camera, when it is on: bodycam.js)
+  bodycam.update(world, dt);
   if (colliderView.on) colliderView.update(player.pos, (x, z) => world.groundAt(x, z));
   perf.end(P_PLAYER);
   S.uPlayer.value.copy(player.pos);
@@ -190,6 +192,8 @@ addEventListener('keydown', e => {
   if (shops && locked && e.code === 'KeyE' && shops.interact()) { e.preventDefault(); release(); return; }
   if (shops && locked && (e.code === 'KeyI' || e.code === 'Tab')) { e.preventDefault(); if (shops.toggleBag()) release(); return; }
   if (!locked) return;
+  // the body camera and its pistol (K; its own keys while it is on: R, Q)
+  if (!(car && car.driving)) { if (e.code === 'KeyK') { bodycam.toggle(); return; } if (bodycam.input(e, true)) { e.preventDefault(); return; } }
   // the car: in and out (V), its views (C), back on its wheels (R), the gearbox's mode (X)
   if (car && e.code === 'KeyV') {
     if (car.driving && car.st.vel.length() > 3) { toastMsg('Stop the car to get out'); return; }
@@ -212,6 +216,9 @@ addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
+// the pistol's trigger and the aim (bodycam.js): the mouse buttons while the pointer is locked
+for (const ev of ['mousedown', 'mouseup']) document.addEventListener(ev, e => { if (locked && !(car && car.driving)) bodycam.input(e, ev === 'mousedown'); });
+document.addEventListener('contextmenu', e => { if (locked) e.preventDefault(); });
 $('tSlider').addEventListener('input', e => { time.hour = +e.target.value; updateSky(true); });
 document.querySelectorAll('[data-hour]').forEach(b => b.addEventListener('click', () => { time.hour = +b.dataset.hour; updateSky(true); $('tSlider').value = time.hour; toastMsg(b.textContent); }));
 // sliders remember their value on this computer (quality is kept by engine.js)
@@ -228,6 +235,8 @@ setting('fSlider', 'wl_fov', 72, v => { camera.fov = v; camera.updateProjectionM
 const carFov = { v: 62 }; setting('cfSlider', 'wl_carfov2', 62, v => { carFov.v = v; if (car) car.fov = v; }, v => v + '°'); // (the car's cameras: cockpit, bonnet, chase)
 setting('vSlider', 'wl_volume', 0.8, v => audio.setVolume(v), v => Math.round(v * 100) + '%');
 $('qSel').addEventListener('change', e => setQuality(e.target.value));
+// the camera: the walker's own, or the body camera with the pistol (bodycam.js; K switches too, and the switch follows)
+{ const bs = $('bcSel'); bs.value = bodycam.remembered() ? '1' : '0'; bs.addEventListener('change', () => bodycam.setOn(bs.value === '1')); bodycam.bodycam.onChange = on => { bs.value = on ? '1' : '0'; }; }
 { const cs = $('carSel'); try { cs.value = localStorage.getItem('wl_car') || ''; } catch (e) {} cs.addEventListener('change', () => { try { localStorage.setItem('wl_car', cs.value); } catch (e) {} toastMsg('Car: from the next stage you load'); }); }
 $('qSel').value = Q.name;
 $('rSel').addEventListener('change', e => setScale(+e.target.value || 0));
@@ -265,6 +274,7 @@ async function main(hour = null) {
   if (mapName === 'town') { home = ctx; setTimeout(() => preload.warmShared(3), 8000); } // (what any race needs, fetched while the player walks about)
   else { raceCtx = ctx; const r = raceOfMap(mapName); raceInfo = r ? { race: r, car: car && car.id } : null; $('leaveRace').hidden = false; }
   frame();
+  if (bodycam.remembered()) bodycam.setOn(true); // (left on last time: on again)
   document.documentElement.classList.add('ingame');
   if (direct) {
     const ld = $('loading'); ld.classList.add('hidden'); setTimeout(() => ld.remove(), 900);

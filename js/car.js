@@ -301,7 +301,7 @@ export function loadCarModel(id) {
 export const loadedCarModels = () => { const out = []; for (const p of carModels.values()) p.then(g => out.push(g.scene), () => {}); return out; };
 export const carModelRoots = async () => (await Promise.all([...carModels.values()].map(p => p.catch(() => null)))).filter(Boolean).map(g => g.scene);
 export function loadArms() { if (!armsBytes) armsBytes = fetch(ARMS).then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error('arms ' + r.status))).catch(e => { armsBytes = null; throw e; }); return armsBytes; }
-const parseArms = () => loadArms().then(b => modelLoader.parseAsync(b, new URL('Modeleaut/', location.href).href)).catch(() => null);
+export const parseArms = () => loadArms().then(b => modelLoader.parseAsync(b, new URL('Modeleaut/', location.href).href)).catch(() => null);
 // a copy that owns its geometry and materials (the textures stay shared)
 function ownCopy(src) {
   const c = src.clone(true), mats = new Map(), own = m => { if (!mats.has(m)) { const k = m.clone(); k.userData = { ...m.userData }; mats.set(m, k); } return mats.get(m); };
@@ -992,7 +992,7 @@ function dashDisplay(mesh, model) {
 // with their seams kept (the values are sRGB: a near-black there is no glove at all under the cabin's light), the
 // fingers keep their own skin, and the sleeves take the dark blue of the team's race suit. Skin is told by its place on
 // the sheet and its hue; the sleeve is the cloth region of the sheet.
-function suitUp(arms) {
+export function suitUp(arms) {
   arms.traverse(o => { if (!o.isSkinnedMesh) return; const m = o.material; if (!m || !m.map || !m.map.image || m.userData.suited) return; m.userData.suited = true;
     const img = m.map.image, S = Math.min(2048, img.width || 2048), cv = document.createElement('canvas'); cv.width = cv.height = S;
     const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, S, S); const id = g.getImageData(0, 0, S, S), a = id.data;
@@ -1087,7 +1087,7 @@ const BEND = [[[-0.5, 1.0], [-0.2, 1.2], [-0.2, 1.2]], [[-0.3, 1.25], [-0.1, 1.7
 const OPEN = [[0.1, 0.1, 0.1], [0, 0.15, 0.1], [0, 0.15, 0.1], [0, 0.15, 0.1], [0, 0.2, 0.1]]; // (an open, relaxed hand's bends)
 const SLANTS = [0.2, 0.3, 0.4, 0.5, 0.6], SLANT_MIN = 0.22, SLANT_MAX = 0.55; // (the bar's angle across the palm: the grips worked out for, and the range held)
 const PALM = [0.0005, 0.0015]; // (how near the bar the palm's skin comes, m: its nearest point, between)
-function armsRig(sceneRoot, parent, chestAt, scale) {
+export function armsRig(sceneRoot, parent, chestAt, scale) {
   const V = () => new THREE.Vector3(), bone = n => { let f = null; sceneRoot.traverse(o => { if (!f && o.isBone && o.name.startsWith(n)) f = o; }); return f; };
   let skin = null; sceneRoot.traverse(o => { if (o.isSkinnedMesh) skin = o; });
   if (!skin || !bone('chest') || !bone('L_wrist') || !bone('R_wrist')) return null;
