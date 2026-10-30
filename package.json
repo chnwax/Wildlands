@@ -1,0 +1,21 @@
+{
+  "name": "wildlands",
+  "private": true,
+  "description": "Wildlands — painted free-roam game (three.js) with a world editor; in the browser or as a desktop app (Electron)",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "app": "electron .",
+    "dev": "node tools/devserver.mjs",
+    "editor": "node tools/devserver.mjs --open=editor.html?map=town",
+    "validate-world": "node tools/validate-world.mjs",
+    "regenerate-world": "node tools/regenerate-world.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0"
+  }
+}

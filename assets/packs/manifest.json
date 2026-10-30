@@ -1,0 +1,2465 @@
+{
+ "libraries": {
+  "farm": {
+   "pack": "Polygon Farm",
+   "licence": "Synty Studios EULA (POLYGON Farm 1.6.4): models used inside the game; source assets are not redistributed",
+   "runtime": true,
+   "file": "farm.glb",
+   "hash": "773babc10d",
+   "bytes": 8304780,
+   "assets": {
+    "farm_corn_l": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.821,
+      2.186,
+      0.856
+     ],
+     "tris": 510,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Corn_01_L.prefab"
+    },
+    "farm_corn_m": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.733,
+      1.792,
+      0.768
+     ],
+     "tris": 404,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Corn_01_M.prefab"
+    },
+    "farm_pumpkin_l": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.541,
+      0.534,
+      0.803
+     ],
+     "tris": 335,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Pumpkin_01_L.prefab"
+    },
+    "farm_pumpkin_m": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.341,
+      0.354,
+      0.647
+     ],
+     "tris": 325,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Pumpkin_01_M.prefab"
+    },
+    "farm_watermelon": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.361,
+      0.367,
+      0.762
+     ],
+     "tris": 129,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Watermelon_01_L.prefab"
+    },
+    "farm_sunflower_1": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.398,
+      1.288,
+      0.342
+     ],
+     "tris": 398,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Sunflower_01.prefab"
+    },
+    "farm_sunflower_2": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.368,
+      1.103,
+      0.348
+     ],
+     "tris": 322,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Sunflower_02.prefab"
+    },
+    "farm_wheat_1": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.192,
+      0.623,
+      0.18
+     ],
+     "tris": 39,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_01.prefab"
+    },
+    "farm_wheat_2": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.468,
+      0.945,
+      0.403
+     ],
+     "tris": 105,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Wheat_Optimised_02.prefab"
+    },
+    "farm_strawberry": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.689,
+      0.159,
+      0.689
+     ],
+     "tris": 580,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Strawberry_01.prefab"
+    },
+    "farm_tomato_bush": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.627,
+      0.989,
+      0.597
+     ],
+     "tris": 654,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Bush_02_Tomato.prefab"
+    },
+    "farm_bean_bush": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.627,
+      0.989,
+      0.597
+     ],
+     "tris": 806,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Bush_01_Bean.prefab"
+    },
+    "farm_eggplant": {
+     "kind": "crop",
+     "category": "farm",
+     "dims": [
+      0.141,
+      0.599,
+      0.123
+     ],
+     "tris": 108,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Eggplant_01_L.prefab"
+    },
+    "farm_peach": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      3.238,
+      4.512,
+      2.728
+     ],
+     "tris": 1038,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Peach_Grown_01.prefab"
+    },
+    "farm_pear": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      2.389,
+      3.819,
+      2.151
+     ],
+     "tris": 1504,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Pear_Grown_01.prefab"
+    },
+    "farm_plum": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      2.519,
+      3.741,
+      2.011
+     ],
+     "tris": 978,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Plum_Grown_01.prefab"
+    },
+    "farm_apple": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      3.037,
+      4.296,
+      2.961
+     ],
+     "tris": 1044,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Apple_Grown_01.prefab"
+    },
+    "farm_mikan": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      3.112,
+      3.196,
+      3.183
+     ],
+     "tris": 845,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Orange_Grown_01.prefab"
+    },
+    "farm_cherry_fruit": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      3.291,
+      4.344,
+      3.074
+     ],
+     "tris": 2250,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Cherry_Grown_01.prefab"
+    },
+    "farm_peach_young": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      3.236,
+      4.512,
+      2.713
+     ],
+     "tris": 280,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Peach_01.prefab"
+    },
+    "farm_pear_young": {
+     "kind": "tree",
+     "category": "orchard",
+     "dims": [
+      2.389,
+      3.819,
+      2.151
+     ],
+     "tris": 306,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Environments/SM_Env_Tree_Pear_01.prefab"
+    },
+    "farm_wheelbarrow": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.705,
+      0.846,
+      2.089
+     ],
+     "tris": 694,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Wheelbarrow_01.prefab"
+    },
+    "farm_wheelbarrow_metal": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.687,
+      1.015,
+      1.931
+     ],
+     "tris": 666,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Wheelbarrow_Metal_01.prefab"
+    },
+    "farm_bucket": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.364,
+      0.283,
+      0.372
+     ],
+     "tris": 124,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tool_Bucket_01.prefab"
+    },
+    "farm_watering_can": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.222,
+      0.471,
+      0.737
+     ],
+     "tris": 646,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Watering_Can_01.prefab"
+    },
+    "farm_hoe": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.334,
+      1.314,
+      0.32
+     ],
+     "tris": 170,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tool_Hoe_01.prefab"
+    },
+    "farm_rake": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.517,
+      1.394,
+      0.156
+     ],
+     "tris": 148,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tool_Rake_01.prefab"
+    },
+    "farm_spade": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.247,
+      1.468,
+      0.072
+     ],
+     "tris": 94,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tool_Spade_01.prefab"
+    },
+    "farm_box_potato": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.756,
+      0.385,
+      0.453
+     ],
+     "tris": 1372,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Potato_01.prefab"
+    },
+    "farm_box_onion": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.037,
+      0.576,
+      0.53
+     ],
+     "tris": 1406,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Onion_01.prefab"
+    },
+    "farm_box_carrot": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.142,
+      0.535,
+      0.511
+     ],
+     "tris": 1196,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Carrot_01.prefab"
+    },
+    "farm_box_eggplant": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.76,
+      0.415,
+      0.453
+     ],
+     "tris": 844,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Eggplant_01.prefab"
+    },
+    "farm_box_cucumber": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.759,
+      0.434,
+      0.453
+     ],
+     "tris": 628,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Cucumber_01.prefab"
+    },
+    "farm_box_apple": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.756,
+      0.477,
+      0.453
+     ],
+     "tris": 1258,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Apple_01.prefab"
+    },
+    "farm_box_peach": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.756,
+      0.452,
+      0.453
+     ],
+     "tris": 1477,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Peach_01.prefab"
+    },
+    "farm_crate": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.827,
+      0.873,
+      0.815
+     ],
+     "tris": 220,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Crate_01.prefab"
+    },
+    "farm_pallet_crate": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.756,
+      0.385,
+      0.453
+     ],
+     "tris": 256,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_PalletCrate_01.prefab"
+    },
+    "farm_grain_bag": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.845,
+      0.32,
+      0.572
+     ],
+     "tris": 156,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_GrainBag_01.prefab"
+    },
+    "farm_grain_bag_open": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.531,
+      0.471,
+      0.43
+     ],
+     "tris": 158,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_GrainBag_Open_01.prefab"
+    },
+    "farm_sprinkler": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.144,
+      1.602,
+      0.268
+     ],
+     "tris": 268,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Sprinkler_01.prefab"
+    },
+    "farm_wood_stack": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.915,
+      0.717,
+      1.095
+     ],
+     "tris": 432,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Wood_Stack_01.prefab"
+    },
+    "farm_barrel": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.908,
+      1.16,
+      0.908
+     ],
+     "tris": 456,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Barrel_01.prefab"
+    },
+    "farm_straw_bale": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.909,
+      0.947,
+      1.412
+     ],
+     "tris": 544,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Hay_Bale_Square_01.prefab"
+    },
+    "farm_plastic_bin": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.632,
+      0.432,
+      0.847
+     ],
+     "tris": 92,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_PlasticBin_01.prefab"
+    },
+    "farm_fence_wire": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      5,
+      1.219,
+      0.123
+     ],
+     "tris": 168,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Fence_Wire_01.prefab"
+    },
+    "farm_fence_wire_pole": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.291,
+      1.702,
+      0.291
+     ],
+     "tris": 216,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Fence_Wire_Pole_01.prefab"
+    },
+    "farm_beehive": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.775,
+      1.206,
+      0.8
+     ],
+     "tris": 294,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Beehive_01.prefab"
+    },
+    "farm_table": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.209,
+      0.882,
+      2.446
+     ],
+     "tris": 716,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Table_01.prefab"
+    },
+    "farm_rack": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.958,
+      0.823,
+      0.404
+     ],
+     "tris": 912,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Rack_01.prefab"
+    },
+    "farm_tyre": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.724,
+      0.525,
+      1.724
+     ],
+     "tris": 1522,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tyre_01.prefab"
+    },
+    "farm_greenhouse_glass": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      5.571,
+      4.991,
+      7.71
+     ],
+     "tris": 628,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Greenhouse_01.prefab"
+    },
+    "farm_shelter": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      4.933,
+      3.611,
+      3.597
+     ],
+     "tris": 824,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Shelter_01.prefab"
+    },
+    "farm_produce_stand": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      3.076,
+      3.334,
+      3.078
+     ],
+     "tris": 1936,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_ProduceStand_01.prefab"
+    },
+    "farm_barn": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      13.495,
+      9.105,
+      14.158
+     ],
+     "tris": 13151,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Barn_01.prefab"
+    },
+    "farm_barn_02": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      13.495,
+      9.105,
+      7.435
+     ],
+     "tris": 10212,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Barn_02.prefab"
+    },
+    "farm_barn_03": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      9.769,
+      9.105,
+      7.435
+     ],
+     "tris": 8160,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Barn_03.prefab"
+    },
+    "farm_farmhouse": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      13.455,
+      9.824,
+      10.952
+     ],
+     "tris": 14829,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Farmhouse_01.prefab"
+    },
+    "farm_farmhouse_02": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      8.584,
+      6.794,
+      9.209
+     ],
+     "tris": 7347,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Farmhouse_02.prefab"
+    },
+    "farm_garage": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      13.888,
+      4.865,
+      6.882
+     ],
+     "tris": 2952,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Garage_01.prefab"
+    },
+    "farm_greenhouse_large": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      12.869,
+      6.773,
+      32.458
+     ],
+     "tris": 1828,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Greenhouse_Large_01.prefab"
+    },
+    "farm_silo_small": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      4.577,
+      4.59,
+      4.577
+     ],
+     "tris": 424,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Silo_Small_01.prefab"
+    },
+    "farm_outhouse": {
+     "kind": "building",
+     "category": "farm_building",
+     "dims": [
+      1.868,
+      3.184,
+      2.389
+     ],
+     "tris": 1113,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Buildings/SM_Bld_Outhouse_01.prefab"
+    },
+    "farm_bench": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.645,
+      0.472,
+      0.474
+     ],
+     "tris": 150,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Bench_01.prefab"
+    },
+    "farm_chicken_coop": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      2.232,
+      2.482,
+      3.895
+     ],
+     "tris": 1005,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Chicken_Coop_01.prefab"
+    },
+    "farm_clothesline": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.074,
+      2.269,
+      5.489
+     ],
+     "tris": 1578,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_ClothesLine_01.prefab"
+    },
+    "farm_well": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.602,
+      1.675,
+      1.415
+     ],
+     "tris": 717,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Well_01.prefab"
+    },
+    "farm_trough": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      3.224,
+      0.42,
+      0.917
+     ],
+     "tris": 138,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Trough_01.prefab"
+    },
+    "farm_wood_stack_02": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.677,
+      0.513,
+      1.095
+     ],
+     "tris": 120,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Wood_Stack_02.prefab"
+    },
+    "farm_hay_bale_round": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.262,
+      1.582,
+      1.219
+     ],
+     "tris": 936,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Hay_Bale_Round_01.prefab"
+    },
+    "farm_hay_pile": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      2.47,
+      1.102,
+      2.64
+     ],
+     "tris": 420,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Hay_Pile_01.prefab"
+    },
+    "farm_box_apple_02": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.756,
+      0.477,
+      0.453
+     ],
+     "tris": 1258,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Apple_02.prefab"
+    },
+    "farm_box_plum": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.756,
+      0.452,
+      0.453
+     ],
+     "tris": 1477,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Box_Plum_01.prefab"
+    },
+    "farm_barrel_02": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.92,
+      1.16,
+      0.92
+     ],
+     "tris": 640,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Barrel_02.prefab"
+    },
+    "farm_barrel_half": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.906,
+      0.565,
+      0.906
+     ],
+     "tris": 348,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Barrel_Half_01.prefab"
+    },
+    "farm_can": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.106,
+      0.191,
+      0.108
+     ],
+     "tris": 212,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Can_01.prefab"
+    },
+    "farm_gascan": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.448,
+      0.561,
+      0.149
+     ],
+     "tris": 342,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_GasCan_01.prefab"
+    },
+    "farm_gastank": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.457,
+      2.907,
+      2.53
+     ],
+     "tris": 596,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Gastank_01.prefab"
+    },
+    "farm_pot": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.294,
+      0.28,
+      0.28
+     ],
+     "tris": 120,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Pot_01.prefab"
+    },
+    "farm_pot_02": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.1,
+      0.13,
+      0.1
+     ],
+     "tris": 36,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Pot_02.prefab"
+    },
+    "farm_plantbox_large": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      4.201,
+      0.558,
+      7.69
+     ],
+     "tris": 252,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_PlantBox_Large_01.prefab"
+    },
+    "farm_sign_veges": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.869,
+      0.342,
+      0.024
+     ],
+     "tris": 44,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Sign_Veges_01.prefab"
+    },
+    "farm_signpost": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.146,
+      0.538,
+      0.108
+     ],
+     "tris": 114,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_SignPost_01.prefab"
+    },
+    "farm_toolbox": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.265,
+      0.33,
+      0.719
+     ],
+     "tris": 320,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_ToolBox_01.prefab"
+    },
+    "farm_tool_axe": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.068,
+      1.028,
+      0.266
+     ],
+     "tris": 142,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tool_Axe_01.prefab"
+    },
+    "farm_tool_pitchfork": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.294,
+      1.508,
+      0.083
+     ],
+     "tris": 130,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tool_Pitchfork_01.prefab"
+    },
+    "farm_tool_scythe": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.876,
+      1.22,
+      0.234
+     ],
+     "tris": 194,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Tool_Scythe_01.prefab"
+    },
+    "farm_sprinkler_hose": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.134,
+      0.087,
+      3.015
+     ],
+     "tris": 68,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Sprinkler_Hose_01.prefab"
+    },
+    "farm_spoolwheel": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      1.564,
+      1.023,
+      1.564
+     ],
+     "tris": 258,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_SpoolWheel_01.prefab"
+    },
+    "farm_rusted_drum": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.699,
+      1.045,
+      0.713
+     ],
+     "tris": 308,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Rusted_Drum_01.prefab"
+    },
+    "farm_seedpacket": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.229,
+      0.276,
+      0.067
+     ],
+     "tris": 96,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_SeedPacket_01.prefab"
+    },
+    "farm_fence_wood": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      2.502,
+      1.082,
+      0.049
+     ],
+     "tris": 104,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Fence_Wood_01.prefab"
+    },
+    "farm_fence_wood_pole": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      0.168,
+      1.664,
+      0.168
+     ],
+     "tris": 60,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Fence_Wood_Pole_01.prefab"
+    },
+    "farm_fence_wire_gate": {
+     "kind": "prop",
+     "category": "farm",
+     "dims": [
+      3.557,
+      1.168,
+      0.083
+     ],
+     "tris": 528,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Props/SM_Prop_Fence_Wire_Gate_01.prefab"
+    },
+    "farm_plant_ground_01_l": {
+     "kind": "crop",
+     "category": "orchard",
+     "dims": [
+      1.303,
+      0.461,
+      1.085
+     ],
+     "tris": 244,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Ground_01_L.prefab"
+    },
+    "farm_plant_ground_02_l": {
+     "kind": "crop",
+     "category": "orchard",
+     "dims": [
+      1.277,
+      0.211,
+      0.939
+     ],
+     "tris": 190,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Ground_02_L.prefab"
+    },
+    "farm_plant_ground_03_l": {
+     "kind": "crop",
+     "category": "orchard",
+     "dims": [
+      1.064,
+      0.408,
+      0.914
+     ],
+     "tris": 190,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Ground_03_L.prefab"
+    },
+    "farm_bush_round_row": {
+     "kind": "crop",
+     "category": "orchard",
+     "dims": [
+      1.111,
+      0.219,
+      7.269
+     ],
+     "tris": 720,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Bush_Round_Row_01.prefab"
+    },
+    "farm_cabbage_01_l": {
+     "kind": "crop",
+     "category": "orchard",
+     "dims": [
+      0.438,
+      0.29,
+      0.498
+     ],
+     "tris": 258,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Cabbage_01_L.prefab"
+    },
+    "farm_lettuce_01_l": {
+     "kind": "crop",
+     "category": "orchard",
+     "dims": [
+      0.301,
+      0.224,
+      0.277
+     ],
+     "tris": 164,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Lettuce_01_L.prefab"
+    },
+    "farm_plant_potato_01_l": {
+     "kind": "crop",
+     "category": "orchard",
+     "dims": [
+      1.175,
+      1.005,
+      1.126
+     ],
+     "tris": 396,
+     "src": "UnityAssets/Polygon Farm/Prefabs/Plants/SM_Prop_Plant_Potato_01_L.prefab"
+    }
+   }
+  },
+  "japan": {
+   "pack": "Idyllic Anime Japan",
+   "licence": "Unity Asset Store EULA (Idyllic Anime Japan 1.1.1): models used inside the game; source assets are not redistributed",
+   "runtime": true,
+   "file": "japan.glb",
+   "hash": "588707166e",
+   "bytes": 12372044,
+   "assets": {
+    "jp_sign_traffic_001": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.598,
+      2.862,
+      0.106
+     ],
+     "tris": 204,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_001.prefab"
+    },
+    "jp_sign_traffic_004": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.61,
+      2.822,
+      0.109
+     ],
+     "tris": 280,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_004.prefab"
+    },
+    "jp_sign_traffic_005": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.598,
+      2.822,
+      0.11
+     ],
+     "tris": 280,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_005.prefab"
+    },
+    "jp_sign_traffic_006": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.608,
+      2.822,
+      0.109
+     ],
+     "tris": 280,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_006.prefab"
+    },
+    "jp_sign_traffic_007": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.615,
+      2.736,
+      0.102
+     ],
+     "tris": 228,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_007.prefab"
+    },
+    "jp_sign_traffic_008": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.615,
+      2.736,
+      0.096
+     ],
+     "tris": 152,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_008.prefab"
+    },
+    "jp_sign_traffic_009": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.615,
+      2.929,
+      0.11
+     ],
+     "tris": 228,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_009.prefab"
+    },
+    "jp_sign_traffic_010": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.632,
+      2.873,
+      0.104
+     ],
+     "tris": 172,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_010.prefab"
+    },
+    "jp_sign_traffic_011": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.632,
+      2.873,
+      0.104
+     ],
+     "tris": 172,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_011.prefab"
+    },
+    "jp_sign_traffic_012": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.538,
+      2.834,
+      0.104
+     ],
+     "tris": 172,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_012.prefab"
+    },
+    "jp_sign_traffic_013": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.605,
+      2.926,
+      0.112
+     ],
+     "tris": 172,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_013.prefab"
+    },
+    "jp_sign_traffic_014": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.562,
+      3.02,
+      0.106
+     ],
+     "tris": 208,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_014.prefab"
+    },
+    "jp_sign_traffic_015": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.442,
+      2.232,
+      0.1
+     ],
+     "tris": 172,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_015.prefab"
+    },
+    "jp_sign_traffic_016": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.483,
+      2.205,
+      0.118
+     ],
+     "tris": 248,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_016.prefab"
+    },
+    "jp_sign_traffic_017": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.456,
+      2.038,
+      0.085
+     ],
+     "tris": 172,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_traffic_017.prefab"
+    },
+    "jp_warning_panel_1": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.406,
+      0.406,
+      0.008
+     ],
+     "tris": 12,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_01.prefab"
+    },
+    "jp_warning_panel_2": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.406,
+      0.406,
+      0.008
+     ],
+     "tris": 12,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_02.prefab"
+    },
+    "jp_warning_panel_3": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.709,
+      0.473,
+      0.013
+     ],
+     "tris": 44,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_03.prefab"
+    },
+    "jp_warning_panel_4": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.709,
+      0.473,
+      0.013
+     ],
+     "tris": 44,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_04.prefab"
+    },
+    "jp_warning_panel_5": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.709,
+      0.473,
+      0.013
+     ],
+     "tris": 44,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_05.prefab"
+    },
+    "jp_warning_panel_6": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.291,
+      0.291,
+      0.021
+     ],
+     "tris": 98,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_06.prefab"
+    },
+    "jp_warning_panel_7": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.291,
+      0.291,
+      0.021
+     ],
+     "tris": 98,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_07.prefab"
+    },
+    "jp_warning_panel_8": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.291,
+      0.291,
+      0.021
+     ],
+     "tris": 98,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_08.prefab"
+    },
+    "jp_warning_panel_9": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.291,
+      0.291,
+      0.021
+     ],
+     "tris": 98,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_warning_panel_09.prefab"
+    },
+    "jp_drain_street": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.752,
+      0.039,
+      0.518
+     ],
+     "tris": 106,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_drain_street.prefab"
+    },
+    "jp_bucket": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.393,
+      0.338,
+      0.393
+     ],
+     "tris": 580,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_bucket.prefab"
+    },
+    "jp_broom_stick": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.277,
+      1.834,
+      0.119
+     ],
+     "tris": 408,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_broom_stick.prefab"
+    },
+    "jp_trowel_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.339,
+      0.557,
+      0.196
+     ],
+     "tris": 268,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_trowel_01.prefab"
+    },
+    "jp_carton_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.855,
+      0.451,
+      0.546
+     ],
+     "tris": 68,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_carton_01.prefab"
+    },
+    "jp_carton_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.319,
+      0.457,
+      1.138
+     ],
+     "tris": 84,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_carton_02.prefab"
+    },
+    "jp_trash_recycling": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.621,
+      1.19,
+      0.501
+     ],
+     "tris": 510,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_trash_recycling.prefab"
+    },
+    "jp_bikestand": {
+     "kind": "prop",
+     "category": "estate",
+     "dims": [
+      0.756,
+      0.547,
+      1.736
+     ],
+     "tris": 3528,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_bikestand.prefab"
+    },
+    "jp_traffic_pylon": {
+     "kind": "prop",
+     "category": "estate",
+     "dims": [
+      0.457,
+      0.622,
+      0.489
+     ],
+     "tris": 174,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_traffic_pylon.prefab"
+    },
+    "jp_lantern_traditional_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.288,
+      1.463,
+      0.292
+     ],
+     "tris": 368,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lantern_traditional_01.prefab"
+    },
+    "jp_lantern_traditional_03": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.417,
+      1.626,
+      0.423
+     ],
+     "tris": 456,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lantern_traditional_03.prefab"
+    },
+    "jp_board_foldable_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.548,
+      0.956,
+      0.459
+     ],
+     "tris": 96,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_board_foldable_01.prefab"
+    },
+    "jp_bush_01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      2.774,
+      1.342,
+      2.588
+     ],
+     "tris": 360,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Nature/SM_bush_01.prefab"
+    },
+    "jp_tree_garden": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      4.804,
+      4.255,
+      3.168
+     ],
+     "tris": 3216,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Nature/SM_tree_garden.prefab"
+    },
+    "jp_airconditioner_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.942,
+      0.873,
+      0.392
+     ],
+     "tris": 354,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_airconditioner_01.prefab"
+    },
+    "jp_airconditioner_02": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      1.239,
+      1.232,
+      0.575
+     ],
+     "tris": 668,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_airconditioner_02.prefab"
+    },
+    "jp_antenna_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      1.779,
+      2.096,
+      1.083
+     ],
+     "tris": 580,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_antenna_01.prefab"
+    },
+    "jp_bicycle": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      2.322,
+      1.382,
+      0.601
+     ],
+     "tris": 3832,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_bicycle.prefab"
+    },
+    "jp_mofa_vehicle": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      2.124,
+      1.444,
+      0.933
+     ],
+     "tris": 4462,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_mofa_vehicle.prefab"
+    },
+    "jp_mailbox_resident_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.393,
+      0.464,
+      0.14
+     ],
+     "tris": 92,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_mailbox_resident_01.prefab"
+    },
+    "jp_mailbox_resident_02": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.431,
+      0.336,
+      0.104
+     ],
+     "tris": 64,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_mailbox_resident_02.prefab"
+    },
+    "jp_fusebox_wall_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.331,
+      0.822,
+      0.191
+     ],
+     "tris": 478,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_fusebox_wall_01.prefab"
+    },
+    "jp_fusebox_large": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      1.064,
+      1.68,
+      0.477
+     ],
+     "tris": 218,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_fusebox_large.prefab"
+    },
+    "jp_ventilation_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.739,
+      0.574,
+      0.557
+     ],
+     "tris": 308,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_ventilation_01.prefab"
+    },
+    "jp_flowerpot_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.609,
+      0.925,
+      0.585
+     ],
+     "tris": 766,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_01.prefab"
+    },
+    "jp_flowerpot_02": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.544,
+      0.724,
+      0.586
+     ],
+     "tris": 530,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_02.prefab"
+    },
+    "jp_flowerpot_03": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.332,
+      0.345,
+      0.328
+     ],
+     "tris": 122,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_03.prefab"
+    },
+    "jp_flowerpot_04": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.466,
+      0.924,
+      0.41
+     ],
+     "tris": 600,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_04.prefab"
+    },
+    "jp_flowerpot_05": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.36,
+      0.678,
+      0.354
+     ],
+     "tris": 356,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_05.prefab"
+    },
+    "jp_flowerpot_06": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.701,
+      0.514,
+      0.655
+     ],
+     "tris": 408,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_06.prefab"
+    },
+    "jp_flowerpot_07": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.458,
+      0.558,
+      0.427
+     ],
+     "tris": 1184,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_07.prefab"
+    },
+    "jp_flowerpot_08": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.278,
+      0.432,
+      0.275
+     ],
+     "tris": 342,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_08.prefab"
+    },
+    "jp_flowerpot_09": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.458,
+      0.257,
+      0.427
+     ],
+     "tris": 224,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_09.prefab"
+    },
+    "jp_flowerpot_010": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.701,
+      0.598,
+      0.639
+     ],
+     "tris": 452,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_flowerpot_010.prefab"
+    },
+    "jp_plants_box_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.738,
+      0.778,
+      0.586
+     ],
+     "tris": 632,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_plants_box_01.prefab"
+    },
+    "jp_plants_box_02": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.641,
+      1.181,
+      0.658
+     ],
+     "tris": 240,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_plants_box_02.prefab"
+    },
+    "jp_plants_box_03": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      1.199,
+      1.15,
+      0.673
+     ],
+     "tris": 392,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_plants_box_03.prefab"
+    },
+    "jp_carton_03": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.479,
+      0.381,
+      0.461
+     ],
+     "tris": 68,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_carton_03.prefab"
+    },
+    "jp_bottle_drink_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.107,
+      0.409,
+      0.107
+     ],
+     "tris": 108,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_bottle_drink_01.prefab"
+    },
+    "jp_bottle_drink_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.107,
+      0.307,
+      0.107
+     ],
+     "tris": 156,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_bottle_drink_02.prefab"
+    },
+    "jp_chair": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.541,
+      0.762,
+      0.541
+     ],
+     "tris": 108,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_chair.prefab"
+    },
+    "jp_chair_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.521,
+      1.307,
+      0.561
+     ],
+     "tris": 112,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_chair_02.prefab"
+    },
+    "jp_stool_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.5,
+      0.919,
+      0.492
+     ],
+     "tris": 288,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_stool_01.prefab"
+    },
+    "jp_stool_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.453,
+      0.865,
+      0.446
+     ],
+     "tris": 188,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_stool_02.prefab"
+    },
+    "jp_table_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.126,
+      1.087,
+      1.057
+     ],
+     "tris": 92,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_table_01.prefab"
+    },
+    "jp_table_shop": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.822,
+      1.049,
+      0.929
+     ],
+     "tris": 108,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_table_shop.prefab"
+    },
+    "jp_trash_can_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.691,
+      1.142,
+      0.691
+     ],
+     "tris": 1176,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_trash_can_01.prefab"
+    },
+    "jp_vendingmachine_bottles_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.205,
+      2.038,
+      0.723
+     ],
+     "tris": 2266,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_vendingmachine_bottles_01.prefab"
+    },
+    "jp_vendingmachine_bottles_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.205,
+      2.038,
+      0.723
+     ],
+     "tris": 1876,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_vendingmachine_bottles_02.prefab"
+    },
+    "jp_vendingmachine_bottles_04": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.205,
+      2.038,
+      0.723
+     ],
+     "tris": 1750,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_vendingmachine_bottles_04.prefab"
+    },
+    "jp_board_foldable_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.62,
+      1.113,
+      0.486
+     ],
+     "tris": 108,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_board_foldable_02.prefab"
+    },
+    "jp_board_foldable_03": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.58,
+      1.012,
+      0.486
+     ],
+     "tris": 96,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_board_foldable_03.prefab"
+    },
+    "jp_cloth_storefront_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      4.728,
+      1.263,
+      0.104
+     ],
+     "tris": 1558,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_cloth_storefront_01.prefab"
+    },
+    "jp_cloth_storefront_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      3.76,
+      1.263,
+      0.132
+     ],
+     "tris": 1178,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_cloth_storefront_02.prefab"
+    },
+    "jp_cloth_storefront_03": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      4.941,
+      0.918,
+      0.109
+     ],
+     "tris": 1966,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_cloth_storefront_03.prefab"
+    },
+    "jp_sunscreen_shop_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      5.552,
+      1.445,
+      1.155
+     ],
+     "tris": 780,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_sunscreen_shop_01.prefab"
+    },
+    "jp_sunscreen_shop_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.755,
+      0.652,
+      0.781
+     ],
+     "tris": 44,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_sunscreen_shop_02.prefab"
+    },
+    "jp_sunscreen_shop_03": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      4.579,
+      1.741,
+      1.319
+     ],
+     "tris": 96,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_sunscreen_shop_03.prefab"
+    },
+    "jp_sunscreen_shop_04": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      5.418,
+      0.919,
+      1.858
+     ],
+     "tris": 136,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_sunscreen_shop_04.prefab"
+    },
+    "jp_lantern_traditional_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.417,
+      1.626,
+      0.423
+     ],
+     "tris": 456,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lantern_traditional_02.prefab"
+    },
+    "jp_lantern_traditional_04": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      0.492,
+      1.637,
+      0.499
+     ],
+     "tris": 456,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lantern_traditional_04.prefab"
+    },
+    "jp_signboard_small_01": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.233,
+      1.103,
+      0.744
+     ],
+     "tris": 120,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_signboard_small_01.prefab"
+    },
+    "jp_signboard_small_02": {
+     "kind": "prop",
+     "category": "shop",
+     "dims": [
+      1.157,
+      1.209,
+      0.435
+     ],
+     "tris": 316,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Signs and Boards/SM_signboard_small_02.prefab"
+    },
+    "jp_trash_container_01": {
+     "kind": "prop",
+     "category": "estate",
+     "dims": [
+      0.705,
+      1.248,
+      0.761
+     ],
+     "tris": 998,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_trash_container_01.prefab"
+    },
+    "jp_pole_street": {
+     "kind": "prop",
+     "category": "estate",
+     "dims": [
+      0.174,
+      1.044,
+      0.17
+     ],
+     "tris": 164,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_pole_street.prefab"
+    },
+    "jp_firehydrant": {
+     "kind": "prop",
+     "category": "estate",
+     "dims": [
+      0.923,
+      1.186,
+      0.42
+     ],
+     "tris": 1302,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_firehydrant.prefab"
+    },
+    "jp_mailbox_post": {
+     "kind": "prop",
+     "category": "estate",
+     "dims": [
+      0.511,
+      1.282,
+      0.445
+     ],
+     "tris": 376,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_mailbox_post.prefab"
+    },
+    "jp_lamp_01": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.748,
+      0.698,
+      0.397
+     ],
+     "tris": 591,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lamp_01.prefab"
+    },
+    "jp_lamp_02": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      1.632,
+      0.999,
+      0.323
+     ],
+     "tris": 362,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lamp_02.prefab"
+    },
+    "jp_lamp_03": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.394,
+      0.348,
+      0.4
+     ],
+     "tris": 582,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lamp_03.prefab"
+    },
+    "jp_lamp_04": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.452,
+      0.594,
+      0.387
+     ],
+     "tris": 320,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Props/SM_lamp_04.prefab"
+    },
+    "jp_sign_streetname_01": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      1.134,
+      3.343,
+      0.142
+     ],
+     "tris": 188,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_streetname_01.prefab"
+    },
+    "jp_sign_streetname_02": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      1.134,
+      3.343,
+      0.142
+     ],
+     "tris": 188,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_sign_streetname_02.prefab"
+    },
+    "jp_mirror_round_01": {
+     "kind": "prop",
+     "category": "street",
+     "dims": [
+      0.868,
+      0.87,
+      0.325
+     ],
+     "tris": 716,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Traffic Signs/SM_mirror_round_01.prefab"
+    },
+    "jp_entrance_fence": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      0.885,
+      1.358,
+      0.128
+     ],
+     "tris": 266,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_entrance_fence.prefab"
+    },
+    "jp_fence_01": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      2.414,
+      1.114,
+      0.056
+     ],
+     "tris": 276,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_fence_01.prefab"
+    },
+    "jp_fence_02": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      1.241,
+      1.114,
+      0.056
+     ],
+     "tris": 696,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_fence_02.prefab"
+    },
+    "jp_fence_03": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      2.233,
+      1.058,
+      0.049
+     ],
+     "tris": 476,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_fence_03.prefab"
+    },
+    "jp_fence_04": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      2.233,
+      1.058,
+      0.049
+     ],
+     "tris": 404,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_fence_04.prefab"
+    },
+    "jp_fence_05": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      1.93,
+      1.074,
+      0.042
+     ],
+     "tris": 224,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_fence_05.prefab"
+    },
+    "jp_wall_flowerbed": {
+     "kind": "prop",
+     "category": "plot",
+     "dims": [
+      2.664,
+      0.464,
+      1.182
+     ],
+     "tris": 252,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Modular Pieces/SM_wall_flowerbed.prefab"
+    },
+    "jp_tree_tall_01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      4.752,
+      7.742,
+      4.303
+     ],
+     "tris": 2632,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Nature/SM_tree_tall_01.prefab"
+    },
+    "jp_tree_tall_02": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      4.001,
+      6.942,
+      4.679
+     ],
+     "tris": 2468,
+     "src": "UnityAssets/Idyllic Anime Japan/Prefabs/Nature/SM_tree_tall_02.prefab"
+    }
+   }
+  },
+  "woodlands": {
+   "pack": "Idyllic Woodlands",
+   "licence": "Unity Asset Store EULA (Idyllic Woodlands 1.2): models used inside the game; source assets are not redistributed",
+   "runtime": false,
+   "file": "woodlands.glb",
+   "hash": "f958a90d2e",
+   "bytes": 1115044,
+   "assets": {
+    "wl_tree01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      5.339,
+      7.507,
+      5.121
+     ],
+     "tris": 920,
+     "src": "UnityAssets/Idyllic Woodlands/Prefabs/Environment/Tree01.prefab"
+    },
+    "wl_tree02": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      5.233,
+      11.285,
+      5.029
+     ],
+     "tris": 916,
+     "src": "UnityAssets/Idyllic Woodlands/Prefabs/Environment/Tree02.prefab"
+    },
+    "wl_tree03": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      5.298,
+      5.932,
+      5.482
+     ],
+     "tris": 911,
+     "src": "UnityAssets/Idyllic Woodlands/Prefabs/Environment/Tree03.prefab"
+    },
+    "wl_bush01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      1.749,
+      1.351,
+      1.649
+     ],
+     "tris": 484,
+     "src": "UnityAssets/Idyllic Woodlands/Prefabs/Environment/Bush01.prefab"
+    }
+   }
+  },
+  "illustrated": {
+   "pack": "The Illustrated Nature",
+   "licence": "Unity Asset Store EULA (The Illustrated Nature 1.9): models used inside the game; source assets are not redistributed",
+   "runtime": true,
+   "file": "illustrated.glb",
+   "hash": "abc29e8af5",
+   "bytes": 3189064,
+   "assets": {
+    "il_shrub_round_01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      2.269,
+      2.573,
+      3.28
+     ],
+     "tris": 2739,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Shrub_Round_01.prefab"
+    },
+    "il_shrub_round_02": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      2.303,
+      2.75,
+      2.838
+     ],
+     "tris": 2437,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Shrub_Round_02.prefab"
+    },
+    "il_shrub_round_03": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      2.443,
+      3.458,
+      2.768
+     ],
+     "tris": 2836,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Shrub_Round_03.prefab"
+    },
+    "il_tree_birch_01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      6.002,
+      8.679,
+      5.441
+     ],
+     "tris": 3812,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Tree_Birch_01.prefab"
+    },
+    "il_tree_birch_02": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      10.085,
+      11.18,
+      11.487
+     ],
+     "tris": 5724,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Tree_Birch_02.prefab"
+    },
+    "il_tree_pine_01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      4.227,
+      6.712,
+      4.903
+     ],
+     "tris": 2076,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Tree_Pine_01.prefab"
+    },
+    "il_tree_pine_02": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      5.628,
+      8.496,
+      7.313
+     ],
+     "tris": 2456,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Tree_Pine_02.prefab"
+    },
+    "il_tree_beech_01": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      6.002,
+      8.679,
+      5.441
+     ],
+     "tris": 3812,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Tree_Beech_01.prefab"
+    },
+    "il_tree_beech_02": {
+     "kind": "tree",
+     "category": "park",
+     "dims": [
+      10.085,
+      11.18,
+      11.487
+     ],
+     "tris": 5724,
+     "src": "UnityAssets/The Illustrated Nature/Graphics/Prefabs/IL3DN_Tree_Beech_02.prefab"
+    }
+   }
+  }
+ },
+ "generated": "2026-10-15T20:43:41.659Z"
+}

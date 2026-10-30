@@ -1,0 +1,28 @@
+{
+  "format": "wildlands-world/1",
+  "kind": "generated",
+  "map": "nature",
+  "area": "fields",
+  "note": "Dense procedural vegetation (forest, forest floor, hedgerows, weeds...) is not listed object by object. Every plant still has an id <prefab>_<area>_<nnn> (numbered like the listed objects) and can be edited or deleted by id in ../edits/ like any other object.",
+  "fields": [
+    { "field": "forest", "prefab": "broken_tree", "count": 597, "areas": { "lakeshore": 21, "mountains": 333, "valley": 243 }, "example": "broken_tree_mountains_001" },
+    { "field": "forest", "prefab": "dead_tree", "count": 1107, "areas": { "lakeshore": 40, "mountains": 682, "valley": 385 }, "example": "dead_tree_mountains_001" },
+    { "field": "forest", "prefab": "sapling", "count": 8846, "areas": { "lakeshore": 335, "mountains": 4694, "valley": 3817 }, "example": "sapling_valley_001" },
+    { "field": "forest", "prefab": "tree_birch", "count": 577, "areas": { "lakeshore": 71, "mountains": 152, "valley": 354 }, "example": "tree_birch_mountains_001" },
+    { "field": "forest", "prefab": "tree_broadleaf", "count": 742, "areas": { "lakeshore": 111, "mountains": 46, "valley": 585 }, "example": "tree_broadleaf_valley_001" },
+    { "field": "forest", "prefab": "tree_cedar", "count": 2564, "areas": { "lakeshore": 73, "mountains": 1276, "valley": 1215 }, "example": "tree_cedar_valley_001" },
+    { "field": "forest", "prefab": "tree_maple", "count": 16, "areas": { "lakeshore": 1, "mountains": 6, "valley": 9 }, "example": "tree_maple_lakeshore_001" },
+    { "field": "forest", "prefab": "tree_oak", "count": 318, "areas": { "lakeshore": 58, "mountains": 26, "valley": 234 }, "example": "tree_oak_valley_001" },
+    { "field": "forest", "prefab": "tree_old_fir", "count": 726, "areas": { "lakeshore": 28, "mountains": 345, "valley": 353 }, "example": "tree_old_fir_valley_001" },
+    { "field": "forest", "prefab": "tree_pine", "count": 3187, "areas": { "lakeshore": 47, "mountains": 2470, "valley": 670 }, "example": "tree_pine_valley_001" },
+    { "field": "forest", "prefab": "tree_sakura", "count": 8, "areas": { "lakeshore": 2, "valley": 6 }, "example": "tree_sakura_valley_001" },
+    { "field": "forest", "prefab": "tree_spruce", "count": 4533, "areas": { "lakeshore": 159, "mountains": 2384, "valley": 1990 }, "example": "tree_spruce_mountains_001" },
+    { "field": "forest", "prefab": "tree_young_fir", "count": 25657, "areas": { "lakeshore": 1106, "mountains": 11001, "valley": 13550 }, "example": "tree_young_fir_mountains_001" },
+    { "field": "forest_floor", "prefab": "bush", "count": 2625, "areas": { "lakeshore": 114, "mountains": 1199, "valley": 1312 }, "example": "bush_valley_1099" },
+    { "field": "forest_floor", "prefab": "log", "count": 650, "areas": { "lakeshore": 24, "mountains": 341, "valley": 285 }, "example": "log_mountains_001" },
+    { "field": "forest_floor", "prefab": "twigs", "count": 7000, "areas": { "lakeshore": 311, "mountains": 3236, "valley": 3453 }, "example": "twigs_valley_001" },
+    { "field": "understory", "prefab": "fern", "count": 15000, "areas": { "lakeshore": 621, "mountains": 5149, "valley": 9230 }, "example": "fern_valley_001" },
+    { "field": "understory", "prefab": "shrub", "count": 3800, "areas": { "lakeshore": 117, "mountains": 2254, "valley": 1429 }, "example": "shrub_mountains_001" }
+  ],
+  "objects": []
+}
